@@ -3,6 +3,11 @@
 Complementa `ARQUITECTURA.md`. Aquí está el *cómo*: DDL, protocolo de sincronización y las pruebas que
 demuestran que el modelo cumple lo que promete.
 
+> **Independiente del stack.** Todo este documento es SQL y protocolo: no cambió con la decisión de
+> backend del [ADR 0001](adr/0001-stack-tecnologico.md). La implementación en Python/SQLAlchemy del
+> ingest (savepoints por sobre, `on_conflict_do_nothing`, advisory locks) está en
+> `ARQUITECTURA.md` §3.1.
+
 | Archivo | Contenido |
 |---|---|
 | `server/db/migrations/0001_extensiones_identidad.sql` | Extensiones, sucursales, RBAC, usuarios, dispositivos, sesiones, auditoría |
@@ -194,3 +199,13 @@ Estas decisiones cambian el DDL, así que conviene cerrarlas pronto:
 - **Preventa vs autoventa.** El modelo actual asume autoventa (se vende de lo que trae el camión). La
   preventa agrega un documento de pedido y cambia el ciclo.
 - **Catálogo de motivos de no-drop.** Escríbelo con los vendedores, no en el escritorio.
+
+## 9. Contratos Dart ↔ Python
+
+El `hash_payload` y el hash de Argon2id se calculan en dos lenguajes y **deben coincidir byte a byte**.
+Los puntos donde divergen en silencio (orden de claves, `Decimal` vs `double`, formato de fecha y zona,
+`null` vs clave ausente) se blindan con vectores de prueba compartidos en `contracts/`, ejecutados por
+la suite de Python y la de Dart en CI. Detalle en `ARQUITECTURA.md` §1.6.
+
+Decisión asociada: **el dinero viaja como *string* en el JSON**, nunca como número. `Decimal` en Python,
+paquete `decimal` en Dart, `numeric` en PostgreSQL.

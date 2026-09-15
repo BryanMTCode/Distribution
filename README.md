@@ -7,21 +7,38 @@ offline y panel web analítico.
 
 **Fase 0 — Fundaciones.** Modelo de datos definido y verificado. Sin código de aplicación todavía.
 
+## Stack
+
+| Capa | Tecnología |
+|---|---|
+| App móvil | Flutter · Drift (SQLite) · SQLCipher |
+| Backend | Python 3.12+ · FastAPI · SQLAlchemy 2.0 · Pydantic v2 · psycopg 3 |
+| Base de datos | PostgreSQL 17 + PostGIS |
+| Panel de operación | FastAPI + Jinja2 + HTMX |
+| Laboratorio analítico | Streamlit + Pandas/Polars (solo lectura) |
+| Cola de trabajos | PostgreSQL (`FOR UPDATE SKIP LOCKED`) |
+| Infraestructura | Docker Compose · Caddy · Cloudflare Tunnel |
+
+Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tecnologico.md).
+
 ## Documentación
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — propuesta arquitectónica: stack, arquitectura de
   datos y plan de desarrollo por fases.
 - [`docs/MODELO-DATOS.md`](docs/MODELO-DATOS.md) — DDL, protocolo de sincronización e invariantes
   verificadas.
+- [`docs/adr/`](docs/adr/) — decisiones de arquitectura registradas.
 
 ## Estructura
 
 ```
-server/db/migrations/   Migraciones PostgreSQL 16 + PostGIS (0001-0007)
+server/db/migrations/   Migraciones PostgreSQL + PostGIS (0001-0007)
 server/db/tests/        Prueba de humo de las invariantes del diseño
 mobile/db/schema.sql    Esquema local del dispositivo (SQLite + SQLCipher)
-docs/                   Arquitectura y modelo de datos
+docs/                   Arquitectura, modelo de datos y ADRs
 ```
+
+Estructura completa del backend (Fase 0) en `docs/ARQUITECTURA.md` §3.1.
 
 ## Verificar el modelo
 
