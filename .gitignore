@@ -1,0 +1,19 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Flutter
+.dart_tool/
+.packages
+*.g.dart
+*.freezed.dart
+
+# Local
+*.db
+*.sqlite
+pgdata/
