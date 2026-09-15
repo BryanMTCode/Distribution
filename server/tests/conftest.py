@@ -20,9 +20,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+# El puerto estándar de PostgreSQL. Si corres la base en otro, exporta
+# DSD_TEST_DATABASE_URL en vez de editar esto.
 URL_PRUEBAS = os.environ.get(
     "DSD_TEST_DATABASE_URL",
-    "postgresql+psycopg://postgres@127.0.0.1:55432/dsd_test",
+    "postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd_test",
 )
 
 # Tablas que tocan las pruebas. El orden no importa: CASCADE se encarga.

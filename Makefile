@@ -1,7 +1,7 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar migrar pruebas lint contratos api worker limpiar
+.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos api worker limpiar
 
-DB ?= postgresql+psycopg://postgres@127.0.0.1:5432/dsd
+DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
 ayuda:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -12,8 +12,18 @@ instalar:  ## Crea el venv e instala dependencias
 migrar:  ## Aplica las migraciones (DB=... para apuntar a otra base)
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/alembic upgrade head
 
-pruebas:  ## Corre la suite completa
+pruebas:  ## Corre la suite completa (necesita PostgreSQL+PostGIS arriba)
 	cd server && .venv/bin/python -m pytest -q
+
+db:  ## Levanta PostgreSQL+PostGIS para desarrollo (contenedor desechable)
+	docker run -d --name dsd-postgres -p 5432:5432 		-e POSTGRES_PASSWORD=dsd -e POSTGRES_DB=dsd 		postgis/postgis:17-3.5
+	@echo "Esperando a que acepte conexiones..."
+	@until docker exec dsd-postgres pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+	@docker exec dsd-postgres psql -U postgres -d dsd -c 'CREATE EXTENSION IF NOT EXISTS postgis' >/dev/null
+	@echo "Listo en 127.0.0.1:5432 (usuario postgres, clave dsd)"
+
+db-parar:  ## Detiene y borra el contenedor de desarrollo
+	-docker rm -f dsd-postgres
 
 lint:  ## Ruff
 	cd server && .venv/bin/ruff check app tests
