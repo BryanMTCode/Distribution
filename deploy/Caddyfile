@@ -1,0 +1,15 @@
+# Caddy resuelve TLS solo. Detrás del túnel de Cloudflare, sirve como
+# enrutador entre la API y el laboratorio analítico.
+#
+# Dos nombres distintos a propósito: la analítica es de solo lectura y no
+# comparte superficie con la operación.
+
+{$DSD_DOMINIO_API:api.localhost} {
+	encode gzip
+	reverse_proxy api:8000
+}
+
+{$DSD_DOMINIO_ANALITICA:analitica.localhost} {
+	encode gzip
+	reverse_proxy analitica:8501
+}

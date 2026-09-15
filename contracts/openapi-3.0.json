@@ -1,0 +1,700 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sistema DSD",
+    "description": "API del sistema DSD. El contrato con el dispositivo se genera de aquí; ver contracts/README.md §3 para el degradado a OpenAPI 3.0.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/salud": {
+      "get": {
+        "tags": [
+          "salud"
+        ],
+        "summary": "Salud",
+        "operationId": "salud_salud_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Salud"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeticionLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaLogin"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refrescar",
+        "operationId": "refrescar_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeticionRefresh"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaLogin"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/yo": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Yo",
+        "operationId": "yo_v1_auth_yo_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Yo"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/dispositivos/registrar": {
+      "post": {
+        "tags": [
+          "dispositivos"
+        ],
+        "summary": "Registrar",
+        "description": "Idempotente: reenviar el mismo registro no falla ni duplica.\n\nEs el mismo principio que el resto del sistema — la red puede entregar dos\nveces, y recibirlo dos veces no debe cambiar nada.",
+        "operationId": "registrar_v1_dispositivos_registrar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeticionRegistro"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispositivoRegistrado"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/dispositivos/{dispositivo_id}/folios": {
+      "post": {
+        "tags": [
+          "dispositivos"
+        ],
+        "summary": "Asignar Folios",
+        "description": "Entrega un rango nuevo por tipo de documento.\n\nSi la app se reinstala, el contador local vuelve a 1. Sin rangos, el equipo\nempezaría a reimprimir folios que ya están en papel en manos de clientes.\nEl constraint `no_traslape_rangos` (EXCLUDE) lo hace imposible.",
+        "operationId": "asignar_folios_v1_dispositivos__dispositivo_id__folios_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dispositivo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Dispositivo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RangoAsignado"
+                  },
+                  "title": "Response Asignar Folios V1 Dispositivos  Dispositivo Id  Folios Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/dispositivos/{dispositivo_id}/revocar": {
+      "post": {
+        "tags": [
+          "dispositivos"
+        ],
+        "summary": "Revocar",
+        "description": "Mata el equipo: sus tokens dejan de servir en la siguiente petición.",
+        "operationId": "revocar_v1_dispositivos__dispositivo_id__revocar_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dispositivo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Dispositivo Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeticionRevocar"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CredencialLocal": {
+        "properties": {
+          "usuario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Usuario Id"
+          },
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "rol": {
+            "type": "string",
+            "title": "Rol"
+          },
+          "password_hash": {
+            "type": "string",
+            "title": "Password Hash"
+          },
+          "permisos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permisos"
+          },
+          "almacen_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Almacen Id",
+            "nullable": true
+          },
+          "valida_hasta": {
+            "type": "string",
+            "title": "Valida Hasta"
+          },
+          "argon2": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Argon2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usuario_id",
+          "codigo",
+          "nombre",
+          "rol",
+          "password_hash",
+          "permisos",
+          "almacen_id",
+          "valida_hasta",
+          "argon2"
+        ],
+        "title": "CredencialLocal",
+        "description": "Lo que el teléfono guarda para poder autenticar sin señal.\n\nEs el mismo hash Argon2id de la base de datos. El dispositivo lo verifica\nlocalmente contra el PIN que teclea el vendedor. Ver contracts/README.md §2."
+      },
+      "DispositivoRegistrado": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "usuario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Usuario Id"
+          },
+          "etiqueta": {
+            "type": "string",
+            "title": "Etiqueta"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "ya_existia": {
+            "type": "boolean",
+            "title": "Ya Existia"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "usuario_id",
+          "etiqueta",
+          "estado",
+          "ya_existia"
+        ],
+        "title": "DispositivoRegistrado"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PeticionLogin": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "description": "Código del usuario, p. ej. 'VEND01'"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "dispositivo_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dispositivo Id",
+            "description": "UUID generado en el dispositivo; requerido para vendedores",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "password"
+        ],
+        "title": "PeticionLogin"
+      },
+      "PeticionRefresh": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "PeticionRefresh"
+      },
+      "PeticionRegistro": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "etiqueta": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Etiqueta",
+            "description": "'Moto G54 — Bryan'"
+          },
+          "modelo": {
+            "type": "string",
+            "title": "Modelo",
+            "nullable": true
+          },
+          "so_version": {
+            "type": "string",
+            "title": "So Version",
+            "nullable": true
+          },
+          "app_version": {
+            "type": "string",
+            "title": "App Version",
+            "nullable": true
+          },
+          "impresora_mac": {
+            "type": "string",
+            "title": "Impresora Mac",
+            "nullable": true
+          },
+          "impresora_ancho_mm": {
+            "type": "integer",
+            "enum": [
+              58,
+              80
+            ],
+            "title": "Impresora Ancho Mm",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "etiqueta"
+        ],
+        "title": "PeticionRegistro"
+      },
+      "PeticionRevocar": {
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "minLength": 3,
+            "title": "Motivo",
+            "description": "'equipo robado', 'baja del vendedor'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "motivo"
+        ],
+        "title": "PeticionRevocar"
+      },
+      "RangoAsignado": {
+        "properties": {
+          "documento_tipo": {
+            "type": "string",
+            "title": "Documento Tipo"
+          },
+          "desde": {
+            "type": "integer",
+            "title": "Desde"
+          },
+          "hasta": {
+            "type": "integer",
+            "title": "Hasta"
+          },
+          "consumido_hasta": {
+            "type": "integer",
+            "title": "Consumido Hasta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documento_tipo",
+          "desde",
+          "hasta",
+          "consumido_hasta"
+        ],
+        "title": "RangoAsignado"
+      },
+      "RespuestaLogin": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "expira_en_seg": {
+            "type": "integer",
+            "title": "Expira En Seg"
+          },
+          "credencial_local": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredencialLocal"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expira_en_seg"
+        ],
+        "title": "RespuestaLogin"
+      },
+      "Salud": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "base_de_datos": {
+            "type": "boolean",
+            "title": "Base De Datos"
+          },
+          "postgis": {
+            "type": "boolean",
+            "title": "Postgis"
+          },
+          "migraciones": {
+            "type": "integer",
+            "title": "Migraciones"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "base_de_datos",
+          "postgis",
+          "migraciones"
+        ],
+        "title": "Salud"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Yo": {
+        "properties": {
+          "usuario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Usuario Id"
+          },
+          "rol": {
+            "type": "string",
+            "title": "Rol"
+          },
+          "permisos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permisos"
+          },
+          "rutas": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rutas"
+          },
+          "almacen_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Almacen Id",
+            "nullable": true
+          },
+          "dispositivo_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dispositivo Id",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "usuario_id",
+          "rol",
+          "permisos",
+          "rutas",
+          "almacen_id",
+          "dispositivo_id"
+        ],
+        "title": "Yo"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

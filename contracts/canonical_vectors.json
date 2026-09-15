@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "descripcion": "Vectores del formato canónico compartido entre Dart y Python. Reglas en contracts/README.md. Regenerar con python3 contracts/generar_vectores.py",
+  "vectores": [
+    {
+      "nombre": "vacio",
+      "descripcion": "Objeto vacío",
+      "payload": {},
+      "canonico": "{}",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "nombre": "escalares",
+      "descripcion": "Los tres escalares no numéricos",
+      "payload": {
+        "a": "x",
+        "b": true,
+        "c": false
+      },
+      "canonico": "{\"a\":\"x\",\"b\":true,\"c\":false}",
+      "sha256": "742ba00ac89c8f31b5b9ff958f47ac9590ab026f5e6a0709725a82b4c42301cd"
+    },
+    {
+      "nombre": "entero",
+      "descripcion": "Los enteros van sin comillas",
+      "payload": {
+        "folio_consecutivo": 123
+      },
+      "canonico": "{\"folio_consecutivo\":123}",
+      "sha256": "6f5f5d2e7e6ee2584bcfb7dd61976346621d0848a97eb0e261f0254a37ea3bb5"
+    },
+    {
+      "nombre": "entero_negativo",
+      "descripcion": "Entero negativo",
+      "payload": {
+        "desfase_reloj_seg": -47
+      },
+      "canonico": "{\"desfase_reloj_seg\":-47}",
+      "sha256": "317994d1b7297f201b951ad807921ec734df4626733b09a8ac9c0233952de1b2"
+    },
+    {
+      "nombre": "entero_cero",
+      "descripcion": "Cero es entero, no '0.00'",
+      "payload": {
+        "reimpresiones": 0
+      },
+      "canonico": "{\"reimpresiones\":0}",
+      "sha256": "89a66f85c77fd5f475e6d1edb9cd41581d34cc1ef82f2f26ac5f679bd512b36a"
+    },
+    {
+      "nombre": "orden_claves",
+      "descripcion": "Las claves se ordenan por punto de código, no por inserción",
+      "payload": {
+        "zeta": 1,
+        "alfa": 2,
+        "Beta": 3,
+        "_guion": 4
+      },
+      "canonico": "{\"Beta\":3,\"_guion\":4,\"alfa\":2,\"zeta\":1}",
+      "sha256": "2a2bfa3e38056e588a06d68589d81fed2eedeea19dec8729d69b489e714f5241"
+    },
+    {
+      "nombre": "orden_claves_acentos",
+      "descripcion": "El orden es por punto de código: 'z' (0x7A) antes que 'á' (0xE1)",
+      "payload": {
+        "árbol": 1,
+        "zorro": 2
+      },
+      "canonico": "{\"zorro\":2,\"árbol\":1}",
+      "sha256": "67a4dcfb6a3f741a9ba141fa89b03ea2de12ee837c0b244dd1a162eaa4d1b6ad"
+    },
+    {
+      "nombre": "nulo_se_omite",
+      "descripcion": "Una clave nula desaparece de la forma canónica",
+      "payload": {
+        "a": 1,
+        "b": null
+      },
+      "canonico": "{\"a\":1}",
+      "sha256": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+    },
+    {
+      "nombre": "nulo_equivale_a_ausente",
+      "descripcion": "Mismo hash que {'a': 1}: es la regla que elimina la divergencia null/ausente",
+      "payload": {
+        "a": 1,
+        "z": null
+      },
+      "canonico": "{\"a\":1}",
+      "sha256": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+    },
+    {
+      "nombre": "arreglo_vacio",
+      "descripcion": "Arreglo vacío",
+      "payload": {
+        "partidas": []
+      },
+      "canonico": "{\"partidas\":[]}",
+      "sha256": "68847b6734158246cdc1e702002792c6561609ad6b175ebc1ee7d26e122a13f7"
+    },
+    {
+      "nombre": "arreglo_orden_significativo",
+      "descripcion": "El orden del arreglo SÍ importa: las partidas llevan número de línea",
+      "payload": {
+        "lineas": [
+          3,
+          1,
+          2
+        ]
+      },
+      "canonico": "{\"lineas\":[3,1,2]}",
+      "sha256": "03e72b1c48973c292dfe373a91cacbe8b8829c9de5bdb46028ec9f49bc72b85b"
+    },
+    {
+      "nombre": "orden_claves_fuera_del_plano_basico",
+      "descripcion": "TRAMPA: 'ﬀ' (U+FB00) va ANTES que '🔒' (U+1F512) por punto de código, pero DESPUÉS si se ordena por unidades UTF-16 — que es lo que hace String.compareTo de Dart. El comparador de Dart debe usar runas.",
+      "payload": {
+        "ﬀ": 1,
+        "🔒": 2,
+        "a": 3
+      },
+      "canonico": "{\"a\":3,\"ﬀ\":1,\"🔒\":2}",
+      "sha256": "bb62ed2a34229aff6942163a85e33a3f42b3f8a889cbe23cb75a9a4a4c3fadd7"
+    },
+    {
+      "nombre": "anidado",
+      "descripcion": "Objetos anidados, canonizados recursivamente",
+      "payload": {
+        "venta": {
+          "total": "250.00",
+          "cliente": {
+            "id": "c-1",
+            "nombre": "Doña Mary"
+          }
+        }
+      },
+      "canonico": "{\"venta\":{\"cliente\":{\"id\":\"c-1\",\"nombre\":\"Doña Mary\"},\"total\":\"250.00\"}}",
+      "sha256": "be1663a1a31eff8de3b20b28a37676b0366fc413070b42e3d139be810131533c"
+    },
+    {
+      "nombre": "anidado_profundo",
+      "descripcion": "Anidamiento de 4 niveles",
+      "payload": {
+        "a": {
+          "b": {
+            "c": {
+              "d": "fin"
+            }
+          }
+        }
+      },
+      "canonico": "{\"a\":{\"b\":{\"c\":{\"d\":\"fin\"}}}}",
+      "sha256": "2626d7566d562c392963f66d6af2c045ca52ff883745552c9ed2332a2c4ee4dd"
+    },
+    {
+      "nombre": "dinero_simple",
+      "descripcion": "Dinero con escala fija de 2",
+      "payload": {
+        "total": "250.00"
+      },
+      "canonico": "{\"total\":\"250.00\"}",
+      "sha256": "07df02469f3f8e10060fca1f6d54488493dd2f56ea08ece0dc29a4b262b588dd"
+    },
+    {
+      "nombre": "dinero_centavos",
+      "descripcion": "Dinero que en float se rompería: 0.1 + 0.2",
+      "payload": {
+        "total": "0.30"
+      },
+      "canonico": "{\"total\":\"0.30\"}",
+      "sha256": "6ae1f6c06a1198700fbfcacf84a505272fd169274c12b31a474f16dd1513e0c5"
+    },
+    {
+      "nombre": "dinero_grande",
+      "descripcion": "Importe grande sin separador de miles",
+      "payload": {
+        "total": "1234567.89"
+      },
+      "canonico": "{\"total\":\"1234567.89\"}",
+      "sha256": "5ab4408dbd7e0d24dd86580ab89ec5e53aa16e33c86b72b7853511c81bd95d06"
+    },
+    {
+      "nombre": "dinero_negativo",
+      "descripcion": "Nota de crédito: dinero negativo",
+      "payload": {
+        "total": "-125.50"
+      },
+      "canonico": "{\"total\":\"-125.50\"}",
+      "sha256": "c3b35f0ee5c54fd3ac55a7c8230140f0a77edf97bed9d156102f6d02cff357d4"
+    },
+    {
+      "nombre": "dinero_cero",
+      "descripcion": "Cero en dinero conserva la escala",
+      "payload": {
+        "descuento": "0.00"
+      },
+      "canonico": "{\"descuento\":\"0.00\"}",
+      "sha256": "48d7b724f6e8c93742eaea89ab513189fb8d58ed7baaa250b52f5ba85aeb038c"
+    },
+    {
+      "nombre": "cantidad_escala_3",
+      "descripcion": "Cantidad con escala fija de 3 (fracción de caja, granel)",
+      "payload": {
+        "cantidad": "12.000"
+      },
+      "canonico": "{\"cantidad\":\"12.000\"}",
+      "sha256": "140cd5aabee874fee464e1a210e390d9b72883d30e65bd1265ea7ddd28c2354c"
+    },
+    {
+      "nombre": "cantidad_fraccionaria",
+      "descripcion": "Kilogramos con tres decimales",
+      "payload": {
+        "cantidad": "1.375"
+      },
+      "canonico": "{\"cantidad\":\"1.375\"}",
+      "sha256": "49a267e5375429a4efc8dd4ac23f678b501fe176d5b9a9b85f3ae0f3ecb8cb71"
+    },
+    {
+      "nombre": "instante_utc",
+      "descripcion": "RFC 3339 en UTC con exactamente 3 decimales",
+      "payload": {
+        "fecha_dispositivo": "2026-09-15T03:14:07.123Z"
+      },
+      "canonico": "{\"fecha_dispositivo\":\"2026-09-15T03:14:07.123Z\"}",
+      "sha256": "8aaa56dca49fbf1e86727fe4f516c0a59e90e5fec815df281830cc2f503cfdab"
+    },
+    {
+      "nombre": "instante_con_offset",
+      "descripcion": "Un instante en UTC-6 se normaliza a UTC antes de canonizar",
+      "payload": {
+        "fecha_dispositivo": "2026-09-15T03:14:07.000Z"
+      },
+      "canonico": "{\"fecha_dispositivo\":\"2026-09-15T03:14:07.000Z\"}",
+      "sha256": "286eb458cbab9c39dd73dd8c95c93363dceac1d74e2473a33c30bc7213f68056"
+    },
+    {
+      "nombre": "instante_medianoche",
+      "descripcion": "Medianoche: los milisegundos se emiten aunque sean cero",
+      "payload": {
+        "fecha_operativa_inicio": "2026-01-01T00:00:00.000Z"
+      },
+      "canonico": "{\"fecha_operativa_inicio\":\"2026-01-01T00:00:00.000Z\"}",
+      "sha256": "4d140abdfa76fdb00e8cea7cc95923cc91cf59c725fa8d7069b012d250afbbed"
+    },
+    {
+      "nombre": "acentos",
+      "descripcion": "UTF-8 literal, sin escapes \\uXXXX",
+      "payload": {
+        "nombre": "Abarrotes Doña Mary Ñuñez"
+      },
+      "canonico": "{\"nombre\":\"Abarrotes Doña Mary Ñuñez\"}",
+      "sha256": "fd19a3747ac36dd27139d9d8d304d8f9a4fa2a1059de928f8658d6d9226edd28"
+    },
+    {
+      "nombre": "emoji",
+      "descripcion": "Fuera del plano básico (pares suplentes en UTF-16)",
+      "payload": {
+        "nota": "cerrado 🔒 hoy"
+      },
+      "canonico": "{\"nota\":\"cerrado 🔒 hoy\"}",
+      "sha256": "88fca1ec0f522157ee95886241d34830471f22a375e1d87953078b7b27a137b9"
+    },
+    {
+      "nombre": "comillas",
+      "descripcion": "Comillas dobles escapadas",
+      "payload": {
+        "nota": "el dueño dijo \"vuelvo al rato\""
+      },
+      "canonico": "{\"nota\":\"el dueño dijo \\\"vuelvo al rato\\\"\"}",
+      "sha256": "0eff8f9979d6971a18b2764bd43fac47505708e7ac5d35001a65a5ab69aa4915"
+    },
+    {
+      "nombre": "backslash",
+      "descripcion": "Barra invertida escapada",
+      "payload": {
+        "ruta": "C:\\tickets\\hoy"
+      },
+      "canonico": "{\"ruta\":\"C:\\\\tickets\\\\hoy\"}",
+      "sha256": "908bac9968ac46bfb37e8d94c594edac081aedba37b312b2a0bd5797feb447ad"
+    },
+    {
+      "nombre": "salto_linea",
+      "descripcion": "Salto de línea y tabulador con escape corto",
+      "payload": {
+        "obs": "linea1\nlinea2\tfin"
+      },
+      "canonico": "{\"obs\":\"linea1\\nlinea2\\tfin\"}",
+      "sha256": "3fb71e2c8d327403f8f36b757f03e36e9563a7d04bf05c8951466308d9c102db"
+    },
+    {
+      "nombre": "control",
+      "descripcion": "Carácter de control con escape \\u",
+      "payload": {
+        "raro": "a\u0001b"
+      },
+      "canonico": "{\"raro\":\"a\\u0001b\"}",
+      "sha256": "83d1159622c3ff2a4520fae9b5121fa0a652be0fecbe4ba32836ec522835f670"
+    },
+    {
+      "nombre": "slash_sin_escape",
+      "descripcion": "La diagonal NO se escapa",
+      "payload": {
+        "url": "a/b/c"
+      },
+      "canonico": "{\"url\":\"a/b/c\"}",
+      "sha256": "72bbd398f3e26a302da7dc3a0eeb658c7fdcc3623078fa84eef73592bbe2980f"
+    },
+    {
+      "nombre": "clave_vacia",
+      "descripcion": "Clave vacía es válida",
+      "payload": {
+        "": "vacia"
+      },
+      "canonico": "{\"\":\"vacia\"}",
+      "sha256": "8d6629948d71fcab272a2e2126fb09cca6c33b78bd3111e141ea7bcf1d333363"
+    },
+    {
+      "nombre": "clave_con_acento",
+      "descripcion": "Las claves también se escapan con las mismas reglas",
+      "payload": {
+        "año": 2026
+      },
+      "canonico": "{\"año\":2026}",
+      "sha256": "d8725330cbe98af51b32afa11a1d634c6460612fc49103828dac2e27e83986e4"
+    },
+    {
+      "nombre": "venta_completa",
+      "descripcion": "Payload realista de una venta offline con dos partidas",
+      "payload": {
+        "id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e7f",
+        "folio_consecutivo": 124,
+        "folio_local": "VEND01-000124",
+        "cliente_id": "7a1c9e30-4b55-7d12-8e44-91f0a2b3c4d5",
+        "visita_id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e80",
+        "tipo": "contado",
+        "lista_precios_id": "c0ffee00-0000-4000-8000-000000000001",
+        "lista_precios_version": 7,
+        "subtotal": "412.50",
+        "descuento": "12.50",
+        "impuestos": "0.00",
+        "total": "400.00",
+        "lat": "19.4326000",
+        "lng": "-99.1332000",
+        "ubicacion_precision_m": "8.50",
+        "rfc": null,
+        "observaciones": null,
+        "fecha_dispositivo": "2026-09-15T17:42:03.250Z",
+        "partidas": [
+          {
+            "id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e81",
+            "linea": 1,
+            "producto_id": "aa11bb22-cc33-4d44-8e55-ff6677889900",
+            "unidad_codigo": "CAJA",
+            "factor_unidad": "24.000",
+            "cantidad": "2.000",
+            "cantidad_base": "48.000",
+            "precio_unitario": "175.0000",
+            "descuento": "12.50",
+            "importe": "337.50"
+          },
+          {
+            "id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82",
+            "linea": 2,
+            "producto_id": "bb22cc33-dd44-4e55-8f66-001122334455",
+            "unidad_codigo": "PZA",
+            "factor_unidad": "1.000",
+            "cantidad": "5.000",
+            "cantidad_base": "5.000",
+            "precio_unitario": "12.5000",
+            "descuento": "0.00",
+            "importe": "62.50"
+          }
+        ]
+      },
+      "canonico": "{\"cliente_id\":\"7a1c9e30-4b55-7d12-8e44-91f0a2b3c4d5\",\"descuento\":\"12.50\",\"fecha_dispositivo\":\"2026-09-15T17:42:03.250Z\",\"folio_consecutivo\":124,\"folio_local\":\"VEND01-000124\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e7f\",\"impuestos\":\"0.00\",\"lat\":\"19.4326000\",\"lista_precios_id\":\"c0ffee00-0000-4000-8000-000000000001\",\"lista_precios_version\":7,\"lng\":\"-99.1332000\",\"partidas\":[{\"cantidad\":\"2.000\",\"cantidad_base\":\"48.000\",\"descuento\":\"12.50\",\"factor_unidad\":\"24.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e81\",\"importe\":\"337.50\",\"linea\":1,\"precio_unitario\":\"175.0000\",\"producto_id\":\"aa11bb22-cc33-4d44-8e55-ff6677889900\",\"unidad_codigo\":\"CAJA\"},{\"cantidad\":\"5.000\",\"cantidad_base\":\"5.000\",\"descuento\":\"0.00\",\"factor_unidad\":\"1.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82\",\"importe\":\"62.50\",\"linea\":2,\"precio_unitario\":\"12.5000\",\"producto_id\":\"bb22cc33-dd44-4e55-8f66-001122334455\",\"unidad_codigo\":\"PZA\"}],\"subtotal\":\"412.50\",\"tipo\":\"contado\",\"total\":\"400.00\",\"ubicacion_precision_m\":\"8.50\",\"visita_id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e80\"}",
+      "sha256": "bbddc8b5099fbbc39059c3eb4d0db488dd7710d6a8cc71eac1bf37e4e7aaa57e"
+    }
+  ]
+}

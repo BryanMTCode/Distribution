@@ -17,17 +17,27 @@ demuestran que el modelo cumple lo que promete.
 | `server/db/migrations/0005_ventas_cobranza.sql` | Ventas, partidas, cancelaciones, cartera, cobros y su aplicación |
 | `server/db/migrations/0006_operaciones.sql` | Mermas, devoluciones, no-drops |
 | `server/db/migrations/0007_sync.sql` | Lotes, idempotencia, cuarentena, `change_log`, rangos de folio, salud de sync |
+| `server/db/migrations/0008_jobs.sql` | Cola de trabajos (`FOR UPDATE SKIP LOCKED`) |
+| `server/db/ops/rol_analitico.sql` | Rol de PostgreSQL de solo lectura para Streamlit |
 | `mobile/db/schema.sql` | Esquema SQLite/SQLCipher del dispositivo |
 | `server/db/tests/smoke_invariantes.sql` | Prueba de las 6 invariantes del diseño |
 
-**Estado de verificación:** las 7 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3, y las 6
-invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45 (18 tablas, 1 vista, 8 índices).
+**Estado de verificación:** las 8 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
+Alembic), y las 6 invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45 (18 tablas,
+1 vista, 8 índices).
 
 ```bash
 createdb dsd && psql -d dsd -c 'CREATE EXTENSION postgis;'
-for f in server/db/migrations/0*.sql; do psql -d dsd -v ON_ERROR_STOP=1 -f "$f"; done
+make migrar DB=postgresql+psycopg://…/dsd
 psql -d dsd -v ON_ERROR_STOP=1 -f server/db/tests/smoke_invariantes.sql   # corre en una tx con ROLLBACK
 ```
+
+> **Alembic aplica el SQL, no lo genera.** `target_metadata` es `None` a propósito: si alguien corriera
+> `alembic revision --autogenerate`, obtendría una migración proponiendo borrar el trigger de
+> inmutabilidad del libro mayor, que `autogenerate` no sabe ver. La revisión de línea base ejecuta cada
+> archivo con el cursor crudo de psycopg — ni `op.execute()` (lee `:nombre` como parámetro, y hay JSON
+> de ejemplo en los comentarios) ni `exec_driver_sql()` (interpola `%`, y el trigger usa `%` como
+> marcador de formato de PL/pgSQL).
 
 ---
 

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "descripcion": "Vectores de Argon2id para el login offline. La prueba de Dart VERIFICA estos hashes; no los regenera (la sal es aleatoria). Reglas en contracts/README.md §2.",
+  "parametros": {
+    "variante": "argon2id",
+    "memoria_kib": 65536,
+    "iteraciones": 3,
+    "paralelismo": 4,
+    "sal_bytes": 16,
+    "hash_bytes": 32
+  },
+  "vectores": [
+    {
+      "nombre": "ascii_simple",
+      "descripcion": "Contraseña ASCII corriente",
+      "password": "Vendedor2026",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$x1TUtMtTZuiJ4vCk7QHl3A$q0e9cn6NO9GhTxWlYxx9KJAliCJlBp3wjcTvN5ptDlY",
+      "password_incorrecta": "Vendedor2026x"
+    },
+    {
+      "nombre": "pin_numerico",
+      "descripcion": "PIN de 6 dígitos, el caso real en la calle",
+      "password": "481507",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$Qhx69MQP6H1QG36ZSboKrg$mYj6WV6u1z2GurfVy2Djco3uepFlHgT5pKpusG6PU8w",
+      "password_incorrecta": "481507x"
+    },
+    {
+      "nombre": "con_acentos",
+      "descripcion": "Acentos y eñe",
+      "password": "contraseña_mañana",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$O/+WsNHcsDiFjBxVKKXfTw$EgM7PdS0W6aZ79rLkAlvJpkOGbbLmrjNp866UCN8+mY",
+      "password_incorrecta": "contraseña_mañanax"
+    },
+    {
+      "nombre": "con_emoji",
+      "descripcion": "Fuera del plano básico: pares suplentes en UTF-16",
+      "password": "clave🔒segura",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$mmiLEoCHZFE+doFQ1ao1Cw$qgR9guj/YzXc9f2R3J+/zhF8ydwo54Qf/QuWxgSU4rE",
+      "password_incorrecta": "clave🔒segurax"
+    },
+    {
+      "nombre": "con_espacios",
+      "descripcion": "Espacios al inicio y al final son significativos",
+      "password": "  dos espacios  ",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$yKSA+AlF4bOPXB0FxgvxHw$p0DXKfvPZY+Q8HIjcDYTw36HQah+vLhbbOv6I8e8oIo",
+      "password_incorrecta": "  dos espacios  x"
+    },
+    {
+      "nombre": "larga",
+      "descripcion": "Contraseña larga",
+      "password": "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$jFGMrnnnHJgSNtw/E+mbdA$ZHB80LU7V38ibq9hNaxC7Rt5EIcekVKAvQFXGq1wnOI",
+      "password_incorrecta": "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRx"
+    },
+    {
+      "nombre": "un_caracter",
+      "descripcion": "Un solo carácter",
+      "password": "x",
+      "hash_phc": "$argon2id$v=19$m=65536,t=3,p=4$T8TEIdDDla3oHMnFUEaC+w$sQnKINLCSNqV/WdQEv2INEwp1/oJb+bF/zudjFeSfGw",
+      "password_incorrecta": "xx"
+    }
+  ]
+}

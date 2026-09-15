@@ -5,7 +5,25 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 0 — Fundaciones.** Modelo de datos definido y verificado. Sin código de aplicación todavía.
+**Fase 0 — Fundaciones.** Modelo de datos verificado, esqueleto del servidor en pie, contratos
+Dart↔Python cerrados. Siguiente: Fase 1 (catálogos) y Fase 2 (motor de sincronización).
+
+| Pieza | Estado |
+|---|---|
+| Migraciones PostgreSQL + PostGIS (0001–0008) | ✅ aplican vía Alembic |
+| Esquema SQLite del dispositivo | ✅ aplica en SQLite 3.45 |
+| Invariantes del diseño (6) | ✅ verificadas |
+| Auth + RBAC + credencial offline | ✅ con pruebas |
+| Registro de dispositivos y rangos de folio | ✅ con pruebas |
+| Cola de trabajos (`FOR UPDATE SKIP LOCKED`) | ✅ con pruebas de concurrencia |
+| Contrato canónico Dart↔Python (34 vectores) | ✅ lado Python verificado |
+| Contrato Argon2id (7 vectores) | ✅ lado Python verificado |
+| OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
+| Implementación Dart del formato canónico | ⚠️ escrita, **sin ejecutar** (falta SDK) |
+| Panel de operación (Jinja2 + HTMX) | ⛔ Fase 1 |
+| Motor de sincronización | ⛔ Fase 2 |
+
+**148 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
 
 ## Stack
 
@@ -32,13 +50,53 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 ## Estructura
 
 ```
-server/db/migrations/   Migraciones PostgreSQL + PostGIS (0001-0007)
-server/db/tests/        Prueba de humo de las invariantes del diseño
-mobile/db/schema.sql    Esquema local del dispositivo (SQLite + SQLCipher)
-docs/                   Arquitectura, modelo de datos y ADRs
+server/
+  app/
+    core/            config, seguridad (Argon2id + JWT), sesión de BD
+    domain/          REGLAS PURAS — sin imports de framework
+                     canonico.py      formato canónico y hash del payload
+                     identificadores.py  UUIDv7
+    infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
+    api/v1/          auth, dispositivos, salud
+    workers/         cola sobre PostgreSQL + proceso worker
+  db/
+    migrations/      SQL: la FUENTE DE VERDAD del esquema
+    alembic/         aplica ese SQL, no lo genera
+    ops/             scripts operativos (rol de solo lectura)
+    tests/           prueba de humo de las invariantes
+  tests/             suite de pytest
+mobile/
+  db/schema.sql      esquema local del dispositivo
+  lib/dsd/           implementación Dart del formato canónico
+  test/              la mitad Dart de los contratos
+analytics/           Streamlit (solo lectura)
+contracts/           vectores compartidos + OpenAPI
+deploy/              Caddyfile
+docs/                arquitectura, modelo de datos y ADRs
 ```
 
-Estructura completa del backend (Fase 0) en `docs/ARQUITECTURA.md` §3.1.
+## Desarrollo
+
+```bash
+make instalar                       # venv + dependencias (uv, Python 3.12)
+make migrar DB=postgresql+psycopg://…/dsd
+make pruebas                        # 148 pruebas
+make lint
+make api                            # uvicorn con recarga
+```
+
+Producción: `cp .env.example .env`, rellenar, y `docker compose up -d`.
+
+## Los contratos entre Dart y Python
+
+Tres serializaciones se calculan en dos lenguajes y deben coincidir byte a byte. Los vectores de
+`contracts/` los ejecutan **ambas suites** en CI: si una se pone roja y la otra no, hay divergencia.
+
+```bash
+make contratos    # regenera y REVISA EL DIFF antes de commitear
+```
+
+Detalle en [`contracts/README.md`](contracts/README.md).
 
 ## Verificar el modelo
 

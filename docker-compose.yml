@@ -1,0 +1,105 @@
+# Despliegue del servidor local (mini PC en la oficina).
+#
+# Recordatorios que no son opcionales (ver docs/ARQUITECTURA.md §1.4):
+#   · UPS / no-break: un apagón con 8 rutas sincronizando corrompe la BD.
+#   · Simulacro de restauración: un respaldo que nunca restauraste no lo es.
+#   · Failover 4G en el router.
+
+name: dsd
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dsd
+      POSTGRES_USER: ${DSD_DB_USUARIO:-dsd}
+      POSTGRES_PASSWORD: ${DSD_DB_PASSWORD:?define DSD_DB_PASSWORD en .env}
+    volumes:
+      - datos_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DSD_DB_USUARIO:-dsd} -d dsd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Sin puertos publicados: solo la red interna de compose.
+
+  migraciones:
+    build: ./server
+    command: alembic upgrade head
+    environment:
+      DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./server
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3
+    restart: unless-stopped
+    environment:
+      DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
+      DSD_JWT_SECRETO: ${DSD_JWT_SECRETO:?genera uno con 'openssl rand -hex 32'}
+      DSD_ENTORNO: produccion
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migraciones:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/salud')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build: ./server
+    command: python -m app.workers.principal
+    restart: unless-stopped
+    environment:
+      DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
+      DSD_JWT_SECRETO: ${DSD_JWT_SECRETO}
+      DSD_ENTORNO: produccion
+    depends_on:
+      migraciones:
+        condition: service_completed_successfully
+
+  analitica:
+    build: ./analytics
+    restart: unless-stopped
+    # Rol de PostgreSQL SIN permisos de escritura: una consulta exploratoria
+    # mal escrita no puede tocar la cartera. Crear con db/ops/rol_analitico.sql.
+    environment:
+      DSD_ANALITICA_URL: postgresql://dsd_analitica:${DSD_CLAVE_ANALITICA:?falta}@postgres:5432/dsd
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - datos_caddy:/data
+    depends_on:
+      - api
+      - analitica
+
+  # Cloudflare Tunnel: sin IP fija, sin abrir puertos en el router, TLS y
+  # protección DDoS incluidos. Crea el túnel y pega su token en .env.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${DSD_TUNNEL_TOKEN:?falta el token del túnel}
+    depends_on:
+      - caddy
+
+volumes:
+  datos_postgres:
+  datos_caddy:
