@@ -33,27 +33,30 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
 
+      # Un venv en server/.venv, igual que en local (ver Makefile). Con
+      # --system, uv apunta al intérprete del runner, que está "externally
+      # managed" y rechaza la instalación.
       - name: Instalar dependencias
         working-directory: server
-        run: uv pip install --system -e '.[dev]'
+        run: |
+          uv venv --python 3.12
+          uv pip install -e '.[dev]'
 
       - name: Lint
         working-directory: server
-        run: ruff check app tests
+        run: .venv/bin/ruff check app tests
 
       - name: Pruebas
         working-directory: server
-        run: pytest -q
+        run: .venv/bin/python -m pytest -q
 
       # --------------------------------------------------------------------
       # Los contratos entre Dart y Python
       # --------------------------------------------------------------------
       - name: Los vectores canónicos están al día
         run: |
-          python3 contracts/generar_vectores.py
+          server/.venv/bin/python contracts/generar_vectores.py
           git diff --exit-code contracts/canonical_vectors.json || {
             echo "::error::Los vectores canónicos cambiaron y no se versionó el archivo."
             echo "Si el cambio es intencional, corre contracts/generar_vectores.py,"
@@ -64,7 +67,7 @@ jobs:
       - name: El contrato OpenAPI está al día
         working-directory: server
         run: |
-          python3 ../contracts/exportar_openapi.py
+          .venv/bin/python ../contracts/exportar_openapi.py
           cd .. && git diff --exit-code contracts/openapi.json contracts/openapi-3.0.json || {
             echo "::error::El contrato HTTP cambió. Regenera el cliente Dart."
             exit 1
