@@ -77,6 +77,9 @@ docs/                arquitectura, modelo de datos y ADRs
 
 ## Desarrollo
 
+**¿Windows 11?** Empieza por [`docs/ENTORNO-WINDOWS.md`](docs/ENTORNO-WINDOWS.md): instalación paso a
+paso con WSL2 y cómo seguir el avance del proyecto.
+
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
