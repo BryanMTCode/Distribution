@@ -1,23 +1,20 @@
 /// Mitad Dart del contrato canónico.
 ///
 /// Corre contra `contracts/canonical_vectors.json`, el MISMO archivo que
-/// ejecuta `server/tests/test_canonico.py`. Si una suite se pone roja y la otra
-/// no, hay divergencia entre los lenguajes — que es exactamente lo que este
-/// contrato existe para atrapar.
-///
-/// Ejecutar:  flutter test test/canonico_test.dart
+/// ejecuta `server/tests/test_canonico.py`. Si una suite se pone roja y la
+/// otra no, hay divergencia entre los lenguajes — que es exactamente lo que
+/// este contrato existe para atrapar.
 @Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
-
-import '../lib/dsd/canonico.dart';
+import 'package:dsd_core/dsd_core.dart';
+import 'package:test/test.dart';
 
 void main() {
-  final archivo = File('../contracts/canonical_vectors.json');
+  final archivo = File('../../../contracts/canonical_vectors.json');
   final documento = jsonDecode(archivo.readAsStringSync()) as Map<String, dynamic>;
   final vectores = (documento['vectores'] as List).cast<Map<String, dynamic>>();
 
@@ -54,12 +51,23 @@ void main() {
     });
 
     test('el orden de un arreglo sí importa', () {
-      expect(hashPayload({'x': [1, 2]}), isNot(equals(hashPayload({'x': [2, 1]}))));
+      expect(
+        hashPayload({
+          'x': [1, 2],
+        }),
+        isNot(equals(hashPayload({
+          'x': [2, 1],
+        }))),
+      );
     });
 
     test('las claves se ordenan por punto de código, no por UTF-16', () {
-      // String.compareTo daría el orden inverso para el emoji.
-      expect(aTextoCanonico({'\u{1F512}': 2, 'ﬀ': 1}), equals('{"ﬀ":1,"\u{1F512}":2}'));
+      // String.compareTo daría el orden inverso para el emoji: es la trampa
+      // que el vector `orden_claves_fuera_del_plano_basico` deja fijada.
+      expect(
+        aTextoCanonico({'\u{1F512}': 2, 'ﬀ': 1}),
+        equals('{"ﬀ":1,"\u{1F512}":2}'),
+      );
     });
 
     test('el dinero conserva su escala', () {
@@ -74,8 +82,10 @@ void main() {
     });
 
     test('el instante se normaliza a UTC', () {
-      final enMexico = DateTime.utc(2026, 9, 15, 3, 14, 7);
-      expect(formatearInstante(enMexico), equals('2026-09-15T03:14:07.000Z'));
+      expect(
+        formatearInstante(DateTime.utc(2026, 9, 15, 3, 14, 7)),
+        equals('2026-09-15T03:14:07.000Z'),
+      );
     });
   });
 }

@@ -10,9 +10,8 @@
 /// punto de código, pero después por UTF-16. Por eso aquí se compara por runas.
 /// El vector `orden_claves_fuera_del_plano_basico` fija justo ese caso.
 ///
-/// ADVERTENCIA: este archivo se escribió sin un SDK de Dart disponible para
-/// ejecutarlo. Lo que lo valida es `mobile/test/canonico_test.dart` contra los
-/// vectores compartidos — córrelo antes de confiar en él.
+/// Lo valida `test/canonico_test.dart` contra los vectores compartidos, que son
+/// los MISMOS que ejecuta la suite de Python.
 library;
 
 import 'dart:convert';

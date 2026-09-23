@@ -5,9 +5,9 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 2 — Motor de sincronización, núcleo completo.** Fases 0 y 1 hechas. Reglas de negocio cerradas
-([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite en dinero
-y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
+**Fase 3 — App del vendedor, núcleo offline completo.** Fases 0, 1 y 2 hechas. Reglas de negocio
+cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
+en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
 | Pieza | Estado |
 |---|---|
@@ -24,14 +24,18 @@ y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 | **Motor de sincronización** — sobres, idempotencia, cuarentena | ✅ con pruebas de caos |
 | Cursor de deltas con filtro de snapshot | ✅ verificado contra transacción en vuelo |
 | change_log poblado por trigger | ✅ nada puede escribir sin dejar rastro |
-| Contrato canónico Dart↔Python (34 vectores) | ✅ lado Python verificado |
+| **Outbox del dispositivo** — documento y cola en una transacción | ✅ con pruebas |
+| Reglas de crédito en Dart (espejo del servidor) | ✅ con pruebas |
+| Dinero exacto en el dispositivo (centavos enteros) | ✅ con pruebas |
+| Rangos de folio locales | ✅ con pruebas |
+| Contrato canónico Dart↔Python (34 vectores) | ✅ **verificado en los dos lenguajes** |
 | Contrato Argon2id (7 vectores) | ✅ lado Python verificado |
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
-| Implementación Dart del formato canónico | ⚠️ escrita, **sin ejecutar** (falta SDK) |
+| Sobres de Dart aceptados por el servidor real | ✅ prueba de contrato de punta a punta |
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
-| App vendedor (Flutter) | ⛔ Fase 3 |
+| Pantallas Flutter, carrito e impresión Bluetooth | ⛔ resto de la Fase 3 |
 
-**253 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
+**258 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS y **110 de Dart**, todas en verde.
 
 ## Stack
 
@@ -75,8 +79,10 @@ server/
   tests/             suite de pytest
 mobile/
   db/schema.sql      esquema local del dispositivo
-  lib/dsd/           implementación Dart del formato canónico
-  test/              la mitad Dart de los contratos
+  packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
+    lib/src/         canónico, dinero exacto, crédito, folios, outbox, sobres
+    test/            110 pruebas que corren en segundos
+    tool/            genera los sobres que consume el servidor
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -91,7 +97,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 253 pruebas
+make pruebas                        # 258 pruebas de Python
+make movil                          # 110 pruebas de Dart
 make lint
 make api                            # uvicorn con recarga
 ```

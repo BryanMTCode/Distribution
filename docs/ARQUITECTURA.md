@@ -52,7 +52,8 @@ cada mitad realmente hace.
 | Estado | Riverpod | Simple, testeable, sin el boilerplate de BLoC. |
 | Impresión | `esc_pos_utils` + `print_bluetooth_thermal` / `flutter_blue_plus` | Payload ESC/POS generado localmente; 100% offline. |
 | Mapas / GPS | `geolocator` + `flutter_map` (OSM) | OSM evita la factura de Google Maps, que escala mal. |
-| Dinero | paquete `decimal` | Dart **no tiene decimal nativo**; su `double` es IEEE-754. Ver §1.6. |
+| Dinero | **centavos en un entero** (`Dinero` en `dsd_core`) | Dart no tiene decimal nativo y su `double` pierde centavos al sumar. Un entero de 64 bits es exacto, sin dependencias, y convierte sin pérdida desde el string del contrato. |
+| Núcleo offline | **paquete Dart puro `dsd_core`**, sin Flutter | Canónico, crédito, folios y outbox se prueban en segundos sin emulador ni UI. La mitad del sistema que debe funcionar sin señal no depende del framework de pantallas. |
 
 ### 1.2 Backend — Python 3.12+ · FastAPI · SQLAlchemy 2.0 · PostgreSQL 17
 

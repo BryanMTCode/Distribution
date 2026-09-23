@@ -72,3 +72,40 @@ jobs:
             echo "::error::El contrato HTTP cambió. Regenera el cliente Dart."
             exit 1
           }
+
+  movil:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile/packages/dsd_core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - run: dart pub get
+
+      - name: Análisis estático
+        run: dart analyze
+
+      - name: Pruebas
+        run: dart test
+
+      # --------------------------------------------------------------------
+      # La otra mitad de los contratos
+      # --------------------------------------------------------------------
+      # `dart test` ya corrió los vectores canónicos: si Dart y Python
+      # divergieran, este job se pone rojo y el de Python no. Esa asimetría es
+      # justo la señal que se busca.
+      - name: Los sobres de ejemplo están al día
+        run: |
+          dart run tool/generar_sobres_ejemplo.dart
+          cd ../../.. && git diff --exit-code contracts/sobres_de_ejemplo.json || {
+            echo "::error::Los sobres que genera el cliente Dart cambiaron."
+            echo "Regenéralos, REVISA EL DIFF, y confirma que"
+            echo "server/tests/test_contrato_dart.py sigue en verde."
+            exit 1
+          }

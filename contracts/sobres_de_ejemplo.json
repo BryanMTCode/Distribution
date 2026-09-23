@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "descripcion": "Sobres armados por el cliente Dart. Los empuja server/tests/test_contrato_dart.py contra el endpoint real. Regenerar con: dart run tool/generar_sobres_ejemplo.dart",
+  "lote_id": "019283d0-0001-7000-8000-000000000001",
+  "sobres": [
+    {
+      "operacion_id": "019283b0-0001-7000-8000-000000000001",
+      "secuencia": 0,
+      "hash_payload": "da4f3b60fad68ed802546cf7484a5ab6be95e8a0cbab4180f966e4a98ef4cf0a",
+      "visita_id": "019283c0-0001-7000-8000-000000000001",
+      "operaciones": [
+        {
+          "tipo": "cliente.crear",
+          "entidad_id": "019283a0-0001-7000-8000-000000000001",
+          "datos": {
+            "nombre_comercial": "Abarrotes Doña Mary",
+            "telefono": "5512345678",
+            "ubicacion_origen": "gps",
+            "lat": "19.4326000",
+            "lng": "-99.1332000",
+            "ubicacion_precision_m": "8.50"
+          }
+        }
+      ]
+    },
+    {
+      "operacion_id": "019283b0-0002-7000-8000-000000000002",
+      "secuencia": 1,
+      "hash_payload": "2ac0fb2361c386984bec2c1d0ec0f4c2b8a76b8b5144ec60d675b28517f7f46e",
+      "visita_id": "019283c0-0002-7000-8000-000000000002",
+      "operaciones": [
+        {
+          "tipo": "cliente.crear",
+          "entidad_id": "019283a0-0002-7000-8000-000000000002",
+          "datos": {
+            "nombre_comercial": "La Esquina de Ñoño 🏪",
+            "referencias": "Frente al parque, portón café",
+            "ubicacion_origen": "manual",
+            "lat": "20.6597000",
+            "lng": "-103.3496000"
+          }
+        }
+      ]
+    },
+    {
+      "operacion_id": "019283b0-0003-7000-8000-000000000003",
+      "secuencia": 2,
+      "hash_payload": "6c5926bf4dee4e4d07d65e8a3cb7608e74474ab42dffe0049851612bcec02a8d",
+      "visita_id": "019283c0-0003-7000-8000-000000000003",
+      "operaciones": [
+        {
+          "tipo": "cliente.crear",
+          "entidad_id": "019283a0-0003-7000-8000-000000000003",
+          "datos": {
+            "nombre_comercial": "Tienda del mercado, local 12"
+          }
+        },
+        {
+          "tipo": "cliente.crear",
+          "entidad_id": "019283a0-0004-7000-8000-000000000004",
+          "datos": {
+            "nombre_comercial": "Tienda del mercado, local 13"
+          }
+        }
+      ]
+    }
+  ]
+}

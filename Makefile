@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos api worker limpiar
+.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-contratos api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -43,6 +43,13 @@ api:  ## Levanta la API en modo desarrollo
 
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal
+
+movil:  ## Analiza y prueba el núcleo Dart del dispositivo
+	cd mobile/packages/dsd_core && dart pub get && dart analyze && dart test
+
+movil-contratos:  ## Regenera los sobres de ejemplo que consume el servidor
+	cd mobile/packages/dsd_core && dart run tool/generar_sobres_ejemplo.dart
+	@echo "Ahora corre 'make pruebas': test_contrato_dart.py los empuja al servidor real."
 
 limpiar:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true

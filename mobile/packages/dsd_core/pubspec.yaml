@@ -1,0 +1,17 @@
+name: dsd_core
+description: >-
+  Núcleo offline del sistema DSD: formato canónico, reglas de crédito, outbox
+  y folios. Dart puro, sin Flutter: se prueba en segundos y no depende de la UI.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  crypto: ^3.0.3
+  sqlite3: ^2.4.6
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0
