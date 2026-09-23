@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import auth, dispositivos, salud
+from app.api.v1 import auth, catalogo, clientes, dispositivos, salud
 from app.core.config import obtener_config
 from app.core.db import motor
 
@@ -32,6 +32,8 @@ def crear_app() -> FastAPI:
     app.include_router(salud.router)
     app.include_router(auth.router, prefix="/v1")
     app.include_router(dispositivos.router, prefix="/v1")
+    app.include_router(catalogo.router, prefix="/v1")
+    app.include_router(clientes.router, prefix="/v1")
     return app
 
 

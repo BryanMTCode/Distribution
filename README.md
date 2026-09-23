@@ -5,8 +5,9 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 0 — Fundaciones.** Modelo de datos verificado, esqueleto del servidor en pie, contratos
-Dart↔Python cerrados. Siguiente: Fase 1 (catálogos) y Fase 2 (motor de sincronización).
+**Fase 1 — Catálogos y núcleo, en curso.** Fase 0 completa. Reglas de negocio definidas
+([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite en dinero
+y bloqueo automático, remisión no fiscal, equipos de la empresa.
 
 | Pieza | Estado |
 |---|---|
@@ -16,14 +17,18 @@ Dart↔Python cerrados. Siguiente: Fase 1 (catálogos) y Fase 2 (motor de sincro
 | Auth + RBAC + credencial offline | ✅ con pruebas |
 | Registro de dispositivos y rangos de folio | ✅ con pruebas |
 | Cola de trabajos (`FOR UPDATE SKIP LOCKED`) | ✅ con pruebas de concurrencia |
+| Datos de referencia (roles, permisos, unidades, motivos) | ✅ sembrados por migración |
+| Reglas de crédito con bloqueo offline | ✅ con pruebas de propiedades |
+| API de catálogo (productos, presentaciones, precios) | ✅ con pruebas |
+| API de clientes (alta en campo, alcance por ruta, cartera) | ✅ con pruebas |
 | Contrato canónico Dart↔Python (34 vectores) | ✅ lado Python verificado |
 | Contrato Argon2id (7 vectores) | ✅ lado Python verificado |
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
 | Implementación Dart del formato canónico | ⚠️ escrita, **sin ejecutar** (falta SDK) |
-| Panel de operación (Jinja2 + HTMX) | ⛔ Fase 1 |
+| Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
 | Motor de sincronización | ⛔ Fase 2 |
 
-**148 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
+**205 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
 
 ## Stack
 
@@ -83,7 +88,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 148 pruebas
+make pruebas                        # 205 pruebas
 make lint
 make api                            # uvicorn con recarga
 ```

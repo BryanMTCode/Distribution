@@ -29,4 +29,19 @@ Cantidad = Annotated[
 
 
 class EsquemaBase(BaseModel):
+    """Respuestas: se arman desde objetos del ORM."""
+
     model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+
+class EntradaBase(BaseModel):
+    """Cuerpos de petición.
+
+    `extra="forbid"` no es cosmético. Con el comportamiento por defecto de
+    Pydantic, un campo desconocido se ignora en silencio y la respuesta es
+    200: quien mandó `unidad_base` en un PATCH que no lo admite creería que el
+    cambio se aplicó. Fallar ruidosamente es lo correcto en una API que edita
+    catálogo y condiciones de crédito.
+    """
+
+    model_config = ConfigDict(extra="forbid")

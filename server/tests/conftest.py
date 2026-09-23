@@ -27,7 +27,13 @@ URL_PRUEBAS = os.environ.get(
     "postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd_test",
 )
 
-# Tablas que tocan las pruebas. El orden no importa: CASCADE se encarga.
+# Datos transaccionales: se vacían entre pruebas. CASCADE arrastra a las
+# tablas que dependen de ellas, así que el orden no importa.
+#
+# Los datos de REFERENCIA (roles, permisos, unidades, canales, motivos, la
+# lista de precios por defecto) NO están aquí: los siembra la migración 0009 y
+# el código depende de sus códigos literales. Vaciarlos entre pruebas sería
+# probar contra un sistema que no existe en producción.
 TABLAS_VOLATILES = [
     "sesiones",
     "folios_rangos",
@@ -36,12 +42,13 @@ TABLAS_VOLATILES = [
     "usuarios_rutas",
     "usuarios_permisos",
     "dispositivos",
+    "clientes",
+    "productos",
+    "categorias",
+    "marcas",
     "rutas",
     "usuarios",
     "almacenes",
-    "roles_permisos",
-    "permisos",
-    "roles",
     "sucursales",
 ]
 
@@ -145,22 +152,7 @@ async def semilla(sesion: AsyncSession) -> dict[str, uuid.UUID]:
     }
     hash_password = hashear_password(PASSWORD_VENDEDOR)
 
-    await sesion.execute(
-        text("INSERT INTO roles(codigo, nombre) VALUES ('vendedor','Vendedor'),('admin','Admin')")
-    )
-    await sesion.execute(
-        text(
-            "INSERT INTO permisos(codigo, descripcion, modulo) VALUES "
-            "('ventas.crear','Crear ventas','ventas'),"
-            "('dispositivos.administrar','Administrar dispositivos','sistema')"
-        )
-    )
-    await sesion.execute(
-        text(
-            "INSERT INTO roles_permisos(rol_codigo, permiso_codigo) VALUES "
-            "('vendedor','ventas.crear'),('admin','dispositivos.administrar')"
-        )
-    )
+    # Roles y permisos ya vienen de la migración 0009.
     await sesion.execute(
         text("INSERT INTO sucursales(id, codigo, nombre) VALUES (:id,'MATRIZ','Matriz')"),
         {"id": ids["sucursal"]},
@@ -203,4 +195,7 @@ async def semilla(sesion: AsyncSession) -> dict[str, uuid.UUID]:
         {"v": ids["vendedor"], "r": ids["ruta"]},
     )
     await sesion.commit()
+    ids["lista_precios"] = (
+        await sesion.execute(text("SELECT id FROM listas_precios WHERE codigo = 'GENERAL'"))
+    ).scalar_one()
     return ids

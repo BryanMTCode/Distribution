@@ -286,10 +286,1205 @@
           }
         }
       }
+    },
+    "/v1/catalogo/unidades": {
+      "get": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Listar Unidades",
+        "operationId": "listar_unidades_v1_catalogo_unidades_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnidadSalida"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Unidades V1 Catalogo Unidades Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/catalogo/productos": {
+      "get": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Listar Productos",
+        "operationId": "listar_productos_v1_catalogo_productos_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "busqueda",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Texto, SKU o código de barras",
+              "title": "Busqueda"
+            },
+            "description": "Texto, SKU o código de barras"
+          },
+          {
+            "name": "solo_activos",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Solo Activos"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limite"
+            }
+          },
+          {
+            "name": "desplazamiento",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Desplazamiento"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaProductos"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Crear Producto",
+        "operationId": "crear_producto_v1_catalogo_productos_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductoEntrada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/catalogo/productos/{producto_id}": {
+      "patch": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Editar Producto",
+        "description": "No permite cambiar `unidad_base` ni los factores.\n\nCambiarlos reinterpretaría todos los movimientos de inventario ya\nregistrados: 500 unidades base pasarían a significar otra cosa. Si una\npresentación cambia de tamaño, se da de alta un producto nuevo.",
+        "operationId": "editar_producto_v1_catalogo_productos__producto_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "producto_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Producto Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductoParche"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/catalogo/listas-precios": {
+      "get": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Listar Listas",
+        "operationId": "listar_listas_v1_catalogo_listas_precios_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ListaSalida"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Listas V1 Catalogo Listas Precios Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/catalogo/listas-precios/{lista_id}/precios": {
+      "put": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Fijar Precios",
+        "description": "Alta o actualización de precios en lote.\n\nCada cambio incrementa `version`. Ese número viaja con cada venta, y es lo\nque después permite saber que una venta se hizo con una lista vieja sin\ntener que comparar importes partida por partida — la venta no se rechaza\npor eso, se marca para revisión (§0.1).",
+        "operationId": "fijar_precios_v1_catalogo_listas_precios__lista_id__precios_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lista_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Lista Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PrecioEntrada"
+                },
+                "title": "Entradas"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrecioSalida"
+                  },
+                  "title": "Response Fijar Precios V1 Catalogo Listas Precios  Lista Id  Precios Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "catálogo"
+        ],
+        "summary": "Listar Precios",
+        "operationId": "listar_precios_v1_catalogo_listas_precios__lista_id__precios_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lista_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Lista Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrecioSalida"
+                  },
+                  "title": "Response Listar Precios V1 Catalogo Listas Precios  Lista Id  Precios Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clientes": {
+      "get": {
+        "tags": [
+          "clientes"
+        ],
+        "summary": "Listar Clientes",
+        "operationId": "listar_clientes_v1_clientes_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "busqueda",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Nombre, código o teléfono",
+              "title": "Busqueda"
+            },
+            "description": "Nombre, código o teléfono"
+          },
+          {
+            "name": "ruta_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ruta Id"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limite"
+            }
+          },
+          {
+            "name": "desplazamiento",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Desplazamiento"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaClientes"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "clientes"
+        ],
+        "summary": "Crear Cliente",
+        "description": "Idempotente cuando el alta trae su UUID del dispositivo.\n\nEl mismo principio que el resto del sistema: la red puede entregar dos\nveces y recibirlo dos veces no debe crear dos clientes.",
+        "operationId": "crear_cliente_v1_clientes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClienteEntrada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClienteSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clientes/{cliente_id}/condiciones": {
+      "patch": {
+        "tags": [
+          "clientes"
+        ],
+        "summary": "Fijar Condiciones",
+        "operationId": "fijar_condiciones_v1_clientes__cliente_id__condiciones_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cliente Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CondicionesEntrada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClienteSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clientes/{cliente_id}/cartera": {
+      "get": {
+        "tags": [
+          "clientes"
+        ],
+        "summary": "Ver Cartera",
+        "operationId": "ver_cartera_v1_clientes__cliente_id__cartera_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cliente Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cartera"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/clientes/{cliente_id}/credito/evaluar": {
+      "post": {
+        "tags": [
+          "clientes"
+        ],
+        "summary": "Evaluar Credito",
+        "description": "Aplica la regla de crédito del dominio con los datos reales del servidor.\n\nEl dispositivo tiene su propia copia de esta regla para bloquear offline —\nque es el único momento en que bloquear sirve, porque la mercancía todavía\nno sale. Este endpoint existe para que ambas implementaciones se puedan\ncontrastar contra la misma entrada.",
+        "operationId": "evaluar_credito_v1_clientes__cliente_id__credito_evaluar_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cliente Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluacionEntrada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluacionSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Cartera": {
+        "properties": {
+          "cliente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cliente Id"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "title": "Nombre Comercial"
+          },
+          "permite_credito": {
+            "type": "boolean",
+            "title": "Permite Credito"
+          },
+          "bloqueado": {
+            "type": "boolean",
+            "title": "Bloqueado"
+          },
+          "limite_credito": {
+            "type": "string",
+            "title": "Limite Credito",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "saldo": {
+            "type": "string",
+            "title": "Saldo",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "disponible": {
+            "type": "string",
+            "title": "Disponible",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "credito_agotado": {
+            "type": "boolean",
+            "title": "Credito Agotado"
+          },
+          "facturas_abiertas": {
+            "type": "integer",
+            "title": "Facturas Abiertas"
+          },
+          "facturas_vencidas": {
+            "type": "integer",
+            "title": "Facturas Vencidas"
+          },
+          "saldo_vencido": {
+            "type": "string",
+            "title": "Saldo Vencido",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cliente_id",
+          "nombre_comercial",
+          "permite_credito",
+          "bloqueado",
+          "limite_credito",
+          "saldo",
+          "disponible",
+          "credito_agotado",
+          "facturas_abiertas",
+          "facturas_vencidas",
+          "saldo_vencido"
+        ],
+        "title": "Cartera"
+      },
+      "ClienteEntrada": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "UUID generado en el dispositivo cuando el alta es en campo"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Nombre Comercial"
+          },
+          "ruta_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruta Id"
+          },
+          "canal_codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canal Codigo"
+          },
+          "contacto_nombre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contacto Nombre"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          },
+          "calle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calle"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "colonia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Colonia"
+          },
+          "municipio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Municipio"
+          },
+          "referencias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencias"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": -90.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 180.0,
+                "minimum": -180.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "ubicacion_precision_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ubicacion Precision M"
+          },
+          "ubicacion_origen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ubicacion Origen",
+            "description": "'gps' o 'manual' si el vendedor ajustó las coordenadas"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nombre_comercial"
+        ],
+        "title": "ClienteEntrada",
+        "description": "Alta de cliente.\n\nNótese lo que NO está aquí: `limite_credito`, `permite_credito` y\n`bloqueado`. Las condiciones comerciales son propiedad del servidor y se\nfijan con `clientes.administrar`, no al dar de alta desde la calle. Un\ncliente nuevo nace sin línea de crédito."
+      },
+      "ClienteSalida": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo"
+          },
+          "nombre_comercial": {
+            "type": "string",
+            "title": "Nombre Comercial"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          },
+          "ruta_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruta Id"
+          },
+          "secuencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secuencia"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "ubicacion_origen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ubicacion Origen"
+          },
+          "permite_credito": {
+            "type": "boolean",
+            "title": "Permite Credito"
+          },
+          "limite_credito": {
+            "type": "string",
+            "title": "Limite Credito",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "dias_credito": {
+            "type": "integer",
+            "title": "Dias Credito"
+          },
+          "bloqueado": {
+            "type": "boolean",
+            "title": "Bloqueado"
+          },
+          "estatus": {
+            "type": "string",
+            "title": "Estatus"
+          },
+          "origen_alta": {
+            "type": "string",
+            "title": "Origen Alta"
+          },
+          "requiere_revision": {
+            "type": "boolean",
+            "title": "Requiere Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "codigo",
+          "nombre_comercial",
+          "telefono",
+          "ruta_id",
+          "secuencia",
+          "lat",
+          "lng",
+          "ubicacion_origen",
+          "permite_credito",
+          "limite_credito",
+          "dias_credito",
+          "bloqueado",
+          "estatus",
+          "origen_alta",
+          "requiere_revision"
+        ],
+        "title": "ClienteSalida"
+      },
+      "CondicionesEntrada": {
+        "properties": {
+          "permite_credito": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permite Credito"
+          },
+          "limite_credito": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "dias_credito": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 180.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Credito"
+          },
+          "bloqueado": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bloqueado"
+          },
+          "bloqueo_motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bloqueo Motivo"
+          },
+          "lista_precios_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lista Precios Id"
+          },
+          "ruta_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruta Id"
+          },
+          "secuencia": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secuencia"
+          },
+          "estatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CondicionesEntrada",
+        "description": "Condiciones comerciales: propiedad exclusiva del servidor."
+      },
       "CredencialLocal": {
         "properties": {
           "usuario_id": {
@@ -401,6 +1596,93 @@
         ],
         "title": "DispositivoRegistrado"
       },
+      "EvaluacionEntrada": {
+        "properties": {
+          "total": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Total",
+            "description": "Total de la venta propuesta"
+          },
+          "a_credito": {
+            "type": "boolean",
+            "title": "A Credito",
+            "default": true
+          },
+          "cargos_pendientes": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Cargos Pendientes",
+            "default": "0"
+          },
+          "abonos_pendientes": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Abonos Pendientes",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total"
+        ],
+        "title": "EvaluacionEntrada"
+      },
+      "EvaluacionSalida": {
+        "properties": {
+          "permitida": {
+            "type": "boolean",
+            "title": "Permitida"
+          },
+          "motivo": {
+            "type": "string",
+            "title": "Motivo"
+          },
+          "disponible": {
+            "type": "string",
+            "title": "Disponible",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "excedente": {
+            "type": "string",
+            "title": "Excedente",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "permitida",
+          "motivo",
+          "disponible",
+          "excedente"
+        ],
+        "title": "EvaluacionSalida"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -413,6 +1695,83 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ListaSalida": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "es_default": {
+            "type": "boolean",
+            "title": "Es Default"
+          },
+          "activo": {
+            "type": "boolean",
+            "title": "Activo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "codigo",
+          "nombre",
+          "es_default",
+          "activo"
+        ],
+        "title": "ListaSalida"
+      },
+      "PaginaClientes": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "clientes": {
+            "items": {
+              "$ref": "#/components/schemas/ClienteSalida"
+            },
+            "type": "array",
+            "title": "Clientes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "clientes"
+        ],
+        "title": "PaginaClientes"
+      },
+      "PaginaProductos": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "productos": {
+            "items": {
+              "$ref": "#/components/schemas/ProductoSalida"
+            },
+            "type": "array",
+            "title": "Productos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "productos"
+        ],
+        "title": "PaginaProductos"
       },
       "PeticionLogin": {
         "properties": {
@@ -554,6 +1913,342 @@
         ],
         "title": "PeticionRevocar"
       },
+      "PrecioEntrada": {
+        "properties": {
+          "producto_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Producto Id"
+          },
+          "unidad_codigo": {
+            "type": "string",
+            "title": "Unidad Codigo"
+          },
+          "precio": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Precio",
+            "description": "Precio por presentación"
+          },
+          "precio_minimo": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precio Minimo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "producto_id",
+          "unidad_codigo",
+          "precio"
+        ],
+        "title": "PrecioEntrada"
+      },
+      "PrecioSalida": {
+        "properties": {
+          "producto_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Producto Id"
+          },
+          "unidad_codigo": {
+            "type": "string",
+            "title": "Unidad Codigo"
+          },
+          "precio": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Precio"
+          },
+          "precio_minimo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precio Minimo"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "producto_id",
+          "unidad_codigo",
+          "precio",
+          "precio_minimo",
+          "version"
+        ],
+        "title": "PrecioSalida"
+      },
+      "ProductoEntrada": {
+        "properties": {
+          "sku": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Sku"
+          },
+          "nombre": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Nombre"
+          },
+          "unidad_base": {
+            "type": "string",
+            "title": "Unidad Base"
+          },
+          "unidades": {
+            "items": {
+              "$ref": "#/components/schemas/UnidadProducto"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Unidades"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion"
+          },
+          "categoria_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria Id"
+          },
+          "marca_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marca Id"
+          },
+          "peso_gramos": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peso Gramos"
+          },
+          "tasa_iva": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Tasa Iva",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sku",
+          "nombre",
+          "unidad_base",
+          "unidades"
+        ],
+        "title": "ProductoEntrada"
+      },
+      "ProductoParche": {
+        "properties": {
+          "nombre": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion"
+          },
+          "tasa_iva": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasa Iva"
+          },
+          "activo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProductoParche"
+      },
+      "ProductoSalida": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "sku": {
+            "type": "string",
+            "title": "Sku"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "unidad_base": {
+            "type": "string",
+            "title": "Unidad Base"
+          },
+          "tasa_iva": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Tasa Iva"
+          },
+          "activo": {
+            "type": "boolean",
+            "title": "Activo"
+          },
+          "unidades": {
+            "items": {
+              "$ref": "#/components/schemas/UnidadProductoSalida"
+            },
+            "type": "array",
+            "title": "Unidades"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sku",
+          "nombre",
+          "codigo_barras",
+          "unidad_base",
+          "tasa_iva",
+          "activo",
+          "unidades"
+        ],
+        "title": "ProductoSalida"
+      },
       "RangoAsignado": {
         "properties": {
           "documento_tipo": {
@@ -642,6 +2337,89 @@
           "migraciones"
         ],
         "title": "Salud"
+      },
+      "UnidadProducto": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "description": "Código de la unidad: 'PZA', 'CAJA'"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Factor",
+            "description": "Cuántas unidades base contiene"
+          },
+          "es_default": {
+            "type": "boolean",
+            "title": "Es Default",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codigo",
+          "factor"
+        ],
+        "title": "UnidadProducto"
+      },
+      "UnidadProductoSalida": {
+        "properties": {
+          "unidad_codigo": {
+            "type": "string",
+            "title": "Unidad Codigo"
+          },
+          "factor": {
+            "type": "string",
+            "title": "Factor",
+            "description": "Cantidad con 3 decimales, serializada como string: '12.000'"
+          },
+          "es_default": {
+            "type": "boolean",
+            "title": "Es Default"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unidad_codigo",
+          "factor",
+          "es_default"
+        ],
+        "title": "UnidadProductoSalida"
+      },
+      "UnidadSalida": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "fraccionable": {
+            "type": "boolean",
+            "title": "Fraccionable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codigo",
+          "nombre",
+          "fraccionable"
+        ],
+        "title": "UnidadSalida"
       },
       "ValidationError": {
         "properties": {

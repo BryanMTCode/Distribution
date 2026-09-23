@@ -12,7 +12,11 @@
 BEGIN;
 
 -- ---------------------------------------------------------------- semilla ---
-INSERT INTO roles(codigo, nombre) VALUES ('vendedor','Vendedor'),('admin','Administrador');
+-- Los roles y las unidades son datos de REFERENCIA: los siembra la migración
+-- 0009. ON CONFLICT DO NOTHING deja correr esta prueba tanto sobre una base
+-- recién migrada como sobre una que ya los tiene.
+INSERT INTO roles(codigo, nombre) VALUES ('vendedor','Vendedor'),('admin','Administrador')
+ON CONFLICT (codigo) DO NOTHING;
 INSERT INTO sucursales(id, codigo, nombre)
      VALUES ('11111111-1111-1111-1111-111111111111','MATRIZ','Matriz');
 
@@ -25,7 +29,8 @@ INSERT INTO almacenes(id, codigo, nombre, tipo, responsable_id) VALUES
  ('44444444-4444-4444-4444-444444444444','CAMION_01','Camión 01','camion',
   '22222222-2222-2222-2222-222222222222');
 
-INSERT INTO unidades_medida(codigo, nombre) VALUES ('PZA','Pieza'),('CAJA','Caja');
+INSERT INTO unidades_medida(codigo, nombre) VALUES ('PZA','Pieza'),('CAJA','Caja')
+ON CONFLICT (codigo) DO NOTHING;
 INSERT INTO productos(id, sku, nombre, unidad_base)
 VALUES ('55555555-5555-5555-5555-555555555555','SKU-001','Frijol 1kg','PZA');
 INSERT INTO producto_unidades(producto_id, unidad_codigo, factor, es_default) VALUES

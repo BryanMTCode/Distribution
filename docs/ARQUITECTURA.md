@@ -453,17 +453,24 @@ cosas que deciden si el sistema sobrevive al primer mes en la calle.
 
 ---
 
-## 4. Decisiones abiertas
+## 4. Decisiones de negocio
 
-Las decisiones de **stack** están cerradas y registradas en
-[`adr/0001-stack-tecnologico.md`](adr/0001-stack-tecnologico.md). Lo que sigue abierto es de negocio, y
-cambia el DDL — conviene cerrarlo antes de la Fase 1.
+**Cerradas** en [`adr/0002-reglas-de-negocio.md`](adr/0002-reglas-de-negocio.md):
 
-- [ ] ¿Remisión no fiscal es suficiente, o se requiere CFDI desde v1?
-- [ ] Unidades de venta: ¿pieza, caja, y algún producto a granel (kg)? Define las conversiones antes de la Fase 1.
-- [ ] Esquemas de crédito: ¿plazos fijos, límite por cliente, bloqueo automático por mora?
-- [ ] ¿Preventa (toma de pedido) además de venta en camión, o solo autoventa?
-- [ ] Modelo de dispositivos: ¿teléfono propio del vendedor (BYOD) o equipo de la empresa con MDM?
+| Decisión | Definición |
+|---|---|
+| Modelo de venta | **Autoventa.** Se entrega y cobra en el momento; el inventario sale del camión al vender. Sin preventa. |
+| Unidades | **Pieza y caja.** Sin granel, ninguna unidad es fraccionable. |
+| Crédito | Límite en dinero por cliente. Al excederlo se **bloquea el crédito** pero **se sigue vendiendo de contado**. El bloqueo offline cuenta la cola local del dispositivo. |
+| Comprobante | **Remisión no fiscal** por Bluetooth. CFDI en fase posterior. |
+| Dispositivos | **Equipos de la empresa** (Android de gama baja). Sin BYOD, con MDM posible en la Fase 9. |
 
-Y tres contratos técnicos que se cierran **dentro** de la Fase 0 (§1.6): dinero como *string* en el JSON,
-vectores del hash canónico, y parámetros de Argon2id.
+Ninguna obligó a modificar el esquema de datos: ya estaban modeladas.
+
+**Abierta, no bloqueante:**
+
+- [ ] **Lotes y caducidad.** El esquema lo soporta y hoy está apagado. Decisión operativa —exige que el
+      vendedor distinga lotes al cargar y al liquidar— que conviene cerrar antes de la Fase 4, porque
+      cambia esas dos pantallas.
+
+Las decisiones de **stack** están en [`adr/0001-stack-tecnologico.md`](adr/0001-stack-tecnologico.md).
