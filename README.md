@@ -5,9 +5,9 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 1 — Catálogos y núcleo, en curso.** Fase 0 completa. Reglas de negocio definidas
+**Fase 2 — Motor de sincronización, núcleo completo.** Fases 0 y 1 hechas. Reglas de negocio cerradas
 ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite en dinero
-y bloqueo automático, remisión no fiscal, equipos de la empresa.
+y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
 | Pieza | Estado |
 |---|---|
@@ -21,14 +21,17 @@ y bloqueo automático, remisión no fiscal, equipos de la empresa.
 | Reglas de crédito con bloqueo offline | ✅ con pruebas de propiedades |
 | API de catálogo (productos, presentaciones, precios) | ✅ con pruebas |
 | API de clientes (alta en campo, alcance por ruta, cartera) | ✅ con pruebas |
+| **Motor de sincronización** — sobres, idempotencia, cuarentena | ✅ con pruebas de caos |
+| Cursor de deltas con filtro de snapshot | ✅ verificado contra transacción en vuelo |
+| change_log poblado por trigger | ✅ nada puede escribir sin dejar rastro |
 | Contrato canónico Dart↔Python (34 vectores) | ✅ lado Python verificado |
 | Contrato Argon2id (7 vectores) | ✅ lado Python verificado |
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
 | Implementación Dart del formato canónico | ⚠️ escrita, **sin ejecutar** (falta SDK) |
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
-| Motor de sincronización | ⛔ Fase 2 |
+| App vendedor (Flutter) | ⛔ Fase 3 |
 
-**205 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
+**253 pruebas en verde** sobre PostgreSQL 16.13 + PostGIS.
 
 ## Stack
 
@@ -88,7 +91,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 205 pruebas
+make pruebas                        # 253 pruebas
 make lint
 make api                            # uvicorn con recarga
 ```

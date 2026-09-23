@@ -961,10 +961,188 @@
           }
         }
       }
+    },
+    "/v1/sync/push": {
+      "post": {
+        "tags": [
+          "sincronización"
+        ],
+        "summary": "Push",
+        "description": "Recibe la cola del dispositivo.\n\nReenviar el mismo lote es inofensivo por diseño: cada sobre lleva su llave\nde idempotencia y el servidor responde lo mismo que la primera vez sin\nvolver a aplicar nada.\n\nResponde 200 aunque haya sobres rechazados: el lote se procesó. El detalle\npor sobre va en `resultados`, y lo rechazado quedó en cuarentena del lado\ndel servidor. Devolver un error de transporte por un sobre malo haría que\nel dispositivo reintentara el lote completo para siempre.",
+        "operationId": "push_v1_sync_push_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoteEntrada"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoteSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/sync/pull": {
+      "get": {
+        "tags": [
+          "sincronización"
+        ],
+        "summary": "Pull",
+        "description": "Entrega los cambios posteriores al cursor.\n\n**El cursor es un BIGSERIAL, nunca un timestamp.** Con relojes\ndesincronizados y transacciones concurrentes, un cursor por fecha pierde\nregistros en silencio: una transacción que empezó antes puede hacer COMMIT\ndespués de que el dispositivo ya avanzó su marca de agua, y ese registro no\nse entrega jamás.\n\nEl BIGSERIAL tiene el mismo problema si se lee sin cuidado —la secuencia\navanza al INSERT, no al COMMIT—, así que solo se entregan filas de\ntransacciones **ya confirmadas para todos**:\n\n    xid < pg_snapshot_xmin(pg_current_snapshot())\n\nSin ese filtro, un dispositivo podría llevarse el cursor 120 mientras el\n119 sigue en vuelo, y al confirmarse quedaría por debajo de su marca de\nagua para siempre.",
+        "operationId": "pull_v1_sync_pull_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limite"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeltaSalida"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sync/estado": {
+      "get": {
+        "tags": [
+          "sincronización"
+        ],
+        "summary": "Estado",
+        "description": "Lo que alimenta la pantalla de *inspector de sync* de la app.\n\nSe usa durante años: es la diferencia entre depurar con datos y depurar\ncon adivinanzas.",
+        "operationId": "estado_v1_sync_estado_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoSync"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "Cambio": {
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor"
+          },
+          "entidad": {
+            "type": "string",
+            "title": "Entidad"
+          },
+          "entidad_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entidad Id"
+          },
+          "operacion": {
+            "type": "string",
+            "title": "Operacion"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cursor",
+          "entidad",
+          "entidad_id",
+          "operacion",
+          "payload"
+        ],
+        "title": "Cambio"
+      },
       "Cartera": {
         "properties": {
           "cliente_id": {
@@ -1561,6 +1739,34 @@
         "title": "CredencialLocal",
         "description": "Lo que el teléfono guarda para poder autenticar sin señal.\n\nEs el mismo hash Argon2id de la base de datos. El dispositivo lo verifica\nlocalmente contra el PIN que teclea el vendedor. Ver contracts/README.md §2."
       },
+      "DeltaSalida": {
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor",
+            "description": "Cursor a mandar en la siguiente llamada"
+          },
+          "hay_mas": {
+            "type": "boolean",
+            "title": "Hay Mas",
+            "description": "True si faltan cambios por traer"
+          },
+          "cambios": {
+            "items": {
+              "$ref": "#/components/schemas/Cambio"
+            },
+            "type": "array",
+            "title": "Cambios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cursor",
+          "hay_mas",
+          "cambios"
+        ],
+        "title": "DeltaSalida"
+      },
       "DispositivoRegistrado": {
         "properties": {
           "id": {
@@ -1595,6 +1801,64 @@
           "ya_existia"
         ],
         "title": "DispositivoRegistrado"
+      },
+      "EstadoSync": {
+        "properties": {
+          "dispositivo_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dispositivo Id"
+          },
+          "ultimo_cursor_pull": {
+            "type": "integer",
+            "title": "Ultimo Cursor Pull"
+          },
+          "cursor_disponible": {
+            "type": "integer",
+            "title": "Cursor Disponible"
+          },
+          "cambios_pendientes": {
+            "type": "integer",
+            "title": "Cambios Pendientes"
+          },
+          "ultima_sync_push_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultima Sync Push En"
+          },
+          "ultima_sync_pull_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultima Sync Pull En"
+          },
+          "operaciones_en_cuarentena": {
+            "type": "integer",
+            "title": "Operaciones En Cuarentena"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dispositivo_id",
+          "ultimo_cursor_pull",
+          "cursor_disponible",
+          "cambios_pendientes",
+          "ultima_sync_push_en",
+          "ultima_sync_pull_en",
+          "operaciones_en_cuarentena"
+        ],
+        "title": "EstadoSync"
       },
       "EvaluacionEntrada": {
         "properties": {
@@ -1730,6 +1994,106 @@
           "activo"
         ],
         "title": "ListaSalida"
+      },
+      "LoteEntrada": {
+        "properties": {
+          "lote_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lote Id"
+          },
+          "sobres": {
+            "items": {
+              "$ref": "#/components/schemas/SobreEntrada"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Sobres"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lote_id",
+          "sobres"
+        ],
+        "title": "LoteEntrada"
+      },
+      "LoteSalida": {
+        "properties": {
+          "lote_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lote Id"
+          },
+          "aceptadas": {
+            "type": "integer",
+            "title": "Aceptadas"
+          },
+          "duplicadas": {
+            "type": "integer",
+            "title": "Duplicadas"
+          },
+          "rechazadas": {
+            "type": "integer",
+            "title": "Rechazadas"
+          },
+          "resultados": {
+            "items": {
+              "$ref": "#/components/schemas/ResultadoSobreSalida"
+            },
+            "type": "array",
+            "title": "Resultados"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lote_id",
+          "aceptadas",
+          "duplicadas",
+          "rechazadas",
+          "resultados"
+        ],
+        "title": "LoteSalida"
+      },
+      "OperacionEntrada": {
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "title": "Tipo",
+            "description": "'cliente.crear', 'venta.crear', …"
+          },
+          "entidad_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entidad Id",
+            "description": "UUID del documento, generado en el dispositivo"
+          },
+          "datos": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Datos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tipo",
+          "entidad_id"
+        ],
+        "title": "OperacionEntrada"
       },
       "PaginaClientes": {
         "properties": {
@@ -2310,6 +2674,55 @@
         ],
         "title": "RespuestaLogin"
       },
+      "ResultadoSobreSalida": {
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operacion Id"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "entidades": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Entidades"
+          },
+          "error_codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Codigo"
+          },
+          "error_mensaje": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Mensaje"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operacion_id",
+          "estado"
+        ],
+        "title": "ResultadoSobreSalida"
+      },
       "Salud": {
         "properties": {
           "ok": {
@@ -2337,6 +2750,57 @@
           "migraciones"
         ],
         "title": "Salud"
+      },
+      "SobreEntrada": {
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operacion Id",
+            "description": "Llave de idempotencia del sobre"
+          },
+          "secuencia": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Secuencia",
+            "description": "Orden FIFO dentro de la cola del dispositivo"
+          },
+          "hash_payload": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Hash Payload"
+          },
+          "operaciones": {
+            "items": {
+              "$ref": "#/components/schemas/OperacionEntrada"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Operaciones"
+          },
+          "visita_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visita Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operacion_id",
+          "secuencia",
+          "hash_payload",
+          "operaciones"
+        ],
+        "title": "SobreEntrada"
       },
       "UnidadProducto": {
         "properties": {

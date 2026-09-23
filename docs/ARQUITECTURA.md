@@ -467,10 +467,8 @@ cosas que deciden si el sistema sobrevive al primer mes en la calle.
 
 Ninguna obligó a modificar el esquema de datos: ya estaban modeladas.
 
-**Abierta, no bloqueante:**
+| Lotes y caducidad | **Apagados.** El giro es abarrote seco; rastrearlos alentaría la carga y la liquidación sin beneficio en la calle. El esquema conserva el soporte por si entra una línea de caducidad corta. |
 
-- [ ] **Lotes y caducidad.** El esquema lo soporta y hoy está apagado. Decisión operativa —exige que el
-      vendedor distinga lotes al cargar y al liquidar— que conviene cerrar antes de la Fase 4, porque
-      cambia esas dos pantallas.
+No quedan decisiones de negocio abiertas.
 
 Las decisiones de **stack** están en [`adr/0001-stack-tecnologico.md`](adr/0001-stack-tecnologico.md).

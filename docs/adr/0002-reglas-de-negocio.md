@@ -114,13 +114,17 @@ Eso es consecuencia de haber empezado por el modelo de datos y no por el framewo
 
 ---
 
-## Pendiente, no bloqueante
+## 6. Lotes y caducidad: apagados
 
-**Lotes y caducidad.** No se definió. El esquema lo soporta (`productos.maneja_lote`,
-`dias_caducidad`, `movimientos_inventario.lote`), y hoy todos los productos se dan de alta con
-`maneja_lote = false`.
+**No se manejan lotes.** El giro es abarrote seco: rastrearlos alentaría la carga del camión y la
+liquidación sin dar beneficio en la calle.
 
-Es una decisión operativa, no técnica: manejar lotes en el camión exige que el vendedor los distinga
-físicamente al cargar y al liquidar. En abarrotes con caducidad corta suele valer la pena; en abarrotes
-secos, casi nunca. Conviene decidirlo antes de la Fase 4 (inventario de camión), porque cambia la
-pantalla de carga y la de liquidación.
+**Consecuencias:**
+
+- Los productos se dan de alta con `maneja_lote = false` y las pantallas de carga y liquidación no
+  piden lote.
+- **El esquema conserva el soporte** (`productos.maneja_lote`, `dias_caducidad`,
+  `movimientos_inventario.lote`, `carga_detalle.lote`). Dejarlo cuesta cero; agregarlo después, con
+  movimientos de inventario ya registrados, cuesta una migración delicada.
+- Si algún día entra una línea con caducidad corta —lácteos, pan—, se enciende por producto sin tocar
+  el modelo.
