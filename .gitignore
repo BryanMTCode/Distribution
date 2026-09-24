@@ -26,3 +26,10 @@ __pycache__/
 *.db
 *.sqlite
 pgdata/
+
+# Flutter / Android
+mobile/app/.gradle/
+mobile/app/build/
+mobile/app/android/.gradle/
+mobile/app/android/local.properties
+mobile/app/android/app/build/

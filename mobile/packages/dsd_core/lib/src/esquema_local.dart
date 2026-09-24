@@ -1,3 +1,16 @@
+// GENERADO — no editar a mano.
+// Fuente: mobile/db/schema.sql
+// Regenerar: dart run tool/generar_esquema.dart
+
+/// Esquema de la base local del dispositivo (SQLite + SQLCipher).
+///
+/// Dos zonas con reglas opuestas: el ESPEJO (catálogo, precios, clientes,
+/// saldos) se sobrescribe con lo que manda el servidor, y la zona PROPIA
+/// (ventas, cobros, mermas, no-drops, clientes nuevos) nace aquí y solo viaja
+/// hacia el servidor. Nadie edita lo mismo desde dos lados.
+library;
+
+const esquemaLocal = r'''
 -- =============================================================================
 -- Esquema local del dispositivo (SQLite + SQLCipher)
 -- =============================================================================
@@ -308,3 +321,4 @@ SELECT
     (SELECT COUNT(*) FROM outbox WHERE estado = 'cuarentena')  AS en_cuarentena,
     (SELECT MIN(creado_en) FROM outbox WHERE estado = 'pendiente') AS mas_antiguo,
     (SELECT valor FROM sync_estado WHERE clave = 'ultima_sync_ok') AS ultima_sync_ok;
+''';

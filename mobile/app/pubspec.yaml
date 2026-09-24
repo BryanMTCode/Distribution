@@ -1,0 +1,37 @@
+name: dsd_app
+description: App del vendedor DSD — opera 100% offline en ruta.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # El núcleo offline: canónico, dinero exacto, crédito, folios, outbox.
+  # Vive aparte y sin Flutter para poder probarse en segundos.
+  dsd_core:
+    path: ../packages/dsd_core
+
+  flutter_riverpod: ^2.6.1
+  sqlite3: ^2.4.6
+  # Provee libsqlite3 en el APK. En producción se cambia por
+  # sqlcipher_flutter_libs: la base local guarda precios, cartera y efectivo.
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  # La credencial y la llave de SQLCipher van al Keystore de Android,
+  # no en la base ni en preferencias.
+  flutter_secure_storage: ^9.2.2
+  http: ^1.2.2
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

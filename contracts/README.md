@@ -83,9 +83,15 @@ Parámetros fijados (ver `server/app/core/seguridad.py`, constante `PARAMETROS_A
 (no genera: la sal es aleatoria) que cada hash valida contra su contraseña, y que una contraseña
 equivocada falla.
 
-> **Nota de rendimiento:** 64 MiB por verificación es deliberado en el servidor, pero en un teléfono de
-> gama baja tarda. Mídelo en la Fase 3 con el equipo real; si el login offline se siente lento, baja la
-> memoria **en ambos lados a la vez** y regenera los vectores. Nunca en uno solo.
+> **Nota de rendimiento (medida, no supuesta):** la implementación en Dart puro (`hashlib`) tarda
+> **330–460 ms por verificación** en una máquina de escritorio. En un Android de gama baja serán del
+> orden de 1 a 3 segundos — aceptable para un login que ocurre una vez al día, pero **mídelo en el
+> equipo real** antes del piloto. Si se siente lento, baja la memoria **en ambos lados a la vez** y
+> regenera los vectores. Nunca en uno solo.
+>
+> Ese costo es deliberado: es lo que hace caro probar PINs por fuerza bruta contra un teléfono robado.
+> Por eso la app no lleva contador de intentos —quien tiene el equipo tiene el hash y puede atacarlo sin
+> pasar por la app—; la defensa real es el costo de Argon2 y la vigencia de la credencial.
 
 ---
 

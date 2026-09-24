@@ -5,8 +5,10 @@
 library;
 
 export 'src/canonico.dart';
+export 'src/credencial.dart';
 export 'src/credito.dart';
 export 'src/dinero.dart';
+export 'src/esquema_local.dart';
 export 'src/folios.dart';
 export 'src/outbox.dart';
 export 'src/sobre.dart';
