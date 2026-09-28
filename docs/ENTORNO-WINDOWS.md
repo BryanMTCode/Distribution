@@ -182,6 +182,74 @@ El emulador no sirve: no tiene Bluetooth ni GPS de verdad.
 
 ---
 
+## 4.1 Evaluar la app en el teléfono sin levantar el servidor
+
+Una instalación nueva no tiene credencial guardada, así que el login **exige conexión la primera
+vez**. Es la regla de seguridad correcta —si no fuera así, cualquiera que robe un teléfono nuevo
+entraría sin que la oficina haya autorizado nada—, pero estorba cuando lo único que quieres es ver
+la interfaz en la mano.
+
+Para eso existe el **modo demo**: se compila explícitamente, siembra una sesión y datos locales, y
+entra directo a la ruta. No necesitas Python corriendo, ni `adb reverse`, ni red.
+
+```bash
+make app-demo     # equivale a: flutter run --dart-define=DSD_DEMO=true
+```
+
+O si prefieres instalar un APK a mano y luego desconectar el cable —lo natural para salir a la
+calle—:
+
+```bash
+make apk-demo
+adb install -r mobile/app/build/app/outputs/flutter-apk/app-debug.apk
+```
+
+En la pantalla de login aparece **"Sembrar datos y entrar"**. El PIN también se muestra ahí
+(`481507`) por si quieres recorrer el login normal escribiéndolo.
+
+### Qué siembra, y por qué eso
+
+Cinco clientes elegidos para que se vean **de un golpe los cuatro estados de crédito** que la lista
+distingue, no relleno:
+
+| Cliente | Para ver |
+|---|---|
+| Abarrotes Doña Mary | crédito disponible normal |
+| La Esquina de Ñoño 🏪 | disponible **ya descontado** por una venta encolada sin sincronizar (límite 3000 − saldo 900 − venta 1500 = **$600.00**) |
+| Tienda del Mercado, local 12 | crédito agotado |
+| Miscelánea El Buen Precio | bloqueado |
+| Cremería Los Compadres | solo contado |
+
+Los clientes se colocan **alrededor de tu posición real de GPS** (a 25, 45, 300, 600 y 900 metros).
+Eso es a propósito: con dos vecinos dentro del radio de 60 m, el **aviso de posible duplicado** se
+dispara de verdad en el lugar donde estés parado. Es lo único que un emulador no puede evaluar. Si
+el GPS no da lectura, usa coordenadas fijas y no falla.
+
+Puedes pulsar el botón varias veces: la siembra es idempotente, no duplica nada.
+
+### Por qué esto no puede llegar al teléfono de un vendedor
+
+El atajo tiene **dos cerrojos, y los dos son de compilación** (`mobile/app/lib/src/demo.dart`):
+
+1. `bool.fromEnvironment('DSD_DEMO')` — hay que pedirlo al compilar.
+2. `!kReleaseMode` — aunque alguien pase el define en un build de release, se ignora.
+
+Las dos son constantes, así que el compilador de Dart **elimina el botón del árbol**: en un build de
+release no está oculto, no existe en el binario. El CI lo vigila por los dos lados: la corrida normal
+comprueba que el atajo esté apagado, y una prueba que corre en ambos modos comprueba que la
+constante siga derivándose del define —si alguien la fijara a `true` para no teclear el flag, se
+pone rojo—.
+
+Además el login de demo **no salta la verificación**: guarda la credencial y llama al mismo login
+offline con el PIN, recorriendo Argon2id igual que en producción. El hash es uno de los vectores
+compartidos de `contracts/argon2_vectors.json`.
+
+```bash
+make movil-demo   # las pruebas de widget del camino demo
+```
+
+---
+
 ## 5. Para el servidor de la oficina (Fase 3, al salir el piloto)
 
 - Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) con Ubuntu Server LTS

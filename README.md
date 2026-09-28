@@ -31,6 +31,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | Delta de cartera (el saldo que faltaba) | ✅ migración 0011 |
 | **Login sin señal** (Argon2id verificado en Dart) | ✅ con pruebas de widget |
 | **Lista de clientes offline** con crédito compuesto | ✅ con pruebas de widget |
+| Modo demo para evaluar la UI en campo sin servidor | ✅ imposible en release (candado de compilación) |
 | Portal por rol (vendedor / gerencia) | ✅ con pruebas |
 | Contrato de Argon2id (7 vectores) | ✅ **verificado en los dos lenguajes** |
 | **Outbox del dispositivo** — documento y cola en una transacción | ✅ con pruebas |
@@ -44,7 +45,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
 | Carrito, venta e impresión Bluetooth | ⛔ resto de la Fase 3 |
 
-**261 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **201 de Dart** y **40 de widget**, todas en verde.
+**261 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **201 de Dart** y **50 de widget**, todas en verde.
 
 ## Stack
 
@@ -98,7 +99,7 @@ mobile/
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta del vendedor, panel de gerencia
-    test/            40 pruebas de widget, sin emulador
+    test/            50 pruebas de widget, sin emulador
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -114,8 +115,9 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make pruebas                        # 261 pruebas de Python
-make movil                          # 201 de Dart + 40 de widget
+make movil                          # 201 de Dart + 50 de widget
 make app                            # corre la app en un teléfono conectado
+make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
 make lint
 make api                            # uvicorn con recarga
 ```

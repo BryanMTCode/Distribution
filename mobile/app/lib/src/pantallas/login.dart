@@ -5,6 +5,9 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../datos/servicio_ubicacion.dart';
+import '../demo.dart';
+import '../estado/alta.dart';
 import '../estado/sesion.dart';
 
 class PantallaLogin extends ConsumerStatefulWidget {
@@ -34,6 +37,44 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
       _error = null;
     });
     final resultado = await ref.read(sesionProvider.notifier).entrarOffline(_pin.text);
+    if (!mounted) return;
+    setState(() {
+      _verificando = false;
+      _error = resultado == ResultadoLogin.ok ? null : resultado;
+    });
+  }
+
+  /// Siembra la sesión y los datos de demostración, y entra.
+  ///
+  /// No es un atajo que salte la verificación: guarda la credencial y después
+  /// llama al **mismo** login offline con el PIN de demo, así que el camino de
+  /// Argon2 se recorre igual que en producción.
+  Future<void> _entrarEnModoDemo() async {
+    setState(() {
+      _verificando = true;
+      _error = null;
+    });
+
+    final ahora = ref.read(relojProvider)();
+    await ref
+        .read(repoCredencialProvider)
+        .guardar(credencialDemo(ahora: ahora));
+
+    // Se intenta leer el GPS para colocar los clientes de demostración
+    // alrededor del punto donde estás: es lo que permite probar el aviso de
+    // posible duplicado en campo. Si no hay lectura, se usan coordenadas fijas.
+    final lectura = await ref.read(servicioUbicacionProvider).leer();
+    sembrarDemo(
+      ref.read(baseLocalProvider).db,
+      referencia: lectura is GpsObtenido ? lectura.ubicacion : null,
+      ahora: ahora.toUtc().toIso8601String(),
+    );
+
+    ref.invalidate(clientesProvider);
+    ref.invalidate(resumenColaProvider);
+
+    final resultado =
+        await ref.read(sesionProvider.notifier).entrarOffline(pinDemo);
     if (!mounted) return;
     setState(() {
       _verificando = false;
@@ -92,6 +133,34 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                   if (_error != null) ...[
                     const SizedBox(height: 20),
                     _Aviso(motivo: _error!),
+                  ],
+                  // Este bloque NO EXISTE en un build de release: las dos
+                  // constantes que lo gobiernan son de compilación, así que el
+                  // compilador lo elimina del árbol. Ver lib/src/demo.dart.
+                  if (modoDemoDisponible) ...[
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Compilado en modo demo',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('boton_modo_demo'),
+                        onPressed: _verificando ? null : _entrarEnModoDemo,
+                        icon: const Icon(Icons.science_outlined),
+                        label: const Text('Sembrar datos y entrar'),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'PIN de demo: $pinDemo',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
                   ],
                 ],
               ),

@@ -1,6 +1,26 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Sin estos dos permisos declarados, Geolocator.requestPermission()
+         devuelve `denied` en el acto y ni siquiera muestra el diálogo al
+         vendedor: el alta de clientes se quedaría para siempre en "sin
+         permiso" por más veces que lo toque. Es el tipo de falla que solo
+         aparece en el teléfono, nunca en las pruebas de widget. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- La aproximada, como respaldo: en Android 12+ el vendedor puede conceder
+         solo esta desde el diálogo del sistema, y una coordenada de barrio sirve
+         más que ninguna (el alta permite corregirla a mano). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- El GPS es la razón de ser del alta en la calle, pero no se declara
+         `required`: un equipo sin chip de GPS todavía sirve para vender, cobrar
+         y capturar la ubicación a mano. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+
+    <!-- Sincronizar necesita saber si hay red. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
     <application
-        android:label="dsd_app"
+        android:label="Ruta"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

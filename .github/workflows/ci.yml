@@ -146,6 +146,16 @@ jobs:
       - name: Pruebas de widget
         run: flutter test
 
+      # El modo demo es un atajo que salta el login; el candado que impide que
+      # llegue a producción es de compilación (ver lib/src/demo.dart). El paso
+      # de arriba, sin define, es el que comprueba que el atajo está apagado en
+      # la compilación normal —la que se instala en el teléfono del vendedor—.
+      # Este ejercita el camino contrario: que el atajo, cuando se pide, de
+      # verdad siembre y entre. Sin este paso el modo demo se podría podrir sin
+      # que nadie lo notara hasta estar en la calle con el teléfono en la mano.
+      - name: Pruebas de widget en modo demo
+        run: flutter test --dart-define=DSD_DEMO=true
+
       - name: El esquema local embebido está al día
         working-directory: mobile/packages/dsd_core
         run: |

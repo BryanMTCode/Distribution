@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_clientes.dart';
+import '../../demo.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import 'alta_cliente.dart';
@@ -40,7 +41,35 @@ class PantallaClientes extends ConsumerWidget {
         label: const Text('Nuevo'),
       ),
       appBar: AppBar(
-        title: const Text('Mi ruta'),
+        // La marca de demo va en un widget aparte, no dentro del título: si
+        // cambiara el texto del título, cualquier prueba que lo busque se
+        // rompería solo por compilar en modo demo. Nadie debe confundir datos
+        // sembrados con la ruta real, pero eso no justifica acoplar las dos
+        // cosas.
+        title: Row(
+          children: [
+            const Text('Mi ruta'),
+            if (modoDemoDisponible) ...[
+              const SizedBox(width: 8),
+              Container(
+                key: const Key('marca_demo'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'DEMO',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onError,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
           IconButton(
             key: const Key('boton_sincronizar'),

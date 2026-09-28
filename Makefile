@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-contratos movil-esquema app api worker limpiar
+.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-demo movil-contratos movil-esquema app app-demo apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -48,8 +48,20 @@ movil:  ## Analiza y prueba el núcleo Dart y la app Flutter
 	cd mobile/packages/dsd_core && dart pub get && dart analyze && dart test
 	cd mobile/app && flutter pub get && flutter analyze && flutter test
 
+movil-demo:  ## Prueba la app compilada en modo demo (el camino que se instala en campo)
+	cd mobile/app && flutter test --dart-define=DSD_DEMO=true
+
 app:  ## Corre la app en el dispositivo o emulador conectado
 	cd mobile/app && flutter run
+
+app-demo:  ## Corre la app con el botón de modo demo (siembra datos, entra sin servidor)
+	cd mobile/app && flutter run --dart-define=DSD_DEMO=true
+
+apk-demo:  ## Genera el APK de depuración con modo demo para instalar a mano
+	cd mobile/app && flutter build apk --debug --dart-define=DSD_DEMO=true
+	@echo
+	@echo "APK en mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
+	@echo "Instalar:  adb install -r mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
 
 movil-esquema:  ## Regenera la constante del esquema local desde el .sql
 	cd mobile/packages/dsd_core && dart run tool/generar_esquema.dart
