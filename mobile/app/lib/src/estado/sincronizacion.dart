@@ -68,12 +68,16 @@ class ControladorSync extends Notifier<EstadoSync> {
 
     state = const SyncEnCurso();
     final db = ref.read(baseLocalProvider).db;
+    // El reloj se resuelve antes de entrar a la parte asíncrona: leerlo desde
+    // un callback que corre a mitad de la sincronización lo ata al ciclo de
+    // vida del provider, y la sincronización puede sobrevivir a la pantalla.
+    final reloj = ref.read(relojProvider);
 
     final sincronizador = Sincronizador(
       outbox: ref.read(outboxProvider),
       cliente: ClienteSync(transporte),
       aplicador: AplicadorDeltas(db),
-      ahora: () => ref.read(relojProvider)().toUtc().toIso8601String(),
+      ahora: () => reloj().toUtc().toIso8601String(),
     );
 
     final resultado = await sincronizador.sincronizar(
@@ -91,7 +95,7 @@ class ControladorSync extends Notifier<EstadoSync> {
     db.execute(
       "INSERT INTO sync_estado (clave, valor) VALUES ('ultima_sync_ok', ?) "
       'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
-      [ref.read(relojProvider)().toUtc().toIso8601String()],
+      [reloj().toUtc().toIso8601String()],
     );
 
     // Si la sesión caducó, el vendedor tiene que volver a entrar: se limpia el

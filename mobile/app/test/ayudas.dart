@@ -12,6 +12,7 @@ import 'package:dsd_app/src/datos/almacen_seguro.dart';
 import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/estado/sesion.dart';
 import 'package:dsd_core/dsd_core.dart';
+import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,17 +59,31 @@ void sembrarCliente(
   double saldoCache = 0,
   bool bloqueado = false,
   bool esLocal = false,
+  double? lat,
+  double? lng,
 }) {
   base.db.execute(
     '''
     INSERT INTO clientes (id, codigo, nombre_comercial, secuencia, permite_credito,
                           limite_credito, saldo_cache, saldo_cache_en, bloqueado,
-                          es_local, sincronizado)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '2026-09-24T07:00:00.000Z', ?, ?, 1)
+                          es_local, sincronizado, lat, lng)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '2026-09-24T07:00:00.000Z', ?, ?, 1, ?, ?)
     ''',
     [id, codigo, nombre, secuencia, permiteCredito ? 1 : 0, limite, saldoCache,
-     bloqueado ? 1 : 0, esLocal ? 1 : 0],
+     bloqueado ? 1 : 0, esLocal ? 1 : 0, lat, lng],
   );
+}
+
+/// Consultas cortas sobre la base de una prueba.
+class BaseLocalDePrueba {
+  const BaseLocalDePrueba(this.base);
+
+  final BaseLocal base;
+
+  int contar(String tabla) =>
+      base.db.select('SELECT COUNT(*) AS n FROM $tabla').single['n'] as int;
+
+  sql.Row unaFila(String consulta) => base.db.select(consulta).single;
 }
 
 /// Venta a crédito encolada y sin sincronizar. Es la que tiene que bajar el
@@ -178,6 +193,15 @@ Future<BaseLocal> montarApp(
 
   addTearDown(base.cerrar);
 
+  // Viewport con forma de teléfono. El 800x600 que trae flutter_test por
+  // defecto es apaisado y bajo: deja fuera de pantalla lo que en un equipo real
+  // se ve sin desplazar, y hace fallar pruebas por una razón que no existe en
+  // la calle.
+  tester.view.physicalSize = const Size(400, 900);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -203,6 +227,19 @@ Future<void> entrarCon(WidgetTester tester, String pin) async {
   await tester.enterText(find.byKey(const Key('campo_pin')), pin);
   await tester.tap(find.byKey(const Key('boton_entrar')));
   await tester.pumpAndSettle(const Duration(seconds: 5));
+}
+
+/// Toca un control asegurándose de que esté a la vista.
+///
+/// En un formulario largo, `tap` sobre algo que quedó fuera del área visible
+/// —o detrás de la barra fija— no llega al widget y la prueba falla por una
+/// razón que no tiene que ver con lo que se está probando.
+Future<void> tocar(WidgetTester tester, Key clave) async {
+  final finder = find.byKey(clave);
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
 }
 
 Finder textoQueContiene(String fragmento) => find.byWidgetPredicate(

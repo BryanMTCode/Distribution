@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/repo_clientes.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
+import 'alta_cliente.dart';
 
 class PantallaClientes extends ConsumerWidget {
   const PantallaClientes({super.key});
@@ -30,6 +31,14 @@ class PantallaClientes extends ConsumerWidget {
     });
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        key: const Key('boton_nuevo_cliente'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const PantallaAltaCliente()),
+        ),
+        icon: const Icon(Icons.add_business_outlined),
+        label: const Text('Nuevo'),
+      ),
       appBar: AppBar(
         title: const Text('Mi ruta'),
         actions: [

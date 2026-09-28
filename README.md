@@ -5,7 +5,7 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 3 — App del vendedor: ciclo de sincronización cerrado.** Fases 0, 1 y 2 hechas. Reglas de negocio
+**Fase 3 — App del vendedor: alta de clientes en la calle funcionando.** Fases 0, 1 y 2 hechas. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
@@ -24,6 +24,8 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Motor de sincronización** — sobres, idempotencia, cuarentena | ✅ con pruebas de caos |
 | Cursor de deltas con filtro de snapshot | ✅ verificado contra transacción en vuelo |
 | change_log poblado por trigger | ✅ nada puede escribir sin dejar rastro |
+| **Alta de cliente en la calle** con GPS y ajuste manual | ✅ 14 pruebas de widget |
+| Aviso de posible duplicado antes de crearlo | ✅ por distancia, no por nombre |
 | **Cliente de sincronización** del dispositivo | ✅ 22 pruebas de la tabla de decisiones |
 | Aplicador de deltas al espejo local | ✅ contra el payload real del servidor |
 | Delta de cartera (el saldo que faltaba) | ✅ migración 0011 |
@@ -42,7 +44,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
 | Carrito, venta e impresión Bluetooth | ⛔ resto de la Fase 3 |
 
-**261 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **168 de Dart** y **26 de widget**, todas en verde.
+**261 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **201 de Dart** y **40 de widget**, todas en verde.
 
 ## Stack
 
@@ -88,14 +90,15 @@ mobile/
   db/schema.sql      esquema local del dispositivo — FUENTE DE VERDAD
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, crédito, credencial, folios,
-                     outbox, sobres, esquema embebido
-    test/            168 pruebas que corren en segundos
+                     outbox, sobres, ubicación, alta de clientes,
+                     sincronizador, aplicador de deltas, esquema embebido
+    test/            201 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta del vendedor, panel de gerencia
-    test/            26 pruebas de widget, sin emulador
+    test/            40 pruebas de widget, sin emulador
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -111,7 +114,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make pruebas                        # 261 pruebas de Python
-make movil                          # 168 de Dart + 26 de widget
+make movil                          # 201 de Dart + 40 de widget
 make app                            # corre la app en un teléfono conectado
 make lint
 make api                            # uvicorn con recarga
