@@ -29,15 +29,18 @@ from typing import Any
 __all__ = [
     "ESCALA_CANTIDAD",
     "ESCALA_DINERO",
+    "ESCALA_PRECIO",
     "PayloadNoCanonico",
     "a_texto_canonico",
     "formatear_cantidad",
     "formatear_dinero",
     "formatear_instante",
+    "formatear_precio",
     "hash_payload",
 ]
 
 ESCALA_DINERO = 2
+ESCALA_PRECIO = 4
 ESCALA_CANTIDAD = 3
 
 # 'dinero' y 'cantidad' se validan con estas formas exactas: sin separador de
@@ -70,6 +73,24 @@ def formatear_dinero(valor: Decimal | int | str) -> str:
         raise PayloadNoCanonico("el dinero nunca se representa como float")
     d = Decimal(valor)
     return f"{d.quantize(Decimal('1.' + '0' * ESCALA_DINERO)):f}"
+
+
+def formatear_precio(valor: Decimal | int | str) -> str:
+    """Precio unitario como string con exactamente 4 decimales.
+
+    Escala distinta al dinero, y no por gusto: el precio por pieza sale de
+    dividir el de la caja. Una caja de 24 a $296.00 da $12.3333 por pieza, y
+    redondear eso a centavos antes de multiplicar por la cantidad desplaza el
+    importe de la caja completa ($296.00 contra $295.92). El precio se lleva a
+    4 decimales, el IMPORTE se redondea una sola vez al final.
+
+    Es la misma escala que `precios.precio` y `venta_partidas.precio_unitario`
+    en PostgreSQL: numeric(14,4). No es coincidencia — es el mismo número.
+    """
+    if isinstance(valor, float):
+        raise PayloadNoCanonico("los precios nunca se representan como float")
+    d = Decimal(valor)
+    return f"{d.quantize(Decimal('1.' + '0' * ESCALA_PRECIO)):f}"
 
 
 def formatear_cantidad(valor: Decimal | int | str) -> str:

@@ -30,6 +30,7 @@ lint:  ## Ruff
 
 contratos:  ## Regenera vectores y OpenAPI — REVISA EL DIFF antes de commitear
 	cd server && .venv/bin/python ../contracts/generar_vectores.py
+	cd server && .venv/bin/python ../contracts/generar_importes.py
 	cd server && .venv/bin/python ../contracts/exportar_openapi.py
 	@echo
 	@echo "Los vectores de Argon2 NO se regeneran solos (la sal es aleatoria)."

@@ -25,6 +25,7 @@ from app.domain.canonico import (  # noqa: E402
     formatear_cantidad,
     formatear_dinero,
     formatear_instante,
+    formatear_precio,
     hash_payload,
 )
 
@@ -101,6 +102,23 @@ CASOS: list[tuple[str, str, dict]] = [
         {"cantidad": formatear_cantidad("1.375")},
     ),
     (
+        "precio_escala_4",
+        "El precio unitario lleva 4 decimales, NO 2: es numeric(14,4) en el servidor",
+        {"precio_unitario": formatear_precio("175")},
+    ),
+    (
+        "precio_derivado_de_caja",
+        "TRAMPA: 296.00 / 24 = 12.3333 por pieza. Si el precio se guardara en "
+        "centavos (12.33), la caja completa valdría 295.92 y el cliente lo "
+        "reclamaría con la lista en la mano. El redondeo va en el IMPORTE.",
+        {"precio_unitario": formatear_precio("12.3333")},
+    ),
+    (
+        "precio_cero",
+        "Cero conserva la escala de 4",
+        {"precio_unitario": formatear_precio("0")},
+    ),
+    (
         "instante_utc",
         "RFC 3339 en UTC con exactamente 3 decimales",
         {"fecha_dispositivo": formatear_instante(
@@ -142,10 +160,10 @@ CASOS: list[tuple[str, str, dict]] = [
             "tipo": "contado",
             "lista_precios_id": "c0ffee00-0000-4000-8000-000000000001",
             "lista_precios_version": 7,
-            "subtotal": formatear_dinero("412.50"),
-            "descuento": formatear_dinero("12.50"),
+            "subtotal": formatear_dinero("659.50"),
+            "descuento": formatear_dinero("0"),
             "impuestos": formatear_dinero("0"),
-            "total": formatear_dinero("400.00"),
+            "total": formatear_dinero("659.50"),
             "lat": "19.4326000",
             "lng": "-99.1332000",
             "ubicacion_precision_m": "8.50",
@@ -163,9 +181,11 @@ CASOS: list[tuple[str, str, dict]] = [
                     "factor_unidad": formatear_cantidad("24"),
                     "cantidad": formatear_cantidad("2"),
                     "cantidad_base": formatear_cantidad("48"),
-                    "precio_unitario": "175.0000",
-                    "descuento": formatear_dinero("12.50"),
-                    "importe": formatear_dinero("337.50"),
+                    # 296.0000 × 2 = 592.00. Sin descuento: el vendedor no
+                    # otorga descuentos en la calle (ADR 0002 §7).
+                    "precio_unitario": formatear_precio("296"),
+                    "descuento": formatear_dinero("0"),
+                    "importe": formatear_dinero("592.00"),
                 },
                 {
                     "id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82",
@@ -175,9 +195,9 @@ CASOS: list[tuple[str, str, dict]] = [
                     "factor_unidad": formatear_cantidad("1"),
                     "cantidad": formatear_cantidad("5"),
                     "cantidad_base": formatear_cantidad("5"),
-                    "precio_unitario": "12.5000",
+                    "precio_unitario": formatear_precio("13.5"),
                     "descuento": formatear_dinero("0"),
-                    "importe": formatear_dinero("62.50"),
+                    "importe": formatear_dinero("67.50"),
                 },
             ],
         },

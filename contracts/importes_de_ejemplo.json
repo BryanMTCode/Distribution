@@ -1,0 +1,123 @@
+{
+  "descripcion": "La aritmética de una partida de venta, calculada por Python con Decimal. Dart y PostgreSQL deben dar exactamente estos importes. Regla: importe = redondear_medio_arriba(cantidad * precio, 2), UNA sola vez, al final. Sin descuento: el vendedor no otorga descuentos en la calle (ADR 0002 §7).",
+  "regla": "importe = ROUND_HALF_UP(cantidad * precio_unitario, 2)",
+  "casos": [
+    {
+      "nombre": "pieza_simple",
+      "por_que": "Lo más común: piezas a un precio exacto en centavos",
+      "cantidad": "5.000",
+      "precio_unitario": "13.5000",
+      "factor_unidad": "1.0000",
+      "importe": "67.50",
+      "cantidad_base": "5.000"
+    },
+    {
+      "nombre": "caja_precio_exacto",
+      "por_que": "Dos cajas de 24 a precio de caja",
+      "cantidad": "2.000",
+      "precio_unitario": "296.0000",
+      "factor_unidad": "24.0000",
+      "importe": "592.00",
+      "cantidad_base": "48.000"
+    },
+    {
+      "nombre": "precio_derivado_de_caja",
+      "por_que": "EL CASO QUE JUSTIFICA LOS 4 DECIMALES: 296.00/24 = 12.3333 por pieza. La caja completa vale 296.00 exactos. Con el precio en centavos (12.33) daría 295.92, y el cliente lo reclama con la lista en la mano.",
+      "cantidad": "24.000",
+      "precio_unitario": "12.3333",
+      "factor_unidad": "1.0000",
+      "importe": "296.00",
+      "cantidad_base": "24.000"
+    },
+    {
+      "nombre": "medio_hacia_arriba",
+      "por_que": "TRAMPA: 0.125 → 0.13. El modo por omisión de Decimal en Python es medio-al-par y daría 0.12, mientras PostgreSQL y Dart dan 0.13.",
+      "cantidad": "1.000",
+      "precio_unitario": "0.1250",
+      "factor_unidad": "1.0000",
+      "importe": "0.13",
+      "cantidad_base": "1.000"
+    },
+    {
+      "nombre": "medio_hacia_arriba_acumulado",
+      "por_que": "3 × 0.1250 = 0.375 → 0.38",
+      "cantidad": "3.000",
+      "precio_unitario": "0.1250",
+      "factor_unidad": "1.0000",
+      "importe": "0.38",
+      "cantidad_base": "3.000"
+    },
+    {
+      "nombre": "medio_hacia_arriba_impar",
+      "por_que": "1 × 0.1350 = 0.135 → 0.14 (medio-al-par daría 0.14 también; el par cambia según el dígito anterior, y por eso hay dos casos)",
+      "cantidad": "1.000",
+      "precio_unitario": "0.1350",
+      "factor_unidad": "1.0000",
+      "importe": "0.14",
+      "cantidad_base": "1.000"
+    },
+    {
+      "nombre": "granel_media_unidad",
+      "por_que": "Cantidad fraccionaria: media bolsa de granel",
+      "cantidad": "0.500",
+      "precio_unitario": "45.8000",
+      "factor_unidad": "1.0000",
+      "importe": "22.90",
+      "cantidad_base": "0.500"
+    },
+    {
+      "nombre": "granel_tres_decimales",
+      "por_que": "1.375 kg — la escala completa de la cantidad",
+      "cantidad": "1.375",
+      "precio_unitario": "32.5000",
+      "factor_unidad": "1.0000",
+      "importe": "44.69",
+      "cantidad_base": "1.375"
+    },
+    {
+      "nombre": "factor_fraccionario",
+      "por_que": "Un display de 6.5 unidades base: raro, pero el esquema lo admite y el descuadre de inventario no perdona",
+      "cantidad": "2.000",
+      "precio_unitario": "80.0000",
+      "factor_unidad": "6.5000",
+      "importe": "160.00",
+      "cantidad_base": "13.000"
+    },
+    {
+      "nombre": "precio_cero",
+      "por_que": "Producto de regalo o promocional con precio cero: el importe es cero, no un error",
+      "cantidad": "3.000",
+      "precio_unitario": "0.0000",
+      "factor_unidad": "1.0000",
+      "importe": "0.00",
+      "cantidad_base": "3.000"
+    },
+    {
+      "nombre": "importe_grande",
+      "por_que": "99 999 piezas a 9 999.9999 — muy por encima de cualquier venta real, para confirmar que el entero de 64 bits de Dart no desborda",
+      "cantidad": "99999.000",
+      "precio_unitario": "9999.9999",
+      "factor_unidad": "1.0000",
+      "importe": "999989990.00",
+      "cantidad_base": "99999.000"
+    },
+    {
+      "nombre": "centavo_solitario",
+      "por_que": "El importe más chico que existe",
+      "cantidad": "1.000",
+      "precio_unitario": "0.0100",
+      "factor_unidad": "1.0000",
+      "importe": "0.01",
+      "cantidad_base": "1.000"
+    },
+    {
+      "nombre": "redondeo_hacia_abajo",
+      "por_que": "0.124 → 0.12: el otro lado del medio",
+      "cantidad": "1.000",
+      "precio_unitario": "0.1240",
+      "factor_unidad": "1.0000",
+      "importe": "0.12",
+      "cantidad_base": "1.000"
+    }
+  ]
+}

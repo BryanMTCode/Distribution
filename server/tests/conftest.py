@@ -67,19 +67,25 @@ def _preparar_esquema() -> None:
             con.execute(f'CREATE DATABASE "{nombre}"')
     with psycopg.connect(URL_PRUEBAS.replace("+psycopg", ""), autocommit=True) as con:
         con.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-        ya = con.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema='public' AND table_name='alembic_version'"
-        ).fetchone()
-    if not ya:
-        # sys.executable -m alembic: el binario del venv no está en PATH
-        # cuando pytest corre desde un entorno distinto.
-        subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            check=True,
-            env={**os.environ, "DSD_DATABASE_URL": URL_PRUEBAS},
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        )
+
+    # `upgrade head` SIEMPRE, no solo cuando la base está vacía.
+    #
+    # Antes esto se saltaba si ya existía `alembic_version`, y el resultado era
+    # una trampa: en CI la base nace limpia y todo pasa, pero en la máquina de
+    # quien ya corrió la suite una vez, una migración nueva NO se aplicaba y las
+    # pruebas de sus constraints fallaban con "DID NOT RAISE" — un mensaje que
+    # no apunta a ningún lado. Alembic es idempotente y cuando no hay nada
+    # pendiente tarda menos de un segundo; el arranque lento es un precio
+    # ridículo al lado de esa confusión.
+    #
+    # sys.executable -m alembic: el binario del venv no está en PATH cuando
+    # pytest corre desde un entorno distinto.
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        check=True,
+        env={**os.environ, "DSD_DATABASE_URL": URL_PRUEBAS},
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

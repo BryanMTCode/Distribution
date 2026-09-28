@@ -216,6 +216,33 @@
       "sha256": "49a267e5375429a4efc8dd4ac23f678b501fe176d5b9a9b85f3ae0f3ecb8cb71"
     },
     {
+      "nombre": "precio_escala_4",
+      "descripcion": "El precio unitario lleva 4 decimales, NO 2: es numeric(14,4) en el servidor",
+      "payload": {
+        "precio_unitario": "175.0000"
+      },
+      "canonico": "{\"precio_unitario\":\"175.0000\"}",
+      "sha256": "02a5935ee5df66cef629aa670dfbe419f3d0f4aea529dc046137c312dd23dd0e"
+    },
+    {
+      "nombre": "precio_derivado_de_caja",
+      "descripcion": "TRAMPA: 296.00 / 24 = 12.3333 por pieza. Si el precio se guardara en centavos (12.33), la caja completa valdría 295.92 y el cliente lo reclamaría con la lista en la mano. El redondeo va en el IMPORTE.",
+      "payload": {
+        "precio_unitario": "12.3333"
+      },
+      "canonico": "{\"precio_unitario\":\"12.3333\"}",
+      "sha256": "834537124224439d4f2801a390a416f489c323a327929921daaa36fb82aedd91"
+    },
+    {
+      "nombre": "precio_cero",
+      "descripcion": "Cero conserva la escala de 4",
+      "payload": {
+        "precio_unitario": "0.0000"
+      },
+      "canonico": "{\"precio_unitario\":\"0.0000\"}",
+      "sha256": "a2de093826c8ca870b58f7fe79c69a4d3e5f167b26e599f58d6ae59fd41f7769"
+    },
+    {
       "nombre": "instante_utc",
       "descripcion": "RFC 3339 en UTC con exactamente 3 decimales",
       "payload": {
@@ -335,10 +362,10 @@
         "tipo": "contado",
         "lista_precios_id": "c0ffee00-0000-4000-8000-000000000001",
         "lista_precios_version": 7,
-        "subtotal": "412.50",
-        "descuento": "12.50",
+        "subtotal": "659.50",
+        "descuento": "0.00",
         "impuestos": "0.00",
-        "total": "400.00",
+        "total": "659.50",
         "lat": "19.4326000",
         "lng": "-99.1332000",
         "ubicacion_precision_m": "8.50",
@@ -354,9 +381,9 @@
             "factor_unidad": "24.000",
             "cantidad": "2.000",
             "cantidad_base": "48.000",
-            "precio_unitario": "175.0000",
-            "descuento": "12.50",
-            "importe": "337.50"
+            "precio_unitario": "296.0000",
+            "descuento": "0.00",
+            "importe": "592.00"
           },
           {
             "id": "018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82",
@@ -366,14 +393,14 @@
             "factor_unidad": "1.000",
             "cantidad": "5.000",
             "cantidad_base": "5.000",
-            "precio_unitario": "12.5000",
+            "precio_unitario": "13.5000",
             "descuento": "0.00",
-            "importe": "62.50"
+            "importe": "67.50"
           }
         ]
       },
-      "canonico": "{\"cliente_id\":\"7a1c9e30-4b55-7d12-8e44-91f0a2b3c4d5\",\"descuento\":\"12.50\",\"fecha_dispositivo\":\"2026-09-15T17:42:03.250Z\",\"folio_consecutivo\":124,\"folio_local\":\"VEND01-000124\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e7f\",\"impuestos\":\"0.00\",\"lat\":\"19.4326000\",\"lista_precios_id\":\"c0ffee00-0000-4000-8000-000000000001\",\"lista_precios_version\":7,\"lng\":\"-99.1332000\",\"partidas\":[{\"cantidad\":\"2.000\",\"cantidad_base\":\"48.000\",\"descuento\":\"12.50\",\"factor_unidad\":\"24.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e81\",\"importe\":\"337.50\",\"linea\":1,\"precio_unitario\":\"175.0000\",\"producto_id\":\"aa11bb22-cc33-4d44-8e55-ff6677889900\",\"unidad_codigo\":\"CAJA\"},{\"cantidad\":\"5.000\",\"cantidad_base\":\"5.000\",\"descuento\":\"0.00\",\"factor_unidad\":\"1.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82\",\"importe\":\"62.50\",\"linea\":2,\"precio_unitario\":\"12.5000\",\"producto_id\":\"bb22cc33-dd44-4e55-8f66-001122334455\",\"unidad_codigo\":\"PZA\"}],\"subtotal\":\"412.50\",\"tipo\":\"contado\",\"total\":\"400.00\",\"ubicacion_precision_m\":\"8.50\",\"visita_id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e80\"}",
-      "sha256": "bbddc8b5099fbbc39059c3eb4d0db488dd7710d6a8cc71eac1bf37e4e7aaa57e"
+      "canonico": "{\"cliente_id\":\"7a1c9e30-4b55-7d12-8e44-91f0a2b3c4d5\",\"descuento\":\"0.00\",\"fecha_dispositivo\":\"2026-09-15T17:42:03.250Z\",\"folio_consecutivo\":124,\"folio_local\":\"VEND01-000124\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e7f\",\"impuestos\":\"0.00\",\"lat\":\"19.4326000\",\"lista_precios_id\":\"c0ffee00-0000-4000-8000-000000000001\",\"lista_precios_version\":7,\"lng\":\"-99.1332000\",\"partidas\":[{\"cantidad\":\"2.000\",\"cantidad_base\":\"48.000\",\"descuento\":\"0.00\",\"factor_unidad\":\"24.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e81\",\"importe\":\"592.00\",\"linea\":1,\"precio_unitario\":\"296.0000\",\"producto_id\":\"aa11bb22-cc33-4d44-8e55-ff6677889900\",\"unidad_codigo\":\"CAJA\"},{\"cantidad\":\"5.000\",\"cantidad_base\":\"5.000\",\"descuento\":\"0.00\",\"factor_unidad\":\"1.000\",\"id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e82\",\"importe\":\"67.50\",\"linea\":2,\"precio_unitario\":\"13.5000\",\"producto_id\":\"bb22cc33-dd44-4e55-8f66-001122334455\",\"unidad_codigo\":\"PZA\"}],\"subtotal\":\"659.50\",\"tipo\":\"contado\",\"total\":\"659.50\",\"ubicacion_precision_m\":\"8.50\",\"visita_id\":\"018f3a5c-7b2e-7c91-9f3d-2a1b4c5d6e80\"}",
+      "sha256": "1be324a174715cdfc2c7385a286906a99c7573f1f18ccd2bcfe9e4851bdcb9a0"
     }
   ]
 }

@@ -75,6 +75,19 @@ jobs:
             exit 1
           }
 
+      - name: El contrato de importes está al día
+        run: |
+          server/.venv/bin/python contracts/generar_importes.py
+          git diff --exit-code contracts/importes_de_ejemplo.json || {
+            echo "::error::La aritmética de una partida cambió."
+            echo "El importe de una línea se calcula en TRES lugares: el teléfono,"
+            echo "el servidor y el CHECK de PostgreSQL. Revisa el diff y confirma"
+            echo "que los tres siguen dando el mismo centavo:"
+            echo "  cd mobile/packages/dsd_core && dart test test/importes_contrato_test.dart"
+            echo "  cd server && .venv/bin/python -m pytest tests/test_importes.py"
+            exit 1
+          }
+
       - name: El contrato OpenAPI está al día
         working-directory: server
         run: |
