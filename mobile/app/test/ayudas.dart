@@ -11,6 +11,7 @@ import 'package:dsd_app/src/app.dart';
 import 'package:dsd_app/src/datos/almacen_seguro.dart';
 import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/estado/sesion.dart';
+import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -120,17 +121,40 @@ void sembrarCobroPendiente(
   );
 }
 
-/// Encola un sobre cualquiera, para probar el indicador de pendientes.
+/// Encola sobres con el payload REAL que viaja al servidor.
+///
+/// Un payload de relleno (`{}`) haría pasar pruebas que en producción
+/// fallarían: el sincronizador manda ese JSON tal cual, y el servidor espera
+/// encontrar ahí el `operacion_id`.
 void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
   for (var i = 0; i < cuantos; i++) {
+    final sobre = SobreLocal(
+      operacionId: 'op-$i',
+      secuencia: i,
+      visitaId: 'visita-$i',
+      operaciones: [
+        OperacionLocal(
+          tipo: 'cliente.crear',
+          entidadId: 'ent-$i',
+          datos: {'nombre_comercial': 'Tienda $i'},
+        ),
+      ],
+    );
     base.db.execute(
       '''
       INSERT INTO outbox (operacion_id, tipo, entidad_id, payload, hash_payload,
-                          secuencia, estado, intentos, creado_en)
-      VALUES (?, 'cliente.crear', ?, '{}', ?, ?, 'pendiente', 0,
+                          secuencia, visita_id, estado, intentos, creado_en)
+      VALUES (?, 'cliente.crear', ?, ?, ?, ?, ?, 'pendiente', 0,
               '2026-09-24T09:00:00.000Z')
       ''',
-      ['op-$i', 'ent-$i', '0' * 64, i],
+      [
+        sobre.operacionId,
+        'ent-$i',
+        jsonEncode(sobre.aMapa()),
+        sobre.hash,
+        i,
+        sobre.visitaId,
+      ],
     );
   }
 }
@@ -143,6 +167,7 @@ Future<BaseLocal> montarApp(
   Map<String, Object?>? credencial,
   DateTime? ahora,
   void Function(BaseLocal base)? sembrar,
+  List<Override> extras = const [],
 }) async {
   final base = BaseLocal.enMemoria();
   final almacen = AlmacenSeguroEnMemoria();
@@ -161,6 +186,7 @@ Future<BaseLocal> montarApp(
         relojProvider.overrideWithValue(
           () => ahora ?? DateTime.utc(2026, 9, 24, 7),
         ),
+        ...extras,
       ],
       child: const AppDsd(),
     ),

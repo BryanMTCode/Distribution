@@ -64,6 +64,17 @@ jobs:
             exit 1
           }
 
+      - name: El fixture de deltas está al día
+        working-directory: server
+        run: |
+          .venv/bin/python -m pytest tests/test_contrato_deltas.py -q
+          cd .. && git diff --exit-code contracts/deltas_de_ejemplo.json || {
+            echo "::error::La forma de los deltas cambió."
+            echo "Revisa el diff y confirma que contrato_deltas_test.dart sigue verde:"
+            echo "  cd mobile/packages/dsd_core && dart test test/contrato_deltas_test.dart"
+            exit 1
+          }
+
       - name: El contrato OpenAPI está al día
         working-directory: server
         run: |

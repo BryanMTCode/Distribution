@@ -286,6 +286,23 @@ CREATE TABLE outbox (
 CREATE INDEX ix_outbox_cola ON outbox(estado, secuencia);
 CREATE UNIQUE INDEX ix_outbox_entidad ON outbox(tipo, entidad_id);
 
+-- ---------------------------------------------------------------------------
+-- Deltas que esta versión de la app no sabe aplicar
+-- ---------------------------------------------------------------------------
+-- Si el servidor empieza a mandar una entidad nueva y la app es más vieja, hay
+-- dos malas salidas: atorar el cursor (el equipo no volvería a recibir NADA) o
+-- descartar el delta en silencio (pérdida invisible). Se guarda el crudo y el
+-- cursor avanza. Una versión futura de la app los reprocesa, y el inspector de
+-- sync los muestra para que nadie descubra la pérdida por accidente.
+CREATE TABLE deltas_desconocidos (
+    cursor          INTEGER PRIMARY KEY,
+    entidad         TEXT NOT NULL,
+    entidad_id      TEXT NOT NULL,
+    operacion       TEXT NOT NULL,
+    payload         TEXT,
+    recibido_en     TEXT NOT NULL
+);
+
 CREATE TABLE sync_bitacora (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     lote_id         TEXT,

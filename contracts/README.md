@@ -9,6 +9,8 @@ tiene vectores de prueba que **ambas suites ejecutan en CI**.
 | `canonical_vectors.json` | Forma canónica del payload y su SHA-256 |
 | `argon2_vectors.json` | Parámetros de Argon2id para el login offline |
 | `openapi.json` | Contrato HTTP (generado; de aquí sale el cliente Dart) |
+| `sobres_de_ejemplo.json` | Sobres armados por Dart, que el servidor debe aceptar |
+| `deltas_de_ejemplo.json` | Deltas emitidos por el servidor, que Dart debe aplicar |
 
 Regenerar: `python3 contracts/generar_vectores.py`
 
@@ -95,7 +97,23 @@ equivocada falla.
 
 ---
 
-## 3. OpenAPI
+## 3. Sobres y deltas: los dos sentidos del viaje
+
+Los dos fixtures cierran el circuito, cada uno en una dirección:
+
+- **`sobres_de_ejemplo.json`** lo genera el cliente Dart con su propio código y lo empuja
+  `server/tests/test_contrato_dart.py` por el endpoint real. Demuestra que lo que arma el dispositivo es
+  lo que el servidor acepta.
+- **`deltas_de_ejemplo.json`** lo genera `server/tests/test_contrato_deltas.py` a partir de un pull real,
+  y lo aplica `mobile/packages/dsd_core/test/contrato_deltas_test.dart`. Demuestra que lo que emite el
+  servidor es lo que el dispositivo sabe digerir.
+
+Ese segundo importa más de lo que parece: el `change_log` se llena con `to_jsonb(fila)`, así que los
+tipos salen como los tiene PostgreSQL —los booleanos como `true`, no como 0/1; los importes como número
+JSON, no como string—. Escribir esos deltas a mano en una prueba de Dart sería probar contra lo que uno
+*supone* que manda el servidor.
+
+## 4. OpenAPI
 
 FastAPI emite **OpenAPI 3.1**, y buena parte de los generadores de Dart todavía solo digieren 3.0. El
 paso de CI `contracts/exportar_openapi.py` produce una versión degradada a 3.0.x que es la que consume

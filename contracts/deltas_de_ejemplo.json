@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "descripcion": "Deltas tal como los emite /v1/sync/pull. Los aplica mobile/packages/dsd_core/test/contrato_deltas_test.dart. Regenerar: pytest tests/test_contrato_deltas.py",
+  "cambios": [
+    {
+      "cursor": 1,
+      "entidad": "producto",
+      "entidad_id": "019283e0-0001-7000-8000-000000000001",
+      "operacion": "upsert",
+      "payload": {
+        "id": "019283e0-0001-7000-8000-000000000001",
+        "sku": "FRIJOL-1KG",
+        "activo": true,
+        "nombre": "Frijol negro 1 kg",
+        "marca_id": null,
+        "tasa_iva": 0.0,
+        "tasa_ieps": 0.0,
+        "descripcion": null,
+        "maneja_lote": false,
+        "peso_gramos": null,
+        "unidad_base": "PZA",
+        "categoria_id": null,
+        "codigo_barras": "7501234567890",
+        "dias_caducidad": null
+      }
+    },
+    {
+      "cursor": 2,
+      "entidad": "producto_unidad",
+      "entidad_id": "019283e0-0001-7000-8000-000000000001",
+      "operacion": "upsert",
+      "payload": {
+        "activo": true,
+        "factor": 1.0,
+        "es_default": true,
+        "producto_id": "019283e0-0001-7000-8000-000000000001",
+        "unidad_codigo": "PZA"
+      }
+    },
+    {
+      "cursor": 3,
+      "entidad": "producto_unidad",
+      "entidad_id": "019283e0-0001-7000-8000-000000000001",
+      "operacion": "upsert",
+      "payload": {
+        "activo": true,
+        "factor": 24.0,
+        "es_default": false,
+        "producto_id": "019283e0-0001-7000-8000-000000000001",
+        "unidad_codigo": "CAJA"
+      }
+    },
+    {
+      "cursor": 4,
+      "entidad": "precio",
+      "entidad_id": "019283e0-0001-7000-8000-000000000001",
+      "operacion": "upsert",
+      "payload": {
+        "precio": 25.5,
+        "version": 1,
+        "lista_id": "1a1ee795-f52c-45c9-9588-0d59f6893f1e",
+        "producto_id": "019283e0-0001-7000-8000-000000000001",
+        "precio_minimo": 24.0,
+        "unidad_codigo": "PZA"
+      }
+    },
+    {
+      "cursor": 5,
+      "entidad": "cliente",
+      "entidad_id": "019283e0-0002-7000-8000-000000000002",
+      "operacion": "upsert",
+      "payload": {
+        "id": "019283e0-0002-7000-8000-000000000002",
+        "lat": 19.4326,
+        "lng": -99.1332,
+        "rfc": null,
+        "calle": "Av. Hidalgo",
+        "codigo": "CLI-0001",
+        "estado": null,
+        "numero": "145",
+        "colonia": "Centro",
+        "estatus": "activo",
+        "ruta_id": "2678d5a0-2f86-4ef9-9071-1abbfb6c175a",
+        "telefono": "5512345678",
+        "bloqueado": false,
+        "municipio": null,
+        "secuencia": 3,
+        "creado_por": null,
+        "origen_alta": "oficina",
+        "referencias": null,
+        "canal_codigo": null,
+        "dias_credito": 15,
+        "razon_social": null,
+        "codigo_postal": null,
+        "bloqueo_motivo": null,
+        "dispositivo_id": null,
+        "limite_credito": 5000.0,
+        "contacto_nombre": null,
+        "permite_credito": true,
+        "revision_motivo": null,
+        "lista_precios_id": "1a1ee795-f52c-45c9-9588-0d59f6893f1e",
+        "nombre_comercial": "La Esquina de Ñoño 🏪",
+        "ubicacion_origen": "gps",
+        "fecha_dispositivo": null,
+        "requiere_revision": false,
+        "ubicacion_precision_m": null
+      }
+    },
+    {
+      "cursor": 6,
+      "entidad": "cartera",
+      "entidad_id": "019283e0-0002-7000-8000-000000000002",
+      "operacion": "upsert",
+      "payload": {
+        "saldo": 1200.0,
+        "ruta_id": "2678d5a0-2f86-4ef9-9071-1abbfb6c175a",
+        "bloqueado": false,
+        "cliente_id": "019283e0-0002-7000-8000-000000000002",
+        "disponible": 3800.0,
+        "dias_credito": 15,
+        "saldo_vencido": 0.0,
+        "limite_credito": 5000.0,
+        "credito_agotado": false,
+        "permite_credito": true,
+        "facturas_abiertas": 1,
+        "facturas_vencidas": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+"""Contrato de la forma de los deltas, entre el servidor y el dispositivo.
+
+El `change_log` se llena con `to_jsonb(fila)`, así que los tipos salen como los
+tiene PostgreSQL: los booleanos como `true`, los numéricos como número JSON, y
+los importes NO como string. El aplicador de Dart tiene que digerir eso
+exactamente, y escribirlo a mano en una prueba de Dart sería adivinar.
+
+Esta prueba genera `contracts/deltas_de_ejemplo.json` a partir de un pull
+REAL, y `mobile/packages/dsd_core/test/contrato_deltas_test.dart` lo aplica.
+Los identificadores y los cursores se normalizan para que el archivo no cambie
+en cada corrida: un fixture que churnea no sirve para detectar cambios de
+verdad en el diff.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import uuid
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import text
+
+from tests.conftest import PASSWORD_VENDEDOR
+
+pytestmark = pytest.mark.asyncio
+
+ARCHIVO = (
+    pathlib.Path(__file__).resolve().parents[2] / "contracts" / "deltas_de_ejemplo.json"
+)
+
+# Fijos: el archivo se versiona y no debe cambiar si nada cambió.
+PRODUCTO = uuid.UUID("019283e0-0001-7000-8000-000000000001")
+CLIENTE = uuid.UUID("019283e0-0002-7000-8000-000000000002")
+VENTA = uuid.UUID("019283e0-0003-7000-8000-000000000003")
+
+
+async def _cab_vendedor(cliente, sesion, semilla) -> dict:
+    dispositivo_id = uuid.uuid4()
+    await sesion.execute(
+        text("INSERT INTO dispositivos(id, usuario_id, etiqueta, estado, registrado_en) "
+             "VALUES (:d,:u,'Moto G54','activo',now())"),
+        {"d": dispositivo_id, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+    r = await cliente.post("/v1/auth/login", json={
+        "codigo": "VEND01", "password": PASSWORD_VENDEDOR, "dispositivo_id": str(dispositivo_id),
+    })
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+async def _sembrar(sesion, semilla) -> None:
+    """Un catálogo mínimo y un cliente con cartera, con los ids fijos."""
+    await sesion.execute(
+        text("""
+            INSERT INTO productos (id, sku, codigo_barras, nombre, unidad_base,
+                                   tasa_iva, activo, creado_en, actualizado_en)
+            VALUES (:p, 'FRIJOL-1KG', '7501234567890', 'Frijol negro 1 kg', 'PZA',
+                    0.0000, true, now(), now())
+        """),
+        {"p": PRODUCTO},
+    )
+    await sesion.execute(
+        text("""
+            INSERT INTO producto_unidades (producto_id, unidad_codigo, factor,
+                                           es_default, activo)
+            VALUES (:p, 'PZA', 1, true, true), (:p, 'CAJA', 24, false, true)
+        """),
+        {"p": PRODUCTO},
+    )
+    await sesion.execute(
+        text("""
+            INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio,
+                                 precio_minimo, version, actualizado_en)
+            VALUES (:l, :p, 'PZA', 25.5000, 24.0000, 1, now())
+        """),
+        {"l": semilla["lista_precios"], "p": PRODUCTO},
+    )
+    await sesion.execute(
+        text("""
+            INSERT INTO clientes (id, codigo, nombre_comercial, ruta_id, secuencia,
+                                  telefono, calle, numero, colonia, lat, lng,
+                                  ubicacion_origen, lista_precios_id,
+                                  permite_credito, limite_credito, dias_credito,
+                                  bloqueado, estatus, creado_en, actualizado_en)
+            VALUES (:c, 'CLI-0001', 'La Esquina de Ñoño 🏪', :r, 3, '5512345678',
+                    'Av. Hidalgo', '145', 'Centro', 19.4326000, -99.1332000,
+                    'gps', :l, true, 5000.00, 15, false, 'activo', now(), now())
+        """),
+        {"c": CLIENTE, "r": semilla["ruta"], "l": semilla["lista_precios"]},
+    )
+    # Una factura abierta, para que el delta de cartera traiga saldo real.
+    await sesion.execute(
+        text("""
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, tipo,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            SELECT :v, d.id, 1, 'VEND01-000001', :c, :u, :a, 'credito',
+                   1200.00, 1200.00, now(), CURRENT_DATE
+              FROM dispositivos d WHERE d.usuario_id = :u LIMIT 1
+        """),
+        {"v": VENTA, "c": CLIENTE, "u": semilla["vendedor"], "a": semilla["camion"]},
+    )
+    await sesion.execute(
+        text("""
+            INSERT INTO cuentas_por_cobrar (venta_id, cliente_id, importe_original,
+                                            importe_pagado, fecha_emision,
+                                            fecha_vencimiento, estado, actualizado_en)
+            VALUES (:v, :c, 1200.00, 0, CURRENT_DATE, CURRENT_DATE + 15,
+                    'abierta', now())
+        """),
+        {"v": VENTA, "c": CLIENTE},
+    )
+    await sesion.commit()
+
+
+def _normalizar(cambios: list[dict]) -> list[dict]:
+    """Cursores 1..N y se quitan las marcas de tiempo variables."""
+    salida = []
+    for i, c in enumerate(cambios, start=1):
+        payload = dict(c["payload"] or {})
+        for campo in list(payload):
+            if campo.endswith(("_en", "_at")) or campo in {
+                "vencimiento_mas_antiguo", "fecha_emision", "fecha_vencimiento",
+                "vigente_desde", "vigente_hasta",
+            }:
+                payload.pop(campo)
+        salida.append(
+            {
+                "cursor": i,
+                "entidad": c["entidad"],
+                "entidad_id": c["entidad_id"],
+                "operacion": c["operacion"],
+                "payload": payload or None,
+            }
+        )
+    return salida
+
+
+async def test_generar_y_verificar_deltas(cliente, semilla, sesion):
+    """Genera el fixture y comprueba que trae lo que el dispositivo necesita."""
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    await _sembrar(sesion, semilla)
+
+    r = await cliente.get("/v1/sync/pull?cursor=0&limite=2000", headers=cab)
+    assert r.status_code == 200, r.text
+    cambios = _normalizar(r.json()["cambios"])
+
+    entidades = {c["entidad"] for c in cambios}
+    # Sin 'cartera' el dispositivo nunca sabría el saldo y calcularía el crédito
+    # con cero. Ver ADR 0002 y la migración 0011.
+    assert "cartera" in entidades
+    assert {"producto", "producto_unidad", "precio", "cliente"} <= entidades
+
+    cartera = next(c for c in cambios if c["entidad"] == "cartera")
+    assert Decimal(str(cartera["payload"]["saldo"])) == Decimal("1200.00")
+    assert Decimal(str(cartera["payload"]["disponible"])) == Decimal("3800.00")
+
+    # Los booleanos salen como booleanos de JSON, no como 0/1: es justo lo que
+    # el aplicador de Dart tiene que digerir.
+    producto = next(c for c in cambios if c["entidad"] == "producto")
+    assert producto["payload"]["activo"] is True
+
+    ARCHIVO.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "descripcion": (
+                    "Deltas tal como los emite /v1/sync/pull. Los aplica "
+                    "mobile/packages/dsd_core/test/contrato_deltas_test.dart. "
+                    "Regenerar: pytest tests/test_contrato_deltas.py"
+                ),
+                "cambios": cambios,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+async def test_el_emoji_del_cliente_viaja_intacto(cliente, semilla, sesion):
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    await _sembrar(sesion, semilla)
+
+    r = await cliente.get("/v1/sync/pull?cursor=0&limite=2000", headers=cab)
+    nombres = {
+        c["payload"]["nombre_comercial"]
+        for c in r.json()["cambios"]
+        if c["entidad"] == "cliente"
+    }
+    assert "La Esquina de Ñoño 🏪" in nombres
+
+
+async def test_la_geografia_generada_no_viaja(cliente, semilla, sesion):
+    """El hexadecimal de PostGIS solo engordaría cada delta: el dispositivo ya
+    recibe lat y lng."""
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    await _sembrar(sesion, semilla)
+
+    r = await cliente.get("/v1/sync/pull?cursor=0&limite=2000", headers=cab)
+    for c in r.json()["cambios"]:
+        if c["payload"]:
+            assert "ubicacion" not in c["payload"]

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_clientes.dart';
 import '../../estado/sesion.dart';
+import '../../estado/sincronizacion.dart';
 
 class PantallaClientes extends ConsumerWidget {
   const PantallaClientes({super.key});
@@ -18,11 +19,34 @@ class PantallaClientes extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final clientes = ref.watch(clientesProvider);
     final cola = ref.watch(resumenColaProvider);
+    final sync = ref.watch(syncProvider);
+
+    ref.listen(syncProvider, (_, actual) {
+      final mensaje = _mensajeDeSync(actual);
+      if (mensaje == null) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(mensaje)));
+    });
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi ruta'),
         actions: [
+          IconButton(
+            key: const Key('boton_sincronizar'),
+            tooltip: 'Sincronizar',
+            icon: sync is SyncEnCurso
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+            onPressed: sync is SyncEnCurso
+                ? null
+                : () => ref.read(syncProvider.notifier).sincronizar(),
+          ),
           IconButton(
             key: const Key('boton_salir'),
             tooltip: 'Salir',
@@ -65,6 +89,35 @@ class PantallaClientes extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Lo que se le dice al vendedor después de sincronizar.
+///
+/// Cada final pide algo distinto de él: "sin señal" es esperar, "vuelve a
+/// entrar" es actuar, y "quedaron con error" es avisar a la oficina. Un mensaje
+/// genérico lo dejaría sin saber qué hacer.
+String? _mensajeDeSync(EstadoSync estado) => switch (estado) {
+      SyncInactiva() || SyncEnCurso() => null,
+      SyncSinSesionEnLinea() =>
+        'Entraste sin señal. Conéctate para enviar lo pendiente.',
+      SyncTerminada(:final resultado) => switch (resultado.fin) {
+          FinDeSync.sinRed => 'Sin señal. Nada se perdió, se reintenta luego.',
+          FinDeSync.sesionInvalida => 'Tu sesión venció. Vuelve a entrar.',
+          FinDeSync.servidorCaido => 'El servidor no responde. Se reintenta luego.',
+          FinDeSync.parcial => 'Se envió una parte. Falta cola por subir.',
+          FinDeSync.completa => resultado.huboActividad
+              ? _resumenCompleto(resultado)
+              : 'Todo al día.',
+        },
+    };
+
+String _resumenCompleto(ResultadoSincronizacion r) {
+  final partes = <String>[
+    if (r.sobresConfirmados > 0) 'enviadas ${r.sobresConfirmados}',
+    if (r.deltasAplicados > 0) 'actualizados ${r.deltasAplicados}',
+    if (r.sobresEnCuarentena > 0) '${r.sobresEnCuarentena} con error',
+  ];
+  return 'Listo: ${partes.join(' · ')}';
 }
 
 /// Mientras haya cola sin sincronizar, se ve. Un número de pendientes que crece
