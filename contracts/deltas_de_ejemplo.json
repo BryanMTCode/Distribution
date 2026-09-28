@@ -58,7 +58,7 @@
       "payload": {
         "precio": 25.5,
         "version": 1,
-        "lista_id": "1a1ee795-f52c-45c9-9588-0d59f6893f1e",
+        "lista_id": "uuid-de-la-semilla-1",
         "producto_id": "019283e0-0001-7000-8000-000000000001",
         "precio_minimo": 24.0,
         "unidad_codigo": "PZA"
@@ -80,7 +80,7 @@
         "numero": "145",
         "colonia": "Centro",
         "estatus": "activo",
-        "ruta_id": "2678d5a0-2f86-4ef9-9071-1abbfb6c175a",
+        "ruta_id": "uuid-de-la-semilla-2",
         "telefono": "5512345678",
         "bloqueado": false,
         "municipio": null,
@@ -98,7 +98,7 @@
         "contacto_nombre": null,
         "permite_credito": true,
         "revision_motivo": null,
-        "lista_precios_id": "1a1ee795-f52c-45c9-9588-0d59f6893f1e",
+        "lista_precios_id": "uuid-de-la-semilla-1",
         "nombre_comercial": "La Esquina de Ñoño 🏪",
         "ubicacion_origen": "gps",
         "fecha_dispositivo": null,
@@ -113,7 +113,7 @@
       "operacion": "upsert",
       "payload": {
         "saldo": 1200.0,
-        "ruta_id": "2678d5a0-2f86-4ef9-9071-1abbfb6c175a",
+        "ruta_id": "uuid-de-la-semilla-2",
         "bloqueado": false,
         "cliente_id": "019283e0-0002-7000-8000-000000000002",
         "disponible": 3800.0,

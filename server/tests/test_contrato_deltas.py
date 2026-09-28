@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import uuid
 from decimal import Decimal
 
@@ -115,22 +116,49 @@ async def _sembrar(sesion, semilla) -> None:
     await sesion.commit()
 
 
+_RE_UUID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+
+# Los ids que esta prueba fija. Todo otro UUID lo genera la semilla al azar en
+# cada corrida (ruta, lista de precios, sucursal), así que se estabiliza.
+_FIJOS = {str(PRODUCTO), str(CLIENTE), str(VENTA)}
+
+_VARIABLES = {
+    "vencimiento_mas_antiguo", "fecha_emision", "fecha_vencimiento",
+    "vigente_desde", "vigente_hasta",
+}
+
+
 def _normalizar(cambios: list[dict]) -> list[dict]:
-    """Cursores 1..N y se quitan las marcas de tiempo variables."""
+    """Estabiliza el fixture para que se pueda versionar.
+
+    Se le quitan cursores, fechas e identidades aleatorias. Lo que queda es la
+    FORMA: qué entidades se emiten, con qué campos y con qué tipos de JSON. Eso
+    es exactamente lo que el aplicador de Dart tiene que digerir, y lo que se
+    quiere ver cambiar en un diff.
+    """
+    alias: dict[str, str] = {}
+
+    def estabilizar(valor: object) -> object:
+        if isinstance(valor, str) and _RE_UUID.match(valor) and valor not in _FIJOS:
+            # Mismo UUID → mismo alias, en orden de aparición. Conserva las
+            # relaciones entre deltas sin fijar el id concreto.
+            return alias.setdefault(valor, f"uuid-de-la-semilla-{len(alias) + 1}")
+        return valor
+
     salida = []
     for i, c in enumerate(cambios, start=1):
-        payload = dict(c["payload"] or {})
-        for campo in list(payload):
-            if campo.endswith(("_en", "_at")) or campo in {
-                "vencimiento_mas_antiguo", "fecha_emision", "fecha_vencimiento",
-                "vigente_desde", "vigente_hasta",
-            }:
-                payload.pop(campo)
+        payload = {
+            campo: estabilizar(valor)
+            for campo, valor in (c["payload"] or {}).items()
+            if not campo.endswith(("_en", "_at")) and campo not in _VARIABLES
+        }
         salida.append(
             {
                 "cursor": i,
                 "entidad": c["entidad"],
-                "entidad_id": c["entidad_id"],
+                "entidad_id": estabilizar(c["entidad_id"]),
                 "operacion": c["operacion"],
                 "payload": payload or None,
             }
