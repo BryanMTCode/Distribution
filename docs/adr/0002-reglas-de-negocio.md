@@ -194,3 +194,47 @@ ella, la aritmética tiene que seguir cuadrando, y un CHECK que exigiera `descue
 ventas legítimas — violando §0.1.
 
 La diferencia es quién decide: la oficina sí, el vendedor nunca.
+
+
+---
+
+## 8. La remisión se imprime a un toque, no sola
+
+- **Fecha:** 2026-09-29
+- **Decidido por:** el dueño de la distribuidora
+
+Al confirmar la venta, **la remisión NO se imprime automáticamente**. El vendedor
+ve la venta ya guardada —con su folio grande— y toca **"Imprimir"**.
+
+### Por qué no automática
+
+La impresión automática ahorra un toque. Lo que cuesta es peor: cuando la
+impresora está sin papel, apagada o desemparejada —y en ruta pasa—, la venta ya
+quedó escrita y el vendedor se queda **sin un lugar obvio desde dónde
+reintentar**. Tendría que buscar la venta en otra pantalla, con el cliente
+esperando enfrente.
+
+Con el botón, el reintento es el mismo botón, tantas veces como haga falta.
+
+### Consecuencias
+
+- La primera impresión marca `ventas.impreso` y **congela el payload ESC/POS**
+  en `ticket_escpos`. Las siguientes cuentan como `reimpresiones` y **no
+  recalculan el ticket**: una reimpresión tiene que salir idéntica al original,
+  marcada como copia.
+- Una venta sin imprimir es un estado válido y visible. La oficina puede
+  preguntar por qué, que es justo lo que no podría hacer si la impresión fuera
+  un efecto secundario invisible del guardado.
+
+## 9. El aviso de existencia se dice en piezas, no en decimales
+
+- **Fecha:** 2026-09-29 (prueba de campo en POCO M5s)
+
+Cuando no alcanza la mercancía, el aviso dice **"Solo quedan 2 cajas y 6 piezas
+en el camión"**, no *"solo quedan 2.500 cajas"*.
+
+El decimal obliga al vendedor a traducirlo de cabeza frente al cliente, y **media
+caja no existe en un camión**: lo que existe son 2 cajas y 6 piezas sueltas, que
+es exactamente lo que le va a decir al cliente. El dominio devuelve el desglose
+(`DesgloseDisponible`) y la pantalla lo redacta; la unidad se nombra en español
+según su código.

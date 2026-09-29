@@ -63,6 +63,72 @@
           }
         }
       ]
+    },
+    {
+      "operacion_id": "019283b0-0004-7000-8000-000000000004",
+      "secuencia": 3,
+      "hash_payload": "a0846e280f28d67635b60129b8e607e3df251ff5590621943ba1c00805ce4693",
+      "visita_id": "019283c0-0004-7000-8000-000000000004",
+      "operaciones": [
+        {
+          "tipo": "cliente.crear",
+          "entidad_id": "019283a0-0005-7000-8000-000000000005",
+          "datos": {
+            "nombre_comercial": "Cremería Los Compadres",
+            "ubicacion_origen": "gps",
+            "lat": "19.4326000",
+            "lng": "-99.1332000"
+          }
+        },
+        {
+          "tipo": "venta.crear",
+          "entidad_id": "019283e0-0001-7000-8000-000000000001",
+          "datos": {
+            "folio_consecutivo": 124,
+            "folio_local": "VEND01-000124",
+            "cliente_id": "019283a0-0005-7000-8000-000000000005",
+            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
+            "tipo": "contado",
+            "lista_precios_id": "019283a0-0007-7000-8000-000000000007",
+            "lista_precios_version": 7,
+            "subtotal": "629.00",
+            "descuento": "0.00",
+            "impuestos": "0.00",
+            "total": "629.00",
+            "lat": "19.4326000",
+            "lng": "-99.1332000",
+            "ubicacion_precision_m": "8.50",
+            "fecha_dispositivo": "2026-09-29T17:42:03.250Z",
+            "fecha_operativa": "2026-09-29",
+            "partidas": [
+              {
+                "id": "019283e1-0001-7000-8000-000000000001",
+                "linea": 1,
+                "producto_id": "019283a0-0006-7000-8000-000000000006",
+                "unidad_codigo": "CAJA",
+                "factor_unidad": "24.0000",
+                "cantidad": "2.000",
+                "cantidad_base": "48.000",
+                "precio_unitario": "296.0000",
+                "descuento": "0.00",
+                "importe": "592.00"
+              },
+              {
+                "id": "019283e1-0002-7000-8000-000000000002",
+                "linea": 2,
+                "producto_id": "019283a0-0006-7000-8000-000000000006",
+                "unidad_codigo": "PZA",
+                "factor_unidad": "1.0000",
+                "cantidad": "3.000",
+                "cantidad_base": "3.000",
+                "precio_unitario": "12.3333",
+                "descuento": "0.00",
+                "importe": "37.00"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

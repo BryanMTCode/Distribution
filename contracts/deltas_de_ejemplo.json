@@ -138,6 +138,19 @@
         "nombre": "Precio general",
         "es_default": true
       }
+    },
+    {
+      "cursor": 8,
+      "entidad": "lista_precios",
+      "entidad_id": "uuid-de-la-semilla-3",
+      "operacion": "upsert",
+      "payload": {
+        "id": "uuid-de-la-semilla-3",
+        "activo": true,
+        "codigo": "DART",
+        "nombre": "Lista del contrato",
+        "es_default": false
+      }
     }
   ]
 }

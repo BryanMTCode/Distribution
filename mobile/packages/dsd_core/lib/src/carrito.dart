@@ -45,6 +45,7 @@ class PresentacionVendible {
     required this.precio,
     required this.listaPreciosId,
     required this.listaPreciosVersion,
+    this.unidadBaseCodigo = 'PZA',
     this.tasaIva = 0,
     this.esDefault = false,
     this.codigoBarras,
@@ -56,6 +57,10 @@ class PresentacionVendible {
 
   /// 'PZA', 'CAJA'.
   final String unidadCodigo;
+
+  /// La unidad en la que se lleva el inventario del camión: 'PZA'. Sirve para
+  /// decirle al vendedor "2 cajas y 6 **piezas**" cuando no alcanza.
+  final String unidadBaseCodigo;
 
   /// Cuántas unidades base sale del camión por cada una de estas.
   final Factor factor;
@@ -125,21 +130,57 @@ class ResultadoCarrito {
   const ResultadoCarrito.ok(this.carrito)
       : aceptado = true,
         motivo = null,
-        disponibleEnCamion = null;
+        disponibleEnCamion = null,
+        desglose = null;
 
   const ResultadoCarrito.rechazado(
     this.carrito,
     this.motivo, {
     this.disponibleEnCamion,
+    this.desglose,
   }) : aceptado = false;
 
   final bool aceptado;
   final Carrito carrito;
   final MotivoRechazo? motivo;
 
-  /// Cuánto sí cabe, en la unidad que se intentó vender. Es lo que se le
-  /// ofrece al vendedor: "solo quedan 4 cajas".
+  /// Cuánto sí cabe, en la unidad que se intentó vender. Puede traer fracción.
   final Cantidad? disponibleEnCamion;
+
+  /// Lo mismo, partido en unidades enteras y resto.
+  ///
+  /// Es lo que se le dice al vendedor. Probado en campo (POCO M5s, septiembre
+  /// 2026): **"2 cajas y 6 piezas" se entiende, "2.500 cajas" no.** Media caja
+  /// no existe en un camión; lo que existe son 2 cajas y 6 piezas sueltas, y eso
+  /// es exactamente lo que el vendedor le va a decir al cliente.
+  final DesgloseDisponible? desglose;
+}
+
+/// Lo que cabe, partido como se carga físicamente: unidades enteras y sueltas.
+class DesgloseDisponible {
+  const DesgloseDisponible({
+    required this.enteras,
+    required this.sueltasEnBase,
+    required this.unidadCodigo,
+    required this.unidadBaseCodigo,
+  });
+
+  /// Cuántas presentaciones completas caben (2 cajas).
+  final int enteras;
+
+  /// Lo que sobra, en unidad base (6 piezas).
+  final Cantidad sueltasEnBase;
+
+  /// 'CAJA'. Cuando la presentación ES la unidad base, `enteras` ya lo dice todo
+  /// y `sueltasEnBase` es cero.
+  final String unidadCodigo;
+
+  /// 'PZA'.
+  final String unidadBaseCodigo;
+
+  bool get hayEnteras => enteras > 0;
+  bool get haySueltas => !sueltasEnBase.esCero;
+  bool get nadaCabe => !hayEnteras && !haySueltas;
 }
 
 /// Lo que el camión trae hoy, en unidades base por producto.
@@ -270,6 +311,7 @@ class Carrito {
         // decirle "quedan 24 piezas" cuando está vendiendo cajas de 12 lo
         // obliga a dividir de cabeza frente al cliente.
         disponibleEnCamion: _cuantasCaben(libre, presentacion.factor),
+        desglose: _desglosar(libre, presentacion),
       );
     }
 
@@ -300,6 +342,36 @@ class Carrito {
   /// no cobra la deuda vieja y sí pierde la venta nueva.
   ResultadoCredito evaluar(EstadoCredito credito) =>
       evaluarVenta(credito, total, aCredito: aCredito);
+
+  /// Parte lo que cabe como se carga físicamente: presentaciones completas y
+  /// unidades sueltas.
+  ///
+  /// Media caja no existe en un camión. Lo que existe son 2 cajas y 6 piezas, y
+  /// eso es lo que el vendedor le va a decir al cliente.
+  static DesgloseDisponible _desglosar(
+    Cantidad libre,
+    PresentacionVendible presentacion,
+  ) {
+    final f = presentacion.factor.diezmilesimos;
+    final disponibleBase = libre.milesimos < 0 ? 0 : libre.milesimos;
+    // libre está en milésimos de unidad base; el factor en diezmilésimos.
+    // enteras = libre_base / factor, truncado.
+    final enteras = f <= 0 ? 0 : (disponibleBase * 10000) ~/ (f * 1000);
+    final consumidoEnBase = (enteras * f) ~/ 10;
+    return DesgloseDisponible(
+      enteras: enteras,
+      sueltasEnBase: Cantidad.deTexto(
+        _milesimosATexto(disponibleBase - consumidoEnBase),
+      ),
+      unidadCodigo: presentacion.unidadCodigo,
+      unidadBaseCodigo: presentacion.unidadBaseCodigo,
+    );
+  }
+
+  static String _milesimosATexto(int milesimos) {
+    final v = milesimos < 0 ? 0 : milesimos;
+    return '${v ~/ 1000}.${(v % 1000).toString().padLeft(3, '0')}';
+  }
 
   /// Cuántas unidades enteras de esta presentación caben en `libre`.
   ///

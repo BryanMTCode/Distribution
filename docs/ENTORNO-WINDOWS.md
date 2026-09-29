@@ -245,6 +245,12 @@ Lo que vale la pena comprobar con el pulgar:
    en cajas, no en piezas. Ese `.500` es información útil: puede llevarse 2 cajas y 6 piezas.
 5. En el pedido, cambia a **Crédito** con *La Esquina de Ñoño*: debe decir cuánto le queda de línea, ya
    descontada la venta encolada de $1500.
+6. **Cobra.** Debe aparecer el folio `VEND01-000001` en grande, el total, y el aviso de que se envía
+   sola cuando haya señal. La remisión **no se imprime sola**: toca *"Imprimir remisión"*.
+7. Cierra la app desde el selector de apps **a media visita**, con el carrito armado, y vuelve a
+   entrar: el pedido tiene que estar como lo dejaste, con los mismos precios.
+8. El rango de folios de la demo es de **30**, así que a la segunda venta ya debe salir el aviso de
+   *"te quedan pocos folios"* sin tener que emitir cientos de tickets.
 
 Puedes pulsar el botón varias veces: la siembra es idempotente, no duplica nada **ni infla la carga del
 camión**.

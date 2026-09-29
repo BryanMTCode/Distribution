@@ -168,6 +168,58 @@ void main() {
       expect(r.disponibleEnCamion!.enteros, equals(4));
     });
 
+    test('y lo parte como se carga: cajas completas y piezas sueltas', () {
+      // Decisión de campo (POCO M5s, septiembre 2026): el decimal no se
+      // entiende. "4.166 cajas" obliga a traducirlo de cabeza; media caja no
+      // existe en un camión. 100 piezas son 4 cajas y 4 piezas.
+      final r = const Carrito()
+          .agregar(_caja(), Cantidad.deEnteros(5), existencias: _camion(sopa: 100));
+
+      final d = r.desglose!;
+      expect(d.enteras, equals(4));
+      expect(d.sueltasEnBase, equals(Cantidad.deEnteros(4)));
+      expect(d.unidadCodigo, equals('CAJA'));
+      expect(d.unidadBaseCodigo, equals('PZA'));
+      expect(d.hayEnteras, isTrue);
+      expect(d.haySueltas, isTrue);
+    });
+
+    test('el desglose de una caja exacta no inventa piezas sueltas', () {
+      // 96 piezas son 4 cajas justas: decir "4 cajas y 0 piezas" sería ruido.
+      final r = const Carrito()
+          .agregar(_caja(), Cantidad.deEnteros(5), existencias: _camion(sopa: 96));
+
+      expect(r.desglose!.enteras, equals(4));
+      expect(r.desglose!.haySueltas, isFalse);
+    });
+
+    test('cuando no cabe ni una caja, el desglose lo dice en piezas', () {
+      final r = const Carrito()
+          .agregar(_caja(), Cantidad.deEnteros(1), existencias: _camion(sopa: 10));
+
+      expect(r.desglose!.enteras, equals(0));
+      expect(r.desglose!.hayEnteras, isFalse);
+      expect(r.desglose!.sueltasEnBase, equals(Cantidad.deEnteros(10)));
+    });
+
+    test('vendiendo por pieza el desglose no duplica la unidad', () {
+      // Aquí la presentación ES la unidad base: 40 piezas, sin "sueltas" que
+      // sean la misma cosa dicha dos veces.
+      final r = const Carrito()
+          .agregar(_pieza(), Cantidad.deEnteros(41), existencias: _camion(sopa: 40));
+
+      expect(r.desglose!.enteras, equals(40));
+      expect(r.desglose!.haySueltas, isFalse);
+      expect(r.desglose!.unidadCodigo, equals(r.desglose!.unidadBaseCodigo));
+    });
+
+    test('con el camión en cero no cabe nada', () {
+      final r = const Carrito()
+          .agregar(_caja(), Cantidad.deEnteros(1), existencias: _camion(sopa: 0));
+
+      expect(r.desglose!.nadaCabe, isTrue);
+    });
+
     test('las presentaciones del mismo producto comparten la existencia', () {
       // 240 unidades base. Diez cajas las agotan; ya no cabe ni una pieza.
       var c = const Carrito()

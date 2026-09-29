@@ -88,6 +88,7 @@ class RepoCatalogo {
              p.nombre,
              p.codigo_barras,
              p.tasa_iva,
+             p.unidad_base,
              u.unidad_codigo,
              u.factor,
              u.es_default,
@@ -134,6 +135,7 @@ class RepoCatalogo {
                 sku: f['sku'] as String,
                 nombre: f['nombre'] as String,
                 unidadCodigo: f['unidad_codigo'] as String,
+                unidadBaseCodigo: f['unidad_base'] as String,
                 factor: Factor.deBase((f['factor'] as num).toDouble()),
                 // El precio cruza de REAL a entero exacto aquí, una sola vez.
                 precio: Precio.deBase((f['precio'] as num).toDouble()),

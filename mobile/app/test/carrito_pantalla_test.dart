@@ -202,7 +202,7 @@ void main() {
       await tester.tap(find.text('Contado'));
       await tester.pumpAndSettle();
       final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_revisar_venta')),
+        find.byKey(const Key('boton_cobrar')),
       );
       expect(boton.onPressed, isNotNull);
     });
@@ -245,35 +245,37 @@ void main() {
     });
   });
 
-  group('el paso siguiente', () {
-    testWidgets('el botón no miente: dice "Revisar venta", no "Cobrar"',
-        (tester) async {
+  group('el botón de cobrar', () {
+    testWidgets('dice qué va a pasar según la forma de pago', (tester) async {
+      // "Cobrar" y "Registrar a crédito" son dos cosas distintas: en una entra
+      // dinero y en la otra se agranda una deuda.
       await abrirPedido(tester, cajas: 1);
-      expect(find.text('Revisar venta'), findsOneWidget);
-      expect(find.text('Cobrar'), findsNothing);
+      expect(find.text('Cobrar de contado'), findsOneWidget);
+
+      await tester.tap(find.text('Crédito'));
+      await tester.pumpAndSettle();
+      expect(find.text('Registrar a crédito'), findsOneWidget);
     });
 
-    testWidgets('el resumen muestra los números y dice qué falta',
-        (tester) async {
-      await abrirPedido(tester, cajas: 2);
-      await tocar(tester, const Key('boton_revisar_venta'));
-
-      expect(find.byKey(const Key('resumen_venta')), findsOneWidget);
-      expect(find.text('Abarrotes Doña Mary'), findsWidgets);
-      expect(find.text('Contado'), findsWidgets);
-      expect(textoQueContiene('todavía no se guarda'), findsOneWidget);
-    });
-
-    testWidgets('con el crédito bloqueado el botón está muerto',
-        (tester) async {
+    testWidgets('con el crédito pasado del límite, está muerto', (tester) async {
       await abrirPedido(tester, cajas: 2, limite: 500, saldoCache: 100);
       await tester.tap(find.text('Crédito'));
       await tester.pumpAndSettle();
 
       final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_revisar_venta')),
+        find.byKey(const Key('boton_cobrar')),
       );
       expect(boton.onPressed, isNull);
+    });
+
+    testWidgets('de contado está vivo aunque el crédito esté negado',
+        (tester) async {
+      // Negar la venta de contado no cobra la deuda vieja y sí pierde la nueva.
+      await abrirPedido(tester, cajas: 1, permiteCredito: false);
+      final boton = tester.widget<ButtonStyleButton>(
+        find.byKey(const Key('boton_cobrar')),
+      );
+      expect(boton.onPressed, isNotNull);
     });
   });
 

@@ -264,6 +264,7 @@ void sembrarDemo(
       Ubicacion(lat: 19.4326, lng: -99.1332, origen: OrigenUbicacion.gps);
 
   _sembrarCatalogo(db);
+  _sembrarParaCobrar(db, ahora: ahora);
 
   for (final c in _clientesDemo) {
     final punto = base.desplazada(norte: c.metrosAlNorte, este: c.metrosAlEste);
@@ -319,6 +320,38 @@ void sembrarDemo(
       );
     }
   }
+}
+
+/// Lo que hace falta para poder CERRAR una venta: el equipo identificado y su
+/// rango de folios.
+///
+/// Sin esto el botón de cobrar diría "este equipo no tiene folios asignados",
+/// que es el comportamiento correcto en producción —el rango lo asigna el
+/// servidor— pero dejaría el modo demo sin poder probar la mitad interesante.
+void _sembrarParaCobrar(Database db, {required String ahora}) {
+  const estado = {
+    'dispositivo_id': '019283f0-0003-7000-8000-000000000003',
+    'carga_id_activa': 'demo-carga-del-dia',
+  };
+  for (final entrada in estado.entries) {
+    db.execute(
+      'INSERT INTO sync_estado (clave, valor) VALUES (?, ?) '
+      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      [entrada.key, entrada.value],
+    );
+  }
+
+  // Un rango corto a propósito: con 30 folios el aviso de "te quedan pocos"
+  // aparece a la segunda venta, y así se puede ver en campo sin tener que
+  // emitir cientos de tickets.
+  db.execute(
+    '''
+    INSERT INTO folios_rangos (tipo, desde, hasta, consumido_hasta, asignado_en)
+    VALUES ('venta', 1, 30, 0, ?)
+    ON CONFLICT(tipo) DO NOTHING
+    ''',
+    [ahora],
+  );
 }
 
 /// El catálogo y la carga del camión.

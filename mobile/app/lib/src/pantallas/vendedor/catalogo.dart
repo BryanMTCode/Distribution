@@ -134,11 +134,54 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
 }
 
 String _mensajeDeRechazo(ResultadoCarrito rechazo) => switch (rechazo.motivo) {
-      MotivoRechazo.sinExistencia =>
-        'Solo quedan ${rechazo.disponibleEnCamion?.textoCorto ?? '0'} en el camión',
+      MotivoRechazo.sinExistencia => _sinExistencia(rechazo.desglose),
       MotivoRechazo.noVaEnLaCarga => 'Ese producto no va en la carga de hoy',
       MotivoRechazo.cantidadInvalida => 'Cantidad no válida',
       null => '',
+    };
+
+/// "Solo quedan 2 cajas y 6 piezas".
+///
+/// Probado en campo (POCO M5s, septiembre 2026): el decimal no se entiende.
+/// "2.500 cajas" obliga al vendedor a traducirlo de cabeza; media caja no existe
+/// en un camión. Lo que existe son 2 cajas y 6 piezas sueltas, que es exactamente
+/// lo que le va a decir al cliente.
+String _sinExistencia(DesgloseDisponible? d) {
+  if (d == null || d.nadaCabe) return 'Ya no queda nada de ese producto en el camión';
+
+  final partes = <String>[
+    if (d.hayEnteras) _conUnidad(d.enteras, d.unidadCodigo),
+    // Cuando la presentación ya es la unidad base, las "sueltas" serían la misma
+    // unidad repetida: "40 piezas y 0 piezas".
+    if (d.haySueltas && d.unidadCodigo != d.unidadBaseCodigo)
+      _sueltas(d.sueltasEnBase, d.unidadBaseCodigo),
+  ];
+  return 'Solo quedan ${partes.join(' y ')} en el camión';
+}
+
+String _conUnidad(int cuantas, String codigo) {
+  final (singular, plural) = _nombreDeUnidad(codigo);
+  return '$cuantas ${cuantas == 1 ? singular : plural}';
+}
+
+String _sueltas(Cantidad cantidad, String codigo) {
+  final (singular, plural) = _nombreDeUnidad(codigo);
+  final texto = cantidad.textoCorto;
+  return '$texto ${cantidad.milesimos == 1000 ? singular : plural}';
+}
+
+/// El nombre en español de las unidades que el negocio maneja.
+///
+/// `unidades_medida.nombre` vive en el servidor, pero el dispositivo no espeja
+/// esa tabla: son cuatro códigos que no cambian, y sincronizar una tabla entera
+/// para traducir dos palabras no se paga. Un código desconocido cae a sí mismo,
+/// que es feo pero nunca miente.
+(String, String) _nombreDeUnidad(String codigo) => switch (codigo) {
+      'PZA' => ('pieza', 'piezas'),
+      'CAJA' => ('caja', 'cajas'),
+      'KG' => ('kilo', 'kilos'),
+      'DISPLAY' => ('display', 'displays'),
+      _ => (codigo, codigo),
     };
 
 /// Un renglón del catálogo.

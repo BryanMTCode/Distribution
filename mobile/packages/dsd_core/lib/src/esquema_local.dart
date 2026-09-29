@@ -138,6 +138,26 @@ CREATE TABLE existencias_camion (
     carga_id        TEXT
 );
 
+-- Rangos de folio asignados por el servidor.
+--
+-- El folio que se imprime lo genera el teléfono, pero **dentro de un rango que
+-- el servidor le asignó**. Es la defensa contra el escenario que casi nadie
+-- prueba: se reinstala la app, el contador local vuelve a 1, y el equipo empieza
+-- a reimprimir folios que ya están en papel en manos de clientes.
+--
+-- `consumido_hasta` se actualiza DENTRO de la misma transacción que escribe el
+-- documento. Si la transacción se deshace, la marca no avanza y el siguiente
+-- intento reutiliza el mismo número: sin hueco y sin duplicado.
+CREATE TABLE folios_rangos (
+    tipo            TEXT PRIMARY KEY,          -- 'venta', 'cobro'
+    desde           INTEGER NOT NULL,
+    hasta           INTEGER NOT NULL,
+    consumido_hasta INTEGER NOT NULL,
+    asignado_en     TEXT,
+    CHECK (hasta > desde),
+    CHECK (consumido_hasta >= desde - 1 AND consumido_hasta <= hasta)
+);
+
 CREATE TABLE motivos_no_drop (
     codigo          TEXT PRIMARY KEY,
     nombre          TEXT NOT NULL,
@@ -164,6 +184,29 @@ CREATE TABLE credencial_local (
     -- extraviado opere indefinidamente.
     valida_hasta        TEXT NOT NULL,
     actualizada_en      TEXT NOT NULL
+);
+
+-- Borrador del carrito de la visita en curso.
+--
+-- El carrito no es un documento: no tiene folio, no descuenta inventario y no
+-- viaja al servidor. Pero perderlo SÍ duele. En un Android de gama baja, veinte
+-- minutos en un mercado con la app en segundo plano alcanzan para que el sistema
+-- la mate, y el vendedor tendría que rearmar quince renglones frente al cliente
+-- —o, más probable, apuntarlos en papel y dejar de usar la app—.
+--
+-- Una sola visita a la vez: el carrito pertenece al cliente que se está
+-- atendiendo, y cambiar de cliente lo reemplaza. Arrastrar renglones de una
+-- tienda a la siguiente sería la forma más rápida de facturarle a quien no pidió
+-- nada.
+CREATE TABLE carrito_borrador (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),   -- fila única
+    cliente_id      TEXT NOT NULL,
+    a_credito       INTEGER NOT NULL DEFAULT 0,
+    -- Las líneas, con su presentación y su precio ya resuelto. Se guarda el
+    -- precio con el que se armó: si el catálogo se refresca a media visita, el
+    -- vendedor sigue viendo lo que le cotizó al cliente.
+    lineas_json     TEXT NOT NULL,
+    actualizado_en  TEXT NOT NULL
 );
 
 -- =============================================================================

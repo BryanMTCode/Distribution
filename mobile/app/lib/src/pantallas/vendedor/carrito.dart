@@ -19,7 +19,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_clientes.dart';
+import '../../datos/servicio_ubicacion.dart';
+import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
+import 'venta_guardada.dart';
 
 class PantallaCarrito extends ConsumerWidget {
   const PantallaCarrito({super.key});
@@ -29,6 +32,38 @@ class PantallaCarrito extends ConsumerWidget {
     final carrito = ref.watch(carritoProvider);
     final cliente = ref.watch(clienteDeLaVisitaProvider);
     final evaluacion = ref.watch(evaluacionProvider);
+
+    // La venta cerrada abre su pantalla. Se navega desde aquí y no desde el
+    // botón para que el estado sea la única fuente: si la app se reconstruye
+    // mientras se cobra, no se pierde el resultado.
+    ref.listen(cobroProvider, (_, estado) {
+      switch (estado) {
+        case VentaCerrada(:final venta):
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => PantallaVentaGuardada(venta: venta),
+            ),
+          );
+        case CobroFallido(:final motivo, :final detalle):
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(content: Text(_mensajeDeFallo(motivo, detalle))),
+            );
+        case CobroSinIdentidad():
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Este equipo no tiene folios asignados. Sincroniza una vez.',
+                ),
+              ),
+            );
+        case CobroInactivo() || CobroEnCurso():
+          break;
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -100,6 +135,21 @@ class PantallaCarrito extends ConsumerWidget {
     }
   }
 }
+
+/// Cada motivo pide algo distinto del vendedor, y ninguno es un error de
+/// programación: son situaciones de la calle.
+String _mensajeDeFallo(MotivoNoVenta motivo, String? detalle) =>
+    switch (motivo) {
+      MotivoNoVenta.carritoVacio => 'No hay nada que cobrar',
+      MotivoNoVenta.creditoRechazado =>
+        'El crédito no alcanza. Cámbialo a contado o cóbrale primero.',
+      MotivoNoVenta.sinRangoDeFolios =>
+        'Este equipo no tiene folios asignados. Sincroniza una vez.',
+      MotivoNoVenta.sinFolios =>
+        'Se acabaron los folios. Sincroniza para pedir más.',
+      MotivoNoVenta.sinExistencia =>
+        'Ya no hay esa mercancía en el camión${detalle == null ? '' : ': $detalle'}',
+    };
 
 class _Encabezado extends StatelessWidget {
   const _Encabezado({required this.cliente});
@@ -387,6 +437,7 @@ class _BarraCobro extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colores = Theme.of(context).colorScheme;
     final procede = !carrito.estaVacio && (evaluacion?.permitida ?? false);
+    final cobrando = ref.watch(cobroProvider) is CobroEnCurso;
 
     return SafeArea(
       child: Container(
@@ -418,11 +469,18 @@ class _BarraCobro extends ConsumerWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                key: const Key('boton_revisar_venta'),
-                onPressed:
-                    procede ? () => _mostrarResumen(context, ref, carrito) : null,
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('Revisar venta'),
+                key: const Key('boton_cobrar'),
+                onPressed: procede && !cobrando ? () => _cobrar(ref) : null,
+                icon: cobrando
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.point_of_sale_outlined),
+                label: Text(
+                  carrito.aCredito ? 'Registrar a crédito' : 'Cobrar de contado',
+                ),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -434,68 +492,20 @@ class _BarraCobro extends ConsumerWidget {
     );
   }
 
-  /// Lo que se va a escribir cuando exista la Parte 2.
+  /// Cobra, sellando la venta con la ubicación si el GPS responde.
   ///
-  /// El botón no dice "Cobrar" porque todavía no cobra: la venta —folio,
-  /// descuento de inventario, sobre en la cola, ticket— es la siguiente entrega.
-  /// Un botón que dijera "Cobrar" y no cobrara sería una mentira en la interfaz.
-  /// Este resumen sirve para revisar los números en el teléfono, que es lo que
-  /// hace falta ahora.
-  void _mostrarResumen(BuildContext context, WidgetRef ref, Carrito carrito) {
-    final cliente = ref.read(clienteDeLaVisitaProvider);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-        child: Column(
-          key: const Key('resumen_venta'),
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Resumen de la venta',
-                style: Theme.of(ctx).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            _Dato('Cliente', cliente?.nombreComercial ?? '—'),
-            _Dato('Forma de pago', carrito.aCredito ? 'Crédito' : 'Contado'),
-            _Dato('Renglones', carrito.cuantasLineas.toString()),
-            _Dato('Total', '\$${carrito.total.texto}'),
-            const Divider(height: 24),
-            Text(
-              'La venta todavía no se guarda. El folio, el descuento del '
-              'inventario del camión, la cola de sincronización y la remisión '
-              'impresa son la siguiente entrega.',
-              style: Theme.of(ctx).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Entendido'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// El GPS **no bloquea**: dentro de un mercado techado no hay satélite y la
+  /// venta ocurre igual. Se le da un margen corto porque el cliente está
+  /// enfrente esperando; si no llega a tiempo, la venta entra sin geosello y el
+  /// servidor la marca para revisión. Esperar doce segundos con el cliente
+  /// enfrente sería peor que la marca.
+  Future<void> _cobrar(WidgetRef ref) async {
+    final lectura = await ref
+        .read(servicioUbicacionProvider)
+        .leer(tiempoLimite: const Duration(seconds: 4));
+
+    ref.read(cobroProvider.notifier).cobrar(
+          ubicacion: lectura is GpsObtenido ? lectura.ubicacion : null,
+        );
   }
-}
-
-class _Dato extends StatelessWidget {
-  const _Dato(this.etiqueta, this.valor);
-
-  final String etiqueta;
-  final String valor;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Expanded(child: Text(etiqueta)),
-            Text(valor, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      );
 }

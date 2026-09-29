@@ -198,6 +198,42 @@ void sembrarEscenarioDeVenta(
   sembrarCarga(base, productoId: 'p-sopa', unidadesBase: existenciaSopa);
 }
 
+/// Lo que hace falta para poder COBRAR: el equipo identificado y su rango de
+/// folios.
+///
+/// Sin esto, cerrar una venta falla con 'sin_rango_de_folios' — que es el
+/// comportamiento correcto y tiene su propia prueba.
+void sembrarParaCobrar(
+  BaseLocal base, {
+  String dispositivoId = 'dispositivo-de-prueba',
+  String? cargaId = 'carga-del-dia',
+  int desde = 1,
+  int hasta = 500,
+  int consumidoHasta = 0,
+}) {
+  base.db.execute(
+    "INSERT INTO sync_estado (clave, valor) VALUES ('dispositivo_id', ?) "
+    "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+    [dispositivoId],
+  );
+  if (cargaId != null) {
+    base.db.execute(
+      "INSERT INTO sync_estado (clave, valor) VALUES ('carga_id_activa', ?) "
+      "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+      [cargaId],
+    );
+  }
+  RepoFolios(base.db).guardar(
+    RangoFolios(
+      tipo: 'venta',
+      desde: desde,
+      hasta: hasta,
+      consumidoHasta: consumidoHasta,
+    ),
+    asignadoEn: '2026-09-24T07:00:00.000Z',
+  );
+}
+
 /// Consultas cortas sobre la base de una prueba.
 class BaseLocalDePrueba {
   const BaseLocalDePrueba(this.base);

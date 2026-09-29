@@ -89,7 +89,91 @@ List<SobreLocal> construirSobres() => [
           ),
         ],
       ),
+
+      // Caso 4: LA VISITA COMPLETA — alta del cliente y su venta en el MISMO
+      // sobre. Es el escenario real del alta en la calle: el vendedor registra
+      // la tienda y le vende en ese momento, y el servidor tiene que aplicar las
+      // dos operaciones en orden dentro de una transacción. Si la venta se
+      // aplicara antes que el cliente, no habría a quién colgársela.
+      //
+      // La venta trae el precio de 4 decimales que hace que la caja de 24 valga
+      // 296.00 y no 295.92, y una segunda partida por pieza del mismo producto:
+      // dos renglones distintos que descuentan la misma existencia.
+      SobreLocal(
+        operacionId: '019283b0-0004-7000-8000-000000000004',
+        secuencia: 3,
+        visitaId: '019283c0-0004-7000-8000-000000000004',
+        operaciones: [
+          OperacionLocal(
+            tipo: 'cliente.crear',
+            entidadId: _clienteDeLaVenta,
+            datos: {
+              'nombre_comercial': 'Cremería Los Compadres',
+              'ubicacion_origen': 'gps',
+              'lat': '19.4326000',
+              'lng': '-99.1332000',
+            },
+          ),
+          OperacionLocal(
+            tipo: 'venta.crear',
+            entidadId: '019283e0-0001-7000-8000-000000000001',
+            datos: {
+              'folio_consecutivo': 124,
+              'folio_local': 'VEND01-000124',
+              'cliente_id': _clienteDeLaVenta,
+              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
+              'tipo': 'contado',
+              'lista_precios_id': _listaDePrecios,
+              'lista_precios_version': 7,
+              // 2 cajas a 296.0000 = 592.00, más 3 piezas a 12.3333 = 37.00.
+              'subtotal': '629.00',
+              'descuento': '0.00',
+              'impuestos': '0.00',
+              'total': '629.00',
+              'lat': '19.4326000',
+              'lng': '-99.1332000',
+              'ubicacion_precision_m': '8.50',
+              'fecha_dispositivo': '2026-09-29T17:42:03.250Z',
+              'fecha_operativa': '2026-09-29',
+              'partidas': [
+                {
+                  'id': '019283e1-0001-7000-8000-000000000001',
+                  'linea': 1,
+                  'producto_id': _productoDeLaVenta,
+                  'unidad_codigo': 'CAJA',
+                  'factor_unidad': '24.0000',
+                  'cantidad': '2.000',
+                  'cantidad_base': '48.000',
+                  'precio_unitario': '296.0000',
+                  'descuento': '0.00',
+                  'importe': '592.00',
+                },
+                {
+                  'id': '019283e1-0002-7000-8000-000000000002',
+                  'linea': 2,
+                  'producto_id': _productoDeLaVenta,
+                  'unidad_codigo': 'PZA',
+                  'factor_unidad': '1.0000',
+                  'cantidad': '3.000',
+                  'cantidad_base': '3.000',
+                  // 3 × 12.3333 = 36.9999 → 37.00. Medio hacia arriba, igual
+                  // que en Python y en el CHECK de PostgreSQL.
+                  'precio_unitario': '12.3333',
+                  'descuento': '0.00',
+                  'importe': '37.00',
+                },
+              ],
+            },
+          ),
+        ],
+      ),
     ];
+
+/// El cliente y el producto de la venta de ejemplo. El servidor los siembra con
+/// estos mismos ids en `test_contrato_dart.py`.
+const _clienteDeLaVenta = '019283a0-0005-7000-8000-000000000005';
+const _productoDeLaVenta = '019283a0-0006-7000-8000-000000000006';
+const _listaDePrecios = '019283a0-0007-7000-8000-000000000007';
 
 void main() {
   final sobres = construirSobres();

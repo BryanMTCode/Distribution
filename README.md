@@ -5,13 +5,17 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 3 — App del vendedor: catálogo y carrito funcionando.** Fases 0, 1 y 2 hechas. Reglas de negocio
+**Fase 3 — App del vendedor: la venta cierra offline.** Fases 0, 1 y 2 hechas. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
 | Pieza | Estado |
 |---|---|
 | Migraciones PostgreSQL + PostGIS (0001–0013) | ✅ aplican vía Alembic |
+| **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
+| Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
+| Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
+| Rangos de folio locales: ni hueco ni duplicado | ✅ con prueba de rollback |
 | Esquema SQLite del dispositivo | ✅ aplica en SQLite 3.45 |
 | Invariantes del diseño (6) | ✅ verificadas |
 | Auth + RBAC + credencial offline | ✅ con pruebas |
@@ -35,7 +39,8 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Precio rígido en tres capas** (dominio · servidor · CHECK de PostgreSQL) | ✅ [ADR 0002 §7](docs/adr/0002-reglas-de-negocio.md) |
 | Dinero de 2 decimales y **precio de 4** (caja↔pieza sin descuadre) | ✅ 5º contrato, 13 casos |
 | **Catálogo de la visita** con precio de la lista del cliente | ✅ 18 pruebas de widget |
-| **Carrito** con existencia del camión y crédito compuesto | ✅ 18 pruebas de widget + 20 de dominio |
+| **Carrito** con existencia del camión y crédito compuesto | ✅ 18 pruebas de widget + 25 de dominio |
+| Cobro y remisión (impresión **a un toque**, no automática) | ✅ 15 pruebas de widget |
 | Portal por rol (vendedor / gerencia) | ✅ con pruebas |
 | Contrato de Argon2id (7 vectores) | ✅ **verificado en los dos lenguajes** |
 | **Outbox del dispositivo** — documento y cola en una transacción | ✅ con pruebas |
@@ -47,9 +52,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
 | Sobres de Dart aceptados por el servidor real | ✅ prueba de contrato de punta a punta |
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
-| La venta (folio, descuento de inventario, sobre) e impresión Bluetooth | ⛔ resto de la Fase 3 |
+| Impresión Bluetooth ESC/POS (necesita la impresora física) | ⛔ resto de la Fase 3 |
+| Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**318 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **269 de Dart** y **90 de widget**, todas en verde.
+**339 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **303 de Dart** y **105 de widget**, todas en verde.
 
 ## Stack
 
@@ -96,16 +102,16 @@ mobile/
   db/schema.sql      esquema local del dispositivo — FUENTE DE VERDAD
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, precio de 4 decimales, carrito,
-                     crédito, credencial, folios, outbox, sobres, ubicación,
-                     alta de clientes, sincronizador, aplicador de deltas,
-                     esquema embebido
-    test/            269 pruebas que corren en segundos
+                     borrador, VENTA, crédito, credencial, folios, outbox,
+                     sobres, ubicación, alta de clientes, sincronizador,
+                     aplicador de deltas, esquema embebido
+    test/            303 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
-    lib/src/pantallas/ login, ruta, catálogo, carrito, panel de gerencia
-    test/            90 pruebas de widget, sin emulador
+    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, gerencia
+    test/            105 pruebas de widget, sin emulador
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -120,8 +126,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 318 pruebas de Python
-make movil                          # 269 de Dart + 90 de widget
+make pruebas                        # 339 pruebas de Python
+make movil                          # 303 de Dart + 105 de widget
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
 make lint

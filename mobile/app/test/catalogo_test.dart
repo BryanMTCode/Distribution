@@ -166,7 +166,12 @@ void main() {
       // La quinta caja no cabe: 5 × 24 = 120 contra 100 disponibles.
       await tocar(tester, const Key('mas_p-sopa|CAJA'));
 
-      expect(textoQueContiene('Solo quedan 4'), findsOneWidget);
+      // "4 cajas y 4 piezas", no "4.166 cajas". Decisión de campo: el decimal
+      // obliga al vendedor a traducirlo de cabeza y media caja no existe.
+      expect(
+        textoQueContiene('Solo quedan 4 cajas y 4 piezas en el camión'),
+        findsOneWidget,
+      );
       // Y el pedido se quedó en 4: un rechazo no deja rastro.
       expect(
         textoDe(tester, const Key('cantidad_p-sopa|CAJA')),
