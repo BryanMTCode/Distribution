@@ -64,6 +64,99 @@ Map<String, Object?> credencialDemo({required DateTime ahora}) => {
       'valida_hasta': ahora.add(const Duration(days: 30)).toUtc().toIso8601String(),
     };
 
+/// Un producto de demostración, con su precio de pieza y de caja.
+class _ProductoDemo {
+  const _ProductoDemo(
+    this.id,
+    this.sku,
+    this.nombre, {
+    required this.precioPieza,
+    this.precioCaja,
+    this.piezasPorCaja = 24,
+    this.existencia = 0,
+    this.vaEnLaCarga = true,
+  });
+
+  final String id;
+  final String sku;
+  final String nombre;
+
+  /// Con 4 decimales, como llega del servidor.
+  final double precioPieza;
+  final double? precioCaja;
+  final int piezasPorCaja;
+
+  /// Unidades base arriba del camión.
+  final double existencia;
+
+  /// `false` = el producto existe en el catálogo pero no subió al camión hoy.
+  /// Es un estado DISTINTO de "agotado" y se ve distinto en pantalla: agotado es
+  /// "se vendió todo", no va en la carga es "la bodega no lo subió".
+  final bool vaEnLaCarga;
+}
+
+/// El catálogo de demostración. Cada producto está por un caso concreto.
+const _productosDemo = [
+  _ProductoDemo(
+    'demo-p-sopa',
+    'SOPA-70G',
+    'Sopa de fideo 70 g',
+    // 296.00 / 24 = 12.3333. EL caso que justifica los 4 decimales: 24 piezas
+    // dan 296.00 exactos, no 295.92.
+    precioPieza: 12.3333,
+    precioCaja: 296,
+    existencia: 240,
+  ),
+  _ProductoDemo(
+    'demo-p-frijol',
+    'FRIJOL-1K',
+    'Frijol bayo 1 kg',
+    precioPieza: 32.5,
+    precioCaja: 620,
+    piezasPorCaja: 20,
+    existencia: 60,
+  ),
+  _ProductoDemo(
+    'demo-p-aceite',
+    'ACEITE-900',
+    'Aceite vegetal 900 ml',
+    precioPieza: 38.9,
+    precioCaja: 445.5,
+    piezasPorCaja: 12,
+    // Poca existencia: con 3 cajas se agota, y ahí se ve el aviso de
+    // "solo quedan N" con la unidad correcta.
+    existencia: 30,
+  ),
+  _ProductoDemo(
+    'demo-p-azucar',
+    'AZUCAR-1K',
+    'Azúcar estándar 1 kg',
+    precioPieza: 27.25,
+    existencia: 4,
+  ),
+  _ProductoDemo(
+    'demo-p-atun',
+    'ATUN-140',
+    'Atún en agua 140 g',
+    precioPieza: 19.5,
+    precioCaja: 455,
+    // Subió al camión pero ya se vendió todo: se ve AGOTADO. Aparece en la
+    // lista a propósito — el vendedor necesita saber que existe para pedirlo
+    // mañana.
+    existencia: 0,
+  ),
+  _ProductoDemo(
+    'demo-p-jabon',
+    'JABON-150',
+    'Jabón de tocador 150 g',
+    precioPieza: 16.75,
+    precioCaja: 390,
+    // La bodega no lo subió hoy. Estado distinto de "agotado", y se lee
+    // distinto en pantalla.
+    vaEnLaCarga: false,
+  ),
+];
+
 /// Un cliente de demostración.
 class _ClienteDemo {
   const _ClienteDemo(
@@ -170,15 +263,18 @@ void sembrarDemo(
   final base = referencia ??
       Ubicacion(lat: 19.4326, lng: -99.1332, origen: OrigenUbicacion.gps);
 
+  _sembrarCatalogo(db);
+
   for (final c in _clientesDemo) {
     final punto = base.desplazada(norte: c.metrosAlNorte, este: c.metrosAlEste);
     db.execute(
       '''
       INSERT INTO clientes (id, codigo, nombre_comercial, direccion, secuencia,
-                            lat, lng, ubicacion_origen, permite_credito,
+                            lat, lng, ubicacion_origen, lista_precios_id,
+                            permite_credito,
                             limite_credito, saldo_cache, saldo_cache_en,
                             bloqueado, es_local, sincronizado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'gps', ?, ?, ?, ?, ?, 0, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'gps', 'demo-lista-general', ?, ?, ?, ?, ?, 0, 1)
       ON CONFLICT(id) DO UPDATE SET
         lat = excluded.lat,
         lng = excluded.lng,
@@ -220,6 +316,86 @@ void sembrarDemo(
           ahora.substring(0, 10),
           ahora,
         ],
+      );
+    }
+  }
+}
+
+/// El catálogo y la carga del camión.
+///
+/// Sin esto el catálogo se vería vacío y el carrito no tendría contra qué
+/// descontar, así que no habría nada que evaluar en la pantalla. Todo es
+/// idempotente: pulsar el botón dos veces no duplica ni infla la carga.
+void _sembrarCatalogo(Database db) {
+  db.execute(
+    '''
+    INSERT INTO listas_precios (id, codigo, nombre, es_default, activo)
+    VALUES ('demo-lista-general', 'GENERAL', 'General (demo)', 1, 1)
+    ON CONFLICT(id) DO NOTHING
+    ''',
+  );
+
+  for (final p in _productosDemo) {
+    db.execute(
+      '''
+      INSERT INTO productos (id, sku, nombre, unidad_base, tasa_iva, activo)
+      VALUES (?, ?, ?, 'PZA', 0, 1)
+      ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre
+      ''',
+      [p.id, p.sku, p.nombre],
+    );
+
+    // La pieza: unidad base, factor 1, y la presentación por omisión.
+    db.execute(
+      '''
+      INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, es_default)
+      VALUES (?, 'PZA', 1, 1)
+      ON CONFLICT(producto_id, unidad_codigo) DO NOTHING
+      ''',
+      [p.id],
+    );
+    db.execute(
+      '''
+      INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio, version)
+      VALUES ('demo-lista-general', ?, 'PZA', ?, 7)
+      ON CONFLICT(lista_id, producto_id, unidad_codigo)
+        DO UPDATE SET precio = excluded.precio
+      ''',
+      [p.id, p.precioPieza],
+    );
+
+    if (p.precioCaja != null) {
+      db.execute(
+        '''
+        INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, es_default)
+        VALUES (?, 'CAJA', ?, 0)
+        ON CONFLICT(producto_id, unidad_codigo) DO UPDATE SET factor = excluded.factor
+        ''',
+        [p.id, p.piezasPorCaja],
+      );
+      db.execute(
+        '''
+        INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio, version)
+        VALUES ('demo-lista-general', ?, 'CAJA', ?, 7)
+        ON CONFLICT(lista_id, producto_id, unidad_codigo)
+          DO UPDATE SET precio = excluded.precio
+        ''',
+        [p.id, p.precioCaja],
+      );
+    }
+
+    // Sin fila en `existencias_camion` el producto NO VA EN LA CARGA, que es
+    // distinto de estar agotado: una fila con cero es "se vendió todo".
+    if (p.vaEnLaCarga) {
+      db.execute(
+        '''
+        INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual, carga_id)
+        VALUES (?, ?, ?, 'demo-carga-del-dia')
+        ON CONFLICT(producto_id) DO UPDATE SET
+          cant_cargada = excluded.cant_cargada,
+          cant_actual = excluded.cant_actual
+        ''',
+        [p.id, p.existencia, p.existencia],
       );
     }
   }

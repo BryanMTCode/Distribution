@@ -128,3 +128,69 @@ liquidación sin dar beneficio en la calle.
   movimientos de inventario ya registrados, cuesta una migración delicada.
 - Si algún día entra una línea con caducidad corta —lácteos, pan—, se enciende por producto sin tocar
   el modelo.
+
+---
+
+## 7. Precio rígido: el vendedor NO otorga descuentos en la calle
+
+- **Fecha:** 2026-09-29
+- **Decidido por:** el dueño de la distribuidora
+- **Carácter:** regla inmutable de negocio
+
+El precio unitario es **estrictamente** el de la lista de precios asignada a ese cliente. **No hay
+descuentos, no hay campos editables de precio, y no hay flujo de autorización.** Todo cálculo de
+importe es rígido.
+
+### Cuál columna es "el precio"
+
+El esquema tiene dos: `precios.precio` (precio de venta) y `precios.precio_minimo` (piso, nullable).
+Con cero descuentos los dos conceptos **colapsan en un solo número**, y ese número es **`precios.precio`**
+— es el que existe siempre, el que el servidor emite en el delta y el que se imprime.
+
+`precio_minimo` queda **obsoleto para esta operación**. La columna se conserva porque el servidor la
+emite y quitarla no aporta nada; el dispositivo la ignora.
+
+### Cómo se implementa: estructuralmente, en tres capas
+
+Una regla de este peso no se implementa con una validación. Una validación se puede saltar con un `if`
+mal puesto seis meses después, por alguien que no leyó este documento. Se implementa quitando la
+posibilidad:
+
+1. **El teléfono no tiene dónde escribir un precio.** `Carrito.agregar()` recibe una
+   `PresentacionVendible` —que trae su precio ya resuelto del catálogo— y una cantidad. **El parámetro
+   de precio no existe**, ni el de descuento. La pantalla del pedido no tiene un solo `TextField`, y
+   hay una prueba de widget que lo verifica.
+2. **El servidor recalcula al recibir** (`app/domain/importes.py`).
+3. **PostgreSQL lo verifica al escribir** (migración 0012,
+   `CHECK (importe = ROUND(cantidad * precio_unitario, 2) - descuento)`).
+
+Los tres cálculos deben dar **el mismo centavo**. Si no, una venta legítima cae en revisión por un
+redondeo, y una bandera de revisión que se enciende sola se acaba ignorando — que es peor que no
+tenerla. El árbitro es `contracts/importes_de_ejemplo.json`, el quinto contrato ejecutable.
+
+### Consecuencia técnica: el precio necesita 4 decimales
+
+**No es un detalle de implementación, es una consecuencia directa de esta regla.** El precio por pieza
+sale de dividir el de la caja:
+
+| | Precio unitario | 24 piezas |
+|---|---|---|
+| Con 2 decimales | $12.33 | **$295.92** ❌ |
+| Con 4 decimales | $12.3333 | **$296.00** ✅ |
+
+Una caja de 24 a $296.00 da $12.3333 por pieza. Con el precio guardado en centavos, la caja completa
+valdría $295.92 y el cliente lo reclamaría con la lista en la mano — y el vendedor **no podría
+corregirlo**, porque no puede alterar precios. La rigidez obliga a que el número sea exacto de origen.
+
+De ahí el tipo `Precio` (diezmilésimos) separado de `Dinero` (centavos), con la misma escala que
+`numeric(14,4)` del servidor, y **un solo redondeo, al final**, en el importe de la línea.
+
+### Lo que esta regla NO prohíbe
+
+`venta_partidas.descuento` se conserva y el CHECK lo admite en la fórmula. La regla sellada es **"el
+vendedor no decide el precio"**, no "el descuento no existe": el día que la **oficina** active una
+promoción (`promociones` ya está modelada: `nxm`, `regalo`, `descuento_pct`), el descuento lo pondrá
+ella, la aritmética tiene que seguir cuadrando, y un CHECK que exigiera `descuento = 0` rechazaría
+ventas legítimas — violando §0.1.
+
+La diferencia es quién decide: la oficina sí, el vendedor nunca.

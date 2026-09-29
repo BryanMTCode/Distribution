@@ -113,6 +113,15 @@ async def _sembrar(sesion, semilla) -> None:
         """),
         {"v": VENTA, "c": CLIENTE},
     )
+
+    # La lista de precios por omisión la siembra la migración 0009, ANTES de que
+    # existieran los triggers de change_log: no tiene renglón propio. La 0013 lo
+    # siembra, y aquí se aplica para que el fixture traiga el delta de verdad —el
+    # aplicador de Dart tiene que digerir ese payload, y escribirlo a mano sería
+    # adivinar qué emite to_jsonb.
+    from db.sql import leer_sql
+
+    await sesion.execute(text(leer_sql("0013_sembrar_change_log_referencia.sql")))
     await sesion.commit()
 
 

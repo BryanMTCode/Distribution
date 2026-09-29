@@ -225,7 +225,29 @@ Eso es a propósito: con dos vecinos dentro del radio de 60 m, el **aviso de pos
 dispara de verdad en el lugar donde estés parado. Es lo único que un emulador no puede evaluar. Si
 el GPS no da lectura, usa coordenadas fijas y no falla.
 
-Puedes pulsar el botón varias veces: la siembra es idempotente, no duplica nada.
+También siembra el **catálogo y la carga del camión**, que es lo que hace evaluable el carrito:
+
+| Producto | Para ver |
+|---|---|
+| Sopa de fideo 70 g | caja de 24 a $296.00 y pieza a **$12.3333** — el precio de 4 decimales |
+| Frijol bayo 1 kg, Aceite 900 ml | dos presentaciones con factores distintos (20 y 12) |
+| Aceite 900 ml | poca existencia (30 pza): con 3 cajas se agota y sale el aviso de *"solo quedan N"* |
+| Azúcar 1 kg | solo pieza, 4 en el camión |
+| Atún 140 g | **Agotado** (subió al camión y se vendió todo) |
+| Jabón 150 g | **No va en la carga** (la bodega no lo subió) — estado distinto de agotado |
+
+Lo que vale la pena comprobar con el pulgar:
+
+1. Toca un cliente → abre **su** catálogo, con **sus** precios.
+2. Agrega una caja de sopa: el total debe decir **$296.00**, y la existencia bajar de 240 a 216.
+3. Agrega 24 piezas en vez de la caja: el total debe ser **$296.00 otra vez**, no $295.92.
+4. Intenta 3 cajas de aceite (solo hay 30 pza y la caja es de 12): debe decir **"Solo quedan 2.500"** —
+   en cajas, no en piezas. Ese `.500` es información útil: puede llevarse 2 cajas y 6 piezas.
+5. En el pedido, cambia a **Crédito** con *La Esquina de Ñoño*: debe decir cuánto le queda de línea, ya
+   descontada la venta encolada de $1500.
+
+Puedes pulsar el botón varias veces: la siembra es idempotente, no duplica nada **ni infla la carga del
+camión**.
 
 ### Por qué esto no puede llegar al teléfono de un vendedor
 

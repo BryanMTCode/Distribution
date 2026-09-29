@@ -182,3 +182,85 @@ async def test_el_cursor_del_dispositivo_solo_avanza(cliente, semilla, sesion):
 
     estado = (await cliente.get("/v1/sync/estado", headers=cab)).json()
     assert estado["ultimo_cursor_pull"] == alto
+
+
+async def test_la_migracion_cubre_todo_lo_que_el_dispositivo_espeja(sesion):
+    """Una fila de referencia sin renglón en `change_log` es invisible para los
+    teléfonos, y el síntoma aparece en la calle, no aquí.
+
+    Pasó de verdad: la migración 0009 siembra la lista de precios GENERAL y los
+    triggers que alimentan `change_log` se crearon en la 0010, **después**. Un
+    dispositivo que sincroniza desde el cursor 0 nunca la recibía, así que el
+    vendedor no le podía cotizar al cliente que acababa de dar de alta en la
+    calle: ese cliente nace sin lista y cae a la de omisión, que el teléfono no
+    tenía. La migración 0013 la siembra.
+
+    Se prueba el MECANISMO y no el estado actual de la tabla, por una razón
+    concreta: `change_log.ruta_id` referencia a `rutas`, así que el
+    `TRUNCATE ... CASCADE` que limpia entre pruebas se lleva también el
+    `change_log` —incluido el renglón que sembró la migración—. Verificar "hay un
+    renglón" sería verificar el truncate. Lo que sí se puede verificar, y es lo
+    que importa, es que **al aplicar la migración no quede nada fuera**.
+    """
+    await sesion.execute(text(leer_sql_0013()))
+
+    faltantes = (
+        await sesion.execute(
+            text(
+                """
+                SELECT 'lista_precios' AS entidad, l.id::text AS id
+                  FROM listas_precios l
+                 WHERE NOT EXISTS (SELECT 1 FROM change_log c
+                                    WHERE c.entidad = 'lista_precios'
+                                      AND c.entidad_id = l.id)
+                UNION ALL
+                SELECT 'producto', p.id::text
+                  FROM productos p
+                 WHERE NOT EXISTS (SELECT 1 FROM change_log c
+                                    WHERE c.entidad = 'producto'
+                                      AND c.entidad_id = p.id)
+                UNION ALL
+                SELECT 'cliente', cl.id::text
+                  FROM clientes cl
+                 WHERE NOT EXISTS (SELECT 1 FROM change_log c
+                                    WHERE c.entidad = 'cliente'
+                                      AND c.entidad_id = cl.id)
+                """
+            )
+        )
+    ).all()
+
+    assert faltantes == [], (
+        "Estas filas existen en el servidor pero ningún teléfono las va a "
+        f"recibir: {faltantes}. Si vienen de una semilla nueva, agrégalas a "
+        "change_log como hace la migración 0013."
+    )
+
+
+async def test_el_dispositivo_recibe_la_lista_de_precios_por_omision(
+    cliente, semilla, sesion
+):
+    """El delta que el teléfono necesita para cotizarle a un cliente nuevo.
+
+    Sin este delta, `listas_precios` en el dispositivo queda vacía y el catálogo
+    no tiene precio de respaldo. Es la mitad de cliente de la migración 0013.
+    """
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    await sesion.execute(text(leer_sql_0013()))
+    await sesion.commit()
+
+    delta = (await cliente.get("/v1/sync/pull?cursor=0", headers=cab)).json()
+    listas = [c for c in delta["cambios"] if c["entidad"] == "lista_precios"]
+
+    assert listas, "el dispositivo no recibió ninguna lista de precios"
+    porOmision = [c for c in listas if c["payload"]["es_default"]]
+    assert porOmision, "ninguna de las listas recibidas es la de omisión"
+    # El payload sale de to_jsonb: el booleano viaja como true, no como 't'.
+    assert porOmision[0]["payload"]["es_default"] is True
+    assert porOmision[0]["payload"]["codigo"]
+
+
+def leer_sql_0013() -> str:
+    from db.sql import leer_sql
+
+    return leer_sql("0013_sembrar_change_log_referencia.sql")

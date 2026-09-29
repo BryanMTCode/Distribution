@@ -10,9 +10,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_clientes.dart';
 import '../../demo.dart';
+import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import 'alta_cliente.dart';
+import 'catalogo.dart';
 
 class PantallaClientes extends ConsumerWidget {
   const PantallaClientes({super.key});
@@ -120,7 +122,23 @@ class PantallaClientes extends ConsumerWidget {
                     key: const Key('lista_clientes'),
                     itemCount: clientes.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) => _Renglon(cliente: clientes[i]),
+                    itemBuilder: (_, i) => _Renglon(
+                      cliente: clientes[i],
+                      // Tocar un cliente ABRE SU VISITA: fija de quién es el
+                      // carrito y entra al catálogo con SUS precios. El catálogo
+                      // no existe "en general" — el precio depende de su lista y
+                      // el crédito de su saldo.
+                      alTocar: () {
+                        ref.read(clienteEnVisitaProvider.notifier).state =
+                            clientes[i].id;
+                        ref.read(busquedaCatalogoProvider.notifier).state = '';
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const PantallaCatalogo(),
+                          ),
+                        );
+                      },
+                    ),
                   ),
           ),
         ],
@@ -193,9 +211,10 @@ class _BarraPendientes extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _Renglon extends StatelessWidget {
-  const _Renglon({required this.cliente});
+  const _Renglon({required this.cliente, required this.alTocar});
 
   final ClienteEnRuta cliente;
+  final VoidCallback alTocar;
 
   @override
   Widget build(BuildContext context) {
@@ -224,7 +243,7 @@ class _Renglon extends StatelessWidget {
       ),
       subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
       trailing: _Credito(cliente: cliente),
-      onTap: () {},
+      onTap: alTocar,
     );
   }
 }

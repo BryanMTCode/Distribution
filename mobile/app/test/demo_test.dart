@@ -145,6 +145,90 @@ void main() {
       );
     });
 
+    test('siembran catálogo y carga, o no habría nada que evaluar', () {
+      final base = BaseLocal.enMemoria();
+      addTearDown(base.cerrar);
+      sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
+
+      // Lista por omisión, para poder cotizarle a un cliente sin tarifa.
+      expect(
+        base.db.select('SELECT id FROM listas_precios WHERE es_default = 1'),
+        hasLength(1),
+      );
+
+      // Cada producto con precio de pieza; los que van por caja, con los dos.
+      final precios = base.db.select(
+        'SELECT producto_id, unidad_codigo, precio FROM precios',
+      );
+      expect(precios.where((p) => p['unidad_codigo'] == 'PZA'), hasLength(6));
+      expect(precios.where((p) => p['unidad_codigo'] == 'CAJA'), isNotEmpty);
+
+      // El precio de 4 decimales sobrevive el viaje por REAL: 296.00/24.
+      final sopa = base.db.select(
+        "SELECT precio FROM precios WHERE producto_id = 'demo-p-sopa' "
+        "AND unidad_codigo = 'PZA'",
+      ).single;
+      expect(
+        Precio.deBase((sopa['precio'] as num).toDouble()).texto,
+        equals('12.3333'),
+      );
+    });
+
+    test('distinguen "agotado" de "no va en la carga"', () {
+      // Son dos estados distintos y la pantalla los lee distinto: agotado es
+      // "se vendió todo", no va en la carga es "la bodega no lo subió".
+      final base = BaseLocal.enMemoria();
+      addTearDown(base.cerrar);
+      sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
+
+      final agotado = base.db.select(
+        "SELECT cant_actual FROM existencias_camion WHERE producto_id = 'demo-p-atun'",
+      );
+      expect(agotado, hasLength(1), reason: 'el atún subió al camión');
+      expect((agotado.single['cant_actual'] as num).toDouble(), equals(0));
+
+      final sinCarga = base.db.select(
+        "SELECT 1 FROM existencias_camion WHERE producto_id = 'demo-p-jabon'",
+      );
+      expect(sinCarga, isEmpty, reason: 'el jabón no subió al camión');
+    });
+
+    test('sembrar dos veces no infla la carga del camión', () {
+      // Si la siembra sumara en vez de fijar, pulsar el botón tres veces daría
+      // un camión con el triple de mercancía y el control de existencias
+      // dejaría de significar algo.
+      final base = BaseLocal.enMemoria();
+      addTearDown(base.cerrar);
+
+      sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
+      sembrarDemo(base.db, ahora: '2026-09-28T10:05:00.000Z');
+      sembrarDemo(base.db, ahora: '2026-09-28T10:10:00.000Z');
+
+      final sopa = base.db.select(
+        "SELECT cant_actual FROM existencias_camion WHERE producto_id = 'demo-p-sopa'",
+      ).single;
+      expect((sopa['cant_actual'] as num).toDouble(), equals(240));
+      expect(
+        base.db.select('SELECT COUNT(*) AS n FROM productos').single['n'],
+        equals(6),
+      );
+      expect(
+        base.db.select('SELECT COUNT(*) AS n FROM precios').single['n'],
+        equals(11),
+      );
+    });
+
+    test('los clientes de demo traen lista, para poder cotizarles', () {
+      final base = BaseLocal.enMemoria();
+      addTearDown(base.cerrar);
+      sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
+
+      final sinLista = base.db.select(
+        'SELECT id FROM clientes WHERE lista_precios_id IS NULL',
+      );
+      expect(sinLista, isEmpty);
+    });
+
     test('los vecinos quedan alrededor del punto de referencia', () {
       // Es lo que permite probar el aviso de posible duplicado en el lugar
       // donde estás: el emulador no sirve para eso.

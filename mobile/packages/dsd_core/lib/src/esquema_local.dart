@@ -62,11 +62,35 @@ CREATE TABLE producto_unidades (
     PRIMARY KEY (producto_id, unidad_codigo)
 );
 
+-- Listas de precios. El dispositivo las necesita por UN caso concreto: el
+-- vendedor da de alta una tienda en la calle y quiere venderle EN ESE MOMENTO.
+-- Ese cliente nace sin lista asignada —la asigna el servidor al confirmarlo—, y
+-- sin una lista por omisión no habría con qué cotizarle. Negarle la venta al
+-- cliente que se acaba de registrar es justo lo contrario de para qué existe el
+-- alta en la calle.
+CREATE TABLE listas_precios (
+    id              TEXT PRIMARY KEY,
+    codigo          TEXT NOT NULL,
+    nombre          TEXT NOT NULL,
+    es_default      INTEGER NOT NULL DEFAULT 0,
+    activo          INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX ix_listas_default ON listas_precios(es_default) WHERE es_default = 1;
+
 CREATE TABLE precios (
+    -- SIN llave foránea a listas_precios a propósito. Los deltas se aplican en
+    -- una sola transacción todo-o-nada; si un precio llegara antes que su lista
+    -- —el servidor los emite por orden de cursor, no por dependencia—, la
+    -- transacción abortaría y el dispositivo NO VOLVERÍA A SINCRONIZAR NUNCA.
+    -- La integridad referencial la sostiene el servidor, que es el dueño del
+    -- catálogo; aquí solo hay un espejo.
     lista_id        TEXT NOT NULL,
     producto_id     TEXT NOT NULL,
     unidad_codigo   TEXT NOT NULL,
     precio          REAL NOT NULL,
+    -- Sin uso: la regla de cero descuentos (ADR 0002 §7) colapsa el piso y el
+    -- precio de venta en un solo número, y ese número es `precio`. Se conserva
+    -- la columna porque el servidor la emite en el delta.
     precio_minimo   REAL,
     -- Se copia en cada venta. Permite al servidor saber con qué versión de la
     -- lista se vendió sin comparar importes.

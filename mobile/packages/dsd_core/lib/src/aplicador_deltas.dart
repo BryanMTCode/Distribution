@@ -65,9 +65,10 @@ class AplicadorDeltas {
         'precio' => _precio(delta),
         'cliente' => _cliente(delta),
         'cartera' => _cartera(delta, recibidoEn),
-        // El dispositivo no lleva listas de precios ni promociones todavía: el
-        // cliente trae su lista_precios_id y con eso resuelve el precio.
-        'lista_precios' || 'promocion' || 'carga' => true,
+        'lista_precios' => _listaPrecios(delta),
+        // Promociones y cargas todavía no se aplican: se aceptan para no
+        // llenar `deltas_desconocidos` con algo que sí sabemos que viene.
+        'promocion' || 'carga' => true,
         _ => false,
       };
 
@@ -171,6 +172,44 @@ class AplicadorDeltas {
         _aNumero(p['precio']),
         _aNumero(p['precio_minimo']),
         p['version'] ?? 1,
+      ],
+    );
+    return true;
+  }
+
+  /// Las listas de precios.
+  ///
+  /// El dispositivo las guarda por un caso muy concreto: el vendedor da de alta
+  /// una tienda en la calle y le quiere vender **en ese momento**. Ese cliente
+  /// nace sin lista —la asigna el servidor al confirmarlo—, así que se le cotiza
+  /// con la lista por omisión. Sin esta tabla no habría con qué.
+  bool _listaPrecios(Delta delta) {
+    if (delta.operacion == 'delete') {
+      // No se borra: los precios ya sincronizados siguen apuntando a ella, y un
+      // cliente todavía puede traerla asignada. Se marca inactiva.
+      _db.execute(
+        'UPDATE listas_precios SET activo = 0 WHERE id = ?',
+        [delta.entidadId],
+      );
+      return true;
+    }
+    final l = delta.payload!;
+    _db.execute(
+      '''
+      INSERT INTO listas_precios (id, codigo, nombre, es_default, activo)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        codigo = excluded.codigo,
+        nombre = excluded.nombre,
+        es_default = excluded.es_default,
+        activo = excluded.activo
+      ''',
+      [
+        delta.entidadId,
+        l['codigo'],
+        l['nombre'],
+        (l['es_default'] == true) ? 1 : 0,
+        (l['activo'] == false) ? 0 : 1,
       ],
     );
     return true;

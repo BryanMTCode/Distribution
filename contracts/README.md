@@ -11,6 +11,7 @@ tiene vectores de prueba que **ambas suites ejecutan en CI**.
 | `openapi.json` | Contrato HTTP (generado; de aquí sale el cliente Dart) |
 | `sobres_de_ejemplo.json` | Sobres armados por Dart, que el servidor debe aceptar |
 | `deltas_de_ejemplo.json` | Deltas emitidos por el servidor, que Dart debe aplicar |
+| `importes_de_ejemplo.json` | La aritmética de una partida: **tres** implementaciones al centavo |
 
 Regenerar: `python3 contracts/generar_vectores.py`
 
@@ -30,6 +31,8 @@ manipulación. Para que esa alarma sirva, el hash tiene que ser reproducible en 
 3. **Arreglos**: el orden **sí** es significativo. Sin espacios: `[1,2,3]`.
 4. **Flotantes: prohibidos.** Un `float`/`double` en el payload es un error, no una advertencia.
    - **Dinero** → string con **exactamente 2 decimales**: `"250.00"`, `"-125.50"`, `"0.00"`.
+   - **Precio unitario** → string con **exactamente 4 decimales**: `"12.3333"`, `"296.0000"`.
+     Escala distinta al dinero **a propósito**: ver §5.
    - **Cantidad** → string con **exactamente 3 decimales**: `"12.000"`, `"1.375"`.
    - Sin separador de miles, sin `+`, sin notación exponencial.
    - Los **enteros** (folios, versiones, líneas) sí van sin comillas: `123`, `-47`, `0`.
@@ -120,3 +123,52 @@ paso de CI `contracts/exportar_openapi.py` produce una versión degradada a 3.0.
 el generador del cliente Dart.
 
 Descubrir esto en la Fase 3, con 40 endpoints, significa escribir los modelos a mano.
+
+
+---
+
+## 5. La aritmética de una partida
+
+`importes_de_ejemplo.json` es el único contrato que involucra **tres** implementaciones, no dos:
+
+| Dónde | Cómo | Archivo |
+|---|---|---|
+| Teléfono | enteros (diezmilésimos × milésimos) | `dsd_core/lib/src/precio.dart` |
+| Servidor | `Decimal` | `server/app/domain/importes.py` |
+| PostgreSQL | `numeric`, en un CHECK | migración `0012_importes_rigidos.sql` |
+
+### La regla
+
+```
+importe = ROUND_HALF_UP(cantidad × precio_unitario, 2)
+```
+
+**Un solo redondeo, al final.** Y **medio hacia arriba**, explícito.
+
+### Por qué el precio lleva 4 decimales y el dinero 2
+
+Porque el precio por pieza sale de dividir el de la caja:
+
+| | Precio unitario | La caja de 24 |
+|---|---|---|
+| Precio en centavos | $12.33 | **$295.92** ❌ |
+| Precio en diezmilésimos | $12.3333 | **$296.00** ✅ |
+
+Cuatro centavos por caja que el cliente reclama con la lista en la mano — y que el vendedor **no
+puede corregir**, porque no otorga descuentos ([ADR 0002 §7](../docs/adr/0002-reglas-de-negocio.md)).
+La rigidez del precio obliga a que el número sea exacto de origen.
+
+### Las dos trampas que este contrato vigila
+
+1. **El modo de redondeo por omisión de Python es medio-al-PAR** (`ROUND_HALF_EVEN`). `0.125` daría
+   `0.12` en Python y `0.13` en PostgreSQL y en Dart. Por eso `importes.py` pasa `ROUND_HALF_UP`
+   explícito, y hay dos casos en el fixture que lo ejercen.
+2. **Redondear el precio antes de multiplicar.** Es el error que produce el $295.92 de arriba. El caso
+   `precio_derivado_de_caja` existe exactamente para eso.
+
+### Consecuencia de que las tres discrepen
+
+Una venta legítima cae en `requiere_revision` por un centavo. Y en cuanto la bandera de revisión se
+enciende sola dos o tres veces, se ignora — que es peor que no tenerla.
+
+Regenerar: `python3 contracts/generar_importes.py`

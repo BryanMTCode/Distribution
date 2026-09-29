@@ -74,6 +74,130 @@ void sembrarCliente(
   );
 }
 
+/// Siembra una lista de precios, como la dejaría un pull.
+void sembrarListaPrecios(
+  BaseLocal base, {
+  String id = 'lista-general',
+  String codigo = 'GENERAL',
+  String nombre = 'General',
+  bool esDefault = true,
+}) {
+  base.db.execute(
+    'INSERT INTO listas_precios (id, codigo, nombre, es_default, activo) '
+    'VALUES (?, ?, ?, ?, 1)',
+    [id, codigo, nombre, esDefault ? 1 : 0],
+  );
+}
+
+/// Siembra un producto con sus presentaciones y precios.
+///
+/// `precioCaja` en null = el producto solo se vende por pieza. Las dos
+/// presentaciones existen porque el caso interesante es justamente que compitan
+/// por la misma existencia del camión.
+void sembrarProducto(
+  BaseLocal base, {
+  required String id,
+  required String nombre,
+  String? sku,
+  String listaId = 'lista-general',
+  double precioPieza = 13.5,
+  double? precioCaja,
+  int piezasPorCaja = 24,
+  double tasaIva = 0,
+  String? codigoBarras,
+}) {
+  base.db.execute(
+    'INSERT INTO productos (id, sku, codigo_barras, nombre, unidad_base, '
+    'tasa_iva, activo) VALUES (?, ?, ?, ?, ?, ?, 1)',
+    [id, sku ?? id.toUpperCase(), codigoBarras, nombre, 'PZA', tasaIva],
+  );
+  base.db.execute(
+    'INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, '
+    'es_default) VALUES (?, ?, 1, 1)',
+    [id, 'PZA'],
+  );
+  base.db.execute(
+    'INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio, version) '
+    'VALUES (?, ?, ?, ?, 7)',
+    [listaId, id, 'PZA', precioPieza],
+  );
+
+  if (precioCaja != null) {
+    base.db.execute(
+      'INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, '
+      'es_default) VALUES (?, ?, ?, 0)',
+      [id, 'CAJA', piezasPorCaja],
+    );
+    base.db.execute(
+      'INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio, '
+      'version) VALUES (?, ?, ?, ?, 7)',
+      [listaId, id, 'CAJA', precioCaja],
+    );
+  }
+}
+
+/// Pone existencia del producto arriba del camión.
+///
+/// Sin fila en esta tabla el producto **no va en la carga** y no se puede
+/// vender: eso es a propósito, y hay prueba de ello.
+void sembrarCarga(
+  BaseLocal base, {
+  required String productoId,
+  required double unidadesBase,
+  String cargaId = 'carga-del-dia',
+}) {
+  base.db.execute(
+    'INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual, '
+    'carga_id) VALUES (?, ?, ?, ?)',
+    [productoId, unidadesBase, unidadesBase, cargaId],
+  );
+}
+
+/// Un cliente con catálogo listo para venderle: lista, un producto en dos
+/// presentaciones y carga en el camión.
+///
+/// Es el escenario de la mayoría de las pruebas de catálogo y carrito.
+void sembrarEscenarioDeVenta(
+  BaseLocal base, {
+  String clienteId = 'cliente-1',
+  String nombreCliente = 'Abarrotes Doña Mary',
+  bool permiteCredito = true,
+  double limite = 5000,
+  double saldoCache = 0,
+  bool bloqueado = false,
+  double existenciaSopa = 240,
+  bool conListaEnCliente = true,
+}) {
+  sembrarListaPrecios(base);
+  sembrarCliente(
+    base,
+    id: clienteId,
+    nombre: nombreCliente,
+    secuencia: 1,
+    codigo: 'C-001',
+    permiteCredito: permiteCredito,
+    limite: limite,
+    saldoCache: saldoCache,
+    bloqueado: bloqueado,
+  );
+  if (conListaEnCliente) {
+    base.db.execute(
+      'UPDATE clientes SET lista_precios_id = ? WHERE id = ?',
+      ['lista-general', clienteId],
+    );
+  }
+  sembrarProducto(
+    base,
+    id: 'p-sopa',
+    nombre: 'Sopa de fideo 70 g',
+    sku: 'SOPA-70G',
+    // 296.00 / 24 = 12.3333 por pieza: el caso que justifica los 4 decimales.
+    precioPieza: 12.3333,
+    precioCaja: 296,
+  );
+  sembrarCarga(base, productoId: 'p-sopa', unidadesBase: existenciaSopa);
+}
+
 /// Consultas cortas sobre la base de una prueba.
 class BaseLocalDePrueba {
   const BaseLocalDePrueba(this.base);
@@ -245,3 +369,11 @@ Future<void> tocar(WidgetTester tester, Key clave) async {
 Finder textoQueContiene(String fragmento) => find.byWidgetPredicate(
       (w) => w is Text && (w.data ?? '').contains(fragmento),
     );
+
+/// Lee el texto de un `Text` que trae la llave puesta **en él mismo**.
+///
+/// `find.descendant(of: find.byKey(k), matching: find.text(...))` no sirve para
+/// estos casos: el widget con la llave ES el `Text`, no un ancestro suyo, y la
+/// búsqueda devuelve cero sin que quede claro por qué.
+String textoDe(WidgetTester tester, Key clave) =>
+    (tester.widget(find.byKey(clave)) as Text).data ?? '';

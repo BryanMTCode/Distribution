@@ -46,7 +46,25 @@ void main() {
   test('el fixture trae las entidades que el dispositivo necesita', () {
     final entidades = _deltas.map((d) => d.entidad).toSet();
     expect(entidades, containsAll(['producto', 'producto_unidad', 'precio',
-      'cliente', 'cartera']));
+      'cliente', 'cartera', 'lista_precios']));
+  });
+
+  test('la lista de precios por omisión llega y se guarda', () {
+    // El delta que permite cotizarle a un cliente recién dado de alta en la
+    // calle: ese cliente nace sin lista —la asigna el servidor al confirmarlo—
+    // y el catálogo cae a la de omisión. Sin esta fila, el vendedor no le podría
+    // vender al cliente que acaba de registrar.
+    //
+    // El servidor lo emitía desde el primer día, pero la lista sembrada por la
+    // migración 0009 no tenía renglón en change_log (los triggers llegaron en la
+    // 0010) y el dispositivo tiraba la entidad. Migración 0013.
+    AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
+
+    final lista = db.select('SELECT * FROM listas_precios').single;
+    expect(lista['codigo'], equals('GENERAL'));
+    // El booleano de PostgreSQL llega como true y se guarda como 1.
+    expect(lista['es_default'], equals(1));
+    expect(lista['activo'], equals(1));
   });
 
   test('el aplicador digiere los deltas reales del servidor', () {

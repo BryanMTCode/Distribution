@@ -125,6 +125,19 @@
         "facturas_abiertas": 1,
         "facturas_vencidas": 0
       }
+    },
+    {
+      "cursor": 7,
+      "entidad": "lista_precios",
+      "entidad_id": "uuid-de-la-semilla-1",
+      "operacion": "upsert",
+      "payload": {
+        "id": "uuid-de-la-semilla-1",
+        "activo": true,
+        "codigo": "GENERAL",
+        "nombre": "Precio general",
+        "es_default": true
+      }
     }
   ]
 }

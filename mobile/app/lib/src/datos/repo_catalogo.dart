@@ -51,6 +51,18 @@ class ProductoEnCatalogo {
   bool get agotado => !vaEnLaCarga || existenciaBase.esCero;
 }
 
+/// Con qué lista se cotiza, y si es la suya o la de respaldo.
+///
+/// La distinción se muestra en pantalla: cotizar con la lista por omisión a un
+/// cliente que todavía no confirma el servidor es correcto, pero el vendedor
+/// tiene que saberlo por si la oficina le asigna otra tarifa.
+class ListaResuelta {
+  const ListaResuelta({required this.id, required this.esPorOmision});
+
+  final String id;
+  final bool esPorOmision;
+}
+
 class RepoCatalogo {
   const RepoCatalogo(this._db);
 
@@ -153,17 +165,30 @@ class RepoCatalogo {
     });
   }
 
-  /// La lista de precios del cliente, o `null` si no tiene una asignada.
+  /// Con qué lista se le cotiza a este cliente.
   ///
-  /// Sin lista no se puede cotizar nada, y eso se le dice al vendedor en vez de
-  /// mostrarle un catálogo vacío que parece un error de la app.
-  String? listaDeCliente(String clienteId) {
-    final filas = _db.select(
+  /// El cliente trae la suya. Si no la trae —porque **el vendedor acaba de darlo
+  /// de alta en la calle** y la asigna el servidor al confirmarlo—, se usa la
+  /// lista por omisión. Negarle la venta al cliente que se acaba de registrar
+  /// sería lo contrario de para qué existe el alta en campo.
+  ///
+  /// Si el servidor termina asignándole otra lista, la venta ya sincronizada
+  /// queda marcada para revisión con 'precio_desactualizado'. Eso es §0.1
+  /// funcionando: el mundo físico ya ocurrió, y la oficina lo revisa.
+  ListaResuelta? listaParaCliente(String clienteId) {
+    final delCliente = _db.select(
       'SELECT lista_precios_id FROM clientes WHERE id = ?',
       [clienteId],
     );
-    if (filas.isEmpty) return null;
-    return filas.single['lista_precios_id'] as String?;
+    final propia =
+        delCliente.isEmpty ? null : delCliente.single['lista_precios_id'] as String?;
+    if (propia != null) return ListaResuelta(id: propia, esPorOmision: false);
+
+    final omision = _db.select(
+      'SELECT id FROM listas_precios WHERE es_default = 1 AND activo = 1 LIMIT 1',
+    );
+    if (omision.isEmpty) return null;
+    return ListaResuelta(id: omision.single['id'] as String, esPorOmision: true);
   }
 
   /// `true` cuando el camión no trae carga: ningún producto, ninguna existencia.
