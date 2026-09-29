@@ -60,7 +60,9 @@ void main() {
     // 0010) y el dispositivo tiraba la entidad. Migración 0013.
     AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
 
-    final lista = db.select('SELECT * FROM listas_precios').single;
+    final lista = db
+        .select('SELECT * FROM listas_precios WHERE es_default = 1')
+        .single;
     expect(lista['codigo'], equals('GENERAL'));
     // El booleano de PostgreSQL llega como true y se guarda como 1.
     expect(lista['es_default'], equals(1));

@@ -114,11 +114,31 @@ async def _sembrar(sesion, semilla) -> None:
         {"v": VENTA, "c": CLIENTE},
     )
 
-    # La lista de precios por omisión la siembra la migración 0009, ANTES de que
-    # existieran los triggers de change_log: no tiene renglón propio. La 0013 lo
-    # siembra, y aquí se aplica para que el fixture traiga el delta de verdad —el
-    # aplicador de Dart tiene que digerir ese payload, y escribirlo a mano sería
-    # adivinar qué emite to_jsonb.
+    # -----------------------------------------------------------------------
+    # El fixture tiene que salir IGUAL sin importar qué corrió antes.
+    # -----------------------------------------------------------------------
+    # `listas_precios` es dato de referencia: la migración 0009 la siembra y el
+    # TRUNCATE entre pruebas NO la toca, porque el código depende de que exista
+    # la lista GENERAL. Pero otras pruebas crean listas propias (la del contrato
+    # de Dart, por ejemplo) y esas SOBREVIVEN hasta aquí.
+    #
+    # Pasó de verdad, y costó un CI rojo: el fixture se regeneró con dos listas
+    # porque `test_contrato_dart.py` corre antes por orden alfabético. En mi
+    # máquina no se vio, porque había corrido Dart antes que el servidor. Un
+    # archivo versionado que depende del orden de las pruebas no sirve para
+    # detectar cambios de verdad en el diff.
+    await sesion.execute(text("DELETE FROM listas_precios WHERE NOT es_default"))
+    # Y los renglones que ESE borrado acaba de generar: el trigger de change_log
+    # registra la baja, así que limpiar sin esto dejaría un delta de 'delete' de
+    # una lista que el dispositivo nunca tuvo. Se vacía la entidad completa y el
+    # backfill de abajo la reconstruye desde cero.
+    await sesion.execute(text("DELETE FROM change_log WHERE entidad = 'lista_precios'"))
+
+    # La lista por omisión la siembra la migración 0009, ANTES de que existieran
+    # los triggers de change_log: no tiene renglón propio. La 0013 lo siembra, y
+    # aquí se aplica para que el fixture traiga el delta de verdad —el aplicador
+    # de Dart tiene que digerir ese payload, y escribirlo a mano sería adivinar
+    # qué emite to_jsonb.
     from db.sql import leer_sql
 
     await sesion.execute(text(leer_sql("0013_sembrar_change_log_referencia.sql")))
@@ -198,6 +218,21 @@ async def test_generar_y_verificar_deltas(cliente, semilla, sesion):
     # el aplicador de Dart tiene que digerir.
     producto = next(c for c in cambios if c["entidad"] == "producto")
     assert producto["payload"]["activo"] is True
+
+    # EXACTAMENTE una lista de precios, la de omisión.
+    #
+    # Esta aserción existe por un CI rojo: otra prueba había dejado una lista
+    # propia en la base —`listas_precios` es dato de referencia y el TRUNCATE
+    # entre pruebas no la toca— y el fixture se regeneró con dos. El síntoma
+    # apareció del lado de Dart, como "Bad state: Too many elements", que no
+    # apunta a ningún lado. Aquí falla con el nombre del problema.
+    listas = [c for c in cambios if c["entidad"] == "lista_precios"]
+    assert len(listas) == 1, (
+        f"el fixture trae {len(listas)} listas de precios y debe traer una: "
+        "alguna prueba dejó listas propias en la base. El archivo se versiona, "
+        "así que no puede depender de qué corrió antes."
+    )
+    assert listas[0]["payload"]["es_default"] is True
 
     ARCHIVO.write_text(
         json.dumps(
