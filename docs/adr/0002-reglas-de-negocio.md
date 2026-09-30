@@ -326,3 +326,112 @@ El saldo que trae el teléfono puede tener horas (§0.3). Imprimirlo en un papel
 que el cliente conserva es crear una disputa: él sostiene el número impreso y la
 oficina el suyo. El ticket dice el importe de **esta** venta y dónde consultar el
 saldo.
+
+---
+
+## 12. El panel de oficina captura el catálogo; el teléfono nunca lo escribe
+
+**Decisión.** Productos, presentaciones, precios y condiciones comerciales se
+capturan **solo** en el panel web. El dispositivo los recibe por delta y los trata
+como espejo de solo lectura.
+
+Ya estaba en la tabla de propiedad del dato, pero hasta esta fase no había forma de
+ejercerlo: el catálogo llegaba al teléfono por una migración de semilla o por el
+Modo Demo. Ninguna de las dos sirve para operar.
+
+### El delta lo publica la base, no la pantalla
+
+Las escrituras del panel **no publican nada a mano**. Los disparadores de la
+migración 0010 escriben en `change_log` por cada cambio en `productos`,
+`producto_unidades`, `precios`, `listas_precios` y `clientes`.
+
+Es deliberado, y es la razón de que los disparadores vivan en la base: si publicar
+el delta fuera responsabilidad de quien escribe, cada pantalla nueva tendría que
+acordarse, y **la que se olvide produce un catálogo que la oficina ve y el camión
+no**. Así, incluso un `UPDATE` hecho a mano con psql llega a los teléfonos.
+
+### Nada se borra: se desactiva
+
+Un producto se marca `activo = false`; un cliente, `estatus = 'inactivo'`. Hay
+ventas viejas que los referencian y puede haber una venta **de esta mañana que
+todavía no ha sincronizado** y viene con esa clave. Borrar la fila mandaría esa
+venta a cuarentena por una llave foránea: sería violar §0.1 desde la oficina.
+
+### Cambiar un precio marca las ventas en vuelo, y eso está bien
+
+Los equipos que ya salieron traen la lista de la mañana. Si el precio cambia a
+mediodía, las ventas que hagan con el precio viejo entran marcadas
+`precio_desactualizado`: el servidor respeta el importe del papel que firmó el
+cliente y solo levanta la mano. La pantalla lo advierte al guardar, para que quien
+captura decida si lo hace ahora o al cierre del día.
+
+Guardar **el mismo** precio otra vez no mueve la `version` ni publica delta: un
+delta idéntico haría que todos los teléfonos volvieran a bajar el catálogo sin que
+nada hubiera cambiado.
+
+### El precio de la pieza se deriva del de la caja, con cuatro decimales
+
+El panel calcula la división y la ofrece con un botón. La caja de 24 a $296.00 da
+$12.3333 la pieza; quien lo calcula en una hoja escribe $12.33, y desde ahí cada
+caja vendida por pieza cobra $295.92 — ocho centavos menos, veinticuatro veces al
+día. Con cuatro decimales, 24 × $12.3333 vuelve a dar $296.00, porque el redondeo
+ocurre **una sola vez, sobre el importe** (§7).
+
+Y **un precio en cero no se acepta**. Se vería idéntico a "regalado" en el ticket
+del cliente. Si algún día hay producto gratis será una promoción, no un precio de
+lista.
+
+---
+
+## 13. Un prospecto de calle lo confirma una persona, no un proceso
+
+**Decisión.** El alta de cliente hecha en ruta nace `prospecto`, sin código, sin
+lista de precios y con límite de crédito en cero. La oficina la confirma a mano, y
+ese acto asigna el consecutivo y la lista.
+
+### Por qué no se confirma solo
+
+Aceptar una línea de crédito propuesta desde el teléfono sería dejar que el
+vendedor se autorice su propia cartera. Y asignar el código en el INSERT gastaría
+un número para un negocio que la oficina todavía no aceptó, que puede resultar ser
+la misma tienda que registró el vendedor de la ruta de al lado.
+
+### Confirmar y otorgar crédito son dos botones distintos
+
+Confirmar que un negocio existe y decidir cuánto se le presta son dos juicios
+distintos. Juntarlos hace que el segundo se tome sin pensarlo.
+
+### El código sale de una secuencia, no de `max() + 1`
+
+`max()+1` da el mismo número a dos personas que confirmen al mismo tiempo, y una
+de las dos ve un error de UNIQUE que no significa nada para ella. La secuencia
+`seq_codigo_cliente` (migración 0014) deja huecos cuando una transacción se
+deshace, y eso está bien: el código **identifica** a un cliente, no cuenta
+clientes.
+
+### La georreferencia no se edita desde la oficina
+
+La capturó el vendedor parado en la banqueta del negocio, con su precisión y su
+origen (`gps` o `manual`) guardados. Es el mejor dato que va a existir de ese
+domicilio. Corregirla desde una computadora a quince kilómetros sería sustituir un
+dato medido por uno supuesto, y encima rompería la distancia con la que se marcan
+las ventas fuera de geocerca.
+
+### El saldo tampoco
+
+Sale de `cuentas_por_cobrar`. Un campo editable de saldo sería una segunda verdad
+que tarde o temprano contradice a la primera, y entonces nadie sabe cuál de las dos
+cobrar. Se corrige con un cargo o un pago, que dejan rastro.
+
+**Bajar un límite de crédito no perdona la deuda.** El saldo sigue igual; lo que se
+va a cero es el disponible, y el teléfono corta la venta a crédito solo. La
+pantalla lo dice con números cuando el límite nuevo queda por debajo del saldo,
+porque quien lo escribe casi siempre cree lo contrario.
+
+### Fusionar duplicados no se hace con un botón
+
+Dos vendedores pueden levantar la misma tiendita el mismo día. El panel los
+muestra y permite decir "son negocios distintos"; **fusionarlos no**. Fusionar
+significa mover ventas, cuentas por cobrar y cobranza de un UUID a otro, y
+cualquiera de esos renglones puede estar en un teléfono que todavía no sincroniza.
+Necesita su propio diseño, no un botón al lado de una lista.

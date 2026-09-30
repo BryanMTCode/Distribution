@@ -58,11 +58,14 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Panel de operación** — sesión con cookie, CSRF, tablero | ✅ 17 pruebas |
 | Pantalla de **cuarentena**: lo que el servidor rechazó | ✅ con payload íntegro |
 | Pantalla de **ventas marcadas**, con el motivo en español | ✅ la otra mitad de §0.1 |
-| Captura de catálogo y precios desde el panel | ⛔ resto de la Fase 1 |
+| **Captura de catálogo y precios** con cuatro decimales | ✅ 20 pruebas |
+| **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
+| Panel de usuarios, rutas, almacenes y listas de precios | ⛔ lo que falta de la Fase 1 |
+| Carga del camión (el `carga` sigue sin aplicarse en el teléfono) | ⛔ Fase 4 |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**356 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **367 de Dart** y **125 de widget**, todas en verde.
+**392 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **367 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -92,6 +95,9 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 server/
   app/
     api/admin/       PANEL DE OPERACIÓN: sesión con cookie, CSRF, plantillas
+                     comun.py         navegación y lectura de números escritos a mano
+                     productos.py     catálogo y precios (los 4 decimales)
+                     clientes.py      confirmar prospectos y decidir el crédito
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
@@ -135,7 +141,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 356 pruebas de Python
+make pruebas                        # 392 pruebas de Python
 make movil                          # 367 de Dart + 125 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

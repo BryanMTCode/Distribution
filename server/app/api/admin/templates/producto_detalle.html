@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block titulo %}{{ producto.nombre }}{% endblock %}
+{% block contenido %}
+<h1>{{ producto.nombre }}</h1>
+<p class="subtitulo">
+  <span class="mono">{{ producto.sku }}</span>
+  · unidad base {{ producto.unidad_base }}
+  {% if producto.categoria %} · {{ producto.categoria }}{% endif %}
+  {% if not producto.activo %} · <strong>desactivado</strong>{% endif %}
+  · <a href="/panel/productos">volver al catálogo</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if recien_creado %}
+  <div class="aviso-caja neutro">
+    Producto creado. <strong>Le falta el precio</strong>: hasta que lo tenga en la
+    lista general, no le aparece al vendedor en el catálogo del teléfono.
+  </div>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Precios: lo primero porque es lo que se viene a hacer aquí.              #}
+{# ------------------------------------------------------------------------ #}
+{% for tabla in tablas %}
+<h2>
+  Precios · {{ tabla.lista.nombre }}
+  {% if tabla.lista.es_default %}<span class="sutil">(lista por omisión)</span>{% endif %}
+</h2>
+
+<form method="post" action="/panel/productos/{{ producto.id }}/precios">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="lista_id" value="{{ tabla.lista.id }}">
+  <div class="tabla-marco">
+    <table>
+      <thead>
+        <tr>
+          <th>Presentación</th>
+          <th class="numero">Precio actual</th>
+          <th>Precio nuevo</th>
+          <th>Equivalencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in tabla.renglones %}
+        <tr>
+          <td>
+            <strong>{{ r.unidad }}</strong>
+            {% if r.factor|entero != '1' %}
+              <div class="sutil">= {{ r.factor|entero }} {{ producto.unidad_base }}</div>
+            {% endif %}
+          </td>
+          <td class="numero">
+            {% if r.precio is not none %}
+              ${{ r.precio|precio }}
+              <div class="sutil">v{{ r.version }}</div>
+            {% else %}
+              <span style="color:var(--alerta)">sin precio</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if puede_editar %}
+              <input type="text" name="precio_{{ r.unidad }}" inputmode="decimal"
+                     placeholder="{% if r.precio is not none %}{{ r.precio|precio }}{% else %}0.00{% endif %}"
+                     style="width:120px">
+            {% else %}
+              <span class="sutil">—</span>
+            {% endif %}
+          </td>
+          <td class="sutil">
+            {% if r.sugerencia %}
+              ${{ r.sugerencia.precio_origen|precio }} de {{ r.sugerencia.desde }}
+              ÷ {{ r.sugerencia.factor_origen|entero }}
+              × {{ r.factor|entero }}
+              = <strong>${{ r.sugerencia.valor|precio }}</strong>
+              {% if puede_editar %}
+                <br>
+                <button type="submit" class="secundario" style="padding:3px 9px;font-size:12px"
+                        formaction="/panel/productos/{{ producto.id }}/precios/derivar"
+                        name="hacia" value="{{ r.unidad }}"
+                        formnovalidate>Usar</button>
+              {% endif %}
+            {% elif r.precio is not none and puede_editar %}
+              <button type="submit" class="secundario" style="padding:3px 9px;font-size:12px"
+                      formaction="/panel/productos/{{ producto.id }}/precios/quitar"
+                      name="unidad_codigo" value="{{ r.unidad }}"
+                      formnovalidate>Quitar precio</button>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if puede_editar %}
+    <div class="paginacion">
+      <button type="submit">Guardar precios</button>
+      <span class="sutil">
+        Un campo en blanco se deja como está. Los equipos que ya salieron traen el
+        precio anterior hasta que sincronicen.
+      </span>
+    </div>
+  {% endif %}
+</form>
+
+{% if tabla.lista.es_default %}
+<div class="aviso-caja neutro" style="margin-top:14px">
+  <strong>Por qué los precios llevan cuatro decimales.</strong>
+  Una caja de 24 a $296.00 da $12.3333 la pieza. Si se capturara $12.33, las 24
+  piezas sumarían $295.92 y se perderían ocho centavos por caja, todos los días.
+  Con cuatro decimales, 24 × $12.3333 = $296.00: el redondeo ocurre
+  <strong>una sola vez, sobre el importe</strong>.
+</div>
+{% endif %}
+{% endfor %}
+
+{# ------------------------------------------------------------------------ #}
+{# Presentaciones                                                           #}
+{# ------------------------------------------------------------------------ #}
+<h2>Presentaciones</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Unidad</th>
+        <th class="numero">Trae</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in presentaciones %}
+      <tr>
+        <td><strong>{{ p.unidad_codigo }}</strong></td>
+        <td class="numero">{{ p.factor|entero }} {{ producto.unidad_base }}</td>
+        <td class="sutil">
+          {% if p.unidad_codigo == producto.unidad_base %}
+            unidad base · siempre vale 1
+          {% elif p.es_default %}
+            la que el vendedor ve primero
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if puede_editar %}
+<form class="barra" method="post" action="/panel/productos/{{ producto.id }}/presentaciones"
+      style="margin-top:14px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <select name="unidad_codigo" required>
+    <option value="">— unidad —</option>
+    {% for u in unidades %}
+      {% if u.codigo != producto.unidad_base %}
+        <option value="{{ u.codigo }}">{{ u.nombre }} ({{ u.codigo }})</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <input type="text" name="factor" inputmode="numeric" placeholder="24 piezas" required>
+  <button type="submit" class="secundario">Agregar o corregir</button>
+</form>
+<p class="sutil">
+  Corregir un factor no cambia ninguna venta ya hecha: cada partida congela el
+  factor con el que salió del camión.
+</p>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Datos                                                                    #}
+{# ------------------------------------------------------------------------ #}
+{% if puede_editar %}
+<h2>Datos</h2>
+<form method="post" action="/panel/productos/{{ producto.id }}"
+      style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="nombre">Nombre</label>
+    <input type="text" id="nombre" name="nombre" value="{{ producto.nombre }}"
+           required style="width:100%">
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="codigo_barras">Código de barras</label>
+      <input type="text" id="codigo_barras" name="codigo_barras"
+             value="{{ producto.codigo_barras or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="tasa_iva">IVA</label>
+      <select id="tasa_iva" name="tasa_iva" style="width:100%">
+        {% for tasa, etiqueta in tasas %}
+          <option value="{{ tasa }}"
+            {% if producto.tasa_iva == tasa %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="categoria_id">Categoría</label>
+      <select id="categoria_id" name="categoria_id" style="width:100%">
+        <option value="">— sin categoría —</option>
+        {% for c in categorias %}
+          <option value="{{ c.id }}"
+            {% if producto.categoria_id == c.id %}selected{% endif %}>{{ c.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="campo">
+    <label>
+      <input type="checkbox" name="activo" value="1"
+             {% if producto.activo %}checked{% endif %}>
+      Activo en el catálogo
+    </label>
+    <div class="ayuda">
+      Al desactivarlo desaparece del catálogo del vendedor en la siguiente
+      sincronización. <strong>No se borra</strong>: las ventas viejas lo
+      referencian, y una venta de hoy que todavía no ha sincronizado viene con su
+      clave.
+    </div>
+  </div>
+  <button type="submit">Guardar datos</button>
+</form>
+{% endif %}
+{% endblock %}

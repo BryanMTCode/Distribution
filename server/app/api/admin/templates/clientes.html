@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block titulo %}Clientes{% endblock %}
+{% block contenido %}
+<h1>Clientes</h1>
+<p class="subtitulo">
+  Un negocio dado de alta en la calle nace <strong>prospecto</strong>: sin código,
+  sin lista de precios y sin crédito. Eso es a propósito — el vendedor no se
+  autoriza su propia cartera. <strong>Pero alguien aquí tiene que terminarlo</strong>,
+  o cada venta a ese cliente entra marcada.
+</p>
+
+<form class="barra" method="get" action="/panel/clientes">
+  <input type="search" name="q" value="{{ q }}" placeholder="Nombre, código o teléfono"
+         style="min-width:260px">
+  <input type="hidden" name="filtro" value="{{ filtro }}">
+  <button type="submit">Buscar</button>
+</form>
+
+<form class="barra" method="get" action="/panel/clientes">
+  <input type="hidden" name="q" value="{{ q }}">
+  <button type="submit" name="filtro" value="pendientes"
+          class="{% if filtro != 'pendientes' %}secundario{% endif %}">
+    Por confirmar ({{ conteos.pendientes }})
+  </button>
+  <button type="submit" name="filtro" value="todos"
+          class="{% if filtro != 'todos' %}secundario{% endif %}">
+    Todos ({{ conteos.activos }})
+  </button>
+  <button type="submit" name="filtro" value="bloqueados"
+          class="{% if filtro != 'bloqueados' %}secundario{% endif %}">
+    Bloqueados ({{ conteos.bloqueados }})
+  </button>
+  <button type="submit" name="filtro" value="inactivos"
+          class="{% if filtro != 'inactivos' %}secundario{% endif %}">Inactivos</button>
+</form>
+
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Negocio</th>
+        <th>Ruta</th>
+        <th>Crédito</th>
+        <th class="numero">Saldo</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <a href="/panel/clientes/{{ f.id }}"><strong>{{ f.nombre_comercial }}</strong></a>
+          <div class="sutil">
+            {% if f.codigo %}<span class="mono">{{ f.codigo }}</span>{% else %}sin código{% endif %}
+            {% if f.colonia %} · {{ f.colonia }}{% endif %}
+            {% if f.telefono %} · {{ f.telefono }}{% endif %}
+          </div>
+        </td>
+        <td class="sutil">
+          {% if f.ruta %}{{ f.ruta_codigo }} {{ f.ruta }}{% else %}
+            <span style="color:var(--aviso)">sin ruta</span>
+          {% endif %}
+        </td>
+        <td class="sutil">
+          {% if f.permite_credito %}
+            hasta ${{ '%.2f'|format(f.limite_credito) }}
+          {% else %}
+            solo contado
+          {% endif %}
+          {% if not f.lista_precios %}
+            <div style="color:var(--alerta)">sin lista de precios</div>
+          {% endif %}
+        </td>
+        <td class="numero">
+          ${{ '%.2f'|format(f.saldo) }}
+          {% if f.vencidas %}
+            <div class="sutil" style="color:var(--alerta)">
+              {{ f.vencidas }} vencida{% if f.vencidas != 1 %}s{% endif %}
+            </div>
+          {% endif %}
+        </td>
+        <td>
+          {% if f.estatus == 'prospecto' %}
+            <span class="etiqueta-motivo">Por confirmar</span>
+          {% endif %}
+          {% if f.requiere_revision %}
+            <span class="etiqueta-motivo">{{ f.revision_motivo or 'Revisar' }}</span>
+          {% endif %}
+          {% if f.bloqueado %}
+            <span class="etiqueta-motivo" style="background:var(--alerta-suave);
+                  color:var(--alerta)">Bloqueado</span>
+          {% endif %}
+          {% if f.origen_alta == 'campo' %}
+            <div class="sutil">alta en ruta · {{ f.creado_en.strftime('%d/%m/%Y') }}</div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  {% if q %}
+    Nada que coincida con «{{ q }}».
+  {% elif filtro == 'pendientes' %}
+    Ningún prospecto esperando. Todo lo que levantó la ruta ya está confirmado.
+  {% elif filtro == 'bloqueados' %}
+    Ningún cliente bloqueado.
+  {% else %}
+    Todavía no hay clientes.
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

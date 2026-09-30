@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block titulo %}{{ cliente.nombre_comercial }}{% endblock %}
+{% block contenido %}
+<h1>{{ cliente.nombre_comercial }}</h1>
+<p class="subtitulo">
+  {% if cliente.codigo %}<span class="mono">{{ cliente.codigo }}</span>{% else %}sin código{% endif %}
+  · {{ cliente.estatus }}
+  {% if cliente.ruta_nombre %} · {{ cliente.ruta_nombre }}{% endif %}
+  {% if cliente.origen_alta == 'campo' %}
+    · alta en ruta por {{ cliente.alta_por or '—' }}
+    {% if cliente.alta_equipo %}({{ cliente.alta_equipo }}){% endif %}
+  {% endif %}
+  · <a href="/panel/clientes">volver a la lista</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Confirmar: lo único que importa si todavía es prospecto.                  #}
+{# ------------------------------------------------------------------------ #}
+{% if cliente.estatus == 'prospecto' and puede_editar %}
+<div class="tarjeta aviso" style="margin-bottom:22px">
+  <h2 style="margin-top:0">Confirmar el alta</h2>
+  <p>
+    Este negocio lo levantó la ruta y está esperando la oficina. Mientras siga
+    prospecto <strong>no tiene código ni lista de precios</strong>, y cada venta
+    que se le haga entra marcada como «no trae lista de precios».
+  </p>
+  <form method="post" action="/panel/clientes/{{ cliente.id }}/confirmar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="rejilla">
+      <div class="campo">
+        <label for="lista_confirmar">Lista de precios</label>
+        <select id="lista_confirmar" name="lista_precios_id" required style="width:100%">
+          {% for l in listas %}
+            <option value="{{ l.id }}" {% if l.es_default %}selected{% endif %}>
+              {{ l.nombre }}{% if l.es_default %} (por omisión){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="ruta_confirmar">Ruta</label>
+        <select id="ruta_confirmar" name="ruta_id" style="width:100%">
+          <option value="">— dejar la que trae —</option>
+          {% for r in rutas %}
+            <option value="{{ r.id }}"
+              {% if cliente.ruta_id == r.id %}selected{% endif %}>
+              {{ r.codigo }} · {{ r.nombre }}{% if r.vendedor %} ({{ r.vendedor }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <button type="submit">Confirmar y asignar código</button>
+    <span class="sutil" style="margin-left:10px">
+      El crédito se decide aparte, más abajo.
+    </span>
+  </form>
+</div>
+{% endif %}
+
+{% if duplicados %}
+<div class="tarjeta alerta" style="margin-bottom:22px">
+  <h2 style="margin-top:0">Posible duplicado</h2>
+  <p>
+    Dos vendedores pueden levantar la misma tiendita el mismo día. <strong>No se
+    fusionan solos</strong>: fusionar por parecido destruye historial de ventas.
+  </p>
+  {% for d in duplicados %}
+    <p>
+      Se parece a <a href="/panel/clientes/{{ d.otro_id }}">{{ d.otro_nombre }}</a>
+      {% if d.otro_codigo %}(<span class="mono">{{ d.otro_codigo }}</span>){% endif %}
+      {% if d.distancia_m %} · a {{ d.distancia_m|round|int }} m{% endif %}
+      {% if puede_editar %}
+        <form method="post" action="/panel/clientes/{{ cliente.id }}/duplicado/{{ d.id }}"
+              style="display:inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="secundario" style="padding:3px 9px;font-size:12px">
+            Son negocios distintos
+          </button>
+        </form>
+      {% endif %}
+    </p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Cartera: solo lectura, y se explica por qué.                             #}
+{# ------------------------------------------------------------------------ #}
+<h2>Cartera</h2>
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">{{ saldo_texto }}</div>
+    <div class="etiqueta">Saldo</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ disponible_texto }}</div>
+    <div class="etiqueta">Disponible para crédito</div>
+  </div>
+  {% if cartera and cartera.facturas_vencidas %}
+  <div class="tarjeta alerta">
+    <div class="numero">{{ cartera.facturas_vencidas }}</div>
+    <div class="etiqueta">
+      Vencidas
+      {% if cartera.vencimiento_mas_antiguo %}
+        · la más vieja del {{ cartera.vencimiento_mas_antiguo.strftime('%d/%m/%Y') }}
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+<p class="sutil">
+  El saldo no se edita: sale de las cuentas por cobrar. Un campo editable de saldo
+  sería una segunda verdad que tarde o temprano contradice a la primera, y entonces
+  nadie sabe cuál de las dos cobrar. Se corrige con un cargo o un pago, que dejan
+  rastro.
+</p>
+
+{# ------------------------------------------------------------------------ #}
+{# Condiciones comerciales                                                  #}
+{# ------------------------------------------------------------------------ #}
+{% if puede_editar %}
+<h2>Condiciones comerciales</h2>
+<form method="post" action="/panel/clientes/{{ cliente.id }}/credito"
+      style="max-width:680px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="lista_precios_id">Lista de precios</label>
+    <select id="lista_precios_id" name="lista_precios_id" style="width:100%">
+      <option value="">— sin lista —</option>
+      {% for l in listas %}
+        <option value="{{ l.id }}"
+          {% if cliente.lista_precios_id == l.id %}selected{% endif %}>
+          {{ l.nombre }}{% if l.es_default %} (por omisión){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <div class="ayuda">
+      Sin lista, cada venta entra marcada. Es el motivo de revisión más fácil de
+      evitar.
+    </div>
+  </div>
+
+  <div class="campo">
+    <label>
+      <input type="checkbox" name="permite_credito" value="1"
+             {% if cliente.permite_credito %}checked{% endif %}>
+      Autorizado para llevar a crédito
+    </label>
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="limite_credito">Límite de crédito</label>
+      <input type="text" id="limite_credito" name="limite_credito" inputmode="decimal"
+             value="{{ '%.2f'|format(cliente.limite_credito) }}" style="width:100%">
+      <div class="ayuda">
+        Bajarlo <strong>no perdona la deuda</strong>: el saldo sigue igual y lo que
+        se va a cero es el disponible.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="dias_credito">Días de plazo</label>
+      <input type="text" id="dias_credito" name="dias_credito" inputmode="numeric"
+             value="{{ cliente.dias_credito }}" style="width:100%">
+      <div class="ayuda">Máximo {{ dias_maximo }}.</div>
+    </div>
+  </div>
+
+  <button type="submit">Guardar condiciones</button>
+</form>
+
+<h2>Bloqueo</h2>
+<form method="post" action="/panel/clientes/{{ cliente.id }}/bloqueo"
+      style="max-width:680px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if cliente.bloqueado %}
+    <div class="aviso-caja error" style="margin-bottom:14px">
+      Bloqueado: {{ cliente.bloqueo_motivo or 'sin motivo capturado' }}
+    </div>
+    <button type="submit" class="secundario">Desbloquear</button>
+  {% else %}
+    <div class="campo">
+      <label for="motivo">Motivo del bloqueo</label>
+      <input type="text" id="motivo" name="motivo" style="width:100%"
+             placeholder="Cheque devuelto, adeudo vencido…">
+      <div class="ayuda">
+        Viaja al teléfono. El vendedor va a preguntar por qué no le puede vender, y
+        «bloqueado» sin más no le sirve.
+      </div>
+    </div>
+    <button type="submit" class="peligro" name="bloquear" value="1">
+      Bloquear el crédito
+    </button>
+    <span class="sutil" style="margin-left:10px">
+      Sigue pudiendo comprar de contado. Para cerrarle la venta por completo,
+      márcalo inactivo abajo.
+    </span>
+  {% endif %}
+</form>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Domicilio y datos                                                        #}
+{# ------------------------------------------------------------------------ #}
+<h2>Domicilio y datos</h2>
+{% if cliente.lat is not none %}
+<p class="sutil">
+  Ubicación capturada en ruta: {{ cliente.lat }}, {{ cliente.lng }}
+  {% if cliente.ubicacion_origen %}({{ cliente.ubicacion_origen }}{% if cliente.ubicacion_precision_m %},
+    ±{{ cliente.ubicacion_precision_m|round|int }} m{% endif %}){% endif %}.
+  <strong>No se edita desde aquí</strong>: la tomó el vendedor parado en la banqueta
+  del negocio. Cambiarla desde una computadora a quince kilómetros sería sustituir
+  un dato medido por uno supuesto, y encima rompería la distancia que marca las
+  ventas fuera de geocerca.
+</p>
+{% else %}
+<p class="sutil" style="color:var(--aviso)">
+  Sin coordenadas. Las ventas a este cliente no se pueden comparar contra su
+  domicilio.
+</p>
+{% endif %}
+
+{% if puede_editar %}
+<form method="post" action="/panel/clientes/{{ cliente.id }}/datos"
+      style="max-width:680px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="nombre_comercial">Nombre del negocio</label>
+    <input type="text" id="nombre_comercial" name="nombre_comercial" required
+           value="{{ cliente.nombre_comercial }}" style="width:100%">
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="contacto_nombre">Contacto</label>
+      <input type="text" id="contacto_nombre" name="contacto_nombre"
+             value="{{ cliente.contacto_nombre or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="telefono">Teléfono</label>
+      <input type="text" id="telefono" name="telefono"
+             value="{{ cliente.telefono or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="canal_codigo">Canal</label>
+      <select id="canal_codigo" name="canal_codigo" style="width:100%">
+        <option value="">— sin canal —</option>
+        {% for c in canales %}
+          <option value="{{ c.codigo }}"
+            {% if cliente.canal_codigo == c.codigo %}selected{% endif %}>{{ c.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="calle">Calle</label>
+      <input type="text" id="calle" name="calle" value="{{ cliente.calle or '' }}"
+             style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="numero">Número</label>
+      <input type="text" id="numero" name="numero" value="{{ cliente.numero or '' }}"
+             style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="colonia">Colonia</label>
+      <input type="text" id="colonia" name="colonia" value="{{ cliente.colonia or '' }}"
+             style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="municipio">Municipio</label>
+      <input type="text" id="municipio" name="municipio"
+             value="{{ cliente.municipio or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="estado">Estado</label>
+      <input type="text" id="estado" name="estado" value="{{ cliente.estado or '' }}"
+             style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="codigo_postal">C.P.</label>
+      <input type="text" id="codigo_postal" name="codigo_postal"
+             value="{{ cliente.codigo_postal or '' }}" style="width:100%">
+    </div>
+  </div>
+
+  <div class="campo">
+    <label for="referencias">Referencias para encontrarlo</label>
+    <input type="text" id="referencias" name="referencias"
+           value="{{ cliente.referencias or '' }}" style="width:100%">
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="razon_social">Razón social</label>
+      <input type="text" id="razon_social" name="razon_social"
+             value="{{ cliente.razon_social or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="rfc">RFC</label>
+      <input type="text" id="rfc" name="rfc" value="{{ cliente.rfc or '' }}"
+             style="width:100%">
+    </div>
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="ruta_id">Ruta</label>
+      <select id="ruta_id" name="ruta_id" style="width:100%">
+        <option value="">— sin ruta —</option>
+        {% for r in rutas %}
+          <option value="{{ r.id }}"
+            {% if cliente.ruta_id == r.id %}selected{% endif %}>
+            {{ r.codigo }} · {{ r.nombre }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="secuencia">Orden de visita</label>
+      <input type="text" id="secuencia" name="secuencia" inputmode="numeric"
+             value="{{ cliente.secuencia or '' }}" style="width:100%">
+      <div class="ayuda">En qué lugar de la ruta se visita.</div>
+    </div>
+    <div class="campo">
+      <label for="estatus">Estatus</label>
+      <select id="estatus" name="estatus" style="width:100%">
+        {% for e in estatus_posibles %}
+          <option value="{{ e }}" {% if cliente.estatus == e %}selected{% endif %}>{{ e }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        <strong>Inactivo</strong> es la baja: desaparece de la ruta y no se borra.
+        Tiene ventas y cartera, y puede tener una venta de esta mañana que todavía
+        no sincroniza.
+      </div>
+    </div>
+  </div>
+
+  <button type="submit">Guardar datos</button>
+</form>
+{% endif %}
+{% endblock %}

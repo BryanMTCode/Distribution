@@ -62,7 +62,9 @@
 
 <h2>Catálogo</h2>
 <div class="tarjetas">
-  <a class="tarjeta" href="/panel/productos" style="text-decoration:none;color:inherit">
+  <a class="tarjeta {% if indicadores.sin_precio %}alerta{% endif %}"
+     href="/panel/productos{% if indicadores.sin_precio %}?filtro=sin_precio{% endif %}"
+     style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.productos }}</div>
     <div class="etiqueta">productos activos</div>
     <div class="sutil" style="margin-top:6px">
@@ -74,12 +76,14 @@
       {% endif %}
     </div>
   </a>
-  <a class="tarjeta" href="/panel/clientes" style="text-decoration:none;color:inherit">
+  <a class="tarjeta {% if indicadores.prospectos %}aviso{% endif %}"
+     href="/panel/clientes" style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.clientes }}</div>
     <div class="etiqueta">clientes</div>
     <div class="sutil" style="margin-top:6px">
       {% if indicadores.prospectos %}
-        {{ indicadores.prospectos }} dados de alta en la calle, sin revisar.
+        <strong>{{ indicadores.prospectos }} dados de alta en la calle</strong>,
+        esperando código y lista de precios.
       {% else %}
         Ninguno pendiente de revisar.
       {% endif %}

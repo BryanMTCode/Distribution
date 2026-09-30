@@ -7,7 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import RedirectResponse
 
+from app.api.admin import clientes as panel_clientes
 from app.api.admin import panel
+from app.api.admin import productos as panel_productos
 from app.api.admin.sesion_web import SinSesionWeb
 from app.api.v1 import auth, catalogo, clientes, dispositivos, salud, sync
 from app.core.config import obtener_config
@@ -43,6 +45,8 @@ def crear_app() -> FastAPI:
     # interfaz. Versionar sus rutas obligaría a mantener la vieja viva cuando
     # cambie una pantalla, que es justo lo que no se quiere de una UI.
     app.include_router(panel.router)
+    app.include_router(panel_productos.router)
+    app.include_router(panel_clientes.router)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

@@ -25,24 +25,19 @@ vieja.
 
 from __future__ import annotations
 
-from decimal import Decimal
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.admin.comun import SesionDep, dinero, render
 from app.api.admin.sesion_web import (
     ActorWeb,
     abrir_sesion,
     cerrar_sesion,
     exigir_csrf,
-    token_csrf,
 )
-from app.core.db import obtener_sesion
 from app.core.seguridad import verificar_password
 from app.infra.models import Usuario
 
@@ -52,47 +47,11 @@ from app.infra.models import Usuario
 # rutas que devuelven HTML para una oficina ensuciaría el contrato del teléfono y
 # haría que cada pantalla nueva del panel apareciera como un cambio de contrato
 # en el diff. El panel es una interfaz, no una API.
+#
+# Las pantallas de catálogo y de clientes viven en `productos.py` y `clientes.py`,
+# con su propio router. El andamio que comparten las tres (la navegación, el
+# `render`, los lectores de campos numéricos) está en `comun.py`.
 router = APIRouter(prefix="/panel", tags=["panel"], include_in_schema=False)
-
-plantillas = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-# La navegación se declara una vez: una pantalla que no está aquí no existe para
-# quien usa el panel, por más que su ruta responda.
-NAVEGACION = [
-    ("/panel", "Tablero"),
-    ("/panel/productos", "Productos"),
-    ("/panel/clientes", "Clientes"),
-    ("/panel/ventas", "Ventas"),
-    ("/panel/cuarentena", "Cuarentena"),
-]
-
-SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]
-
-
-def _render(
-    peticion: Request,
-    plantilla: str,
-    contexto: dict,
-    *,
-    actor=None,
-    seccion: str = "",
-) -> HTMLResponse:
-    return plantillas.TemplateResponse(
-        peticion,
-        plantilla,
-        {
-            **contexto,
-            "actor": actor,
-            "seccion": seccion,
-            "navegacion": NAVEGACION,
-            "csrf": token_csrf(peticion),
-        },
-    )
-
-
-def _dinero(valor) -> str:
-    """Para mostrar. El dinero se calcula en `Decimal` y se formatea al final."""
-    return f"${Decimal(valor or 0):,.2f}"
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +61,7 @@ def _dinero(valor) -> str:
 
 @router.get("/entrar", response_class=HTMLResponse)
 async def pantalla_entrar(peticion: Request) -> HTMLResponse:
-    return _render(peticion, "entrar.html", {"error": None})
+    return render(peticion, "entrar.html", {"error": None})
 
 
 @router.post("/entrar")
@@ -127,15 +86,15 @@ async def procesar_entrar(
         # Se verifica un hash de todas formas: responder de inmediato cuando el
         # usuario no existe delata su ausencia por el tiempo de respuesta.
         verificar_password(password, _HASH_SEÑUELO)
-        return _render(peticion, "entrar.html", {"error": generico})
+        return render(peticion, "entrar.html", {"error": generico})
 
     if not verificar_password(password, usuario["password_hash"]):
-        return _render(peticion, "entrar.html", {"error": generico})
+        return render(peticion, "entrar.html", {"error": generico})
 
     if usuario["rol_codigo"] == "vendedor":
         # El vendedor tiene su app; el panel es de oficina. Dejarlo entrar aquí le
         # daría pantallas de captura que no le corresponden.
-        return _render(
+        return render(
             peticion,
             "entrar.html",
             {"error": "Tu usuario es de ruta: entra por la app del teléfono."},
@@ -220,9 +179,9 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
     ).mappings().one()
 
     indicadores = dict(fila)
-    indicadores["importe_hoy"] = _dinero(fila["importe_hoy"])
+    indicadores["importe_hoy"] = dinero(fila["importe_hoy"])
 
-    return _render(
+    return render(
         peticion,
         "tablero.html",
         {"indicadores": indicadores},
@@ -277,7 +236,7 @@ async def cuarentena(
         )
     ).mappings().all()
 
-    return _render(
+    return render(
         peticion,
         "cuarentena.html",
         {
@@ -322,7 +281,7 @@ async def cuarentena_detalle(
     if fila is None:
         return RedirectResponse("/panel/cuarentena", status_code=status.HTTP_303_SEE_OTHER)
 
-    return _render(
+    return render(
         peticion,
         "cuarentena_detalle.html",
         {
@@ -424,7 +383,7 @@ async def ventas(
         )
     ).mappings().all()
 
-    return _render(
+    return render(
         peticion,
         "ventas.html",
         {

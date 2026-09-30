@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block titulo %}Nuevo producto{% endblock %}
+{% block contenido %}
+<h1>Nuevo producto</h1>
+<p class="subtitulo">
+  El SKU y la unidad base <strong>no se pueden cambiar después</strong>: todo el
+  inventario y todas las partidas de venta quedan expresados en esa unidad.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/panel/productos/nuevo"
+      style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="sku">SKU</label>
+      <input type="text" id="sku" name="sku" value="{{ valores.sku or '' }}"
+             required autofocus style="width:100%">
+      <div class="ayuda">Con lo que lo identifican la bodega y el vendedor.</div>
+    </div>
+    <div class="campo">
+      <label for="codigo_barras">Código de barras</label>
+      <input type="text" id="codigo_barras" name="codigo_barras"
+             value="{{ valores.codigo_barras or '' }}" style="width:100%">
+      <div class="ayuda">Opcional.</div>
+    </div>
+  </div>
+
+  <div class="campo">
+    <label for="nombre">Nombre</label>
+    <input type="text" id="nombre" name="nombre" value="{{ valores.nombre or '' }}"
+           required style="width:100%">
+    <div class="ayuda">
+      Es el que se imprime en el ticket del cliente. El papel tiene 32 columnas:
+      un nombre muy largo se parte en dos renglones.
+    </div>
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="unidad_base">Unidad base</label>
+      <select id="unidad_base" name="unidad_base" required style="width:100%">
+        <option value="">— elige —</option>
+        {% for u in unidades %}
+          <option value="{{ u.codigo }}"
+            {% if valores.unidad_base == u.codigo %}selected{% endif %}>
+            {{ u.nombre }} ({{ u.codigo }})
+          </option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        En esta unidad se lleva <strong>todo</strong> el inventario. Normalmente
+        la pieza.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="tasa_iva">IVA</label>
+      <select id="tasa_iva" name="tasa_iva" style="width:100%">
+        {% for tasa, etiqueta in tasas %}
+          <option value="{{ tasa }}"
+            {% if valores.tasa_iva == tasa|string %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="categoria_id">Categoría</label>
+      <select id="categoria_id" name="categoria_id" style="width:100%">
+        <option value="">— sin categoría —</option>
+        {% for c in categorias %}
+          <option value="{{ c.id }}"
+            {% if valores.categoria_id == c.id|string %}selected{% endif %}>{{ c.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h2>Presentación adicional</h2>
+  <p class="sutil" style="margin-top:-6px">
+    La caja, el display o la reja. Se puede agregar después, pero capturarla aquí
+    ahorra un paso: es lo que el vendedor ofrece primero.
+  </p>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="unidad_caja">Unidad</label>
+      <select id="unidad_caja" name="unidad_caja" style="width:100%">
+        <option value="">— ninguna —</option>
+        {% for u in unidades %}
+          <option value="{{ u.codigo }}"
+            {% if valores.unidad_caja == u.codigo %}selected{% endif %}>
+            {{ u.nombre }} ({{ u.codigo }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="factor_caja">¿Cuántas unidades base trae?</label>
+      <input type="text" id="factor_caja" name="factor_caja" inputmode="numeric"
+             value="{{ valores.factor_caja or '' }}" placeholder="24" style="width:100%">
+      <div class="ayuda">El 24 de «caja de 24».</div>
+    </div>
+  </div>
+
+  <div class="aviso-caja neutro">
+    Al guardar, el producto <strong>todavía no se puede vender</strong>: le falta
+    precio. La siguiente pantalla es la de precios.
+  </div>
+
+  <button type="submit">Guardar y capturar precios</button>
+  <a href="/panel/productos" style="margin-left:12px">Cancelar</a>
+</form>
+{% endblock %}

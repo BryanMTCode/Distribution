@@ -114,16 +114,46 @@ Entra con un usuario de oficina (rol `admin` o `gerente`). **Un vendedor no pued
 teclea sus datos ahí, el panel le responde que entre por la app del teléfono. Es a propósito — el panel
 ve toda la operación y el teléfono solo la ruta de quien lo trae.
 
-Tres pantallas, y cada una responde una pregunta distinta:
+Cinco pantallas, y cada una responde una pregunta distinta:
 
 | Pantalla | Qué contesta |
 |---|---|
 | **Tablero** | ¿cómo va el día? Ventas sincronizadas, importe, sobres en cuarentena, equipos que no reportan |
-| **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
+| **Productos** | el catálogo y los precios. Es por donde entra el negocio real al sistema |
+| **Clientes** | ¿qué prospectos levantó la ruta y esperan código, lista de precios y crédito? |
 | **Ventas marcadas** | ¿qué ventas entraron con una advertencia? Son las que el servidor **sí** aceptó pero marcó |
+| **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
 
 Las dos últimas son las dos mitades del §0.1 ("el mundo físico ya ocurrió"): el servidor marca en vez de
 rechazar, y alguien en la oficina tiene que poder **ver** esas marcas o la regla no sirve de nada.
+
+### Capturar el primer producto de verdad
+
+Esto es lo que reemplaza al Modo Demo cuando quieras probar con producto real:
+
+1. **Productos → Nuevo producto.** SKU, nombre, unidad base `PZA`, y en «presentación adicional»
+   `CAJA` con las piezas que trae (24, por ejemplo).
+2. En el detalle, captura el **precio de la CAJA** en la lista general. Digamos $296.00.
+3. En el renglón de `PZA` vas a ver la cuenta hecha: `$296.00 de CAJA ÷ 24 × 1 = $12.3333`.
+   Toca **Usar** y queda guardada con sus cuatro decimales.
+
+Ese $12.3333 es el punto entero del diseño: si capturaras $12.33, las 24 piezas sumarían $295.92 y se
+te irían ocho centavos por caja, todos los días. Con cuatro decimales, 24 × $12.3333 vuelve a dar los
+$296.00 exactos, porque el redondeo ocurre **una sola vez, sobre el importe**.
+
+El producto viaja al teléfono en el siguiente `pull`: los disparadores de la base publican el cambio en
+`change_log` solos, sin que ninguna pantalla se tenga que acordar.
+
+### Confirmar un prospecto levantado en ruta
+
+Cuando el vendedor da de alta una tienda en la calle, el servidor la guarda **prospecto**: sin código,
+sin lista de precios y con límite de crédito en cero. Eso es a propósito — el vendedor no se autoriza su
+propia cartera. Pero hay que terminarlo desde aquí, o cada venta a ese cliente entra marcada como «no
+trae lista de precios».
+
+En **Clientes** (abre directo en «Por confirmar»), entra al negocio y toca **Confirmar y asignar código**.
+El crédito se decide aparte, más abajo en la misma pantalla: confirmar que un negocio existe y decidir
+cuánto se le presta son dos juicios distintos.
 
 El panel no carga nada de internet: ni una hoja de estilos, ni una librería de JavaScript. El servidor de
 la oficina puede quedarse sin salida a internet y el panel sigue viéndose igual. Si usáramos un CDN, una
