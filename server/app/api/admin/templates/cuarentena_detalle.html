@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block titulo %}Operación en cuarentena{% endblock %}
+{% block contenido %}
+<p><a href="/panel/cuarentena">← Cuarentena</a></p>
+<h1>{{ fila.tipo }}</h1>
+<p class="subtitulo">
+  Recibido el {{ fila.recibido_en.strftime('%d/%m/%Y a las %H:%M') }}
+  desde {{ fila.equipo }}{% if fila.vendedor %} ({{ fila.vendedor }}){% endif %}.
+</p>
+
+<div class="aviso-caja error">
+  <strong>{{ fila.error_codigo }}</strong><br>
+  {{ fila.error_mensaje }}
+</div>
+
+<div class="rejilla">
+  <div class="tarjeta">
+    <div class="etiqueta">Id de operación</div>
+    <div class="mono">{{ fila.operacion_id }}</div>
+  </div>
+  <div class="tarjeta">
+    <div class="etiqueta">Hash del payload</div>
+    <div class="mono">{{ fila.hash_payload[:24] }}…</div>
+  </div>
+  <div class="tarjeta">
+    <div class="etiqueta">Estado</div>
+    <div>{{ fila.estado }}</div>
+    {% if fila.resuelto_en %}
+      <div class="sutil">{{ fila.resuelto_en.strftime('%d/%m/%Y %H:%M') }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<h2>Lo que mandó el equipo</h2>
+<p class="sutil">
+  Íntegro, sin resumir: para decidir qué hacer hay que ver exactamente qué llegó.
+</p>
+<div class="tabla-marco" style="padding:14px;background:var(--papel);overflow:auto">
+  <pre class="mono" style="margin:0">{{ payload }}</pre>
+</div>
+
+{% if fila.estado == 'pendiente' %}
+<h2>Atender</h2>
+<div class="aviso-caja neutro">
+  Esta operación <strong>no se borra nunca</strong>. El payload queda como
+  evidencia de algo que pasó en la calle y no entró al sistema. Descartarla solo
+  significa «ya lo resolví por fuera», y por eso la nota es obligatoria: dentro de
+  un mes, nadie va a recordar si se corrigió a mano o se perdió.
+</div>
+<form method="post" action="/panel/cuarentena/{{ fila.id }}/descartar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="nota">Qué se hizo</label>
+    <input type="text" id="nota" name="nota" required style="width:100%"
+           placeholder="Capturada a mano con folio 1234 / el cliente canceló / …">
+    <div class="ayuda">Obligatoria. Queda registrada con tu usuario y la fecha.</div>
+  </div>
+  <button type="submit" class="peligro">Marcar como atendida</button>
+</form>
+{% endif %}
+{% endblock %}

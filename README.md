@@ -55,11 +55,14 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
 | Sobres de Dart aceptados por el servidor real | ✅ prueba de contrato de punta a punta |
-| Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
+| **Panel de operación** — sesión con cookie, CSRF, tablero | ✅ 17 pruebas |
+| Pantalla de **cuarentena**: lo que el servidor rechazó | ✅ con payload íntegro |
+| Pantalla de **ventas marcadas**, con el motivo en español | ✅ la otra mitad de §0.1 |
+| Captura de catálogo y precios desde el panel | ⛔ resto de la Fase 1 |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**339 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **367 de Dart** y **125 de widget**, todas en verde.
+**356 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **367 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -68,7 +71,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | App móvil | Flutter · Drift (SQLite) · SQLCipher |
 | Backend | Python 3.12+ · FastAPI · SQLAlchemy 2.0 · Pydantic v2 · psycopg 3 |
 | Base de datos | PostgreSQL 17 + PostGIS |
-| Panel de operación | FastAPI + Jinja2 + HTMX |
+| Panel de operación | FastAPI + Jinja2, HTML del servidor, **sin CDN** |
 | Laboratorio analítico | Streamlit + Pandas/Polars (solo lectura) |
 | Cola de trabajos | PostgreSQL (`FOR UPDATE SKIP LOCKED`) |
 | Infraestructura | Docker Compose · Caddy · Cloudflare Tunnel |
@@ -88,6 +91,7 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 ```
 server/
   app/
+    api/admin/       PANEL DE OPERACIÓN: sesión con cookie, CSRF, plantillas
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
@@ -131,13 +135,13 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 339 pruebas de Python
+make pruebas                        # 356 pruebas de Python
 make movil                          # 367 de Dart + 125 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
 make lint
-make api                            # uvicorn con recarga
+make api                            # uvicorn con recarga — el panel en /panel
 ```
 
 Producción: `cp .env.example .env`, rellenar, y `docker compose up -d`.

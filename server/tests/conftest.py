@@ -129,8 +129,16 @@ async def cliente(motor) -> AsyncIterator[AsyncClient]:
 
     app = crear_app()
     app.dependency_overrides[obtener_sesion] = sesion_de_pruebas
+    # base_url con **https**, no http.
+    #
+    # La cookie de sesión del panel se marca `Secure` fuera de modo depuración, y
+    # un cliente HTTP no manda una cookie Secure sobre http://. Con http, el
+    # login "funcionaba" y todas las pantallas redirigían al login otra vez —un
+    # síntoma que parece de sesión y es de esquema—. ASGITransport no abre un
+    # socket, así que el esquema es solo una etiqueta: poner el correcto ejercita
+    # el camino de producción.
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://pruebas"
+        transport=ASGITransport(app=app), base_url="https://pruebas"
     ) as c:
         yield c
 

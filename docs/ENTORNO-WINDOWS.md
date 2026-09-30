@@ -106,6 +106,33 @@ make api
 Abre <http://localhost:8000/docs> en tu navegador de Windows: es la documentación interactiva de la API,
 generada sola. Puedes probar el login desde ahí.
 
+### Ver el panel de operación
+
+Con el mismo `make api` corriendo, abre <http://localhost:8000/panel>.
+
+Entra con un usuario de oficina (rol `admin` o `gerente`). **Un vendedor no puede entrar al panel**: si
+teclea sus datos ahí, el panel le responde que entre por la app del teléfono. Es a propósito — el panel
+ve toda la operación y el teléfono solo la ruta de quien lo trae.
+
+Tres pantallas, y cada una responde una pregunta distinta:
+
+| Pantalla | Qué contesta |
+|---|---|
+| **Tablero** | ¿cómo va el día? Ventas sincronizadas, importe, sobres en cuarentena, equipos que no reportan |
+| **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
+| **Ventas marcadas** | ¿qué ventas entraron con una advertencia? Son las que el servidor **sí** aceptó pero marcó |
+
+Las dos últimas son las dos mitades del §0.1 ("el mundo físico ya ocurrió"): el servidor marca en vez de
+rechazar, y alguien en la oficina tiene que poder **ver** esas marcas o la regla no sirve de nada.
+
+El panel no carga nada de internet: ni una hoja de estilos, ni una librería de JavaScript. El servidor de
+la oficina puede quedarse sin salida a internet y el panel sigue viéndose igual. Si usáramos un CDN, una
+herramienta de red local dependería de una conexión que puede no estar.
+
+En desarrollo el `make api` enciende `DSD_DEBUG=1`, y eso apaga el atributo `Secure` de la cookie de
+sesión — sin eso el navegador no la manda por `http` y el panel te devolvería al login en cada clic. En
+producción el panel va detrás de Caddy con TLS y el atributo se enciende solo.
+
 ### Comandos del día a día
 
 ```bash
@@ -113,7 +140,7 @@ make ayuda        # lista todo lo disponible
 make db           # levanta la base
 make pruebas      # la suite completa
 make lint         # revisa estilo
-make api          # API con recarga automática
+make api          # API con recarga automática (y el panel en /panel)
 make contratos    # regenera vectores y OpenAPI — REVISA EL DIFF
 make db-parar     # apaga y borra el contenedor de la base
 ```

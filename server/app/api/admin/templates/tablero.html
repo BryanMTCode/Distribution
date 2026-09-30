@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block titulo %}Tablero{% endblock %}
+{% block contenido %}
+<h1>Tablero de operación</h1>
+<p class="subtitulo">
+  Lo que necesita atención hoy. Cada número lleva a su pantalla.
+</p>
+
+{#
+  El orden NO es alfabético ni por tamaño: es por urgencia operativa.
+  La cuarentena va primero porque un sobre rechazado es una venta que la oficina
+  no tiene y el cliente sí: mientras esté ahí, el descuadre crece.
+#}
+<div class="tarjetas">
+  <a class="tarjeta {% if indicadores.cuarentena %}alerta{% endif %}"
+     href="/panel/cuarentena" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.cuarentena }}</div>
+    <div class="etiqueta">en cuarentena</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.cuarentena %}
+        Operaciones que el servidor rechazó. El vendedor ya entregó.
+      {% else %}
+        Nada rechazado.
+      {% endif %}
+    </div>
+  </a>
+
+  <a class="tarjeta {% if indicadores.en_revision %}aviso{% endif %}"
+     href="/panel/ventas" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.en_revision }}</div>
+    <div class="etiqueta">ventas por revisar</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.en_revision %}
+        Entraron marcadas: crédito excedido, precio viejo, fuera de geocerca.
+      {% else %}
+        Todas las ventas entraron limpias.
+      {% endif %}
+    </div>
+  </a>
+
+  <div class="tarjeta {% if indicadores.equipos_rezagados %}aviso{% endif %}">
+    <div class="numero">{{ indicadores.equipos_rezagados }}</div>
+    <div class="etiqueta">equipos sin sincronizar hoy</div>
+    <div class="sutil" style="margin-top:6px">
+      De {{ indicadores.equipos_activos }} activos.
+      {% if indicadores.equipos_rezagados %}
+        Un equipo que no sincroniza acumula ventas que nadie ve.
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="numero">{{ indicadores.ventas_hoy }}</div>
+    <div class="etiqueta">ventas recibidas hoy</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ indicadores.importe_hoy }} en total.
+      {# §0.3: el número se muestra con la advertencia de qué representa. #}
+      Solo lo que ya sincronizó.
+    </div>
+  </div>
+</div>
+
+<h2>Catálogo</h2>
+<div class="tarjetas">
+  <a class="tarjeta" href="/panel/productos" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.productos }}</div>
+    <div class="etiqueta">productos activos</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.sin_precio %}
+        <strong>{{ indicadores.sin_precio }} sin precio en la lista general.</strong>
+        Al vendedor no le aparecen.
+      {% else %}
+        Todos con precio en la lista general.
+      {% endif %}
+    </div>
+  </a>
+  <a class="tarjeta" href="/panel/clientes" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.clientes }}</div>
+    <div class="etiqueta">clientes</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.prospectos %}
+        {{ indicadores.prospectos }} dados de alta en la calle, sin revisar.
+      {% else %}
+        Ninguno pendiente de revisar.
+      {% endif %}
+    </div>
+  </a>
+</div>
+{% endblock %}

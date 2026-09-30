@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Cuarentena{% endblock %}
+{% block contenido %}
+<h1>Cuarentena de sincronización</h1>
+<p class="subtitulo">
+  Operaciones que el servidor rechazó. <strong>El vendedor ya entregó la
+  mercancía</strong>, así que cada fila es un descuadre hasta que alguien la
+  atienda.
+</p>
+
+<form class="barra" method="get" action="/panel/cuarentena">
+  {% for clave, etiqueta in [('pendiente','Pendientes'), ('reprocesada','Reprocesadas'), ('descartada','Descartadas')] %}
+    <button type="submit" name="estado" value="{{ clave }}"
+            class="{% if estado != clave %}secundario{% endif %}">
+      {{ etiqueta }} ({{ conteos.get(clave, 0) }})
+    </button>
+  {% endfor %}
+</form>
+
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Recibido</th>
+        <th>Tipo</th>
+        <th>Equipo / vendedor</th>
+        <th>Por qué se rechazó</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td class="sutil">{{ f.recibido_en.strftime('%d/%m %H:%M') }}</td>
+        <td class="mono">{{ f.tipo }}</td>
+        <td>
+          {{ f.equipo }}
+          {% if f.vendedor %}<div class="sutil">{{ f.vendedor }}</div>{% endif %}
+        </td>
+        <td>
+          <span class="etiqueta-motivo">{{ f.error_codigo }}</span>
+          <div class="sutil">{{ f.error_mensaje }}</div>
+          {% if f.nota_resolucion %}
+            <div class="sutil"><em>Nota: {{ f.nota_resolucion }}</em></div>
+          {% endif %}
+        </td>
+        <td><a href="/panel/cuarentena/{{ f.id }}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  {% if estado == 'pendiente' %}
+    Nada en cuarentena. Todo lo que mandaron los equipos entró.
+  {% else %}
+    Nada con estado «{{ estado }}».
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

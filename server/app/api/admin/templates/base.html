@@ -1,0 +1,164 @@
+{#
+  Plantilla base del panel de operación.
+
+  ───────────────────────────────────────────────────────────────────────────
+  SIN CDN, SIN JAVASCRIPT DE TERCEROS
+  ───────────────────────────────────────────────────────────────────────────
+  El panel corre en el servidor de la oficina, detrás del túnel. Traer HTMX o una
+  hoja de estilos de un CDN convertiría una herramienta de red local en una que
+  **depende de internet**: el día que se caiga el enlace, la oficina se queda sin
+  poder capturar precios aunque el servidor esté perfecto.
+
+  Todo es HTML renderizado en el servidor con formularios normales. Funciona sin
+  JavaScript, en cualquier navegador, y no hay nada que se pueda romper al
+  actualizar una dependencia. HTMX entra el día que una pantalla concreta lo
+  necesite —búsqueda mientras se escribe, por ejemplo— y entonces se versiona el
+  archivo en el repositorio, no se apunta a un CDN.
+
+  Los estilos van aquí embebidos: son doscientas líneas y un archivo aparte sería
+  una petición más en una red local que no lo necesita.
+#}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Panel{% endblock %} · DSD</title>
+  <style>
+    :root {
+      --tinta: #16211a;
+      --suave: #5b6b60;
+      --linea: #d6ded8;
+      --fondo: #f6f8f6;
+      --papel: #ffffff;
+      --acento: #1b5e20;
+      --acento-suave: #e8f1e9;
+      --alerta: #8c1d18;
+      --alerta-suave: #fbe9e7;
+      --aviso: #7a4f01;
+      --aviso-suave: #fff4e0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--tinta);
+      background: var(--fondo);
+    }
+    a { color: var(--acento); }
+    header.principal {
+      background: var(--acento);
+      color: #fff;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    header.principal .marca { font-weight: 700; letter-spacing: .3px; }
+    header.principal nav { display: flex; gap: 16px; flex-wrap: wrap; }
+    header.principal nav a {
+      color: #fff; text-decoration: none; opacity: .85; padding: 4px 0;
+    }
+    header.principal nav a:hover { opacity: 1; }
+    header.principal nav a.activo {
+      opacity: 1; border-bottom: 2px solid #fff; font-weight: 600;
+    }
+    header.principal .quien { margin-left: auto; font-size: 13px; opacity: .9; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 17px; margin: 28px 0 10px; }
+    .subtitulo { color: var(--suave); margin: 0 0 20px; }
+    .tarjetas {
+      display: grid; gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    }
+    .tarjeta {
+      background: var(--papel); border: 1px solid var(--linea);
+      border-radius: 10px; padding: 16px;
+    }
+    .tarjeta .numero { font-size: 30px; font-weight: 700; line-height: 1.1; }
+    .tarjeta .etiqueta { color: var(--suave); font-size: 13px; }
+    .tarjeta.alerta { border-color: #e6b4ae; background: var(--alerta-suave); }
+    .tarjeta.alerta .numero { color: var(--alerta); }
+    .tarjeta.aviso { border-color: #e8cf9a; background: var(--aviso-suave); }
+    .tarjeta.aviso .numero { color: var(--aviso); }
+    table { width: 100%; border-collapse: collapse; background: var(--papel); }
+    th, td {
+      text-align: left; padding: 9px 12px;
+      border-bottom: 1px solid var(--linea); vertical-align: top;
+    }
+    th { font-size: 12px; text-transform: uppercase; color: var(--suave); }
+    td.numero, th.numero { text-align: right; font-variant-numeric: tabular-nums; }
+    tr:last-child td { border-bottom: 0; }
+    .tabla-marco {
+      border: 1px solid var(--linea); border-radius: 10px; overflow: hidden;
+    }
+    .vacio {
+      background: var(--papel); border: 1px dashed var(--linea);
+      border-radius: 10px; padding: 32px; text-align: center; color: var(--suave);
+    }
+    form.barra { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+    input[type=text], input[type=search], input[type=password],
+    input[type=number], select, textarea {
+      padding: 8px 10px; border: 1px solid var(--linea); border-radius: 7px;
+      font: inherit; background: var(--papel); color: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid var(--acento); outline-offset: -1px;
+    }
+    button {
+      padding: 8px 16px; border: 0; border-radius: 7px; font: inherit;
+      font-weight: 600; background: var(--acento); color: #fff; cursor: pointer;
+    }
+    button.secundario {
+      background: var(--papel); color: var(--tinta); border: 1px solid var(--linea);
+    }
+    button.peligro { background: var(--alerta); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .campo { margin-bottom: 14px; }
+    .campo label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .campo .ayuda { font-size: 12px; color: var(--suave); margin-top: 3px; }
+    .rejilla { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .aviso-caja {
+      border-radius: 8px; padding: 12px 14px; margin: 0 0 18px; font-size: 14px;
+    }
+    .aviso-caja.error { background: var(--alerta-suave); color: var(--alerta); }
+    .aviso-caja.bien { background: var(--acento-suave); color: var(--acento); }
+    .aviso-caja.neutro { background: var(--papel); border: 1px solid var(--linea); }
+    .etiqueta-motivo {
+      display: inline-block; background: var(--aviso-suave); color: var(--aviso);
+      border-radius: 999px; padding: 2px 9px; font-size: 12px; margin: 1px 2px 1px 0;
+      white-space: nowrap;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    }
+    .sutil { color: var(--suave); font-size: 13px; }
+    .paginacion { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+    .entrar {
+      max-width: 340px; margin: 12vh auto; background: var(--papel);
+      border: 1px solid var(--linea); border-radius: 12px; padding: 28px;
+    }
+  </style>
+</head>
+<body>
+{% if actor %}
+<header class="principal">
+  <span class="marca">DSD · Operación</span>
+  <nav>
+    {% for ruta, etiqueta in navegacion %}
+      <a href="{{ ruta }}" {% if seccion == etiqueta %}class="activo"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+  <span class="quien">
+    {{ actor.rol }}
+    · <a href="/panel/salir" style="color:#fff">Salir</a>
+  </span>
+</header>
+{% endif %}
+<main>
+  {% block contenido %}{% endblock %}
+</main>
+</body>
+</html>

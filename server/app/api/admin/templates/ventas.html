@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Ventas{% endblock %}
+{% block contenido %}
+<h1>{% if solo_revision %}Ventas por revisar{% else %}Ventas recibidas{% endif %}</h1>
+<p class="subtitulo">
+  El servidor nunca rechaza una venta hecha en la calle: la acepta y la marca.
+  <strong>Esta pantalla es la otra mitad de esa regla</strong> — marcar sin que
+  nadie mire convierte la bandera en ruido.
+</p>
+
+<form class="barra" method="get" action="/panel/ventas">
+  <button type="submit" name="solo_revision" value="1"
+          class="{% if not solo_revision %}secundario{% endif %}">Por revisar</button>
+  <button type="submit" name="solo_revision" value="0"
+          class="{% if solo_revision %}secundario{% endif %}">Todas</button>
+</form>
+
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Cliente</th>
+        <th>Vendedor</th>
+        <th class="numero">Total</th>
+        <th>Qué revisar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <span class="mono">{{ f.folio_local }}</span>
+          <div class="sutil">
+            #{{ f.folio_servidor }} · {{ f.fecha_operativa.strftime('%d/%m') }}
+          </div>
+        </td>
+        <td>{{ f.cliente }}</td>
+        <td class="sutil">{{ f.vendedor }}</td>
+        <td class="numero">
+          ${{ '%.2f'|format(f.total) }}
+          <div class="sutil">{{ f.tipo }}</div>
+        </td>
+        <td>
+          {% if f.requiere_revision %}
+            {% for m in f.revision_motivos %}
+              <span class="etiqueta-motivo">{{ explicacion.get(m, m) }}</span>
+            {% endfor %}
+            {% if f.distancia_cliente_m and f.distancia_cliente_m > 300 %}
+              <div class="sutil">A {{ f.distancia_cliente_m|round|int }} m del domicilio</div>
+            {% endif %}
+            {% if f.desfase_reloj_seg and f.desfase_reloj_seg|abs > 3600 %}
+              <div class="sutil">
+                Reloj desfasado {{ (f.desfase_reloj_seg / 3600)|round(1) }} h
+              </div>
+            {% endif %}
+          {% else %}
+            <span class="sutil">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  {% if solo_revision %}
+    Ninguna venta marcada. Todo lo que entró venía limpio.
+  {% else %}
+    Todavía no ha entrado ninguna venta.
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

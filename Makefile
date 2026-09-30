@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo apk-demo api worker limpiar
+.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -39,8 +39,19 @@ contratos:  ## Regenera vectores y OpenAPI — REVISA EL DIFF antes de commitear
 contratos-argon2:  ## Regenera los vectores de Argon2id
 	cd server && .venv/bin/python ../contracts/generar_vectores_argon2.py
 
-api:  ## Levanta la API en modo desarrollo
-	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/uvicorn app.main:app --reload
+api:  ## Levanta la API y el panel en modo desarrollo
+	@echo "API:   http://127.0.0.1:8000/docs"
+	@echo "Panel: http://127.0.0.1:8000/panel"
+	cd server && DSD_DATABASE_URL="$(DB)" DSD_DEBUG=1 .venv/bin/uvicorn app.main:app --reload
+
+panel:  ## Recuerda cómo entrar al panel
+	@echo "1. make api"
+	@echo "2. Abre http://127.0.0.1:8000/panel"
+	@echo "3. Entra con un usuario de oficina (rol admin o gerente)."
+	@echo
+	@echo "DSD_DEBUG=1 apaga el atributo Secure de la cookie, que es lo que"
+	@echo "permite usar el panel sobre http en desarrollo. En producción va"
+	@echo "detrás de Caddy con TLS y el atributo se enciende solo."
 
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal
