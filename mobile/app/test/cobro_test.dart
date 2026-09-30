@@ -132,9 +132,13 @@ void main() {
 
   group('la impresión', () {
     testWidgets('NO es automática: hay que tocar el botón', (tester) async {
-      // Decisión de negocio. Si imprimiera sola y la impresora estuviera sin
-      // papel, la venta ya estaría escrita y el vendedor no tendría un lugar
-      // obvio desde dónde reintentar.
+      // Decisión de negocio (ADR 0002 §8). Si imprimiera sola y la impresora
+      // estuviera sin papel, la venta ya estaría escrita y el vendedor no
+      // tendría un lugar obvio desde dónde reintentar.
+      //
+      // Lo que pasa AL TOCAR el botón —los bytes, el registro, los caminos de
+      // falla— vive en `impresion_test.dart`, que inyecta una impresora simulada
+      // con su carpeta propia. Aquí solo se comprueba que no imprima sola.
       final base = await irAlPedido(tester);
       await tocar(tester, const Key('boton_cobrar'));
 
@@ -143,36 +147,6 @@ void main() {
         equals(0),
       );
       expect(find.text('Imprimir remisión'), findsOneWidget);
-    });
-
-    testWidgets('al tocarlo, la venta queda marcada como impresa',
-        (tester) async {
-      final base = await irAlPedido(tester);
-      await tocar(tester, const Key('boton_cobrar'));
-      await tocar(tester, const Key('boton_imprimir'));
-
-      final venta = BaseLocalDePrueba(base)
-          .unaFila('SELECT impreso, reimpresiones FROM ventas');
-      expect(venta['impreso'], equals(1));
-      expect(venta['reimpresiones'], equals(0));
-      expect(find.byKey(const Key('aviso_impresa')), findsOneWidget);
-    });
-
-    testWidgets('el reintento es el mismo botón, y cuenta como copia',
-        (tester) async {
-      final base = await irAlPedido(tester);
-      await tocar(tester, const Key('boton_cobrar'));
-      await tocar(tester, const Key('boton_imprimir'));
-
-      // El botón cambia de texto: ya no es la primera.
-      expect(find.text('Imprimir otra copia'), findsOneWidget);
-      await tocar(tester, const Key('boton_imprimir'));
-
-      expect(
-        BaseLocalDePrueba(base)
-            .unaFila('SELECT reimpresiones FROM ventas')['reimpresiones'],
-        equals(1),
-      );
     });
   });
 

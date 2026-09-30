@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-demo movil-contratos movil-esquema app app-demo apk-demo api worker limpiar
+.PHONY: ayuda instalar db db-parar migrar pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -63,6 +63,11 @@ apk-demo:  ## Genera el APK de depuración con modo demo para instalar a mano
 	@echo
 	@echo "APK en mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
 	@echo "Instalar:  adb install -r mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
+
+movil-ticket:  ## Regenera la vista previa del ticket — REVÍSALA, se ve el papel
+	cd mobile/packages/dsd_core && dart run tool/generar_ticket_ejemplo.dart
+	@echo
+	@echo "Míralo:  cat contracts/ticket_58mm_ejemplo.txt"
 
 movil-esquema:  ## Regenera la constante del esquema local desde el .sql
 	cd mobile/packages/dsd_core && dart run tool/generar_esquema.dart

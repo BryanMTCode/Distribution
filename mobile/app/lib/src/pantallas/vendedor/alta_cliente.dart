@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
+import 'lienzo_espacial.dart';
 import '../../estado/sesion.dart';
 
 class PantallaAltaCliente extends ConsumerStatefulWidget {
@@ -118,6 +119,22 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
               validator: (v) =>
                   (v ?? '').trim().isEmpty ? 'Escribe el nombre del negocio' : null,
             ),
+            // El aviso de posible duplicado va ARRIBA, pegado al nombre.
+            //
+            // Estaba al final del formulario, y al agregar el lienzo espacial
+            // quedó fuera de la pantalla: el vendedor llenaba todo y se enteraba
+            // hasta intentar guardar. Decidir si esta tienda es la misma que ya
+            // tiene registrada es lo MÁS consecuente de esta pantalla —un
+            // duplicado parte el historial de un cliente en dos— y se decide
+            // mientras se escribe el nombre, no al final.
+            if (cercanos.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _AvisoCercanos(
+                cercanos: cercanos,
+                confirmado: _confirmoQueEsNueva,
+                alConfirmar: () => setState(() => _confirmoQueEsNueva = true),
+              ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               key: const Key('campo_telefono'),
@@ -178,14 +195,6 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
             ),
             const SizedBox(height: 20),
             const _BloqueUbicacion(),
-            if (cercanos.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              _AvisoCercanos(
-                cercanos: cercanos,
-                confirmado: _confirmoQueEsNueva,
-                alConfirmar: () => setState(() => _confirmoQueEsNueva = true),
-              ),
-            ],
             const SizedBox(height: 24),
           ],
         ),
@@ -266,6 +275,16 @@ class _BloqueUbicacion extends ConsumerWidget {
           const SizedBox(height: 4),
           _Diagnostico(estado: estado),
           if (estado.ubicacion != null) ...[
+            const SizedBox(height: 12),
+            // El lienzo va ANTES de los botones: primero te ubicas, después
+            // corriges. Y al corregir, los vecinos se mueven en el dibujo, que
+            // es la confirmación de que el ajuste va para el lado correcto.
+            LienzoEspacial(
+              centro: estado.ubicacion!,
+              vecinos: ref.watch(vecinosDelLienzoProvider),
+            ),
+            const SizedBox(height: 4),
+            _LeyendaDelLienzo(vecinos: ref.watch(vecinosDelLienzoProvider)),
             const SizedBox(height: 12),
             const _AjusteCardinal(),
           ],
@@ -499,4 +518,75 @@ class _AvisoCercanos extends StatelessWidget {
       ),
     );
   }
+}
+
+/// La leyenda del lienzo, en palabras.
+///
+/// Un dibujo sin leyenda obliga a adivinar qué significa cada color. El aviso de
+/// duplicado usa el mismo rojo que los puntos cercanos, para que el vendedor
+/// relacione una cosa con la otra sin explicación.
+class _LeyendaDelLienzo extends StatelessWidget {
+  const _LeyendaDelLienzo({required this.vecinos});
+
+  final List<PosibleDuplicado> vecinos;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final cerca =
+        vecinos.where((v) => v.distanciaMetros <= radioDuplicadoMetros).length;
+
+    if (vecinos.isEmpty) {
+      return Text(
+        'No hay clientes tuyos registrados a la redonda.',
+        key: const Key('leyenda_lienzo_vacio'),
+        style: TextStyle(fontSize: 11, color: colores.onSurfaceVariant),
+      );
+    }
+
+    return Wrap(
+      key: const Key('leyenda_lienzo'),
+      spacing: 12,
+      children: [
+        _Punto(color: colores.primary, texto: 'Aquí estás'),
+        if (cerca > 0)
+          _Punto(
+            color: colores.error,
+            texto: '$cerca a menos de ${radioDuplicadoMetros.round()} m',
+          ),
+        if (vecinos.length - cerca > 0)
+          _Punto(
+            color: colores.tertiary,
+            texto: '${vecinos.length - cerca} más lejos',
+          ),
+      ],
+    );
+  }
+}
+
+class _Punto extends StatelessWidget {
+  const _Punto({required this.color, required this.texto});
+
+  final Color color;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 8,
+            width: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            texto,
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
 }

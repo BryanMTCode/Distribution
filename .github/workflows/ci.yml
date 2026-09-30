@@ -124,6 +124,19 @@ jobs:
       # `dart test` ya corrió los vectores canónicos: si Dart y Python
       # divergieran, este job se pone rojo y el de Python no. Esa asimetría es
       # justo la señal que se busca.
+      # El diseño del ticket se revisa leyendo este archivo: la impresora física
+      # no está disponible, así que el texto versionado ES la forma de ver el
+      # papel. Si cambia sin versionarse, el diff deja de servir para revisarlo.
+      - name: La vista previa del ticket está al día
+        run: |
+          dart run tool/generar_ticket_ejemplo.dart
+          cd ../../.. && git diff --exit-code contracts/ticket_58mm_ejemplo.txt || {
+            echo "::error::El diseño del ticket cambió y no se versionó el archivo."
+            echo "Regenéralo con 'make movil-ticket', MÍRALO, y commitea el diff:"
+            echo "  cat contracts/ticket_58mm_ejemplo.txt"
+            exit 1
+          }
+
       - name: Los sobres de ejemplo están al día
         run: |
           dart run tool/generar_sobres_ejemplo.dart

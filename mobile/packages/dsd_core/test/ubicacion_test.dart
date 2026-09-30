@@ -146,4 +146,52 @@ void main() {
       expect(tienda.distanciaA(vecina), closeTo(35, 1));
     });
   });
+
+  group('rumbo', () {
+    // Es lo que coloca a cada cliente en el lienzo espacial. Un rumbo mal
+    // calculado pone la tienda de enfrente al otro lado de la pantalla.
+    final centro =
+        Ubicacion(lat: 19.4326, lng: -99.1332, origen: OrigenUbicacion.gps);
+
+    test('los cuatro puntos cardinales', () {
+      expect(centro.rumboA(centro.desplazada(norte: 100)), closeTo(0, 0.5));
+      expect(centro.rumboA(centro.desplazada(este: 100)), closeTo(90, 0.5));
+      expect(centro.rumboA(centro.desplazada(norte: -100)), closeTo(180, 0.5));
+      expect(centro.rumboA(centro.desplazada(este: -100)), closeTo(270, 0.5));
+    });
+
+    test('las diagonales caen a 45 grados', () {
+      expect(
+        centro.rumboA(centro.desplazada(norte: 100, este: 100)),
+        closeTo(45, 1),
+      );
+      expect(
+        centro.rumboA(centro.desplazada(norte: -100, este: -100)),
+        closeTo(225, 1),
+      );
+    });
+
+    test('siempre en 0..360, nunca negativo', () {
+      for (final norte in [-300.0, -50.0, 0.0, 50.0, 300.0]) {
+        for (final este in [-300.0, -50.0, 0.0, 50.0, 300.0]) {
+          final r = centro.rumboA(centro.desplazada(norte: norte, este: este));
+          expect(r, greaterThanOrEqualTo(0));
+          expect(r, lessThan(360));
+        }
+      }
+    });
+
+    test('hacia sí mismo devuelve cero, no NaN', () {
+      // Un NaN pintando el lienzo desaparece el punto sin decir por qué.
+      expect(centro.rumboA(centro), equals(0));
+      expect(centro.rumboA(centro).isNaN, isFalse);
+    });
+
+    test('el rumbo de ida y el de vuelta son opuestos', () {
+      final otro = centro.desplazada(norte: 200, este: 80);
+      final ida = centro.rumboA(otro);
+      final vuelta = otro.rumboA(centro);
+      expect((ida - vuelta).abs(), closeTo(180, 1));
+    });
+  });
 }

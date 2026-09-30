@@ -396,10 +396,76 @@ Future<void> entrarCon(WidgetTester tester, String pin) async {
 /// razón que no tiene que ver con lo que se está probando.
 Future<void> tocar(WidgetTester tester, Key clave) async {
   final finder = find.byKey(clave);
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
+  await traerAlArbol(tester, finder);
   await tester.tap(finder);
   await tester.pumpAndSettle();
+}
+
+/// Trae un widget al árbol, desplazando si hace falta.
+///
+/// En un formulario largo un `ListView` **desecha** los hijos que quedan lejos
+/// del área visible. Si la prueba se desplazó hacia abajo —para tocar los botones
+/// de ajuste, por ejemplo— el campo de arriba ya no existe, y tanto `enterText`
+/// como `ensureVisible` fallan con un "Bad state: No element" que no dice nada
+/// del código.
+///
+/// `scrollUntilVisible` sí sabe buscar fuera del árbol: desplaza hasta
+/// encontrarlo. Se intenta primero hacia arriba, que es de donde vienen los
+/// campos que la prueba ya llenó.
+Future<void> traerAlArbol(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    return;
+  }
+  final desplazable = find.byType(Scrollable).first;
+  for (final delta in [-120.0, 120.0]) {
+    try {
+      await tester.scrollUntilVisible(finder, delta, scrollable: desplazable);
+      await tester.pumpAndSettle();
+      return;
+    } on Object {
+      // Se intenta en la otra dirección.
+    }
+  }
+}
+
+/// Escribe en un campo, trayéndolo al árbol si el desplazamiento lo desechó.
+Future<void> escribirEn(WidgetTester tester, Key clave, String texto) async {
+  final finder = find.byKey(clave);
+  await traerAlArbol(tester, finder);
+  await tester.enterText(finder, texto);
+  await tester.pumpAndSettle();
+}
+
+/// Toca un control que muestra un indicador de progreso mientras trabaja.
+///
+/// `pumpAndSettle` espera a que **no quede ninguna animación**, y un
+/// `CircularProgressIndicator` gira para siempre: la prueba se queda colgada con
+/// un "pumpAndSettle timed out" que no dice nada del código. Aquí se avanza el
+/// reloj a pasos fijos, que es lo que hace falta para que el `await` de la
+/// operación termine.
+Future<void> tocarConProgreso(
+  WidgetTester tester,
+  Key clave, {
+  Duration espera = const Duration(milliseconds: 150),
+}) async {
+  final finder = find.byKey(clave);
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  // El toque va DENTRO de `runAsync`, que corre en la zona asíncrona real.
+  //
+  // Sin esto, el trabajo que toca el disco —la impresora simulada guarda el
+  // ticket en un archivo— nunca termina: `testWidgets` usa un reloj falso que
+  // adelanta timers pero no completa la entrada/salida de verdad. El síntoma es
+  // un `await` colgado y una aserción que falla como si el código no hubiera
+  // hecho nada, sin ninguna pista de por qué.
+  await tester.runAsync(() async {
+    await tester.tap(finder);
+    await Future<void>.delayed(espera);
+  });
+  await tester.pump();
+  await tester.pump();
 }
 
 Finder textoQueContiene(String fragmento) => find.byWidgetPredicate(

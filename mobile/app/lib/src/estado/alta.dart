@@ -116,8 +116,21 @@ final ubicacionProvider = NotifierProvider<ControladorUbicacion, EstadoUbicacion
   ControladorUbicacion.new,
 );
 
-/// Clientes ya conocidos cerca del punto actual.
+/// Clientes ya conocidos **dentro del radio de duplicado**.
+///
+/// Es la lista que dispara el aviso antes de guardar. Radio corto a propósito:
+/// más allá de 60 m ya no es "la tienda de al lado".
 final cercanosProvider = Provider<List<PosibleDuplicado>>((ref) {
   final ubicacion = ref.watch(ubicacionProvider).ubicacion;
   return ref.watch(altasProvider).cercanos(ubicacion);
+});
+
+/// Clientes conocidos para el **lienzo espacial**, con un radio más amplio.
+///
+/// El radio de duplicado (60 m) sirve para decidir, no para orientarse: un
+/// lienzo que solo muestra 60 metros no da contexto. Con 400 m el vendedor ve la
+/// cuadra completa y reconoce dónde está parado.
+final vecinosDelLienzoProvider = Provider<List<PosibleDuplicado>>((ref) {
+  final ubicacion = ref.watch(ubicacionProvider).ubicacion;
+  return ref.watch(altasProvider).cercanos(ubicacion, radio: 400);
 });

@@ -251,6 +251,26 @@ Lo que vale la pena comprobar con el pulgar:
    entrar: el pedido tiene que estar como lo dejaste, con los mismos precios.
 8. El rango de folios de la demo es de **30**, así que a la segunda venta ya debe salir el aviso de
    *"te quedan pocos folios"* sin tener que emitir cientos de tickets.
+9. Toca **"Imprimir remisión"** y luego **"Ver el ticket"**: se abre el ticket como saldría del papel,
+   en monoespaciado, con el ancho de 58 mm marcado. Una línea que se desborde lleva `>` en vez de `|`.
+10. En el alta de cliente, el **lienzo espacial**: tu punto al centro y los clientes conocidos
+    alrededor. Toca las flechas cardinales y fíjate cómo **se mueven los vecinos** — eso confirma que
+    el ajuste va para el lado correcto.
+
+### Revisar el ticket sin impresora
+
+El ticket también se versiona como texto, así que se puede leer sin correr nada:
+
+```bash
+cat contracts/ticket_58mm_ejemplo.txt      # contado, crédito y reimpresión
+make movil-ticket                          # regenerarlo tras un cambio de diseño
+```
+
+Y el teléfono deja una copia de cada ticket impreso:
+
+```bash
+adb exec-out run-as com.distribuidora.dsd_app cat files/tickets/ultimo.txt
+```
 
 Puedes pulsar el botón varias veces: la siembra es idempotente, no duplica nada **ni infla la carga del
 camión**.

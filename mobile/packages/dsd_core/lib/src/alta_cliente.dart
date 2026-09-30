@@ -83,11 +83,19 @@ class PosibleDuplicado {
     required this.clienteId,
     required this.nombreComercial,
     required this.distanciaMetros,
+    required this.rumboGrados,
   });
 
   final String clienteId;
   final String nombreComercial;
   final double distanciaMetros;
+
+  /// Grados desde el norte (0 = norte, 90 = este).
+  ///
+  /// Con distancia y rumbo, el lienzo espacial coloca cada cliente conocido
+  /// alrededor del vendedor **sin descargar un mosaico de mapa**. Un mapa con
+  /// calles necesita red, y la corrección se hace justo donde no la hay.
+  final double rumboGrados;
 }
 
 /// Radio para sospechar de un duplicado.
@@ -144,6 +152,7 @@ class AltaDeClientes {
             clienteId: f['id'] as String,
             nombreComercial: f['nombre_comercial'] as String,
             distanciaMetros: distancia,
+            rumboGrados: ubicacion.rumboA(otra),
           ),
         );
       }

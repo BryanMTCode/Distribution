@@ -144,6 +144,32 @@ class Ubicacion {
     return radioTierraM * 2 * math.asin(math.min(1, math.sqrt(a)));
   }
 
+  /// Rumbo hacia otra ubicación, en grados desde el norte (0 = norte,
+  /// 90 = este), siempre en 0..360.
+  ///
+  /// Es lo que permite dibujar el lienzo espacial: con distancia y rumbo, cada
+  /// cliente conocido se coloca alrededor del punto donde está parado el
+  /// vendedor, **sin descargar un solo mosaico de mapa**. Un mapa con calles
+  /// necesita red, y la corrección de coordenadas se hace justo donde no hay.
+  ///
+  /// Hacia sí mismo el rumbo no existe; se devuelve 0 en vez de NaN, porque un
+  /// NaN pintando un lienzo desaparece el punto sin decir por qué.
+  double rumboA(Ubicacion otra) {
+    double aRadianes(double g) => g * math.pi / 180;
+
+    final phi1 = aRadianes(lat);
+    final phi2 = aRadianes(otra.lat);
+    final dLng = aRadianes(otra.lng - lng);
+
+    final y = math.sin(dLng) * math.cos(phi2);
+    final x = math.cos(phi1) * math.sin(phi2) -
+        math.sin(phi1) * math.cos(phi2) * math.cos(dLng);
+    if (y == 0 && x == 0) return 0;
+
+    final grados = math.atan2(y, x) * 180 / math.pi;
+    return (grados + 360) % 360;
+  }
+
   @override
   String toString() =>
       'Ubicacion($latTexto, $lngTexto, ${origen.codigo}'

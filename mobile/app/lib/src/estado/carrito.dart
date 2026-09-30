@@ -16,6 +16,7 @@ import 'dart:math';
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../datos/impresora.dart';
 import '../datos/repo_catalogo.dart';
 import '../datos/repo_clientes.dart';
 import 'sesion.dart';
@@ -331,3 +332,55 @@ class ControladorCobro extends Notifier<EstadoCobro> {
 final cobroProvider = NotifierProvider<ControladorCobro, EstadoCobro>(
   ControladorCobro.new,
 );
+
+// ---------------------------------------------------------------------------
+// La impresión
+// ---------------------------------------------------------------------------
+
+/// La impresora del equipo.
+///
+/// Hoy es la simulada: la EC Line EC-MP200 no está disponible. Cuando llegue, se
+/// sustituye ESTE provider por la implementación Bluetooth y **nada más cambia**
+/// —ni la pantalla, ni el generador del ticket, ni el registro de la impresión—.
+final impresoraProvider = Provider<Impresora>((_) => ImpresoraSimulada());
+
+/// Los datos del negocio que van en el encabezado del ticket.
+///
+/// Fijos por ahora. Cuando exista el panel de configuración salen de ahí, y el
+/// mismo binario sirve para otra distribuidora.
+final negocioProvider = Provider<DatosDelNegocio>(
+  (_) => const DatosDelNegocio(
+    nombre: 'Distribuidora El Ñandú',
+    direccion: 'Av. Hidalgo 145, Col. Centro',
+    telefono: '55 1234 5678',
+    leyendaFinal: 'Gracias por su compra',
+  ),
+);
+
+/// Arma el ticket de una venta ya guardada.
+///
+/// El ticket del original se congela en `ventas.ticket_escpos`; las
+/// reimpresiones **reusan esos bytes** con el aviso de copia encima, para que el
+/// papel diga exactamente lo mismo que el que firmó el cliente.
+List<int> armarTicket(
+  WidgetRef ref,
+  VentaGuardada venta, {
+  required String nombreCliente,
+  String? codigoCliente,
+  String? direccionCliente,
+}) {
+  final sesion = ref.read(sesionProvider);
+  final vendedor =
+      sesion is SesionAbierta ? sesion.credencial.nombre : 'Vendedor';
+
+  return ticketDeVenta(
+    venta,
+    negocio: ref.read(negocioProvider),
+    visita: DatosDeLaVisita(
+      nombreCliente: nombreCliente,
+      nombreVendedor: vendedor,
+      codigoCliente: codigoCliente,
+      direccionCliente: direccionCliente,
+    ),
+  );
+}

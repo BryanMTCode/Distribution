@@ -20,7 +20,9 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../datos/impresora.dart';
 import '../../estado/carrito.dart';
+import 'vista_ticket.dart';
 
 class PantallaVentaGuardada extends ConsumerStatefulWidget {
   const PantallaVentaGuardada({super.key, required this.venta});
@@ -36,31 +38,69 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
   int _impresiones = 0;
   String? _errorDeImpresion;
 
+  /// Los bytes del original, congelados. Ver `_imprimir`.
+  List<int>? _original;
+
+  /// Donde quedó el ticket cuando la impresora es simulada.
+  String? _dondeQuedo;
+
   Future<void> _imprimir() async {
     setState(() {
       _imprimiendo = true;
       _errorDeImpresion = null;
     });
 
-    // La impresora Bluetooth es la última pieza de la Fase 3 y necesita el
-    // equipo físico. Mientras tanto se registra la impresión —que es lo que la
-    // oficina audita— y se dice la verdad en pantalla.
+    final cliente = ref.read(clienteDeLaVisitaProvider);
     final cierre = ref.read(cierreDeVentaProvider);
-    try {
-      cierre?.marcarImpresa(widget.venta.id, ticket: const []);
-      if (!mounted) return;
-      setState(() {
-        _imprimiendo = false;
-        _impresiones++;
-      });
-    } on Object catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _imprimiendo = false;
-        _errorDeImpresion = e.toString();
-      });
+    final esCopia = _impresiones > 0;
+
+    // El ORIGINAL se arma una vez y se congela; la reimpresión reusa esos bytes
+    // con el aviso de copia encima. Recalcular el ticket daría un papel distinto
+    // del que firmó el cliente si el catálogo cambió en medio.
+    _original ??= armarTicket(
+      ref,
+      widget.venta,
+      nombreCliente: cliente?.nombreComercial ?? 'Cliente',
+      codigoCliente: cliente?.codigo,
+      direccionCliente: cliente?.direccion,
+    );
+    final aImprimir =
+        esCopia ? reimpresion(_original!, _impresiones) : _original!;
+
+    final resultado = await ref.read(impresoraProvider).imprimir(aImprimir);
+    if (!mounted) return;
+
+    switch (resultado) {
+      case ImpresionHecha(:final donde):
+        // El registro va DESPUÉS de imprimir con éxito: marcar antes dejaría
+        // ventas "impresas" que nunca salieron en papel, y la oficina no podría
+        // distinguir un ticket perdido de uno que nunca se imprimió.
+        try {
+          cierre?.marcarImpresa(widget.venta.id, ticket: _original!);
+        } on Object {
+          // La venta ya está guardada y el papel ya salió; no perder eso por no
+          // poder anotar la marca.
+        }
+        setState(() {
+          _imprimiendo = false;
+          _impresiones++;
+          _dondeQuedo = donde;
+        });
+      case ImpresoraSinPapel():
+        _falla('La impresora no tiene papel. Pon papel y vuelve a intentar.');
+      case ImpresoraDesconectada():
+        _falla('La impresora no está conectada. Revisa que esté encendida.');
+      case ImpresoraNoConfigurada():
+        _falla('Este equipo no tiene impresora configurada.');
+      case ImpresionFallida(:final detalle):
+        _falla('No se pudo imprimir: $detalle');
     }
   }
+
+  void _falla(String mensaje) => setState(() {
+        _imprimiendo = false;
+        _errorDeImpresion = mensaje;
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +145,25 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
                     ),
                   ),
                 ),
+                if (_original != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const Key('boton_ver_ticket'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PantallaVistaTicket(
+                            bytes: _original!,
+                            dondeQuedo: _dondeQuedo,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label: const Text('Ver el ticket'),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -208,8 +267,9 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
               _Aviso(
                 clave: 'aviso_error_impresion',
                 icono: Icons.print_disabled_outlined,
-                texto: 'No se pudo imprimir. La venta ya está guardada: '
-                    'puedes reintentar.',
+                // El mensaje concreto, no "hubo un error": cada falla se
+                // resuelve distinto y el vendedor tiene que saber cuál es.
+                texto: '$_errorDeImpresion\nLa venta ya está guardada.',
                 fondo: colores.errorContainer,
                 frente: colores.onErrorContainer,
               ),

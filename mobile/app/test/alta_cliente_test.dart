@@ -68,9 +68,9 @@ void main() {
 
     await tester.enterText(
         find.byKey(const Key('campo_nombre')), 'Abarrotes Doña Mary');
-    await tester.enterText(find.byKey(const Key('campo_telefono')), '5512345678');
-    await tester.enterText(find.byKey(const Key('campo_calle')), 'Av. Hidalgo');
-    await tester.enterText(find.byKey(const Key('campo_numero')), '145');
+    await escribirEn(tester, const Key('campo_telefono'), '5512345678');
+    await escribirEn(tester, const Key('campo_calle'), 'Av. Hidalgo');
+    await escribirEn(tester, const Key('campo_numero'), '145');
     await tocar(tester, const Key('boton_guardar'));
 
     // Volvió a la ruta, el cliente aparece, y la cola creció.
@@ -87,7 +87,7 @@ void main() {
 
   testWidgets('se avisa que se enviará al haber señal', (tester) async {
     await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
-    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Doña Mary');
+    await escribirEn(tester, const Key('campo_nombre'), 'Doña Mary');
     await tocar(tester, const Key('boton_guardar'));
     expect(textoQueContiene('Se enviará al haber señal'), findsOneWidget);
   });
@@ -102,7 +102,7 @@ void main() {
     expect(textoQueContiene('No hay señal de GPS aquí'), findsOneWidget);
     expect(textoQueContiene('Puedes guardar sin coordenadas'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Del mercado');
+    await escribirEn(tester, const Key('campo_nombre'), 'Del mercado');
     await tocar(tester, const Key('boton_guardar'));
 
     expect(base.contar('clientes'), equals(1));
@@ -119,7 +119,7 @@ void main() {
     );
     expect(textoQueContiene('Actívalo en los ajustes'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Sin permiso');
+    await escribirEn(tester, const Key('campo_nombre'), 'Sin permiso');
     await tocar(tester, const Key('boton_guardar'));
     expect(base.contar('clientes'), equals(1));
   });
@@ -150,7 +150,7 @@ void main() {
     expect(textoQueContiene('Movido 10 m'), findsOneWidget);
     expect(textoQueContiene('Puesta a mano'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Corregida');
+    await escribirEn(tester, const Key('campo_nombre'), 'Corregida');
     await tocar(tester, const Key('boton_guardar'));
 
     final c = base.unaFila(
@@ -210,7 +210,7 @@ void main() {
     expect(textoQueContiene('Abarrotes Mary'), findsWidgets);
 
     // El primer intento de guardar no crea nada: pide confirmación.
-    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Otra tienda');
+    await escribirEn(tester, const Key('campo_nombre'), 'Otra tienda');
     await tocar(tester, const Key('boton_guardar'));
     expect(base.contar('outbox'), equals(0));
     expect(find.text('Mi ruta'), findsNothing);

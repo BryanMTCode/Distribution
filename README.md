@@ -5,7 +5,7 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 3 — App del vendedor: la venta cierra offline.** Fases 0, 1 y 2 hechas. Reglas de negocio
+**Fase 3 cerrada — el ciclo completo del vendedor funciona offline.** Fases 0, 1 y 2 hechas. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
@@ -41,6 +41,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Catálogo de la visita** con precio de la lista del cliente | ✅ 18 pruebas de widget |
 | **Carrito** con existencia del camión y crédito compuesto | ✅ 18 pruebas de widget + 25 de dominio |
 | Cobro y remisión (impresión **a un toque**, no automática) | ✅ 15 pruebas de widget |
+| **Ticket ESC/POS de 58 mm** — diseño, acentos, emoji, reimpresión | ✅ 59 pruebas de bytes |
+| Vista previa del ticket, en el teléfono y versionada | ✅ [ver el papel](contracts/ticket_58mm_ejemplo.txt) |
+| Impresora simulada con sus caminos de falla | ✅ 13 pruebas de widget |
+| **Lienzo espacial offline** (radar de clientes, sin mosaicos) | ✅ 9 pruebas de widget |
 | Portal por rol (vendedor / gerencia) | ✅ con pruebas |
 | Contrato de Argon2id (7 vectores) | ✅ **verificado en los dos lenguajes** |
 | **Outbox del dispositivo** — documento y cola en una transacción | ✅ con pruebas |
@@ -52,10 +56,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | OpenAPI 3.1 + degradado a 3.0 para Dart | ✅ generado en CI |
 | Sobres de Dart aceptados por el servidor real | ✅ prueba de contrato de punta a punta |
 | Panel de operación (Jinja2 + HTMX) | ⛔ resto de la Fase 1 |
-| Impresión Bluetooth ESC/POS (necesita la impresora física) | ⛔ resto de la Fase 3 |
+| Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**339 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **303 de Dart** y **105 de widget**, todas en verde.
+**339 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **367 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -102,16 +106,17 @@ mobile/
   db/schema.sql      esquema local del dispositivo — FUENTE DE VERDAD
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, precio de 4 decimales, carrito,
-                     borrador, VENTA, crédito, credencial, folios, outbox,
-                     sobres, ubicación, alta de clientes, sincronizador,
-                     aplicador de deltas, esquema embebido
-    test/            303 pruebas que corren en segundos
+                     borrador, VENTA, TICKET ESC/POS + vista previa, crédito,
+                     credencial, folios, outbox, sobres, ubicación, alta de
+                     clientes, sincronizador, aplicador de deltas, esquema
+    test/            367 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
-    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, gerencia
-    test/            105 pruebas de widget, sin emulador
+    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket,
+                     lienzo espacial, gerencia
+    test/            125 pruebas de widget, sin emulador
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -127,7 +132,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make pruebas                        # 339 pruebas de Python
-make movil                          # 303 de Dart + 105 de widget
+make movil                          # 367 de Dart + 125 de widget
+make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
 make lint

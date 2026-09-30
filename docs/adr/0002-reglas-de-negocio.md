@@ -238,3 +238,91 @@ caja no existe en un camión**: lo que existe son 2 cajas y 6 piezas sueltas, qu
 es exactamente lo que le va a decir al cliente. El dominio devuelve el desglose
 (`DesgloseDisponible`) y la pantalla lo redacta; la unidad se nombra en español
 según su código.
+
+
+---
+
+## 10. El mapa es un lienzo relativo, no mosaicos descargados
+
+- **Fecha:** 2026-09-30
+- **Decidido por:** el dueño de la distribuidora
+
+La pantalla de alta muestra un **radar relativo**: el punto donde está el
+vendedor al centro, los clientes conocidos alrededor a su distancia y rumbo
+reales, con anillos de distancia etiquetados. **No descarga nada.**
+
+### Por qué no un mapa con calles
+
+Un mapa de mosaicos necesita red, y **la corrección de coordenadas se hace justo
+donde no hay** —dentro de un mercado techado, en una colonia sin cobertura—. Un
+mapa que se queda en cuadros grises es peor que no tener mapa: ocupa la pantalla
+y no dice nada.
+
+Se descartó también pre-descargar mosaicos por ruta: el peso de descarga y el
+mantenimiento (qué zona, cada cuánto, qué pasa cuando la ruta cambia) no se paga
+contra lo que aporta. La referencia **relativa** es la que sirve para decidir:
+"la tienda que ya tengo registrada está a 30 m al norte, entonces esta de enfrente
+es otra".
+
+### Consecuencias
+
+- `Ubicacion.rumboA()` en el dominio: distancia y rumbo bastan para colocar cada
+  punto sin cartografía.
+- Al ajustar con los botones cardinales, **los vecinos se mueven en el lienzo**.
+  Ese movimiento es la confirmación visual de que el ajuste va para el lado
+  correcto, que es lo que faltaba en la prueba de campo del POCO M5s.
+- El lienzo usa radio de 400 m; el aviso de duplicado sigue en 60 m. Son cosas
+  distintas: uno orienta, el otro decide.
+- Al agregar el lienzo, el aviso de duplicado quedó fuera de la pantalla. Se
+  movió **arriba, pegado al nombre**: decidir si esta tienda es la misma que ya
+  está registrada es lo más consecuente de la pantalla, y se decide mientras se
+  escribe el nombre, no al final.
+
+## 11. El ticket se genera hoy; la transmisión Bluetooth espera al equipo
+
+- **Fecha:** 2026-09-30
+- **Contexto:** la EC Line EC-MP200 (58 mm) quedó en otro Estado, sin acceso a
+  corto plazo.
+
+**Generar el ticket y transmitirlo son dos problemas distintos**, y se
+desacoplaron. El primero es formato y aritmética: se prueba entero, en segundos,
+sin hardware. El segundo es un socket que se cae, un equipo desemparejado, papel
+que se acaba.
+
+### Lo que ya está hecho y verificado
+
+- Los bytes ESC/POS completos: `ESC @`, `ESC t`, `ESC a`, `ESC E`, `GS !`,
+  `ESC d`, `GS V`, afirmados contra los valores del estándar.
+- El diseño del ticket de 58 mm / 32 columnas.
+- La interfaz `Impresora` con una **implementación simulada** que captura los
+  bytes, los guarda en un archivo del teléfono, y **puede fallar a voluntad**
+  (sin papel, desconectada, sin configurar). Esos caminos de falla no se pueden
+  provocar con una impresora real en una prueba automatizada.
+- Un **decodificador** que convierte los bytes de vuelta a texto con las mismas
+  reglas que aplica la impresora, para poder *ver* el ticket: en la pantalla del
+  teléfono, en las pruebas, y en `contracts/ticket_58mm_ejemplo.txt`, que se
+  versiona y se revisa leyéndolo.
+
+Falta una clase que abra el socket Bluetooth y empuje los bytes. Nada más cambia.
+
+### Los acentos: PC437 con transliteración
+
+Una impresora térmica no habla UTF-8; interpreta bytes con una tabla de códigos.
+Se eligió **PC437** —la que soporta toda impresora ESC/POS— y lo que la tabla no
+tiene se degrada: `Á → A`, y **los emoji se descartan**.
+
+Eso último importa porque el sistema ya tiene emoji en nombres de clientes ("La
+Esquina de Ñoño 🏪"): sin la degradación, serían cuatro símbolos sin sentido en
+medio del nombre, en un papel que el cliente conserva.
+
+PC850 está implementado y conserva las mayúsculas acentuadas; se cambia con un
+parámetro **el día que se compruebe en el equipo real**. Sin poder probar,
+**un ticket legible en cualquier impresora vale más que uno perfecto en una
+sola**.
+
+### El saldo NO se imprime
+
+El saldo que trae el teléfono puede tener horas (§0.3). Imprimirlo en un papel
+que el cliente conserva es crear una disputa: él sostiene el número impreso y la
+oficina el suyo. El ticket dice el importe de **esta** venta y dónde consultar el
+saldo.

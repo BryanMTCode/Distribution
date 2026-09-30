@@ -1,0 +1,151 @@
+TICKET DE REMISIÓN — 58 mm, 32 columnas, PC437
+============================================================
+
+GENERADO — no editar a mano.
+Fuente:     mobile/packages/dsd_core/lib/src/ticket.dart
+Regenerar:  dart run tool/generar_ticket_ejemplo.dart
+
+Esto es lo que saldría del papel, decodificando los bytes
+ESC/POS con las mismas reglas que aplica la impresora.
+El marco marca el ancho real: una línea que lo rebase
+lleva ">" en vez de "|" y es un defecto de diseño.
+
+------------------------------------------------------------
+CONTADO — cuatro renglones, uno con nombre largo
+849 bytes
+------------------------------------------------------------
++--------------------------------+
+|     Distribuidora El Ñandú     |
+|  Av. Hidalgo 145, Col. Centro  |
+|       Tel. 55 1234 5678        |
+|       RFC XAXX010101000        |
+|                                |
+|   V E N D 0 1 - 0 0 0 1 2 4    |
+|       REMISION DE VENTA        |
+|--------------------------------|
+|Fecha           29/09/2026 17:42|
+|Vendedor              Juan Pérez|
+|                                |
+|La Esquina de Ñoño              |
+|Cliente C-001                   |
+|Morelos 22, Col. Centro         |
+|--------------------------------|
+|CANT  DESCRIPCION        IMPORTE|
+|--------------------------------|
+|Sopa de fideo 70 g              |
+|  2 CAJA x 296.00         592.00|
+|Sopa de fideo 70 g              |
+|  3 PZA x 12.3333          37.00|
+|Frijol bayo 1 kg                |
+|  6 PZA x 32.50           195.00|
+|Refresco de cola 600 ml no      |
+|retornable presentación familiar|
+|  1 CAJA x 198.50         198.50|
+|--------------------------------|
+|      T O T A L   1 0 2 2 . 5 0 |
+|                                |
+|Forma de pago            CONTADO|
+|                                |
+|      DOCUMENTO NO FISCAL       |
+|  Aclaraciones al 55 1234 5678  |
+|     Folio del equipo: 124      |
+|                                |
+|                                |
+|                                |
+|                                |
++--------------------------------+
+
+------------------------------------------------------------
+CREDITO — con firma de recibido y sin saldo impreso
+787 bytes
+------------------------------------------------------------
++--------------------------------+
+|     Distribuidora El Ñandú     |
+|  Av. Hidalgo 145, Col. Centro  |
+|       Tel. 55 1234 5678        |
+|       RFC XAXX010101000        |
+|                                |
+|   V E N D 0 1 - 0 0 0 1 2 4    |
+|       REMISION DE VENTA        |
+|--------------------------------|
+|Fecha           29/09/2026 17:42|
+|Vendedor              Juan Pérez|
+|                                |
+|La Esquina de Ñoño              |
+|Cliente C-001                   |
+|Morelos 22, Col. Centro         |
+|--------------------------------|
+|CANT  DESCRIPCION        IMPORTE|
+|--------------------------------|
+|Aceite vegetal 900 ml           |
+|  3 CAJA x 445.50        1336.50|
+|--------------------------------|
+|      T O T A L   1 3 3 6 . 5 0 |
+|                                |
+|Forma de pago            CREDITO|
+|                                |
+|Esta venta queda a crédito por  |
+|1336.50.                        |
+|Consulta tu saldo con tu vendedor.>
+|                                |
+|                                |
+|    _______________________     |
+|        Recibi conforme         |
+|                                |
+|      DOCUMENTO NO FISCAL       |
+|  Aclaraciones al 55 1234 5678  |
+|     Folio del equipo: 124      |
+|                                |
+|                                |
+|                                |
+|                                |
++--------------------------------+
+
+------------------------------------------------------------
+REIMPRESION — los bytes del original, con aviso de copia
+899 bytes
+------------------------------------------------------------
++--------------------------------+
+|         C O P I A   1          |
+|       No es el original        |
+|                                |
+|     Distribuidora El Ñandú     |
+|  Av. Hidalgo 145, Col. Centro  |
+|       Tel. 55 1234 5678        |
+|       RFC XAXX010101000        |
+|                                |
+|   V E N D 0 1 - 0 0 0 1 2 4    |
+|       REMISION DE VENTA        |
+|--------------------------------|
+|Fecha           29/09/2026 17:42|
+|Vendedor              Juan Pérez|
+|                                |
+|La Esquina de Ñoño              |
+|Cliente C-001                   |
+|Morelos 22, Col. Centro         |
+|--------------------------------|
+|CANT  DESCRIPCION        IMPORTE|
+|--------------------------------|
+|Sopa de fideo 70 g              |
+|  2 CAJA x 296.00         592.00|
+|Sopa de fideo 70 g              |
+|  3 PZA x 12.3333          37.00|
+|Frijol bayo 1 kg                |
+|  6 PZA x 32.50           195.00|
+|Refresco de cola 600 ml no      |
+|retornable presentación familiar|
+|  1 CAJA x 198.50         198.50|
+|--------------------------------|
+|      T O T A L   1 0 2 2 . 5 0 |
+|                                |
+|Forma de pago            CONTADO|
+|                                |
+|      DOCUMENTO NO FISCAL       |
+|  Aclaraciones al 55 1234 5678  |
+|     Folio del equipo: 124      |
+|                                |
+|                                |
+|                                |
+|                                |
++--------------------------------+
+
