@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block titulo %}Carga {{ carga.folio }}{% endblock %}
+{% block contenido %}
+<h1>Carga {{ carga.folio }}</h1>
+<p class="subtitulo">
+  {{ carga.vendedor }} · {{ carga.camion }}
+  {% if carga.ruta %} · {{ carga.ruta }}{% endif %}
+  · {{ carga.fecha_operativa.strftime('%d/%m/%Y') }}
+  · desde {{ carga.bodega }}
+  · <a href="/panel/cargas">volver a las cargas</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{% if carga.estado == 'borrador' %}
+  <div class="aviso-caja neutro">
+    <strong>Borrador.</strong> Todavía no salió nada de la bodega y el teléfono del
+    vendedor no sabe que esta carga existe — a propósito: mientras se arma, los
+    renglones se pueden corregir, y publicarla le haría ver mercancía que no tiene.
+  </div>
+{% else %}
+  <div class="aviso-caja bien">
+    <strong>{{ carga.estado|capitalize }}</strong>
+    {% if carga.confirmada_en %}
+      el {{ carga.confirmada_en.strftime('%d/%m/%Y %H:%M') }}
+      {% if carga.confirmada_por_nombre %}por {{ carga.confirmada_por_nombre }}{% endif %}.
+    {% endif %}
+    La mercancía está en el camión y el teléfono la recibe en su siguiente
+    sincronización. <strong>Ya no se edita</strong>: lo que salió de la bodega se
+    corrige con un traspaso o un ajuste, no cambiándole los renglones.
+  </div>
+{% endif %}
+
+{% if faltan and editable %}
+<div class="aviso-caja error">
+  <strong>La bodega no alcanza para {{ faltan|length }} renglón(es).</strong>
+  Revísalos abajo. Si de todas formas el almacenista los está subiendo al camión,
+  confirma: el sistema es el que está mal, no el camión. La bodega quedará en
+  negativo y ahí es donde se ve que hay que recontarla.
+</div>
+{% endif %}
+
+{% if renglones %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Producto</th>
+        <th class="numero">Va en el camión</th>
+        <th class="numero">Hay en bodega</th>
+        {% if editable and puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in renglones %}
+      <tr>
+        <td>
+          <strong>{{ r.nombre }}</strong>
+          <div class="sutil">
+            <span class="mono">{{ r.sku }}</span>
+            {% if r.lote %} · lote {{ r.lote }}{% endif %}
+          </div>
+        </td>
+        <td class="numero">
+          {{ r.cantidad|entero }} {{ r.unidad_base }}
+          {% if r.presentaciones %}
+            {% for p in r.presentaciones %}
+              {% if p.factor|entero != '1' %}
+                <div class="sutil">
+                  = {{ (r.cantidad|float / p.factor|float)|round(2) }} {{ p.unidad }}
+                </div>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        </td>
+        <td class="numero"
+            {% if r.cantidad > r.en_bodega %}style="color:var(--alerta)"{% endif %}>
+          {{ r.en_bodega|entero }}
+          {% if r.cantidad > r.en_bodega %}
+            <div class="sutil" style="color:var(--alerta)">no alcanza</div>
+          {% endif %}
+        </td>
+        {% if editable and puede_editar %}
+        <td>
+          <form method="post"
+                action="/panel/cargas/{{ carga.id }}/renglon/{{ r.id }}/quitar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="secundario"
+                    style="padding:3px 9px;font-size:12px">Quitar</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tbody>
+      <tr>
+        <td><strong>Total</strong></td>
+        <td class="numero"><strong>{{ total_piezas|entero }}</strong> unidades base</td>
+        <td></td>
+        {% if editable and puede_editar %}<td></td>{% endif %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  Sin renglones todavía. Captura lo que se sube al camión.
+</div>
+{% endif %}
+
+{% if editable and puede_editar %}
+<h2>Agregar al camión</h2>
+<form class="barra" method="post" action="/panel/cargas/{{ carga.id }}/renglon">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="text" name="producto" placeholder="SKU o código de barras" required
+         autofocus style="min-width:220px">
+  <input type="text" name="cantidad" inputmode="numeric" placeholder="cuántos bultos"
+         required style="width:150px">
+  <select name="unidad_codigo" required>
+    <option value="CAJA">CAJA</option>
+    <option value="PZA">PZA</option>
+  </select>
+  <input type="text" name="lote" placeholder="lote (opcional)" style="width:140px">
+  <button type="submit">Agregar</button>
+</form>
+<p class="sutil">
+  Se captura en <strong>bultos</strong> —cajas o piezas, como se levantan con las
+  manos— y el sistema los convierte a unidad base al guardar. La multiplicación
+  ocurre una sola vez, aquí: es lo que evita que media empresa cuente cajas y la
+  otra media piezas.
+</p>
+
+<h2>Confirmar</h2>
+<form method="post" action="/panel/cargas/{{ carga.id }}/confirmar"
+      style="background:var(--papel);border:1px solid var(--linea);border-radius:10px;
+             padding:18px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p style="margin-top:0">
+    Al confirmar pasan tres cosas en una sola transacción: se escribe el movimiento
+    en el libro mayor, la bodega baja y el camión sube, y el teléfono del vendedor
+    recibe la carga con su detalle en la siguiente sincronización.
+  </p>
+  <p class="sutil">
+    El movimiento del libro mayor <strong>no se puede borrar</strong>. Si algo sale
+    mal se corrige con un documento compensatorio, que deja rastro de las dos cosas.
+  </p>
+  <button type="submit" {% if not renglones %}disabled{% endif %}>
+    Confirmar la carga
+  </button>
+</form>
+
+<form method="post" action="/panel/cargas/{{ carga.id }}/cancelar"
+      style="margin-top:12px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit" class="secundario">Cancelar el borrador</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -43,6 +43,7 @@ NAVEGACION = [
     ("/panel", "Tablero"),
     ("/panel/productos", "Productos"),
     ("/panel/clientes", "Clientes"),
+    ("/panel/cargas", "Cargas"),
     ("/panel/ventas", "Ventas"),
     ("/panel/cuarentena", "Cuarentena"),
 ]
@@ -182,7 +183,14 @@ def precio_corto(valor) -> str:
 
 
 def sin_decimales(valor) -> str:
-    """El factor de una presentación: `24.0000` → `24`. Nunca hay media caja."""
+    """El factor o la cantidad, sin decimales: `24.0000` → `24`.
+
+    **Y por esto no se usa `Decimal.normalize()`,** que es lo que uno escribe
+    primero: `Decimal("240.000").normalize()` da `2.4E+2`. Quitar los ceros de la
+    derecha de un entero le sube el exponente, así que la pantalla le habría dicho
+    al almacenista «1E+1 CAJA = 2.4E+2 PZA». Lo encontró una prueba que afirmaba
+    el texto que ve la persona, no el número guardado.
+    """
     return f"{Decimal(str(valor)).to_integral_value():,}"
 
 

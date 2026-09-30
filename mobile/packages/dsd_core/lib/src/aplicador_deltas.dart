@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:sqlite3/sqlite3.dart';
 
+import 'precio.dart';
 import 'sync_cliente.dart';
 
 class ResultadoAplicacion {
@@ -66,9 +67,10 @@ class AplicadorDeltas {
         'cliente' => _cliente(delta),
         'cartera' => _cartera(delta, recibidoEn),
         'lista_precios' => _listaPrecios(delta),
-        // Promociones y cargas todavía no se aplican: se aceptan para no
-        // llenar `deltas_desconocidos` con algo que sí sabemos que viene.
-        'promocion' || 'carga' => true,
+        'carga' => _carga(delta),
+        // Las promociones todavía no se aplican: se aceptan para no llenar
+        // `deltas_desconocidos` con algo que sí sabemos que viene.
+        'promocion' => true,
         _ => false,
       };
 
@@ -214,6 +216,150 @@ class AplicadorDeltas {
     );
     return true;
   }
+
+  // -------------------------------------------------------------------------
+  // La carga del camión
+  // -------------------------------------------------------------------------
+
+  /// El inventario con el que el vendedor sale a la calle.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LA CARGA CONFIRMADA ES EL SNAPSHOT BASE DEL DÍA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Es el único delta que trae su detalle dentro del mismo payload, y no es un
+  /// capricho: el teléfono necesita la carga **completa o nada**. Con un delta
+  /// por renglón, una tanda cortada a la mitad dejaría el camión con cinco de
+  /// los doce productos que trae, y el vendedor descubriría el faltante frente
+  /// al cliente.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LO QUE NUNCA DEBE PASAR: QUE REAPLICAR EL DELTA REVIVA LO VENDIDO
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Un `pull` se puede repetir tras un corte de red, y entonces este mismo
+  /// delta llega dos veces. Si la segunda vez volviera a escribir
+  /// `cant_actual = cant_cargada`, el camión recuperaría en la base la
+  /// mercancía que ya salió físicamente, y el vendedor podría venderla otra
+  /// vez. El descuadre aparecería en la liquidación como un faltante que nadie
+  /// sabría explicar.
+  ///
+  /// Por eso el `ON CONFLICT` lleva un `WHERE`: un renglón que **ya pertenece a
+  /// esta carga** no se toca. Solo se sobrescribe el que viene de otra carga —el
+  /// sobrante de ayer— o el que no tenía ninguna.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// UNA CARGA QUE YA TERMINÓ NO BORRA LA DE HOY
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Cuando la oficina liquida o cancela una carga, el servidor emite otro delta
+  /// de esa misma carga con el estado nuevo. Ese delta puede llegar **después**
+  /// de la carga de hoy —la oficina liquida lo de ayer a media mañana—, así que
+  /// no puede tratarse como "éste es el inventario vigente": borraría el de hoy
+  /// y repondría el de ayer.
+  ///
+  /// La regla: un estado terminal borra **solo sus propios renglones**. Si la de
+  /// hoy ya los reemplazó, no borra nada, que es exactamente lo correcto.
+  bool _carga(Delta delta) {
+    if (delta.operacion == 'delete') {
+      _borrarCarga(delta.entidadId);
+      return true;
+    }
+
+    final c = delta.payload;
+    if (c == null) return true;
+
+    final estado = c['estado'] as String?;
+
+    // Terminales: la carga se acabó. Solo lo suyo.
+    if (estado == 'liquidada' || estado == 'cancelada') {
+      _borrarCarga(delta.entidadId);
+      return true;
+    }
+
+    // El servidor no publica borradores (migración 0015), pero si algún día lo
+    // hiciera, el teléfono no debe mostrar mercancía que la bodega no entregó.
+    if (estado != 'confirmada' && estado != 'en_ruta') return true;
+
+    // Lo que no es de esta carga es el sobrante de un día anterior. Se va: la
+    // carga confirmada es el inventario completo con el que arranca el día.
+    _db.execute(
+      'DELETE FROM existencias_camion WHERE carga_id IS NOT ?',
+      [delta.entidadId],
+    );
+
+    final detalle = (c['detalle'] as List?) ?? const [];
+    for (final fila in detalle) {
+      final r = fila as Map<String, Object?>;
+      final producto = r['producto_id'] as String?;
+      if (producto == null) continue;
+
+      // La cantidad llega como string de tres decimales
+      // (contracts/README.md §1.4). Pasa por `Cantidad` para que ningún
+      // `double` la toque: de ahí salen las milésimas enteras y de vuelta al
+      // REAL de SQLite, que es lo que el resto del teléfono ya lee.
+      final cantidad = Cantidad.deTexto(_aTextoCantidad(r['cantidad']));
+
+      _db.execute(
+        '''
+        INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual,
+                                        carga_id)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(producto_id) DO UPDATE SET
+          cant_cargada = excluded.cant_cargada,
+          cant_actual  = excluded.cant_actual,
+          carga_id     = excluded.carga_id
+        WHERE existencias_camion.carga_id IS NOT excluded.carga_id
+        ''',
+        [
+          producto,
+          cantidad.milesimos / 1000,
+          cantidad.milesimos / 1000,
+          delta.entidadId,
+        ],
+      );
+    }
+
+    // La carga activa: de aquí la lee el carrito para estampar `carga_id` en
+    // cada venta. Sin ella las ventas del día no se pueden amarrar a la carga y
+    // la liquidación no tendría contra qué cuadrar.
+    _db.execute(
+      '''
+      INSERT INTO sync_estado (clave, valor) VALUES ('carga_id_activa', ?)
+      ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
+      ''',
+      [delta.entidadId],
+    );
+    if (c['fecha_operativa'] != null) {
+      _db.execute(
+        '''
+        INSERT INTO sync_estado (clave, valor) VALUES ('fecha_operativa', ?)
+        ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
+        ''',
+        [c['fecha_operativa']],
+      );
+    }
+    return true;
+  }
+
+  void _borrarCarga(String cargaId) {
+    _db.execute('DELETE FROM existencias_camion WHERE carga_id = ?', [cargaId]);
+    // Si la que terminó era la activa, deja de serlo. Una venta sin carga es
+    // mejor que una venta amarrada a una carga ya liquidada.
+    _db.execute(
+      "DELETE FROM sync_estado WHERE clave = 'carga_id_activa' AND valor = ?",
+      [cargaId],
+    );
+  }
+
+  /// La cantidad tal como la manda el servidor, lista para `Cantidad.deTexto`.
+  ///
+  /// El contrato dice string de tres decimales, y así la emite el disparador.
+  /// Se acepta también un número por si un servidor viejo lo manda crudo: se
+  /// convierte con `toStringAsFixed(3)`, que es el único cruce permitido entre
+  /// un `double` y el dominio.
+  static String _aTextoCantidad(Object? valor) => switch (valor) {
+        final String s => s,
+        final num n => n.toStringAsFixed(3),
+        _ => '0.000',
+      };
 
   // -------------------------------------------------------------------------
   // Clientes

@@ -35,6 +35,14 @@ ARCHIVO = (
 PRODUCTO = uuid.UUID("019283e0-0001-7000-8000-000000000001")
 CLIENTE = uuid.UUID("019283e0-0002-7000-8000-000000000002")
 VENTA = uuid.UUID("019283e0-0003-7000-8000-000000000003")
+CARGA = uuid.UUID("019283e0-0004-7000-8000-000000000004")
+
+# La fecha operativa de la carga va FIJA, no `CURRENT_DATE`: el archivo se
+# versiona, y una fecha de hoy lo haría cambiar solo cada madrugada. Lo mismo el
+# folio, que en producción sale de una secuencia que el TRUNCATE entre pruebas no
+# reinicia.
+FECHA_CARGA = "2026-09-28"
+FOLIO_CARGA = "CG-000001"
 
 
 async def _cab_vendedor(cliente, sesion, semilla) -> dict:
@@ -115,6 +123,42 @@ async def _sembrar(sesion, semilla) -> None:
     )
 
     # -----------------------------------------------------------------------
+    # Una carga confirmada: el delta que llena el camión.
+    # -----------------------------------------------------------------------
+    # Se arma como en la vida real —borrador, renglones, y después el UPDATE que
+    # confirma— porque es el UPDATE el que publica el delta, y lo publica con el
+    # detalle ya completo (migración 0015). Insertarla directo en 'confirmada'
+    # emitiría un delta con `detalle: []` y la prueba pasaría sin probar nada.
+    await sesion.execute(
+        text("""
+            INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id,
+                                vendedor_id, ruta_id, fecha_operativa, estado)
+            VALUES (:c, :folio, :bodega, :camion, :u, :r, :dia, 'borrador')
+        """),
+        {
+            "c": CARGA,
+            "folio": FOLIO_CARGA,
+            "bodega": semilla["bodega"],
+            "camion": semilla["camion"],
+            "u": semilla["vendedor"],
+            "r": semilla["ruta"],
+            "dia": FECHA_CARGA,
+        },
+    )
+    await sesion.execute(
+        text("""
+            INSERT INTO carga_detalle (carga_id, producto_id, cantidad)
+            VALUES (:c, :p, 240.000)
+        """),
+        {"c": CARGA, "p": PRODUCTO},
+    )
+    await sesion.execute(
+        text("UPDATE cargas SET estado = 'confirmada', confirmada_en = now(), "
+             "       confirmada_por = :quien WHERE id = :c"),
+        {"c": CARGA, "quien": semilla["admin"]},
+    )
+
+    # -----------------------------------------------------------------------
     # El fixture tiene que salir IGUAL sin importar qué corrió antes.
     # -----------------------------------------------------------------------
     # `listas_precios` es dato de referencia: la migración 0009 la siembra y el
@@ -151,7 +195,7 @@ _RE_UUID = re.compile(
 
 # Los ids que esta prueba fija. Todo otro UUID lo genera la semilla al azar en
 # cada corrida (ruta, lista de precios, sucursal), así que se estabiliza.
-_FIJOS = {str(PRODUCTO), str(CLIENTE), str(VENTA)}
+_FIJOS = {str(PRODUCTO), str(CLIENTE), str(VENTA), str(CARGA)}
 
 _VARIABLES = {
     "vencimiento_mas_antiguo", "fecha_emision", "fecha_vencimiento",
@@ -233,6 +277,36 @@ async def test_generar_y_verificar_deltas(cliente, semilla, sesion):
         "así que no puede depender de qué corrió antes."
     )
     assert listas[0]["payload"]["es_default"] is True
+
+    # ------------------------------------------------------------------
+    # La carga, con su detalle DENTRO del mismo delta.
+    # ------------------------------------------------------------------
+    # Es el único delta que viaja así, y es deliberado: el teléfono necesita la
+    # carga completa o nada. Con un delta por renglón, una tanda cortada a la
+    # mitad dejaría el camión con la mitad de los productos y el vendedor
+    # descubriría el faltante frente al cliente.
+    cargas = [c for c in cambios if c["entidad"] == "carga"]
+    assert len(cargas) == 1, (
+        f"el fixture trae {len(cargas)} cargas y debe traer una. El borrador NO "
+        "se publica (migración 0015): si aparecen dos, el disparador volvió a "
+        "publicarlo y el vendedor vería mercancía que la bodega no le entregó."
+    )
+    carga = cargas[0]["payload"]
+    assert carga["estado"] == "confirmada"
+    assert carga["folio"] == FOLIO_CARGA
+    assert carga["detalle"] == [
+        {
+            "producto_id": str(PRODUCTO),
+            # CANTIDAD COMO STRING de tres decimales (contracts/README.md §1.4).
+            # A diferencia del precio —que viaja como número porque sale de un
+            # `to_jsonb` crudo—, este payload se construye a mano y sí cumple la
+            # regla: así `Cantidad.deTexto` la consume sin que ningún double la
+            # toque en el camino.
+            "cantidad": "240.000",
+            "lote": None,
+            "caducidad": None,
+        }
+    ]
 
     ARCHIVO.write_text(
         json.dumps(

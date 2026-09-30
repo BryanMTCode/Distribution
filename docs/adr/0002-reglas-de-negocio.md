@@ -435,3 +435,103 @@ muestra y permite decir "son negocios distintos"; **fusionarlos no**. Fusionar
 significa mover ventas, cuentas por cobrar y cobranza de un UUID a otro, y
 cualquiera de esos renglones puede estar en un teléfono que todavía no sincroniza.
 Necesita su propio diseño, no un botón al lado de una lista.
+
+---
+
+## 14. La carga del camión: el momento en que la mercancía cambia de dueño
+
+**Decisión.** La carga se arma como **borrador** en el panel, y al **confirmarla**
+se mueve el inventario y se publica al teléfono. Las dos cosas, en una sola
+transacción, y una sola vez.
+
+Hasta esta fase el `existencias_camion` del teléfono solo se podía sembrar en Modo
+Demo. La venta estaba construida, el carrito descontaba inventario y el ticket
+salía — sobre mercancía inventada.
+
+### El borrador no sale de la oficina
+
+Mientras se arma, la carga tiene renglones que alguien puede corregir o quitar. Si
+llegara al teléfono, el vendedor vería —y podría vender— mercancía que la bodega
+todavía no le entregó. El disparador de `change_log` **descarta el estado
+`borrador`** (migración 0015); el delta sale con el `UPDATE` que confirma, y para
+entonces el detalle ya está completo.
+
+### El detalle viaja DENTRO del delta
+
+Es el único delta que lo hace, y es deliberado: el teléfono necesita la carga
+**completa o nada**. Con un delta por renglón, una tanda cortada a la mitad
+dejaría el camión con cinco de los doce productos que trae, y el vendedor
+descubriría el faltante frente al cliente.
+
+La cantidad viaja como **string de tres decimales** (`"240.000"`), que es la regla
+del contrato (`contracts/README.md` §1.4). El precio, que sale de un `to_jsonb`
+crudo, todavía viaja como número; el detalle de la carga se construye a mano y sí
+cumple, así que `Cantidad.deTexto` lo consume sin que ningún `double` toque el
+número en el camino.
+
+### Reaplicar el delta no puede revivir lo vendido
+
+Un `pull` se repite tras un corte de red. Si la segunda aplicación volviera a
+escribir `cant_actual = cant_cargada`, el camión recuperaría en la base la
+mercancía que ya salió físicamente, el vendedor la volvería a vender, y el
+descuadre aparecería en la liquidación como un faltante inexplicable.
+
+El `ON CONFLICT` del aplicador lleva un `WHERE`: un renglón que **ya pertenece a
+esta carga** no se toca. Solo se sobrescribe el que viene de otra carga —el
+sobrante de ayer— o el que no tenía ninguna.
+
+### Cerrar una carga vieja no puede borrar la de hoy
+
+La oficina liquida lo de ayer a media mañana, con el camión ya en la calle, así que
+ese delta llega **después** del de hoy. Tratarlo como "éste es el inventario
+vigente" borraría el de hoy y repondría el de ayer.
+
+La regla: un estado terminal (`liquidada`, `cancelada`) borra **solo sus propios
+renglones**. Si la carga de hoy ya los reemplazó, no borra nada.
+
+### La conversión caja → pieza ocurre al capturar
+
+Quien carga el camión cuenta **cajas**, porque es lo que levanta con las manos. El
+inventario se lleva en **unidad base**. La multiplicación ocurre una vez, en el
+panel, con la misma función que usa el teléfono al armar una partida
+(`cantidad_base`). Es la regla del §2.2 de arquitectura y es lo que evita el
+descuadre clásico: media empresa contando cajas y la otra media piezas.
+
+Y se capturan **bultos completos**: un `2.5` se rechaza. Nadie sube media caja a
+un camión, y si se aceptara, la conversión lo volvería 60 piezas con cara de dato
+bueno.
+
+### Se permite dejar la bodega en negativo
+
+Si la bodega marca 8 cajas y el almacenista está subiendo 10, **el sistema está
+mal, no el mundo**. Rechazar la carga significaría que el camión sale con
+mercancía que el sistema no registró, que es infinitamente peor que un número
+negativo en una caché.
+
+Es el §0.1 aplicado dentro de la oficina, y es la razón por la que `existencias` no
+tiene `CHECK (cantidad >= 0)` y sí tiene un índice para encontrar los negativos. La
+pantalla lo advierte con el número exacto y deja pasar.
+
+### Confirmar dos veces no duplica la carga
+
+Un doble clic en una pantalla lenta duplicaría la carga del día, y el faltante
+aparecería en la liquidación como si el vendedor se hubiera llevado el doble. La
+confirmación es idempotente por estado: solo una carga en `borrador` se puede
+confirmar.
+
+### Una carga confirmada no se edita ni se cancela
+
+Lo que ya salió de la bodega se corrige con un **traspaso** o un **ajuste**, que
+son documentos con su propia huella. Lo que regresa al final del día es un
+**retorno**, que es el documento de la liquidación — no una cancelación que finge
+que el día no pasó.
+
+Y el movimiento del libro mayor **no se puede editar**: `movimientos_inventario`
+es append-only por disparador, no por convención.
+
+### El camión no se elige
+
+Es el almacén del vendedor. Un desplegable de almacén destino permitiría cargarle
+el camión de otro, y el dueño exclusivo del almacén es la garantía sobre la que
+descansa todo el modelo offline (§0.2): sin ella vuelven los conflictos de
+concurrencia que este diseño existe para no tener.

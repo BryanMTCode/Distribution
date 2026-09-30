@@ -46,7 +46,51 @@ void main() {
   test('el fixture trae las entidades que el dispositivo necesita', () {
     final entidades = _deltas.map((d) => d.entidad).toSet();
     expect(entidades, containsAll(['producto', 'producto_unidad', 'precio',
-      'cliente', 'cartera', 'lista_precios']));
+      'cliente', 'cartera', 'lista_precios', 'carga']));
+  });
+
+  test('la carga del servidor real llena el camión', () {
+    // Es el delta que el aplicador tiraba: se aceptaba para no ensuciar
+    // `deltas_desconocidos` y no hacía nada. El teléfono sabía que le habían
+    // cargado el camión y no qué.
+    //
+    // Que venga del fixture y no de un delta escrito a mano importa más aquí que
+    // en ningún otro caso: el detalle lo construye un disparador de PostgreSQL
+    // con `jsonb_agg`, y adivinar los tipos que salen de ahí es justo el error
+    // que este contrato existe para no cometer.
+    AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
+
+    final fila = db.select('SELECT * FROM existencias_camion').single;
+    expect(fila['cant_cargada'], equals(240.0));
+    expect(fila['cant_actual'], equals(240.0));
+
+    // Y queda fijada la carga activa, que es lo que el carrito estampa en cada
+    // venta para que la liquidación pueda cuadrar el día.
+    expect(
+      db
+          .select("SELECT valor FROM sync_estado WHERE clave = 'carga_id_activa'")
+          .single['valor'],
+      equals(fila['carga_id']),
+    );
+  });
+
+  test('el detalle de la carga trae la cantidad como STRING de tres decimales', () {
+    // A diferencia del precio —que viaja como número porque sale de un `to_jsonb`
+    // crudo—, el detalle de la carga lo construye el disparador a mano y sí
+    // cumple contracts/README.md §1.4. Si alguien lo cambiara a número, esto
+    // falla aquí y no seis meses después en una liquidación que no cuadra.
+    final carga = _deltas.firstWhere((d) => d.entidad == 'carga');
+    final detalle = (carga.payload!['detalle'] as List).cast<Map<String, Object?>>();
+    expect(detalle.single['cantidad'], equals('240.000'));
+  });
+
+  test('el fixture NO trae ningún borrador de carga', () {
+    // Un borrador es una lista que alguien está armando en la oficina. Si llegara
+    // al teléfono, el vendedor vería —y podría vender— mercancía que la bodega no
+    // le entregó.
+    final cargas = _deltas.where((d) => d.entidad == 'carga').toList();
+    expect(cargas.length, equals(1));
+    expect(cargas.single.payload!['estado'], equals('confirmada'));
   });
 
   test('la lista de precios por omisión llega y se guarda', () {

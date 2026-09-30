@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block titulo %}Cargas{% endblock %}
+{% block contenido %}
+<h1>Cargas del camión</h1>
+<p class="subtitulo">
+  El paso físico del día: a las seis de la mañana alguien cuenta cajas en la bodega
+  y las sube al camión. <strong>De aquí sale el inventario con el que el vendedor
+  puede vender</strong> — y es lo que al cierre tiene que cuadrar.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{% if puede_editar %}
+<form method="post" action="/panel/cargas/nueva"
+      style="background:var(--papel);border:1px solid var(--linea);border-radius:10px;
+             padding:18px;margin-bottom:22px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Abrir una carga</h2>
+  {% if vendedores %}
+  <div class="rejilla">
+    <div class="campo">
+      <label for="vendedor_id">Vendedor</label>
+      <select id="vendedor_id" name="vendedor_id" required style="width:100%">
+        {% for v in vendedores %}
+          <option value="{{ v.id }}">{{ v.codigo }} · {{ v.nombre }} ({{ v.camion }})</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        El camión no se elige: es el almacén del vendedor. Un camión tiene un solo
+        dueño, y esa es la garantía de que el trabajo offline no tenga conflictos.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="almacen_origen_id">Bodega de origen</label>
+      <select id="almacen_origen_id" name="almacen_origen_id" required style="width:100%">
+        {% for b in bodegas %}
+          <option value="{{ b.id }}">{{ b.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="fecha_operativa">Día operativo</label>
+      <input type="date" id="fecha_operativa" name="fecha_operativa" value="{{ hoy }}"
+             style="width:100%">
+      <div class="ayuda">El «día» del vendedor, no la hora de captura.</div>
+    </div>
+  </div>
+  <button type="submit">Abrir borrador</button>
+  {% else %}
+  <div class="aviso-caja error" style="margin-bottom:0">
+    Ningún vendedor tiene camión asignado, así que no hay a dónde cargar. Un
+    vendedor necesita un almacén de tipo <span class="mono">camion</span> con él
+    como responsable.
+  </div>
+  {% endif %}
+</form>
+{% endif %}
+
+<form class="barra" method="get" action="/panel/cargas">
+  <button type="submit" name="filtro" value="abiertas"
+          class="{% if filtro != 'abiertas' %}secundario{% endif %}">Abiertas</button>
+  <button type="submit" name="filtro" value="hoy"
+          class="{% if filtro != 'hoy' %}secundario{% endif %}">De hoy</button>
+  <button type="submit" name="filtro" value="todas"
+          class="{% if filtro != 'todas' %}secundario{% endif %}">Todas</button>
+</form>
+
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Vendedor</th>
+        <th class="numero">Renglones</th>
+        <th class="numero">Piezas</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <a href="/panel/cargas/{{ f.id }}"><span class="mono">{{ f.folio }}</span></a>
+          <div class="sutil">{{ f.fecha_operativa.strftime('%d/%m/%Y') }}</div>
+        </td>
+        <td>
+          {{ f.vendedor }}
+          <div class="sutil">
+            {{ f.camion }}{% if f.ruta %} · {{ f.ruta }}{% endif %}
+          </div>
+        </td>
+        <td class="numero">{{ f.renglones }}</td>
+        <td class="numero">{{ f.piezas|entero }}</td>
+        <td>
+          {% if f.estado == 'borrador' %}
+            <span class="etiqueta-motivo">Borrador · sin salir de bodega</span>
+          {% elif f.estado == 'confirmada' %}
+            <span class="etiqueta-motivo"
+                  style="background:var(--acento-suave);color:var(--acento)">Confirmada</span>
+            <div class="sutil">{{ f.confirmada_en.strftime('%d/%m %H:%M') }}</div>
+          {% else %}
+            <span class="sutil">{{ f.estado }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  {% if filtro == 'abiertas' %}
+    Ninguna carga abierta. Mientras no haya una carga confirmada, el camión del
+    vendedor está vacío y su catálogo no le deja vender nada.
+  {% else %}
+    Nada que mostrar con este filtro.
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

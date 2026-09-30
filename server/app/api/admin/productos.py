@@ -58,7 +58,9 @@ from app.api.admin.comun import (
     SesionDep,
     leer_factor,
     leer_precio,
+    precio_corto,
     render,
+    sin_decimales,
     texto_o_nulo,
 )
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
@@ -464,7 +466,7 @@ async def agregar_presentacion(
     await sesion.commit()
     return _volver(
         producto_id,
-        guardado=f"1 {unidad_codigo} = {valor.normalize()} {producto['unidad_base']}.",
+        guardado=f"1 {unidad_codigo} = {sin_decimales(valor)} {producto['unidad_base']}.",
     )
 
 
@@ -530,7 +532,7 @@ async def guardar_precios(
             ),
             {"l": lista_id, "p": producto_id, "u": unidad, "precio": precio},
         )
-        guardados.append(f"{unidad} ${precio}")
+        guardados.append(f"{unidad} ${precio_corto(precio)}")
 
     if not guardados:
         return _volver(producto_id, error="No escribiste ningún precio.")
@@ -671,8 +673,9 @@ async def derivar_precio(
     return _volver(
         producto_id,
         guardado=(
-            f"{hacia} = ${nuevo}, sacado de ${sugerencia['precio_origen']} "
-            f"de {sugerencia['desde']} entre {sugerencia['factor_origen'].normalize()}."
+            f"{hacia} = ${precio_corto(nuevo)}, sacado de "
+            f"${precio_corto(sugerencia['precio_origen'])} de {sugerencia['desde']} "
+            f"entre {sin_decimales(sugerencia['factor_origen'])}."
         ),
     )
 

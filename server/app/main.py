@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import RedirectResponse
 
+from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import panel
 from app.api.admin import productos as panel_productos
@@ -47,6 +48,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel.router)
     app.include_router(panel_productos.router)
     app.include_router(panel_clientes.router)
+    app.include_router(panel_cargas.router)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

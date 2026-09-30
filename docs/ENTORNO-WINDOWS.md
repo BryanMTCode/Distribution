@@ -114,13 +114,14 @@ Entra con un usuario de oficina (rol `admin` o `gerente`). **Un vendedor no pued
 teclea sus datos ahí, el panel le responde que entre por la app del teléfono. Es a propósito — el panel
 ve toda la operación y el teléfono solo la ruta de quien lo trae.
 
-Cinco pantallas, y cada una responde una pregunta distinta:
+Seis pantallas, y cada una responde una pregunta distinta:
 
 | Pantalla | Qué contesta |
 |---|---|
 | **Tablero** | ¿cómo va el día? Ventas sincronizadas, importe, sobres en cuarentena, equipos que no reportan |
 | **Productos** | el catálogo y los precios. Es por donde entra el negocio real al sistema |
 | **Clientes** | ¿qué prospectos levantó la ruta y esperan código, lista de precios y crédito? |
+| **Cargas** | qué se subió a cada camión hoy. Es el inventario con el que el vendedor puede vender |
 | **Ventas marcadas** | ¿qué ventas entraron con una advertencia? Son las que el servidor **sí** aceptó pero marcó |
 | **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
 
@@ -143,6 +144,34 @@ $296.00 exactos, porque el redondeo ocurre **una sola vez, sobre el importe**.
 
 El producto viaja al teléfono en el siguiente `pull`: los disparadores de la base publican el cambio en
 `change_log` solos, sin que ninguna pantalla se tenga que acordar.
+
+### Cargar el camión de verdad
+
+Esto es lo que por fin reemplaza al Modo Demo: hasta ahora el inventario del camión
+solo se podía sembrar con datos inventados.
+
+1. **Cargas → Abrir borrador.** Eliges vendedor, bodega y el día operativo. El camión
+   no se elige: es el almacén del vendedor.
+2. Captura lo que se sube, **en bultos**: `ATUN-140`, `10`, `CAJA`. El SKU o el código
+   de barras sirven igual — quien está en la bodega tiene un lector en la mano.
+   El sistema lo convierte: 10 cajas de 24 son 240 piezas, y así se guardan.
+3. Cada renglón muestra **cuánto hay en bodega** al lado. Si no alcanza, lo dice en rojo.
+4. **Confirmar la carga.**
+
+Con eso pasan tres cosas en una sola transacción: el movimiento entra al libro mayor
+(que es append-only: no se puede borrar), la bodega baja y el camión sube, y el teléfono
+del vendedor recibe la carga con su detalle en el siguiente `pull`. Ahí es donde
+`existencias_camion` se llena con datos reales.
+
+Un par de cosas que conviene saber antes de usarlo en serio:
+
+- **El borrador no llega al teléfono.** Mientras armas la lista puedes corregir y quitar
+  renglones sin que el vendedor vea nada. Si llegara, vería mercancía que no tiene.
+- **Si la bodega no alcanza, se confirma igual** y queda en negativo. No es un descuido:
+  si el almacenista está subiendo 10 cajas y el sistema dice 8, el que está mal es el
+  sistema. Rechazarlo haría que el camión saliera con mercancía sin registrar.
+- **Una carga confirmada ya no se edita ni se cancela.** Lo que salió se corrige con un
+  traspaso o un ajuste; lo que regresa al final del día es un retorno.
 
 ### Confirmar un prospecto levantado en ruta
 

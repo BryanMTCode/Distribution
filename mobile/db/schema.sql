@@ -118,8 +118,18 @@ CREATE INDEX ix_clientes_nombre    ON clientes(nombre_comercial);
 
 -- Inventario del camión: se siembra con la carga confirmada y se decrementa
 -- localmente. Único dueño ⇒ sin concurrencia.
+--
+-- SIN llave foránea a productos, por la misma razón que `precios.lista_id`: los
+-- deltas se aplican en una transacción todo-o-nada, y si el renglón de una carga
+-- llegara antes que el producto al que apunta —o si el delta de ese producto se
+-- hubiera podado del change_log— la transacción abortaría y el dispositivo NO
+-- VOLVERÍA A SINCRONIZAR NUNCA. La integridad la sostiene el servidor, que es el
+-- dueño del catálogo y de la carga.
+--
+-- El costo de no tenerla es un renglón huérfano que no aparece en el catálogo
+-- hasta que llegue su producto. El costo de tenerla es un teléfono muerto.
 CREATE TABLE existencias_camion (
-    producto_id     TEXT PRIMARY KEY REFERENCES productos(id),
+    producto_id     TEXT PRIMARY KEY,
     cant_cargada    REAL NOT NULL DEFAULT 0,   -- snapshot inmutable de la carga
     cant_actual     REAL NOT NULL DEFAULT 0,   -- lo que queda ahora mismo
     carga_id        TEXT
