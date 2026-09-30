@@ -197,6 +197,20 @@ void main() {
     expect(cargaActiva(), isNull);
   });
 
+  test('una carga confirmada SIN renglones no vacía el camión', () {
+    // El panel no deja confirmar una carga vacía, así que esto solo llega de un
+    // script contra la base: alguien inserta la carga ya en 'confirmada' y le
+    // pone el detalle después. Ese delta sale con `detalle: []`, y tratarlo como
+    // el inventario del día le dejaría el camión vacío al vendedor a media ruta.
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+    db.execute('UPDATE existencias_camion SET cant_actual = 150');
+
+    aplicar(_cargaDelta('carga-vacia', detalle: const []));
+
+    expect(cantidadActual(_atun), equals(150.0));
+    expect(cargaActiva(), equals(_hoy));
+  });
+
   test('un delta de borrado se lleva solo lo de esa carga', () {
     aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
     aplicar(_cargaDelta(_ayer, operacion: 'delete'));

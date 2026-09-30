@@ -278,6 +278,21 @@ class AplicadorDeltas {
     // hiciera, el teléfono no debe mostrar mercancía que la bodega no entregó.
     if (estado != 'confirmada' && estado != 'en_ruta') return true;
 
+    final detalle = (c['detalle'] as List?) ?? const [];
+
+    // Una carga confirmada SIN renglones no vacía el camión.
+    //
+    // El panel no deja confirmar una carga vacía, así que esto solo puede llegar
+    // de un script corriendo contra la base —alguien que inserta la carga ya en
+    // 'confirmada' y le pone el detalle después—. El delta saldría con
+    // `detalle: []`, y tratarlo como el inventario del día le dejaría el camión
+    // vacío al vendedor a media ruta.
+    //
+    // Ignorarlo es seguro porque el caso legítimo no existe: una carga sin
+    // renglones no es una carga. Si el detalle llega después, el UPDATE que lo
+    // acompañe publica otro delta con los renglones completos.
+    if (detalle.isEmpty) return true;
+
     // Lo que no es de esta carga es el sobrante de un día anterior. Se va: la
     // carga confirmada es el inventario completo con el que arranca el día.
     _db.execute(
@@ -285,7 +300,6 @@ class AplicadorDeltas {
       [delta.entidadId],
     );
 
-    final detalle = (c['detalle'] as List?) ?? const [];
     for (final fila in detalle) {
       final r = fila as Map<String, Object?>;
       final producto = r['producto_id'] as String?;

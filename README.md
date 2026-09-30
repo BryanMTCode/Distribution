@@ -61,13 +61,13 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Captura de catálogo y precios** con cuatro decimales | ✅ 20 pruebas |
 | **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
 | **Carga del camión** — bodega → camión, con su delta y su detalle | ✅ 20 pruebas |
-| El teléfono aplica la carga sin revivir lo ya vendido | ✅ 11 pruebas de Dart |
+| El teléfono aplica la carga sin revivir lo ya vendido | ✅ 12 pruebas de Dart |
 | Panel de usuarios, rutas, almacenes y listas de precios | ⛔ lo que falta de la Fase 1 |
 | Liquidación y retorno al cierre del día | ⛔ Fase 7 |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**412 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **381 de Dart** y **125 de widget**, todas en verde.
+**412 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -145,7 +145,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make pruebas                        # 412 pruebas de Python
-make movil                          # 381 de Dart + 125 de widget
+make movil                          # 382 de Dart + 125 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
