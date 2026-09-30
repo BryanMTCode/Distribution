@@ -86,7 +86,8 @@ CREDITO — con firma de recibido y sin saldo impreso
 |                                |
 |Esta venta queda a crédito por  |
 |1336.50.                        |
-|Consulta tu saldo con tu vendedor.>
+|Consulta tu saldo con tu        |
+|vendedor.                       |
 |                                |
 |                                |
 |    _______________________     |

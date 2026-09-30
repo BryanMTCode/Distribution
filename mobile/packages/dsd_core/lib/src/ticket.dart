@@ -228,7 +228,11 @@ void _totales(ConstructorEscPos t, VentaGuardada venta) {
     t
       ..linea()
       ..parrafo('Esta venta queda a crédito por ${venta.total.texto}.')
-      ..linea('Consulta tu saldo con tu vendedor.')
+      // `parrafo` y no `linea`: son 34 columnas y el papel tiene 32. Con `linea`
+      // la impresora continuaba el texto en el renglón siguiente y corría el
+      // resto del ticket. Lo encontró la vista previa versionada, no una prueba:
+      // la de desbordes solo cubría la venta de contado.
+      ..parrafo('Consulta tu saldo con tu vendedor.')
       ..linea()
       ..linea()
       ..centrado('_______________________')

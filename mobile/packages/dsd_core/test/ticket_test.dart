@@ -83,17 +83,30 @@ VistaPrevia _vista(VentaGuardada venta, {int copia = 0}) => decodificar(
 
 void main() {
   group('la forma del papel', () {
-    test('ninguna línea se desborda de las 32 columnas', () {
+    test('ninguna línea se desborda, EN NINGUNA VARIANTE del ticket', () {
       // Una línea que se desborda no se corta: la impresora la continúa en la
       // siguiente y todo el ticket se corre. Es el defecto más fácil de
       // introducir y el más difícil de ver sin la impresora.
-      final vista = _vista(_venta());
-      for (final l in vista.lineas) {
-        expect(
-          l.columnasOcupadas,
-          lessThanOrEqualTo(32),
-          reason: 'se desborda: "${l.texto}"',
-        );
+      //
+      // Esta prueba cubría solo la venta de contado, y por eso se colaron 34
+      // columnas en el bloque de crédito ("Consulta tu saldo con tu vendedor.").
+      // Lo encontró la vista previa versionada al mirarla. Ahora recorre las
+      // cuatro variantes: contado, crédito, copia, y crédito en copia.
+      final variantes = {
+        'contado': _vista(_venta()),
+        'credito': _vista(_venta(aCredito: true)),
+        'copia de contado': _vista(_venta(), copia: 1),
+        'copia de credito': _vista(_venta(aCredito: true), copia: 3),
+      };
+
+      for (final entrada in variantes.entries) {
+        for (final l in entrada.value.lineas) {
+          expect(
+            l.columnasOcupadas,
+            lessThanOrEqualTo(32),
+            reason: 'en ${entrada.key} se desborda: "${l.texto}"',
+          );
+        }
       }
     });
 
