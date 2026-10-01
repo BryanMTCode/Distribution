@@ -41,6 +41,9 @@ class PortalPorRol extends ConsumerWidget {
     return switch (sesion) {
       SinSesion() => const PantallaLogin(),
       SesionAbierta(:final credencial) => _porRol(credencial),
+      // Gerencia entró en línea y no guardó credencial: su teléfono no tiene
+      // cartera ni maquinaria offline que proteger. Ver `SesionDeGerencia`.
+      SesionDeGerencia(:final perfil) => PantallaGerencia(nombre: perfil.nombre),
     };
   }
 

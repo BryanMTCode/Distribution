@@ -1,4 +1,20 @@
-/// Login del vendedor. Funciona sin señal.
+/// Login. Dos caminos que no se parecen, y a propósito.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// EL VENDEDOR ENTRA SIN SEÑAL; GERENCIA NO PUEDE
+/// ─────────────────────────────────────────────────────────────────────────
+/// El vendedor teclea un PIN que se verifica **en el teléfono** contra el hash
+/// Argon2id guardado en el Keystore. Es el camino normal: arranca su día en la
+/// bodega, muchas veces sin datos, y la venta tiene que poder ocurrir igual.
+///
+/// Gerencia es lo contrario y no hay forma de que no lo sea: el tablero existe
+/// para ver lo que están haciendo los OTROS, y eso no se puede saber sin
+/// preguntarle al servidor. Así que entra en línea, con código y contraseña, y
+/// su teléfono no guarda credencial para entrar sin red — no le serviría, y un
+/// teléfono de oficina no tiene por qué cargar con una.
+///
+/// Lo que sí se guarda es el refresh token, para que abrir la app por la mañana
+/// no exija teclear la contraseña otra vez.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -19,13 +35,56 @@ class PantallaLogin extends ConsumerStatefulWidget {
 
 class _EstadoLogin extends ConsumerState<PantallaLogin> {
   final _pin = TextEditingController();
+  final _codigo = TextEditingController();
+  final _password = TextEditingController();
   bool _verificando = false;
+  bool _mostrarGerencia = false;
   ResultadoLogin? _error;
+
+  /// Mensaje del camino en línea. Es texto y no un enum porque el que más
+  /// importa lo escribe el SERVIDOR —"un vendedor debe iniciar sesión desde un
+  /// dispositivo registrado"— y traducirlo a un genérico dejaría a quien lo lea
+  /// intentando lo mismo otra vez.
+  String? _errorEnLinea;
+
+  @override
+  void initState() {
+    super.initState();
+    // Se intenta reabrir la sesión de Gerencia con el refresh token guardado.
+    //
+    // Sin esperar y sin bloquear: si el vendedor es quien abrió la app, el
+    // campo de PIN tiene que estar listo de inmediato, y esta llamada no le
+    // sirve de nada. `reabrirGerencia` lee el Keystore primero y se rinde al
+    // instante si no hay nada guardado, así que en el teléfono del vendedor no
+    // toca la red nunca.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(sesionProvider.notifier).reabrirGerencia();
+    });
+  }
 
   @override
   void dispose() {
     _pin.dispose();
+    _codigo.dispose();
+    _password.dispose();
     super.dispose();
+  }
+
+  Future<void> _entrarComoGerencia() async {
+    setState(() {
+      _verificando = true;
+      _errorEnLinea = null;
+      _error = null;
+    });
+    final problema = await ref.read(sesionProvider.notifier).entrarEnLinea(
+          codigo: _codigo.text,
+          password: _password.text,
+        );
+    if (!mounted) return;
+    setState(() {
+      _verificando = false;
+      _errorEnLinea = problema;
+    });
   }
 
   Future<void> _entrar() async {
@@ -133,6 +192,82 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                   if (_error != null) ...[
                     const SizedBox(height: 20),
                     _Aviso(motivo: _error!),
+                  ],
+                  const SizedBox(height: 28),
+                  const Divider(),
+                  if (!_mostrarGerencia)
+                    TextButton.icon(
+                      key: const Key('boton_abrir_gerencia'),
+                      onPressed: _verificando
+                          ? null
+                          : () => setState(() => _mostrarGerencia = true),
+                      icon: const Icon(Icons.insights_outlined),
+                      label: const Text('Entrar como Gerencia'),
+                    )
+                  else ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Gerencia entra con señal: el tablero consulta al '
+                      'servidor en vivo.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('campo_codigo_gerencia'),
+                      controller: _codigo,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Código de usuario',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('campo_password_gerencia'),
+                      controller: _password,
+                      obscureText: true,
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (_) =>
+                          _verificando ? null : _entrarComoGerencia(),
+                      decoration: const InputDecoration(
+                        labelText: 'Contraseña',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.password_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        key: const Key('boton_entrar_gerencia'),
+                        onPressed: _verificando ? null : _entrarComoGerencia,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('Entrar al tablero'),
+                        ),
+                      ),
+                    ),
+                    if (_errorEnLinea != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        key: const Key('aviso_login_en_linea'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _errorEnLinea!,
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                   // Este bloque NO EXISTE en un build de release: las dos
                   // constantes que lo gobiernan son de compilación, así que el

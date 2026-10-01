@@ -1,7 +1,14 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
+
+# Zona horaria del contenedor de PostgreSQL. NO es cosmético: `CURRENT_DATE`
+# usa la zona del servidor, y en UTC−6 un reloj en UTC hace que a partir de las
+# 18:00 locales "hoy" sea ya mañana. El tablero del día saldría vacío por la
+# tarde y el arqueo no cuadraría con lo que la gente tiene en la mano.
+# `make doctor` avisa si el sistema y el contenedor no coinciden.
+ZONA ?= America/Mexico_City
 
 # El laboratorio se conecta con psycopg "crudo", sin el prefijo +psycopg de
 # SQLAlchemy. En desarrollo va con el usuario de siempre; en producción, con el
@@ -50,6 +57,7 @@ db:  ## Levanta PostgreSQL+PostGIS para desarrollo (crea o rearranca)
 		docker run -d --name dsd-postgres -p 5432:5432 \
 			-v dsd_pgdata:/var/lib/postgresql/data \
 			-e POSTGRES_PASSWORD=dsd -e POSTGRES_DB=dsd \
+			-e TZ=$(ZONA) \
 			postgis/postgis:17-3.5 >/dev/null && \
 		echo "Contenedor creado."; \
 	fi
@@ -113,6 +121,9 @@ analitica:  ## Levanta el laboratorio analítico (Streamlit) en :8501
 
 refrescar-analitica:  ## Recalcula el esquema estrella del laboratorio
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli refrescar-analitica
+
+recalcular-tablero:  ## Recalcula los modelos de lectura del tablero de Gerencia
+	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli recalcular-tablero
 
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal

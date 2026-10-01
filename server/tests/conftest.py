@@ -69,6 +69,18 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # Los modelos de lectura del tablero (Fase 7) van PRIMERO y explícitamente.
+    #
+    # `tablero_refrescos` y `tablero_cartera` no tienen llave foránea a nada, así
+    # que el CASCADE de las otras tablas no se los lleva: sin esto, el renglón que
+    # dejó una prueba sobrevive a la siguiente, y la prueba de "el tablero nunca
+    # se ha calculado" ve la hora de la corrida anterior. Es el mismo defecto que
+    # las cachés globales de Streamlit en la Fase 8, con otra cara.
+    "tablero_refrescos",
+    "tablero_cartera",
+    "tablero_mes_ruta",
+    "tablero_dia",
+    "objetivos_ruta",
     "sesiones",
     "folios_rangos",
     "jobs",

@@ -1,0 +1,456 @@
+"""Tablero de Gerencia: lo que el teléfono del gerente pide (Fase 7).
+
+────────────────────────────────────────────────────────────────────────────
+UN SOLO VIAJE, SEIS BLOQUES
+────────────────────────────────────────────────────────────────────────────
+`GET /v1/tablero` devuelve el tablero completo en una respuesta. Seis peticiones
+—una por tarjeta— serían seis viajes sobre la conexión de un teléfono, y además
+seis marcas de antigüedad distintas por accidente del orden en que llegaron las
+respuestas. El tablero es una foto: tiene que ser una sola foto.
+
+────────────────────────────────────────────────────────────────────────────
+TODO SALE DE LOS MODELOS DE LECTURA
+────────────────────────────────────────────────────────────────────────────
+Ninguna consulta de aquí agrega sobre `ventas`. La única que toca tablas
+transaccionales es la del mapa, y es un listado acotado de un día (ver
+`SQL_MAPA_DEL_DIA`). La razón está en el encabezado de la migración 0021: si el
+tablero barriera las tablas de operación, tres gerentes con la pantalla abierta
+harían que la SINCRONIZACIÓN de los camiones fuera lenta. El vendedor esperando
+en la calle por una pantalla de oficina es exactamente al revés de lo que
+importa.
+
+────────────────────────────────────────────────────────────────────────────
+LA ANTIGÜEDAD NO ES ADORNO
+────────────────────────────────────────────────────────────────────────────
+Cada bloque trae su `calculado_en` y el tablero trae su `frescura`. En un DSD
+las cifras del día son un PISO: un camión sin señal desde las 10 tiene ventas
+reales que no están aquí (§0.3). Decir "venta de hoy: $42,180" sin decir "hace 2
+min, con 2 equipos sin sincronizar" es dar por total lo que es un mínimo.
+"""
+
+from __future__ import annotations
+
+import calendar
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import text
+
+from app.api.deps import ActorDep, SesionDep
+from app.api.esquemas import Cantidad, Dinero
+from app.domain.tablero import (
+    MAXIMO_PUNTOS_MAPA,
+    SQL_AVANCE_POR_RUTA,
+    SQL_DIA_POR_VENDEDOR,
+    SQL_ESTADO_DEL_MUNDO,
+    SQL_MAPA_DEL_DIA,
+    SQL_RESUMEN_DIA,
+    SQL_VENTA_MES_SIN_RUTA,
+    Avance,
+    Frescura,
+    inicio_de_mes,
+    porcentaje,
+)
+
+router = APIRouter(prefix="/tablero", tags=["tablero"])
+
+PERMISO = "tablero.ver"
+
+
+# ---------------------------------------------------------------------------
+# Esquemas
+# ---------------------------------------------------------------------------
+class FrescuraSalida(BaseModel):
+    """De cuándo son las cifras y qué falta para que estén completas."""
+
+    calculado_en: datetime | None
+    minutos: int | None
+    confiable: bool
+    equipos_sin_sincronizar: int
+    cola_reportada: int
+    ops_en_cuarentena: int
+    advertencia: str | None
+
+
+class VentaDelDia(BaseModel):
+    fecha: date
+    total: Dinero
+    contado: Dinero
+    credito: Dinero
+    documentos: int
+    # El ticket promedio sale de los documentos, no de las visitas: es la cifra
+    # que el gerente compara con la de ayer. El drop size "de verdad" —por
+    # visita que vendió— vive en el bloque de visitas, con ese nombre.
+    ticket_promedio: Dinero
+    calculado_en: datetime | None
+
+
+class VisitasDelDia(BaseModel):
+    visitas: int
+    con_venta: int
+    no_drops: int
+    # Los no-drops que la empresa puede arreglar: 'operacion', 'producto',
+    # 'vendedor'. Es la cifra accionable del bloque.
+    no_drops_nuestros: int
+    efectividad: Decimal
+    drop_size: Dinero
+    calculado_en: datetime | None
+
+
+class CobranzaDelDia(BaseModel):
+    cobrado_hoy: Dinero
+    cobrado_efectivo: Dinero
+    saldo_total: Dinero
+    saldo_vencido: Dinero
+    facturas_vencidas: int
+    clientes_vencidos: int
+    # La cartera es un SALDO: su antigüedad es la del cálculo, no la del día.
+    calculado_en: datetime | None
+
+
+class MermasDelDia(BaseModel):
+    documentos: int
+    unidades: Cantidad
+    calculado_en: datetime | None
+
+
+class RenglonVendedor(BaseModel):
+    vendedor_id: uuid.UUID
+    codigo: str | None
+    nombre: str
+    venta: Dinero
+    documentos: int
+    visitas: int
+    con_venta: int
+    no_drops: int
+    cobrado: Dinero
+    efectividad: Decimal
+
+
+class RenglonRuta(BaseModel):
+    ruta_id: uuid.UUID
+    codigo: str
+    nombre: str
+    venta_mes: Dinero
+    objetivo: Dinero | None
+    logrado: Decimal | None
+    esperado: Decimal
+    diferencia: Decimal | None
+    semaforo: str
+    visitas_mes: int
+    dias_con_venta: int
+    clientes_distintos: int
+
+
+class AvanceDelMes(BaseModel):
+    periodo: date
+    dia_del_mes: int
+    dias_del_mes: int
+    rutas: list[RenglonRuta]
+    # Lo que no se pudo atribuir a ninguna ruta. Se muestra porque es la
+    # diferencia entre el total del mes y la suma de las barras; callarlo haría
+    # que las cifras no cuadraran sin explicación.
+    venta_sin_ruta: Dinero
+    documentos_sin_ruta: int
+
+
+class Tablero(BaseModel):
+    frescura: FrescuraSalida
+    venta: VentaDelDia
+    visitas: VisitasDelDia
+    cobranza: CobranzaDelDia
+    mermas: MermasDelDia
+    vendedores: list[RenglonVendedor]
+    avance: AvanceDelMes
+
+
+class PuntoDelMapa(BaseModel):
+    clase: str          # 'venta' | 'no_drop'
+    lat: Decimal
+    lng: Decimal
+    cliente: str
+    vendedor: str | None
+    importe: Dinero | None
+    motivo: str | None
+    momento: datetime
+
+
+class MapaDelDia(BaseModel):
+    fecha: date
+    puntos: list[PuntoDelMapa]
+    # Cuántos se dejaron fuera por el tope. Un mapa recortado en silencio haría
+    # que el gerente contara visitas sobre el dibujo y le faltaran.
+    recortados: bool
+    calculado_en: datetime | None
+
+
+# ---------------------------------------------------------------------------
+# Auxiliares
+# ---------------------------------------------------------------------------
+def _minutos(desde: datetime | None) -> int | None:
+    if desde is None:
+        return None
+    if desde.tzinfo is None:
+        desde = desde.replace(tzinfo=UTC)
+    return max(0, int((datetime.now(UTC) - desde).total_seconds() // 60))
+
+
+def _frescura(calculado_en: datetime | None, mundo) -> FrescuraSalida:
+    """Arma la frescura. Un tablero nunca calculado NO es un tablero fresco.
+
+    `calculado_en is None` significa que el worker no ha corrido ni una vez. Se
+    devuelve `confiable=False` con su advertencia en vez de `minutos=0`, que es
+    el error de leer "recién calculado" cuando lo correcto es "no hay cifras".
+    """
+    minutos = _minutos(calculado_en)
+    frescura = Frescura(
+        minutos=minutos if minutos is not None else 10**6,
+        equipos_sin_sincronizar=mundo["equipos_sin_sincronizar"] or 0,
+        cola_reportada=int(mundo["cola_reportada"] or 0),
+        ops_en_cuarentena=mundo["ops_en_cuarentena"] or 0,
+    )
+    if calculado_en is None:
+        return FrescuraSalida(
+            calculado_en=None,
+            minutos=None,
+            confiable=False,
+            equipos_sin_sincronizar=frescura.equipos_sin_sincronizar,
+            cola_reportada=frescura.cola_reportada,
+            ops_en_cuarentena=frescura.ops_en_cuarentena,
+            advertencia=(
+                "El tablero no se ha calculado todavía: no hay cifras que mostrar. "
+                "Si esto no cambia en unos minutos, el worker no está corriendo."
+            ),
+        )
+    return FrescuraSalida(
+        calculado_en=calculado_en,
+        minutos=minutos,
+        confiable=frescura.confiable,
+        equipos_sin_sincronizar=frescura.equipos_sin_sincronizar,
+        cola_reportada=frescura.cola_reportada,
+        ops_en_cuarentena=frescura.ops_en_cuarentena,
+        advertencia=frescura.advertencia,
+    )
+
+
+def _fecha_pedida(fecha: date | None) -> date:
+    hoy = date.today()
+    if fecha is None:
+        return hoy
+    if fecha > hoy:
+        # Un día que no ha pasado no tiene cifras. Devolver ceros haría que el
+        # tablero dijera "no se vendió nada" de un día que todavía no ocurrió.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "esa fecha no ha ocurrido")
+    return fecha
+
+
+# ---------------------------------------------------------------------------
+# El tablero
+# ---------------------------------------------------------------------------
+@router.get("", response_model=Tablero)
+async def ver_tablero(
+    actor: ActorDep,
+    sesion: SesionDep,
+    fecha: Annotated[
+        date | None, Query(description="Día operativo; por omisión hoy")
+    ] = None,
+) -> Tablero:
+    actor.exigir(PERMISO)
+    dia = _fecha_pedida(fecha)
+    periodo = inicio_de_mes(dia)
+
+    resumen = (
+        await sesion.execute(text(SQL_RESUMEN_DIA), {"fecha": dia})
+    ).mappings().one()
+    cartera = (
+        await sesion.execute(text("SELECT * FROM tablero_cartera WHERE id"))
+    ).mappings().first()
+    refresco = (
+        await sesion.execute(text("SELECT * FROM tablero_refrescos WHERE id"))
+    ).mappings().first()
+    mundo = (await sesion.execute(text(SQL_ESTADO_DEL_MUNDO))).mappings().one()
+
+    # La antigüedad del tablero es la del REFRESCO, no la del renglón del día:
+    # si el worker lleva una hora caído, el renglón de hoy sigue diciendo
+    # "calculado hace una hora" y es cierto, pero lo que el gerente necesita
+    # saber es que el tablero completo está viejo.
+    calculado_en = refresco["calculado_en"] if refresco else None
+
+    por_vendedor = (
+        await sesion.execute(text(SQL_DIA_POR_VENDEDOR), {"fecha": dia})
+    ).mappings().all()
+    rutas = (
+        await sesion.execute(text(SQL_AVANCE_POR_RUTA), {"periodo": periodo})
+    ).mappings().all()
+    sin_ruta = (
+        await sesion.execute(text(SQL_VENTA_MES_SIN_RUTA), {"periodo": periodo})
+    ).mappings().one()
+
+    documentos = int(resumen["documentos_venta"])
+    visitas = int(resumen["visitas"])
+    con_venta = int(resumen["visitas_con_venta"])
+    venta_total = Decimal(resumen["venta_total"])
+
+    # El esperado se prorratea contra HOY, no contra el día pedido.
+    #
+    # `tablero_mes_ruta` guarda el mes **a la fecha**: si hoy es 20 y alguien
+    # abre el tablero del día 5, `venta_mes` sigue trayendo los 20 días. Usar el
+    # día 5 como numerador del prorrateo compararía veinte días de venta contra
+    # cinco días de objetivo y toda ruta se vería adelantadísima.
+    #
+    # Un mes ya terminado se prorratea al 100%: su avance es el definitivo.
+    hoy = date.today()
+    dias_del_mes = calendar.monthrange(periodo.year, periodo.month)[1]
+    dia_del_mes = hoy.day if periodo == inicio_de_mes(hoy) else dias_del_mes
+
+    return Tablero(
+        frescura=_frescura(calculado_en, mundo),
+        venta=VentaDelDia(
+            fecha=dia,
+            total=venta_total,
+            contado=Decimal(resumen["venta_contado"]),
+            credito=Decimal(resumen["venta_credito"]),
+            documentos=documentos,
+            ticket_promedio=(
+                (venta_total / documentos).quantize(Decimal("0.01"))
+                if documentos
+                else Decimal("0.00")
+            ),
+            calculado_en=resumen["calculado_en"],
+        ),
+        visitas=VisitasDelDia(
+            visitas=visitas,
+            con_venta=con_venta,
+            no_drops=int(resumen["no_drops"]),
+            no_drops_nuestros=int(resumen["no_drops_nuestros"]),
+            efectividad=porcentaje(con_venta, visitas),
+            # Drop size: lo que deja una visita en la que SÍ se vendió. El
+            # denominador son las visitas con venta, igual que en el
+            # laboratorio; si fuera el total de visitas sería otra métrica
+            # ("importe por visita") y las dos cifras no coincidirían.
+            drop_size=(
+                (venta_total / con_venta).quantize(Decimal("0.01"))
+                if con_venta
+                else Decimal("0.00")
+            ),
+            calculado_en=resumen["calculado_en"],
+        ),
+        cobranza=CobranzaDelDia(
+            cobrado_hoy=Decimal(resumen["cobrado_total"]),
+            cobrado_efectivo=Decimal(resumen["cobrado_efectivo"]),
+            saldo_total=Decimal(cartera["saldo_total"]) if cartera else Decimal("0"),
+            saldo_vencido=Decimal(cartera["saldo_vencido"]) if cartera else Decimal("0"),
+            facturas_vencidas=int(cartera["facturas_vencidas"]) if cartera else 0,
+            clientes_vencidos=int(cartera["clientes_vencidos"]) if cartera else 0,
+            calculado_en=cartera["calculado_en"] if cartera else None,
+        ),
+        mermas=MermasDelDia(
+            documentos=int(resumen["mermas_documentos"]),
+            unidades=Decimal(resumen["mermas_unidades"]),
+            calculado_en=resumen["calculado_en"],
+        ),
+        vendedores=[
+            RenglonVendedor(
+                vendedor_id=f["vendedor_id"],
+                codigo=f["codigo"],
+                nombre=f["nombre"],
+                venta=Decimal(f["venta_total"]),
+                documentos=int(f["documentos_venta"]),
+                visitas=int(f["visitas"]),
+                con_venta=int(f["visitas_con_venta"]),
+                no_drops=int(f["no_drops"]),
+                cobrado=Decimal(f["cobrado_total"]),
+                efectividad=porcentaje(f["visitas_con_venta"], f["visitas"]),
+            )
+            for f in por_vendedor
+        ],
+        avance=AvanceDelMes(
+            periodo=periodo,
+            dia_del_mes=dia_del_mes,
+            dias_del_mes=dias_del_mes,
+            rutas=[_renglon_ruta(f, dia_del_mes, dias_del_mes) for f in rutas],
+            venta_sin_ruta=Decimal(sin_ruta["venta"]),
+            documentos_sin_ruta=int(sin_ruta["documentos"]),
+        ),
+    )
+
+
+def _renglon_ruta(fila, dia_del_mes: int, dias_del_mes: int) -> RenglonRuta:
+    avance = Avance(
+        venta=Decimal(fila["venta_mes"]),
+        objetivo=Decimal(fila["objetivo_venta"]) if fila["objetivo_venta"] is not None else None,
+        dia_del_mes=dia_del_mes,
+        dias_del_mes=dias_del_mes,
+    )
+    return RenglonRuta(
+        ruta_id=fila["ruta_id"],
+        codigo=fila["codigo"],
+        nombre=fila["nombre"],
+        venta_mes=avance.venta,
+        objetivo=avance.objetivo,
+        logrado=avance.logrado,
+        esperado=avance.esperado,
+        diferencia=avance.diferencia,
+        semaforo=avance.semaforo,
+        visitas_mes=int(fila["visitas_mes"]),
+        dias_con_venta=int(fila["dias_con_venta"]),
+        clientes_distintos=int(fila["clientes_distintos"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# El mapa
+# ---------------------------------------------------------------------------
+@router.get("/mapa", response_model=MapaDelDia)
+async def ver_mapa(
+    actor: ActorDep,
+    sesion: SesionDep,
+    fecha: Annotated[date | None, Query()] = None,
+) -> MapaDelDia:
+    """Las visitas del día con coordenadas: ventas y no-drops.
+
+    Va aparte del tablero porque son cientos de renglones y la mayoría de las
+    aperturas del tablero no abren el mapa. Pedirlo siempre costaría la
+    transferencia del mapa en cada *pull to refresh*.
+
+    Una venta sin coordenadas no aparece —el filtro es `lat IS NOT NULL`— y eso
+    es información: significa que el GPS no respondió. Los no-drops, en cambio,
+    tienen `lat/lng` NOT NULL por diseño (un no-drop sin coordenadas es
+    indistinguible de una visita que no ocurrió), así que ahí no hay huecos.
+    """
+    actor.exigir(PERMISO)
+    dia = _fecha_pedida(fecha)
+
+    # Se pide uno más que el tope para saber si hubo recorte sin un COUNT extra.
+    filas = (
+        await sesion.execute(
+            text(SQL_MAPA_DEL_DIA), {"fecha": dia, "limite": MAXIMO_PUNTOS_MAPA + 1}
+        )
+    ).mappings().all()
+    recortados = len(filas) > MAXIMO_PUNTOS_MAPA
+    refresco = (
+        await sesion.execute(text("SELECT calculado_en FROM tablero_refrescos WHERE id"))
+    ).mappings().first()
+
+    return MapaDelDia(
+        fecha=dia,
+        puntos=[
+            PuntoDelMapa(
+                clase=f["clase"],
+                lat=f["lat"],
+                lng=f["lng"],
+                cliente=f["cliente"],
+                vendedor=f["vendedor"],
+                importe=Decimal(f["importe"]) if f["importe"] is not None else None,
+                motivo=f["motivo"],
+                momento=f["momento"],
+            )
+            for f in filas[:MAXIMO_PUNTOS_MAPA]
+        ],
+        recortados=recortados,
+        calculado_en=refresco["calculado_en"] if refresco else None,
+    )

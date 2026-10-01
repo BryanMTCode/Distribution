@@ -7,9 +7,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../datos/transporte_http.dart';
 import 'sesion.dart';
 
-/// Dirección del servidor local. Se configura por entorno; en producción apunta
-/// al hostname del túnel de Cloudflare.
-final baseUrlProvider = Provider<String>((_) => 'https://api.localhost');
+/// Dirección del servidor.
+///
+/// Se fija en **tiempo de compilación** con `--dart-define=DSD_BASE_URL=...`, no
+/// en una pantalla de ajustes. Un campo editable para apuntar el teléfono a otro
+/// servidor es un camino para que un equipo robado mande la cartera a donde
+/// quiera quien lo tenga; y además nadie lo cambia nunca en operación normal.
+///
+/// En producción apunta al hostname del túnel de Cloudflare. Para probar contra
+/// la PC en la red local, el valor es la IP de la PC:
+///
+///     flutter run --dart-define=DSD_BASE_URL=http://192.168.1.50:8000
+///
+/// Con `http://` hace falta además el `usesCleartextTraffic` del manifiesto de
+/// **debug** (está puesto ahí y solo ahí: en release Android lo prohíbe, y está
+/// bien que lo prohíba).
+const baseUrlPorOmision = String.fromEnvironment(
+  'DSD_BASE_URL',
+  defaultValue: 'https://api.localhost',
+);
+
+final baseUrlProvider = Provider<String>((_) => baseUrlPorOmision);
 
 /// Token vigente. Nulo mientras no haya sesión.
 final tokenProvider = StateProvider<String?>((_) => null);
@@ -23,6 +41,16 @@ final cursorProvider = Provider<int>((ref) {
   if (filas.isEmpty) return 0;
   return int.tryParse(filas.first['valor'] as String? ?? '0') ?? 0;
 });
+
+/// Transporte sin token, para el login: todavía no hay sesión que lo dé.
+///
+/// `token: ''` hace que `TransporteHttp` **omita** la cabecera, que no es lo
+/// mismo que mandarla vacía: un `Authorization: Bearer ` sin valor es una
+/// credencial mal formada y el servidor contesta 401 antes de llegar al
+/// endpoint, tapando el 400 explicativo del login que sí sirve de mensaje.
+final transporteSinSesionProvider = Provider<Transporte>(
+  (ref) => TransporteHttp(baseUrl: ref.watch(baseUrlProvider), token: ''),
+);
 
 final transporteProvider = Provider<Transporte?>((ref) {
   final token = ref.watch(tokenProvider);

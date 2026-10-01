@@ -164,10 +164,43 @@ async def refrescar_analitica() -> int:
     return 0
 
 
+async def recalcular_tablero() -> int:
+    """Recalcula los modelos de lectura del tablero de Gerencia, ahora mismo.
+
+    El disparador normal es la propia sincronización: cada lote aceptado encola
+    el job. Esto es para el arranque en frío —cuando el tablero nunca se ha
+    calculado y la app diría "no hay cifras"—, para después de restaurar un
+    respaldo, y para comprobar a mano que el recálculo funciona sin esperar al
+    worker.
+    """
+    from app.core.db import CrearSesion
+    from app.workers.tablero import recalcular_todo
+
+    print("Recalculando el tablero…")
+    async with CrearSesion() as sesion:
+        resultado = await recalcular_todo(sesion)
+
+    print(f"  {len(resultado['dias'])} día(s) en {resultado['duracion_ms']} ms")
+    print(f"  días: {', '.join(resultado['dias'][:10])}")
+    if resultado["equipos_sin_sincronizar"]:
+        print(
+            f"\n  AVISO: {resultado['equipos_sin_sincronizar']} equipo(s) no han "
+            "sincronizado hoy. Las cifras del tablero son un piso, no un total."
+        )
+    if resultado["ops_en_cuarentena"]:
+        print(
+            f"  AVISO: {resultado['ops_en_cuarentena']} operación(es) en cuarentena, "
+            "que no están contadas en ninguna cifra."
+        )
+    print("\nListo. El tablero móvil ya muestra estas cifras con su hora al lado.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
         "refrescar-analitica": refrescar_analitica,
+        "recalcular-tablero": recalcular_tablero,
     }
     if len(sys.argv) != 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")

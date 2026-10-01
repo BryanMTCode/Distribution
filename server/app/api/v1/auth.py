@@ -53,11 +53,35 @@ class CredencialLocal(BaseModel):
     argon2: dict[str, int | str]
 
 
+class Perfil(BaseModel):
+    """Quién entró, para los perfiles que NO operan offline.
+
+    Hace falta porque `credencial_local` se devuelve **solo** cuando el login
+    trae un dispositivo registrado, y un gerente no tiene camión ni equipo
+    asignado: su teléfono no guarda cartera, así que tampoco debe guardar una
+    credencial que le permita entrar sin red.
+
+    Sin esto, la app tendría que decodificar el JWT para saber el nombre y los
+    permisos de quien acaba de entrar. Funcionaría —el token los trae— pero
+    pondría al cliente a interpretar un token que no puede verificar, y de ahí a
+    "si el token dice que puedo, muestro la pantalla" hay un paso. Los permisos
+    se mandan para decidir QUÉ DIBUJAR; quien decide qué se puede leer sigue
+    siendo el servidor en cada petición.
+    """
+
+    usuario_id: uuid.UUID
+    codigo: str
+    nombre: str
+    rol: str
+    permisos: list[str]
+
+
 class RespuestaLogin(BaseModel):
     access_token: str
     refresh_token: str
     expira_en_seg: int
     credencial_local: CredencialLocal | None = None
+    perfil: Perfil | None = None
 
 
 async def _armar_credencial(sesion, usuario: Usuario, permisos: list[str]) -> CredencialLocal:
@@ -159,6 +183,13 @@ async def login(peticion: PeticionLogin, request: Request, sesion: SesionDep) ->
         credencial_local=(
             await _armar_credencial(sesion, usuario, permisos) if dispositivo else None
         ),
+        perfil=Perfil(
+            usuario_id=usuario.id,
+            codigo=usuario.codigo,
+            nombre=usuario.nombre,
+            rol=usuario.rol_codigo,
+            permisos=permisos,
+        ),
     )
 
 
@@ -211,6 +242,19 @@ async def refrescar(peticion: PeticionRefresh, sesion: SesionDep) -> RespuestaLo
         access_token=access,
         refresh_token=peticion.refresh_token,
         expira_en_seg=cfg.access_token_minutos * 60,
+        # El perfil también al refrescar: un rol o un permiso que la oficina
+        # cambió ayer tiene que llegar al teléfono sin que su dueño vuelva a
+        # teclear la contraseña. Si solo viniera en el login, el tablero de un
+        # usuario al que le quitaron el permiso seguiría dibujándose hasta que
+        # el refresh token venciera — con el servidor contestándole 403 a cada
+        # tarjeta y la pantalla sin saber por qué.
+        perfil=Perfil(
+            usuario_id=usuario.id,
+            codigo=usuario.codigo,
+            nombre=usuario.nombre,
+            rol=usuario.rol_codigo,
+            permisos=permisos,
+        ),
     )
 
 

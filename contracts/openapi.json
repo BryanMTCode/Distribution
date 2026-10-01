@@ -1097,10 +1097,166 @@
           }
         ]
       }
+    },
+    "/v1/tablero": {
+      "get": {
+        "tags": [
+          "tablero"
+        ],
+        "summary": "Ver Tablero",
+        "operationId": "ver_tablero_v1_tablero_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fecha",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Día operativo; por omisión hoy",
+              "title": "Fecha"
+            },
+            "description": "Día operativo; por omisión hoy"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tablero"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tablero/mapa": {
+      "get": {
+        "tags": [
+          "tablero"
+        ],
+        "summary": "Ver Mapa",
+        "description": "Las visitas del día con coordenadas: ventas y no-drops.\n\nVa aparte del tablero porque son cientos de renglones y la mayoría de las\naperturas del tablero no abren el mapa. Pedirlo siempre costaría la\ntransferencia del mapa en cada *pull to refresh*.\n\nUna venta sin coordenadas no aparece —el filtro es `lat IS NOT NULL`— y eso\nes información: significa que el GPS no respondió. Los no-drops, en cambio,\ntienen `lat/lng` NOT NULL por diseño (un no-drop sin coordenadas es\nindistinguible de una visita que no ocurrió), así que ahí no hay huecos.",
+        "operationId": "ver_mapa_v1_tablero_mapa_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fecha",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fecha"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapaDelDia"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AvanceDelMes": {
+        "properties": {
+          "periodo": {
+            "type": "string",
+            "format": "date",
+            "title": "Periodo"
+          },
+          "dia_del_mes": {
+            "type": "integer",
+            "title": "Dia Del Mes"
+          },
+          "dias_del_mes": {
+            "type": "integer",
+            "title": "Dias Del Mes"
+          },
+          "rutas": {
+            "items": {
+              "$ref": "#/components/schemas/RenglonRuta"
+            },
+            "type": "array",
+            "title": "Rutas"
+          },
+          "venta_sin_ruta": {
+            "type": "string",
+            "title": "Venta Sin Ruta",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "documentos_sin_ruta": {
+            "type": "integer",
+            "title": "Documentos Sin Ruta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "periodo",
+          "dia_del_mes",
+          "dias_del_mes",
+          "rutas",
+          "venta_sin_ruta",
+          "documentos_sin_ruta"
+        ],
+        "title": "AvanceDelMes"
+      },
       "Cambio": {
         "properties": {
           "cursor": {
@@ -1546,6 +1702,61 @@
         ],
         "title": "ClienteSalida"
       },
+      "CobranzaDelDia": {
+        "properties": {
+          "cobrado_hoy": {
+            "type": "string",
+            "title": "Cobrado Hoy",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "cobrado_efectivo": {
+            "type": "string",
+            "title": "Cobrado Efectivo",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "saldo_total": {
+            "type": "string",
+            "title": "Saldo Total",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "saldo_vencido": {
+            "type": "string",
+            "title": "Saldo Vencido",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "facturas_vencidas": {
+            "type": "integer",
+            "title": "Facturas Vencidas"
+          },
+          "clientes_vencidos": {
+            "type": "integer",
+            "title": "Clientes Vencidos"
+          },
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cobrado_hoy",
+          "cobrado_efectivo",
+          "saldo_total",
+          "saldo_vencido",
+          "facturas_vencidas",
+          "clientes_vencidos",
+          "calculado_en"
+        ],
+        "title": "CobranzaDelDia"
+      },
       "CondicionesEntrada": {
         "properties": {
           "permite_credito": {
@@ -1947,6 +2158,72 @@
         ],
         "title": "EvaluacionSalida"
       },
+      "FrescuraSalida": {
+        "properties": {
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          },
+          "minutos": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutos"
+          },
+          "confiable": {
+            "type": "boolean",
+            "title": "Confiable"
+          },
+          "equipos_sin_sincronizar": {
+            "type": "integer",
+            "title": "Equipos Sin Sincronizar"
+          },
+          "cola_reportada": {
+            "type": "integer",
+            "title": "Cola Reportada"
+          },
+          "ops_en_cuarentena": {
+            "type": "integer",
+            "title": "Ops En Cuarentena"
+          },
+          "advertencia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advertencia"
+          }
+        },
+        "type": "object",
+        "required": [
+          "calculado_en",
+          "minutos",
+          "confiable",
+          "equipos_sin_sincronizar",
+          "cola_reportada",
+          "ops_en_cuarentena",
+          "advertencia"
+        ],
+        "title": "FrescuraSalida",
+        "description": "De cuándo son las cifras y qué falta para que estén completas."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2081,6 +2358,78 @@
         ],
         "title": "LoteSalida"
       },
+      "MapaDelDia": {
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "puntos": {
+            "items": {
+              "$ref": "#/components/schemas/PuntoDelMapa"
+            },
+            "type": "array",
+            "title": "Puntos"
+          },
+          "recortados": {
+            "type": "boolean",
+            "title": "Recortados"
+          },
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fecha",
+          "puntos",
+          "recortados",
+          "calculado_en"
+        ],
+        "title": "MapaDelDia"
+      },
+      "MermasDelDia": {
+        "properties": {
+          "documentos": {
+            "type": "integer",
+            "title": "Documentos"
+          },
+          "unidades": {
+            "type": "string",
+            "title": "Unidades",
+            "description": "Cantidad con 3 decimales, serializada como string: '12.000'"
+          },
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documentos",
+          "unidades",
+          "calculado_en"
+        ],
+        "title": "MermasDelDia"
+      },
       "OperacionEntrada": {
         "properties": {
           "tipo": {
@@ -2149,6 +2498,44 @@
           "productos"
         ],
         "title": "PaginaProductos"
+      },
+      "Perfil": {
+        "properties": {
+          "usuario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Usuario Id"
+          },
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "rol": {
+            "type": "string",
+            "title": "Rol"
+          },
+          "permisos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permisos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usuario_id",
+          "codigo",
+          "nombre",
+          "rol",
+          "permisos"
+        ],
+        "title": "Perfil",
+        "description": "Quién entró, para los perfiles que NO operan offline.\n\nHace falta porque `credencial_local` se devuelve **solo** cuando el login\ntrae un dispositivo registrado, y un gerente no tiene camión ni equipo\nasignado: su teléfono no guarda cartera, así que tampoco debe guardar una\ncredencial que le permita entrar sin red.\n\nSin esto, la app tendría que decodificar el JWT para saber el nombre y los\npermisos de quien acaba de entrar. Funcionaría —el token los trae— pero\npondría al cliente a interpretar un token que no puede verificar, y de ahí a\n\"si el token dice que puedo, muestro la pantalla\" hay un paso. Los permisos\nse mandan para decidir QUÉ DIBUJAR; quien decide qué se puede leer sigue\nsiendo el servidor en cada petición."
       },
       "PeticionLogin": {
         "properties": {
@@ -2626,6 +3013,79 @@
         ],
         "title": "ProductoSalida"
       },
+      "PuntoDelMapa": {
+        "properties": {
+          "clase": {
+            "type": "string",
+            "title": "Clase"
+          },
+          "lat": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lng"
+          },
+          "cliente": {
+            "type": "string",
+            "title": "Cliente"
+          },
+          "vendedor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendedor"
+          },
+          "importe": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Importe con 2 decimales, serializado como string: '250.00'"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importe"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "momento": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Momento"
+          }
+        },
+        "type": "object",
+        "required": [
+          "clase",
+          "lat",
+          "lng",
+          "cliente",
+          "vendedor",
+          "importe",
+          "motivo",
+          "momento"
+        ],
+        "title": "PuntoDelMapa"
+      },
       "RangoAsignado": {
         "properties": {
           "documento_tipo": {
@@ -2654,6 +3114,170 @@
         ],
         "title": "RangoAsignado"
       },
+      "RenglonRuta": {
+        "properties": {
+          "ruta_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Ruta Id"
+          },
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "venta_mes": {
+            "type": "string",
+            "title": "Venta Mes",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "objetivo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Importe con 2 decimales, serializado como string: '250.00'"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objetivo"
+          },
+          "logrado": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logrado"
+          },
+          "esperado": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Esperado"
+          },
+          "diferencia": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diferencia"
+          },
+          "semaforo": {
+            "type": "string",
+            "title": "Semaforo"
+          },
+          "visitas_mes": {
+            "type": "integer",
+            "title": "Visitas Mes"
+          },
+          "dias_con_venta": {
+            "type": "integer",
+            "title": "Dias Con Venta"
+          },
+          "clientes_distintos": {
+            "type": "integer",
+            "title": "Clientes Distintos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ruta_id",
+          "codigo",
+          "nombre",
+          "venta_mes",
+          "objetivo",
+          "logrado",
+          "esperado",
+          "diferencia",
+          "semaforo",
+          "visitas_mes",
+          "dias_con_venta",
+          "clientes_distintos"
+        ],
+        "title": "RenglonRuta"
+      },
+      "RenglonVendedor": {
+        "properties": {
+          "vendedor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Vendedor Id"
+          },
+          "codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "venta": {
+            "type": "string",
+            "title": "Venta",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "documentos": {
+            "type": "integer",
+            "title": "Documentos"
+          },
+          "visitas": {
+            "type": "integer",
+            "title": "Visitas"
+          },
+          "con_venta": {
+            "type": "integer",
+            "title": "Con Venta"
+          },
+          "no_drops": {
+            "type": "integer",
+            "title": "No Drops"
+          },
+          "cobrado": {
+            "type": "string",
+            "title": "Cobrado",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "efectividad": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Efectividad"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vendedor_id",
+          "codigo",
+          "nombre",
+          "venta",
+          "documentos",
+          "visitas",
+          "con_venta",
+          "no_drops",
+          "cobrado",
+          "efectividad"
+        ],
+        "title": "RenglonVendedor"
+      },
       "RespuestaLogin": {
         "properties": {
           "access_token": {
@@ -2672,6 +3296,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CredencialLocal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "perfil": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Perfil"
               },
               {
                 "type": "null"
@@ -2815,6 +3449,46 @@
         ],
         "title": "SobreEntrada"
       },
+      "Tablero": {
+        "properties": {
+          "frescura": {
+            "$ref": "#/components/schemas/FrescuraSalida"
+          },
+          "venta": {
+            "$ref": "#/components/schemas/VentaDelDia"
+          },
+          "visitas": {
+            "$ref": "#/components/schemas/VisitasDelDia"
+          },
+          "cobranza": {
+            "$ref": "#/components/schemas/CobranzaDelDia"
+          },
+          "mermas": {
+            "$ref": "#/components/schemas/MermasDelDia"
+          },
+          "vendedores": {
+            "items": {
+              "$ref": "#/components/schemas/RenglonVendedor"
+            },
+            "type": "array",
+            "title": "Vendedores"
+          },
+          "avance": {
+            "$ref": "#/components/schemas/AvanceDelMes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "frescura",
+          "venta",
+          "visitas",
+          "cobranza",
+          "mermas",
+          "vendedores",
+          "avance"
+        ],
+        "title": "Tablero"
+      },
       "UnidadProducto": {
         "properties": {
           "codigo": {
@@ -2937,6 +3611,115 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VentaDelDia": {
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "total": {
+            "type": "string",
+            "title": "Total",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "contado": {
+            "type": "string",
+            "title": "Contado",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "credito": {
+            "type": "string",
+            "title": "Credito",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "documentos": {
+            "type": "integer",
+            "title": "Documentos"
+          },
+          "ticket_promedio": {
+            "type": "string",
+            "title": "Ticket Promedio",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fecha",
+          "total",
+          "contado",
+          "credito",
+          "documentos",
+          "ticket_promedio",
+          "calculado_en"
+        ],
+        "title": "VentaDelDia"
+      },
+      "VisitasDelDia": {
+        "properties": {
+          "visitas": {
+            "type": "integer",
+            "title": "Visitas"
+          },
+          "con_venta": {
+            "type": "integer",
+            "title": "Con Venta"
+          },
+          "no_drops": {
+            "type": "integer",
+            "title": "No Drops"
+          },
+          "no_drops_nuestros": {
+            "type": "integer",
+            "title": "No Drops Nuestros"
+          },
+          "efectividad": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Efectividad"
+          },
+          "drop_size": {
+            "type": "string",
+            "title": "Drop Size",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "calculado_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "visitas",
+          "con_venta",
+          "no_drops",
+          "no_drops_nuestros",
+          "efectividad",
+          "drop_size",
+          "calculado_en"
+        ],
+        "title": "VisitasDelDia"
       },
       "Yo": {
         "properties": {

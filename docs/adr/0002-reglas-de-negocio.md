@@ -1257,3 +1257,278 @@ Y una que no es de arquitectura sino de pruebas: **un Streamlit roto devuelve HT
 websocket; una excepción ahí no aparece en ningún código de estado. Por eso el
 laboratorio se prueba con `AppTest`, que ejecuta el script como lo haría el
 navegador — comprobar que "levanta" no comprueba nada.
+
+---
+
+## 27. El tablero de Gerencia: otra cadencia, otras tablas
+
+La Fase 7 pedía un «dashboard sobre modelos de lectura precalculados, nunca sobre tablas
+transaccionales». La primera reacción al leerlo fue que ya existían: la Fase 8 había dejado un esquema
+estrella entero. **No servía**, y entender por qué es la decisión central de esta fase.
+
+### La cadencia es lo que separa las dos cosas
+
+Las vistas materializadas de la migración 0020 se refrescan **al cerrar la liquidación**, que es cuando
+las cifras del día quedan firmes. Un gerente que abre el tablero a las once de la mañana vería ceros,
+porque la última liquidación cerrada es la de ayer.
+
+Son dos preguntas distintas y necesitan dos modelos:
+
+| | pregunta | se recalcula |
+|---|---|---|
+| esquema estrella (0020) | «¿cómo nos fue?» — cifras **firmes** para analizar | al cerrar el día |
+| tablero (0021) | «¿cómo va?» — cifras **vivas** para monitorear | al sincronizar |
+
+### Por qué tampoco se lee directo de `ventas`
+
+Porque las cifras del tablero son agregados, y calcularlos al vuelo significa barrer `ventas`,
+`venta_partidas`, `no_drops`, `cobros` y `cuentas_por_cobrar` **en cada apertura de la pantalla**. Tres
+gerentes con la app abierta y un *pull to refresh* nervioso son decenas de barridos por minuto sobre las
+mismas tablas en las que están escribiendo los camiones, en una mini PC de oficina.
+
+El síntoma no sería «el tablero va lento»: sería que **la sincronización** va lenta, y entonces el
+vendedor espera en la calle por una pantalla que alguien está mirando en la oficina. Exactamente al
+revés de lo que importa.
+
+### Días rancios, no un ETL incremental
+
+El job `recalcular_tablero` no carga «lo nuevo desde la última corrida» —ese es el error que la Fase 8
+documentó largamente, y en un DSD los datos llegan tarde por diseño (§0.3)—. Lo que hace es:
+
+1. buscar qué **días operativos** quedaron rancios: aquellos con algún documento cuyo `fecha_servidor`
+   es posterior al `calculado_en` de su renglón;
+2. recalcular ese día **completo** desde la verdad transaccional.
+
+La diferencia con un incremental es la que importa: `fecha_servidor` decide **qué días** recalcular,
+nunca qué renglones sumar. Una venta del lunes que sincroniza el jueves deja rancio el **lunes**, y el
+lunes se recalcula entero.
+
+Efecto lateral que paga solo: el job es **autorreparable**. Si el worker estuvo caído dos horas, la
+siguiente corrida encuentra los días rancios por sí sola; nadie tiene que acordarse de encolar las
+fechas correctas. Y por lo mismo la `clave_unica` es fija y sin fecha: ocho camiones subiendo a la vez
+encolan **un** job, no ocho.
+
+Hay un caso que no deja huella y hubo que cubrir aparte: **cancelar una venta no toca
+`ventas.fecha_servidor`**. Sin la rama de `ventas_cancelaciones` en la detección, el total de un día
+nunca bajaría — el tablero seguiría contando una venta que ya no existe. Hay prueba de eso.
+
+### El grano es (día, vendedor), no (día, ruta)
+
+Parece un detalle y no lo es. `ventas.ruta_id` y `no_drops.ruta_id` son **nullable**, y `mermas` no tiene
+ruta en absoluto —una merma pertenece a un camión, no a una ruta; la caja se revienta entre dos tiendas—.
+Con grano por ruta, el total del día sería la suma de los renglones **más** un cajón de «sin ruta» que
+alguien olvidaría sumar, y un total que no cuadra con su desglose destruye la confianza en el tablero
+completo.
+
+`vendedor_id` es `NOT NULL` en los cuatro documentos. El grano por vendedor es **completo**: la suma de
+sus renglones *es* el día, y la prueba que lo afirma suma el desglose y lo compara con el total.
+
+El avance por ruta vive en su propia tabla porque su comparación es mensual —el objetivo es mensual— y
+ahí sí se acepta perder los documentos sin ruta: se cuentan, se muestran, y el tablero dice en palabras
+que esa cifra no está en ninguna barra.
+
+### Un flujo y un saldo no se guardan igual
+
+`tablero_dia` guarda **flujos** (lo que pasó ese día) y `tablero_cartera` guarda un **saldo** (lo que se
+debe ahora). Un saldo no tiene fecha operativa: meterlo en el renglón de hoy haría que el «vencido del 3
+de marzo» cambiara cada vez que se recalcula marzo, y nadie podría explicar por qué. Por eso es una tabla
+de un solo renglón, y la tarjeta lo dice: *«al momento del cálculo, no del día que estás viendo»*.
+
+### Borrar e insertar, no `ON CONFLICT DO UPDATE`
+
+Si la única venta de un vendedor se cancela, su renglón tiene que **desaparecer**. Con un update
+quedaría ahí con la cifra anterior, y un tablero que muestra la venta de ayer como la de hoy es peor que
+uno vacío. Hay prueba de eso también.
+
+Lo contrario pasa con el día de **hoy**, que se «sella» con los vendedores activos en cero: sin eso, el
+tablero de las siete de la mañana no podría distinguir *«nadie ha vendido»* de *«el tablero no se ha
+calculado»*. La primera es información y la segunda es una falla del worker. Un día **pasado** no se
+sella: inventaría renglones en cero para vendedores que entraron después.
+
+---
+
+## 28. El objetivo de ruta existe porque sin él la tarjeta no puede tener datos
+
+La Fase 6 dejó una lección cara: se construyó la captura de motivos de merma y no-drop, y **nada
+publicaba los catálogos al dispositivo**. La pantalla estaba perfecta y no servía.
+
+La tarjeta «avance vs objetivo» tenía el mismo riesgo exacto. No existía ninguna tabla de objetivos en
+las veinte migraciones anteriores, así que la tarjeta se habría quedado en blanco para siempre sin que
+nadie supiera si era un error o si faltaba capturar algo. Por eso la fase incluye `objetivos_ruta` **y**
+su pantalla en el panel, y el tablero dice «sin objetivo» con esas palabras en las rutas que no lo
+tienen, en vez de pintar una barra vacía.
+
+Cuatro decisiones del objetivo:
+
+- **Es mensual.** Un objetivo diario obligaría a mantener un calendario de días hábiles por ruta —y a
+  decidir qué pasa con un puente, o con el día que el camión estuvo en el taller—. Nadie mantiene eso, y
+  un objetivo que nadie mantiene es peor que ninguno: el tablero pintaría rojo todos los domingos y en
+  dos semanas la gente dejaría de mirar el color.
+- **El periodo es el día 1 del mes**, con un `CHECK` que lo exige. Sin él, dos renglones del mismo mes
+  (día 1 y día 15) convivirían y el avance se mediría contra uno de los dos al azar.
+- **Vacío borra el renglón; no guarda cero.** «Sin objetivo» y «objetivo $0» son dos cosas distintas, y
+  la segunda daría 100 % de avance con la primera venta.
+- **Se puede copiar del mes anterior sin pisar lo ya ajustado.** Si fijar ocho rutas cuesta ocho
+  capturas cada mes, el mes que haya prisa no se van a fijar — y el tablero mentiría todo ese mes
+  mostrando «sin objetivo» en rutas que sí tienen una meta en la cabeza de alguien.
+
+### Gerencia fija los objetivos, y eso no contradice «solo lectura»
+
+El rol `gerente` se definió como *«monitoreo y análisis; solo lectura sobre la operación»*. Fijar un
+objetivo no es una operación: no mueve inventario ni dinero. Es el **plan contra el que se mide** la
+operación, y si la única persona que mide no pudiera fijar contra qué, la tarjeta quedaría vacía
+esperando que la oficina se acordara.
+
+`tablero.ver` y `objetivos.administrar` son permisos **separados** a propósito. Un supervisor puede ver
+cómo va el mes sin poder mover la meta: cambiar la meta cambia cómo se juzga a todo el equipo.
+
+Y `tablero.ver` no es un alias de `analitica.ver`: el laboratorio es una herramienta de oficina con la
+cartera completa a la vista, y el tablero es una pantalla de monitoreo. Que un supervisor pueda ver cómo
+va el día no implica darle el laboratorio.
+
+---
+
+## 29. Gerencia entra en línea, y su teléfono no guarda credencial
+
+Al construir la pantalla apareció un hueco que no estaba en el plan: **la app no tenía login en línea**.
+El vendedor entra sin señal contra el hash Argon2id guardado en el Keystore, y ese era el único camino
+implementado. El `tokenProvider` existía y nadie lo llenaba nunca.
+
+Sin token, el tablero no podía consultar nada. Era el mismo defecto de la Fase 6 a punto de repetirse:
+una pantalla impecable alimentada por un dato que no llega.
+
+La solución no es darle credencial offline a Gerencia, y la razón es de diseño, no de comodidad:
+
+- **No le serviría.** El tablero existe para ver lo que están haciendo **los otros**, y eso no se puede
+  saber sin preguntarle al servidor. Un login offline lo dejaría entrar a una pantalla vacía.
+- **No debería tenerla.** Un teléfono de gerencia no guarda cartera ni opera inventario. Guardar en él
+  una credencial que permite entrar sin red es superficie de ataque a cambio de nada.
+
+El servidor ya empujaba en esa dirección por su cuenta: `credencial_local` solo se devuelve cuando el
+login trae un dispositivo registrado, y un login de rol `vendedor` **sin** `dispositivo_id` se rechaza
+con 400. El camino en línea está cerrado para el vendedor sin que el cliente tenga que colaborar.
+
+Tres detalles que importan:
+
+- **`SesionDeGerencia` es un estado propio**, no un `SesionAbierta` con credencial nula. `SesionAbierta`
+  implica que hay credencial en el Keystore y que el equipo puede volver a entrar sin red; confundir los
+  dos casos haría que algún día una pantalla del vendedor leyera una credencial que no existe.
+- **Se guarda el refresh token, y solo ese**, para que abrir la app por la mañana no exija teclear la
+  contraseña. Y **salir lo borra**: dejarlo haría que la siguiente apertura reabriera la sesión sola, y
+  eso convierte un botón de seguridad en un adorno.
+- **El 403 del tablero no manda al login.** Un 401 y un 403 llegan igual y significan cosas opuestas:
+  el primero se arregla volviendo a entrar y el segundo no se arregla nunca —hay que pedir el permiso en
+  la oficina—. Mandar a alguien a teclear su contraseña cuando el problema es un permiso es tiempo
+  perdido garantizado, así que la pantalla de «sin permiso» **no ofrece reintentar**.
+
+---
+
+## 30. Sin señal, las cifras viejas con su etiqueta valen más que una pantalla vacía
+
+El tablero necesita red. Pero hay dos formas de fallar cuando no hay señal, y una es mucho peor:
+
+- pantalla vacía con «sin conexión» → no sirve para nada;
+- las cifras de hace una hora, **con su etiqueta** → sirven para casi todo lo que se decide con un
+  tablero.
+
+La segunda exige disciplina: la antigüedad tiene que estar a la vista y ser imposible de confundir con
+una cifra fresca. De ahí la copia local (`tablero_cache`), que guarda el JSON tal como llegó más la hora
+del **teléfono** al recibirlo.
+
+Son dos horas distintas y las dos se muestran: el servidor calculó a las 10:05 y el teléfono lo bajó a
+las 10:40, así que la cifra arrastra 35 minutos de camino **más** los que tuviera al calcularse.
+
+`ErrorDeRed` es lo único que cae a la copia. Un 401 o un 403 se propagan: mostrar cifras viejas a alguien
+a quien le quitaron el permiso sería exactamente lo contrario de lo que el permiso significa.
+
+### La marca de frescura va arriba, antes de la primera cifra
+
+Y hay una prueba que compara las coordenadas en pantalla para afirmarlo. Debajo de las tarjetas se
+leería como nota al pie de algo que ya se dio por cierto.
+
+La marca dice **dos** cosas, porque una sola es una media verdad peligrosa: «hace 2 minutos» suena
+perfecto, y si en ese minuto dos teléfonos no habían subido su día, el total de ventas es un **piso**, no
+un total. La advertencia enumera todos los motivos y no solo el primero — un tablero que dice «2 equipos
+sin sincronizar» y se calla las 5 operaciones en cuarentena deja a quien lo lee creyendo que ya sabe todo
+lo que falta.
+
+---
+
+## 31. El mapa es un lienzo, no un mapa
+
+Misma decisión que el radar de la pantalla de alta de cliente (§13), con una razón que se suma: **la
+pregunta no necesita calles**. «¿Se está cubriendo la zona o el vendedor se quedó en tres cuadras?» y
+«¿las visitas perdidas están juntas en un rumbo?» se contestan con la forma de la nube de puntos. Las
+calles no añaden nada a esas dos preguntas, y a cambio cuestan una llave de API que mantener, una
+factura que crece con el uso y un dibujo que se queda en cuadros grises justo en la bodega sin cobertura.
+
+Dos cosas del dibujo que no son obvias:
+
+- **El coseno de la latitud.** A 20° de latitud un grado de longitud mide ~94 % de lo que mide uno de
+  latitud. Sin esa corrección la nube sale estirada en horizontal, suficiente para que dos puntos que
+  están uno encima del otro parezcan separados.
+- **Un semilado mínimo (~275 m).** Con un rango de veinte metros, escalar al lienzo completo convertiría
+  el **ruido del GPS** en un mapa, y alguien leería dispersión donde solo hay imprecisión.
+
+Y una venta sin coordenadas **no aparece**, que es información: significa que el GPS no respondió.
+Dibujarla en el centro o en 0,0 sería inventarle una ubicación. Los no-drops sí tienen `lat/lng` NOT NULL
+por diseño, así que ahí no hay huecos.
+
+---
+
+## 32. Dos defectos que solo aparecieron al construir la Fase 7
+
+1. **`:periodo::date` llegaba a PostgreSQL sin sustituir.** El `::` de PostgreSQL choca con la sintaxis
+   de parámetros de SQLAlchemy y la consulta salía con el `:periodo` literal: `syntax error at or near
+   ":"`. Dos de las trece consultas del tablero lo tenían. Se arreglaron con `CAST(:periodo AS date)` —
+   el mismo motivo por el que `ingesta.py` ya usaba `CAST` en su `COALESCE`. **Se descubrió ejecutando
+   las trece consultas contra PostgreSQL real antes de escribir una sola prueba**, que es la costumbre
+   que la Fase 8 dejó.
+
+2. **Las tarjetas se desbordaban en un teléfono angosto.** Un `GridView.count` exige una relación de
+   aspecto **fija**, y el detalle de cada tarjeta mide lo que mide su texto —tres renglones en una, cinco
+   en otra, y más si el tamaño de letra del sistema está subido—. La tarjeta más larga se desbordaba y
+   Flutter pintaba la franja amarilla y negra encima de la cifra. Lo encontró la primera prueba de
+   widget, no una revisión visual. Se cambió a filas de `IntrinsicHeight` con `Expanded`: la fila mide
+   lo que necesita la tarjeta más alta y nunca se desborda.
+
+Y una tercera que no es un defecto del código sino de las pruebas, y que vale igual: **las tablas nuevas
+no estaban en `TABLAS_VOLATILES` de `conftest.py`**. `tablero_refrescos` y `tablero_cartera` no tienen
+llave foránea a nada, así que el `TRUNCATE ... CASCADE` de las demás no se las llevaba, y el renglón que
+dejaba una prueba sobrevivía a la siguiente: la prueba de «el tablero nunca se ha calculado» veía la hora
+de la corrida anterior. Es el mismo defecto que las cachés globales de Streamlit en la Fase 8, con otra
+cara — y las dos veces lo delató una prueba que afirmaba un estado inicial.
+
+---
+
+## 33. La zona horaria del servidor es una regla de negocio, no un ajuste
+
+Apareció al revisar el tablero y vale para todo el sistema, así que queda escrito aquí.
+
+**«Hoy» lo deciden `date.today()` en Python y `CURRENT_DATE` en PostgreSQL**, y los dos usan la zona del
+sistema. El `fecha_operativa` de cada documento, en cambio, lo pone el **teléfono** con su día local.
+Para que las dos cosas coincidan, el servidor tiene que correr en la hora de la operación.
+
+Con el reloj en UTC y la operación en UTC−6, **a partir de las 18:00 locales «hoy» pasa a ser mañana**:
+
+- el tablero de Gerencia muestra el día siguiente, vacío;
+- la cobranza del día abre sin cobros;
+- y el arqueo de la liquidación no cuadra con el efectivo que el vendedor tiene en la mano.
+
+Lo que vuelve esto peligroso es que **a las once de la mañana todo funciona**. El síntoma aparece
+justo en el momento del día en que se cierra la operación, que es cuando menos tiempo hay para
+investigarlo.
+
+No es una dependencia nueva —el panel, la cobranza y las cargas ya la tenían— pero estaba implícita en
+trece lugares y en ninguno escrita. Ahora:
+
+- `docker-compose.yml` fija `TZ` en los cinco servicios (`DSD_ZONA` lo cambia si algún día hace falta
+  otra zona);
+- `make db` crea el contenedor con `TZ`, y la variable `ZONA` del Makefile lo controla;
+- `make doctor` compara la hora del sistema con la del contenedor **y falla si no coinciden**, porque
+  una mezcla hace que `CURRENT_DATE` y `date.today()` discrepen: el renglón se escribe con una fecha y
+  se lee con otra.
+
+El contenedor toma su zona **al crearse**, no al arrancar, así que arreglar el sistema no basta si el
+contenedor ya existía. `docs/ARRANQUE-DIARIO.md` §1.2-bis tiene los tres comandos que lo recrean sin
+perder los datos.

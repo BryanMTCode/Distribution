@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block titulo %}Objetivos{% endblock %}
+{% block contenido %}
+<h1>Objetivos de ruta</h1>
+<p class="subtitulo">
+  Contra qué se mide el tablero. El objetivo es <strong>del mes</strong>: un
+  objetivo diario exigiría un calendario de días hábiles por ruta que nadie va a
+  mantener, y un objetivo que nadie mantiene pinta de rojo todos los domingos
+  hasta que la gente deja de mirar el color.
+</p>
+
+<form class="barra" method="get" action="/panel/objetivos">
+  <input type="month" name="mes" value="{{ periodo }}">
+  <button type="submit">Ver</button>
+</form>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">${{ '{:,.2f}'.format(total_objetivo) }}</div>
+    <div class="etiqueta">objetivo de {{ nombre_periodo }}</div>
+    <div class="sutil" style="margin-top:6px">
+      Suma de las rutas activas con objetivo fijado.
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">${{ '{:,.2f}'.format(total_venta) }}</div>
+    <div class="etiqueta">vendido en el mes</div>
+    <div class="sutil" style="margin-top:6px">
+      {# La cifra sale de tablero_mes_ruta, el mismo modelo de lectura que
+         alimenta el tablero del gerente: las dos pantallas no pueden discrepar. #}
+      Día {{ dia_del_mes }} de {{ dias_del_mes }} · lo esperado a prorrata es
+      {{ esperado }}%.
+    </div>
+  </div>
+  <div class="tarjeta {% if sin_objetivo %}aviso{% endif %}">
+    <div class="numero">{{ sin_objetivo }}</div>
+    <div class="etiqueta">rutas sin objetivo</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if sin_objetivo %}
+        En el tablero aparecen con su venta y sin barra de avance. No se inventa
+        una meta: una barra calculada contra un objetivo que nadie fijó sería
+        una cifra sin dueño.
+      {% else %}
+        Todas las rutas activas tienen meta este mes.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if puede_editar %}
+<form method="post" action="/panel/objetivos/copiar" style="margin:18px 0 0">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="mes" value="{{ periodo }}">
+  <button type="submit" class="secundario">
+    Copiar los objetivos de {{ nombre_anterior }}
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Rellena los huecos. No pisa lo que ya ajustaste a mano este mes.
+  </span>
+</form>
+{% endif %}
+
+<h2>Por ruta</h2>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Ruta</th>
+      <th class="numero">Objetivo</th>
+      <th class="numero">Vendido</th>
+      <th class="numero">Avance</th>
+      <th class="numero">{{ nombre_anterior|capitalize }}</th>
+      {% if puede_editar %}<th>Fijar</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for f in filas %}
+    {% set objetivo = f.objetivo_venta %}
+    {% set logrado = (f.venta_mes * 100 / objetivo) if objetivo and objetivo > 0 else none %}
+    <tr>
+      <td>
+        <strong>{{ f.codigo }}</strong><br>
+        <span class="sutil">{{ f.nombre }}</span>
+        {% if f.nota %}<br><span class="sutil">{{ f.nota }}</span>{% endif %}
+      </td>
+      <td class="numero">
+        {% if objetivo %}
+          ${{ '{:,.2f}'.format(objetivo) }}
+          {% if f.objetivo_visitas %}
+            <br><span class="sutil">{{ f.objetivo_visitas }} visitas</span>
+          {% endif %}
+          {% if f.fijado_por %}
+            <br><span class="sutil">{{ f.fijado_por }}</span>
+          {% endif %}
+        {% else %}
+          <span class="sutil">sin objetivo</span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        ${{ '{:,.2f}'.format(f.venta_mes) }}
+        <br><span class="sutil">{{ f.visitas_mes }} visitas</span>
+      </td>
+      <td class="numero">
+        {% if logrado is not none %}
+          {{ '%.1f'|format(logrado) }}%
+          {# La barra no es decoración: 67% el día 10 es excelente y el día 28 es
+             un problema, y el número es el mismo. La marca gris es lo esperado. #}
+          <div style="position:relative;height:8px;background:var(--linea);
+                      border-radius:4px;margin-top:5px;overflow:hidden">
+            <div style="position:absolute;left:0;top:0;bottom:0;
+                        width:{{ '%.1f'|format([logrado, 100]|min) }}%;
+                        background:{% if logrado >= esperado|float %}var(--acento)
+                                   {% elif logrado >= esperado|float - 10 %}var(--aviso)
+                                   {% else %}var(--alerta){% endif %}"></div>
+          </div>
+          <span class="sutil">esperado {{ esperado }}%</span>
+        {% else %}
+          <span class="sutil">—</span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        ${{ '{:,.2f}'.format(f.venta_anterior) }}
+        {% if f.objetivo_anterior %}
+          <br><span class="sutil">meta ${{ '{:,.2f}'.format(f.objetivo_anterior) }}</span>
+        {% endif %}
+      </td>
+      {% if puede_editar %}
+      <td>
+        <form method="post" action="/panel/objetivos/fijar"
+              style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="mes" value="{{ periodo }}">
+          <input type="hidden" name="ruta_id" value="{{ f.ruta_id }}">
+          <input type="text" name="objetivo_venta" inputmode="decimal"
+                 style="width:110px" placeholder="$ del mes"
+                 value="{{ '{:.2f}'.format(objetivo) if objetivo else '' }}"
+                 aria-label="Objetivo de venta de {{ f.codigo }}">
+          <input type="text" name="objetivo_visitas" inputmode="numeric"
+                 style="width:80px" placeholder="visitas"
+                 value="{{ f.objetivo_visitas or '' }}"
+                 aria-label="Objetivo de visitas de {{ f.codigo }}">
+          <button type="submit">Guardar</button>
+        </form>
+        <span class="sutil">
+          {# Vacío borra, no guarda cero: "sin objetivo" y "objetivo $0" son dos
+             cosas distintas, y la segunda daría 100% con la primera venta. #}
+          Déjalo vacío para quitar el objetivo.
+        </span>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6">
+      <div class="vacio">No hay rutas activas. Da de alta una ruta primero.</div>
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Qué hace el tablero con esto</h2>
+<p class="sutil">
+  El prorrateo es por <strong>días naturales</strong> transcurridos, no por días
+  hábiles. Una ruta que trabaja de lunes a sábado se verá atrasada los domingos,
+  y es a propósito: la alternativa es un calendario de días hábiles por ruta, un
+  dato que se desactualiza y entonces miente todo el mes en vez de un día.
+</p>
+<p class="sutil">
+  Una ruta sin objetivo aparece en el tablero con su venta y sin barra. Es la que
+  hay que notar: si no apareciera, nadie se acordaría de ponerle meta.
+</p>
+{% endblock %}

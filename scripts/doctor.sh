@@ -124,6 +124,46 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+titulo "Zona horaria"
+# ---------------------------------------------------------------------------
+# Esto no es cosmético y cuesta una tarde de confusión.
+#
+# "Hoy" lo deciden `date.today()` en Python y `CURRENT_DATE` en PostgreSQL, y
+# los dos usan la zona del sistema. En el centro de México son UTC−6, así que
+# con el reloj en UTC, a partir de las 18:00 locales "hoy" pasa a ser MAÑANA: el
+# tablero de Gerencia muestra el día siguiente vacío, la cobranza del día sale
+# sin cobros y el arqueo no cuadra con lo que la gente tiene en la mano.
+#
+# El síntoma es desconcertante porque a las 11 de la mañana todo funciona.
+ZONA_ESPERADA="America/Mexico_City"
+ZONA_SO="$( (timedatectl show -p Timezone --value 2>/dev/null) || cat /etc/timezone 2>/dev/null || echo '' )"
+DESFASE="$(date +%z)"
+
+if [ "$ZONA_SO" = "$ZONA_ESPERADA" ] || [ "$DESFASE" = "-0600" ] || [ "$DESFASE" = "-0500" ]; then
+    bien "el sistema está en hora local (${ZONA_SO:-$DESFASE})"
+else
+    falla "el sistema NO está en hora de México (${ZONA_SO:-desconocida}, UTC$DESFASE)" \
+          "sudo ln -sf /usr/share/zoneinfo/$ZONA_ESPERADA /etc/localtime"
+    avisa "con el reloj en UTC, después de las 18:00 'hoy' ya es mañana para el"
+    avisa "tablero, la cobranza del día y el arqueo."
+fi
+
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTENEDOR"; then
+    ZONA_DB="$(docker exec "$CONTENEDOR" date +%z 2>/dev/null || echo '')"
+    if [ -z "$ZONA_DB" ]; then
+        avisa "no se pudo leer la hora del contenedor"
+    elif [ "$ZONA_DB" = "$DESFASE" ]; then
+        bien "PostgreSQL va a la misma hora que el sistema (UTC$ZONA_DB)"
+    else
+        # Las dos tienen que coincidir: una mezcla hace que `CURRENT_DATE` y
+        # `date.today()` discrepen, y entonces el renglón del tablero se
+        # escribe con una fecha y se lee con otra.
+        falla "PostgreSQL va en UTC$ZONA_DB y el sistema en UTC$DESFASE" \
+              "make db-parar \&\& make db   (el contenedor toma TZ al crearse)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 titulo "El puerto $PUERTO_API de la API"
 # ---------------------------------------------------------------------------
 FANTASMAS="$(pgrep -af "uvicorn app.main:app" 2>/dev/null || true)"

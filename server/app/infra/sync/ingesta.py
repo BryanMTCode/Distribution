@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -41,8 +42,20 @@ from app.core.db import lock_de_dispositivo
 from app.domain.sync.resultados import Estado, ResultadoLote, ResultadoSobre
 from app.domain.sync.sobres import CodigoError, Sobre, validar_lote, verificar_hash
 from app.infra.sync.manejadores import Contexto, ErrorDeManejador, obtener_manejador
+from app.workers.cola import encolar
 
 log = logging.getLogger("dsd.sync")
+
+# Cuánto espera el recálculo del tablero después de un lote aceptado.
+#
+# No es cero por una razón concreta: al llegar a la bodega los ocho equipos
+# sincronizan casi al mismo tiempo, y con cero el primero arrancaría el job
+# mientras los otros siete siguen subiendo — se recalcularía con el día a
+# medias y habría que volver a hacerlo. Un minuto los agrupa en una corrida.
+#
+# El costo es que el tablero puede ir hasta un minuto atrás de la última venta
+# recibida, y el tablero lo DICE: muestra la antigüedad de cada cifra.
+RETRASO_TABLERO_SEG = 60
 
 __all__ = ["procesar_lote"]
 
@@ -208,6 +221,24 @@ async def procesar_lote(
             ),
             {"dev": ctx.dispositivo_id, "cola": cola_pendiente},
         )
+
+        # El tablero de Gerencia se recalcula cuando ENTRA operación, no cada
+        # vez que alguien abre la pantalla (ver migración 0021). Va aquí dentro,
+        # en la misma transacción que el lote: si el lote se deshace, no queda
+        # encolado el recálculo de algo que no pasó.
+        #
+        # `clave_unica` fija y sin fecha, a propósito: el job averigua solo qué
+        # días quedaron rancios, así que ocho camiones subiendo a la vez
+        # encolan UNO. El retraso agrupa la ráfaga del final del día — ocho
+        # equipos conectándose al llegar a la bodega — en una sola corrida.
+        if resultado.aceptadas:
+            await encolar(
+                sesion,
+                "recalcular_tablero",
+                {"motivo": "sync", "dispositivo_id": str(ctx.dispositivo_id)},
+                clave_unica="recalcular_tablero",
+                retraso=timedelta(seconds=RETRASO_TABLERO_SEG),
+            )
 
     await sesion.commit()
     return resultado

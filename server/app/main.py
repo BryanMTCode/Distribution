@@ -14,10 +14,11 @@ from app.api.admin import efectividad as panel_efectividad
 from app.api.admin import equipo as panel_equipo
 from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
+from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import panel
 from app.api.admin import productos as panel_productos
 from app.api.admin.sesion_web import SinSesionWeb
-from app.api.v1 import auth, catalogo, clientes, dispositivos, salud, sync
+from app.api.v1 import auth, catalogo, clientes, dispositivos, salud, sync, tablero
 from app.core.config import obtener_config
 from app.core.db import motor
 
@@ -46,6 +47,7 @@ def crear_app() -> FastAPI:
     app.include_router(catalogo.router, prefix="/v1")
     app.include_router(clientes.router, prefix="/v1")
     app.include_router(sync.router, prefix="/v1")
+    app.include_router(tablero.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una
     # interfaz. Versionar sus rutas obligaría a mantener la vieja viva cuando
@@ -59,6 +61,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_liquidaciones.router)
     app.include_router(panel_cobranza.router)
     app.include_router(panel_efectividad.router)
+    app.include_router(panel_objetivos.router)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

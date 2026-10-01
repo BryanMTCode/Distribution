@@ -10,8 +10,8 @@ dice el comando exacto, qué debe responder, y qué hacer cuando no responde eso
 > ```
 >
 > `make doctor` revisa Docker, el contenedor, el puerto 5432, las migraciones, si hay usuario de
-> oficina, el puerto 8000, los `.env`, el venv y el teléfono — y para cada falla imprime **el comando
-> exacto que la arregla**. Si dice «Todo listo», salta a [§1.5](#15-abrir-el-panel). El resto de este
+> oficina, la **zona horaria**, el puerto 8000, los `.env`, el venv y el teléfono — y para cada falla
+> imprime **el comando exacto que la arregla**. Si dice «Todo listo», salta a [§1.5](#15-abrir-el-panel). El resto de este
 > documento explica cada paso por si el doctor señala algo, o por si quieres entender qué pasa.
 
 ---
@@ -122,6 +122,40 @@ Si vas a probar algo que use la cola de trabajos, en **otra** pestaña:
 ```bash
 make worker
 ```
+
+## 1.2-bis La zona horaria, que no es cosmética
+
+`make doctor` la revisa, y vale la pena saber por qué está en la lista.
+
+**«Hoy» lo deciden `date.today()` en Python y `CURRENT_DATE` en PostgreSQL**, y los dos usan la zona
+del sistema. En el centro de México son UTC−6, así que **con el reloj en UTC, a partir de las 18:00
+locales «hoy» pasa a ser mañana**: el tablero de Gerencia muestra el día siguiente vacío, la cobranza
+del día sale sin cobros, y el arqueo de la liquidación no cuadra con el efectivo que la gente tiene en
+la mano.
+
+El síntoma desconcierta porque **a las once de la mañana todo funciona**.
+
+Una WSL recién instalada suele venir en UTC. Se arregla una vez:
+
+```bash
+sudo ln -sf /usr/share/zoneinfo/America/Mexico_City /etc/localtime
+date        # debe decir CST, no UTC
+```
+
+Y el contenedor de PostgreSQL toma su zona **al crearse**, no al arrancar. Si ya lo creaste antes de
+arreglar el sistema, hay que recrearlo — los datos están en el volumen y **no se pierden**:
+
+```bash
+make db-parar
+docker rm dsd-postgres     # quita el contenedor, NO el volumen
+make db                    # lo crea otra vez, ahora con TZ=America/Mexico_City
+```
+
+`make doctor` compara las dos horas y falla si no coinciden: una mezcla hace que `CURRENT_DATE` y
+`date.today()` discrepen, y entonces un renglón se escribe con una fecha y se lee con otra.
+
+En producción, `docker-compose.yml` pone `TZ` en los cinco servicios (`DSD_ZONA` lo cambia si algún día
+hace falta otra).
 
 ## 1.3 Variables de entorno: la respuesta corta es «ninguna»
 
@@ -359,12 +393,59 @@ restaurar un respaldo, y para un cron nocturno.
 > consultas propias: las importa de ahí, para que la misma pregunta no se conteste
 > distinto cada vez.
 
+## 1.6-bis El tablero de Gerencia: fijar los objetivos y recalcularlo
+
+El tablero móvil (Fase 7) **no lee las tablas de operación**: lee modelos de
+lectura que recalcula un job. Eso tiene dos consecuencias para tus pruebas
+locales.
+
+### Hay que recalcularlo al menos una vez
+
+```bash
+make recalcular-tablero      # recalcula los días rancios + hoy (milisegundos)
+```
+
+Si nunca lo corres, la app dice «el tablero no se ha calculado todavía» en vez de
+mostrar ceros — a propósito: «nadie ha vendido» y «el worker no está corriendo»
+son dos cosas distintas, y confundirlas te mandaría a buscar el problema donde no
+está.
+
+En producción no hace falta: **cada lote de sincronización encola el recálculo**,
+y el cierre de liquidación también. El job averigua solo qué días quedaron
+rancios, así que ocho camiones subiendo a la vez encolan **uno**. `make
+recalcular-tablero` es para el arranque en frío, para después de restaurar un
+respaldo, y para comprobar a mano que funciona sin esperar al worker.
+
+> Si lo corres mientras `make worker` está levantado, no hay conflicto: el job de
+> la cola y el comando hacen lo mismo y el recálculo es idempotente.
+
+### Sin objetivo de ruta, la tarjeta de avance no puede tener datos
+
+Es el mismo hueco que tuvieron los catálogos de motivos en la Fase 6: la pantalla
+lista y nada publicando el dato. Entra a **Panel → Objetivos**, pon una cifra
+mensual a cada ruta activa y guarda. Un objetivo vacío **borra** el renglón en vez
+de guardar cero: «sin objetivo» y «objetivo $0» son dos cosas distintas, y la
+segunda daría 100 % de avance con la primera venta.
+
+El botón «Copiar los objetivos de \<mes anterior\>» rellena los huecos sin pisar
+lo que ya ajustaste a mano.
+
+### Qué validar en el panel
+
+1. **Objetivos**: fija uno, recarga, y comprueba que aparece con tu nombre al
+   lado. Un objetivo sin autor es una decisión que nadie puede revisar después.
+2. **La barra de avance** trae una marca vertical: es el avance **esperado** a
+   prorrata de los días transcurridos. Sin ella, 67 % se lee igual el día 10 que
+   el día 28, y es excelente o grave según cuál.
+3. **Prueba un objetivo absurdo** (`180000000`): se detiene con un mensaje. Un
+   cero de más deja la barra en 0.1 % todo el mes y nadie sabe por qué.
+
 ## 1.7 Antes de dar por bueno un cambio
 
 ```bash
 make lint          # ruff sobre app y tests
 make pruebas       # 622 pruebas de Python — necesita la base arriba
-make movil         # 439 de Dart + 186 de widget
+make movil         # 457 de Dart + 212 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -583,6 +664,56 @@ indistinguible de «no fui».
 7. Confirma en el panel → *Cobranza* que el cobro llegó, a qué factura se aplicó, y que si cobraste de
    más aparece **marcado** con «Cobró más de lo que el cliente debía».
 
+### Tablero de Gerencia — se entra por «Entrar como Gerencia» en el login
+
+**Gerencia entra en línea**, con código y contraseña, no con PIN: el tablero
+existe para ver lo que están haciendo los otros y eso no se puede saber sin
+preguntarle al servidor. Un vendedor **no** puede entrar por ahí — el servidor lo
+rechaza con un mensaje que explica que necesita un dispositivo registrado.
+
+Para probarlo necesitas dos cosas:
+
+1. **Un usuario de rol `gerente`.** Créalo con `make usuario`.
+2. **Que la app apunte a tu PC.** La dirección del servidor es de **tiempo de
+   compilación** —no hay pantalla de ajustes a propósito: un campo editable es un
+   camino para que un equipo robado mande la cartera a donde quiera quien lo
+   tenga—. Averigua la IP de tu WSL/PC en la red local y compila con ella:
+
+   ```bash
+   ip addr show eth0 | grep 'inet '        # o la interfaz que uses
+   cd mobile/app
+   flutter run --dart-define=DSD_BASE_URL=http://192.168.1.50:8000
+   ```
+
+   Y la API tiene que escuchar en la red, no solo en localhost: `make api` ya
+   levanta uvicorn en `0.0.0.0`. Si el teléfono no conecta, lo primero que hay
+   que descartar es el **firewall de Windows** sobre el puerto 8000.
+
+> `http://` sin TLS solo funciona en los builds de **debug**: el
+> `usesCleartextTraffic` vive en `android/app/src/debug/AndroidManifest.xml` y
+> únicamente ahí. En release Android lo prohíbe, y está bien que lo prohíba.
+
+Qué validar, en este orden:
+
+1. **La franja de arriba, antes de la primera cifra.** Dice cuándo lo calculó el
+   servidor **y** cuándo lo bajó este teléfono. Son dos horas distintas: el
+   servidor calculó a las 10:05, el teléfono lo bajó a las 10:40, y la cifra
+   arrastra los 35 minutos de camino además de los que tuviera al calcularse.
+2. **Apaga los datos del teléfono y vuelve a refrescar.** Las cifras **siguen
+   ahí**, con la franja en rojo diciendo que son la última copia y de cuándo es.
+   Una pantalla vacía con «sin conexión» no sirve para nada; las cifras de hace
+   una hora con su etiqueta sirven para casi todo.
+3. **Borra los datos de la app y refresca sin señal.** Ahora sí no hay copia, y lo
+   dice con esas palabras en vez de mostrar ceros.
+4. **Entra con un usuario sin el permiso `tablero.ver`.** La pantalla lo explica y
+   **no** ofrece «volver a intentar»: no se arregla reintentando, se pide el
+   permiso en la oficina.
+5. **El mapa del día.** Es un lienzo, no un mapa con calles: no descarga nada y
+   funciona en la bodega sin cobertura. Toca un punto para ver de qué cliente es.
+   Las ventas sin GPS **no aparecen**, y eso es información.
+6. **El vendedor sin movimiento** sale marcado en rojo en «Por vendedor». A media
+   mañana es el renglón más urgente del tablero.
+
 ### El ciclo completo, si quieres probar la sincronización de verdad
 
 ```bash
@@ -615,22 +746,22 @@ su duración estimada (punto medio del rango). Las fases 0–9 suman **27 semana
 | **4** | Inventario de camión, liquidación | 2.5 sem | 🟡 casi | ~90 % |
 | **5** | Crédito y cobranza | 2.5 sem | ✅ completa | 100 % |
 | **6** | Alta en calle, mermas, no-drops | 2.0 sem | ✅ completa | 100 % |
-| **7** | **Perfil Gerencia móvil** | 2.0 sem | ⛔ no empezada | 0 % |
+| **7** | **Perfil Gerencia móvil** | 2.0 sem | ✅ completa | 100 % |
 | **8** | Laboratorio analítico (Streamlit) | 3.5 sem | 🟡 **casi** | ~85 % |
 | **9** | Endurecimiento, MDM, RLS | 2.5 sem | ⛔ no empezada | 0 % |
 
-## **Avance general: ≈ 75 %**
+## **Avance general: ≈ 83 %**
 
 El cálculo, semana a semana de plan:
 
 ```
 Fase 0   2.5 × 1.00 = 2.50      Fase 5   2.5 × 1.00 = 2.50
 Fase 1   2.5 × 1.00 = 2.50      Fase 6   2.0 × 1.00 = 2.00
-Fase 2   3.5 × 1.00 = 3.50      Fase 7   2.0 × 0.00 = 0.00
+Fase 2   3.5 × 1.00 = 3.50      Fase 7   2.0 × 1.00 = 2.00
 Fase 3   3.5 × 0.60 = 2.10      Fase 8   3.5 × 0.85 = 2.98
 Fase 4   2.5 × 0.90 = 2.25      Fase 9   2.5 × 0.00 = 0.00
                                 ─────────────────────────────
-                                20.33 de 27 semanas = 75.3 %
+                                22.33 de 27 semanas = 82.7 %
 ```
 
 ### Qué le falta a lo que está «parcial»
@@ -660,22 +791,21 @@ reales en vez de los de una semana de pruebas.
 
 **Los números de fase que usamos al trabajar no coinciden con los de `ARQUITECTURA.md`.** En las
 conversaciones llamamos «Fase 7» a la liquidación, pero en el plan la liquidación es parte de la **Fase
-4**, y la **Fase 7** es el *dashboard de Gerencia móvil* — que hoy es una pantalla con el texto «llega
-en la Fase 7». Esta tabla usa la numeración del plan, que es la que vale para medir.
+4**, y la **Fase 7** es el *dashboard de Gerencia móvil*. Esta tabla usa la numeración del plan, que es
+la que vale para medir.
 
 ### Lo que el porcentaje no dice
 
-El 64 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
+El 83 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 584 pruebas de Python contra PostgreSQL real, 439 de Dart,
-   186 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
+1. **Lo construido está probado de verdad**: 681 pruebas de Python contra PostgreSQL real, 457 de Dart,
+   212 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
-2. **Las fases que faltan son las menos riesgosas.** La Fase 2 —el motor de sincronización, la que puede
-   hundir un proyecto de DSD— está cerrada con pruebas de caos. La 9 es trabajo conocido sobre un
-   modelo de datos que ya no se mueve, y la 7 es una pantalla sobre consultas que el laboratorio ya
-   resolvió.
+2. **Lo que falta es lo menos riesgoso.** La Fase 2 —el motor de sincronización, la que puede hundir un
+   proyecto de DSD— está cerrada con pruebas de caos. La 9 es trabajo conocido sobre un modelo de datos
+   que ya no se mueve.
 
 Y una razón por la que está peor:
 
@@ -698,6 +828,9 @@ make api         # API + panel  →  http://127.0.0.1:8000/panel
 # ───── laboratorio analítico ─────
 make refrescar-analitica              # recalcula el esquema estrella
 make analitica                        # Streamlit  →  http://127.0.0.1:8501
+
+# ───── tablero de Gerencia (Fase 7) ─────
+make recalcular-tablero               # recalcula los modelos de lectura
 
 # ───── cuando algo se atora ─────
 pkill -f "uvicorn app.main:app"       # el 8000 ocupado

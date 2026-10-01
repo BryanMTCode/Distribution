@@ -81,11 +81,11 @@ git checkout claude/exciting-hamilton-asnv8o
 
 make instalar     # uv baja Python 3.12 y las dependencias
 make db           # PostgreSQL + PostGIS en Docker
-make migrar       # aplica las 19 migraciones
-make pruebas      # deben pasar 584
+make migrar       # aplica las 21 migraciones
+make pruebas      # deben pasar 681
 ```
 
-Si ves `584 passed`, tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `681 passed`, tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|

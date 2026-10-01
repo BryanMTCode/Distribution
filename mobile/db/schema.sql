@@ -413,3 +413,31 @@ SELECT
     (SELECT COUNT(*) FROM outbox WHERE estado = 'cuarentena')  AS en_cuarentena,
     (SELECT MIN(creado_en) FROM outbox WHERE estado = 'pendiente') AS mas_antiguo,
     (SELECT valor FROM sync_estado WHERE clave = 'ultima_sync_ok') AS ultima_sync_ok;
+
+-- ---------------------------------------------------------------------------
+-- Copia del último tablero que se pudo bajar (Fase 7)
+-- ---------------------------------------------------------------------------
+-- El tablero de Gerencia es lo único de la app que NO puede funcionar sin red:
+-- su razón de existir es ver lo que están haciendo los otros, y eso no se sabe
+-- sin preguntarle al servidor.
+--
+-- Lo que sí se puede hacer es guardar lo último que se vio, con la hora en que
+-- se vio. Un gerente en la bodega, sin señal, lleva en el bolsillo las cifras
+-- de hace una hora, y las cifras de hace una hora CON SU ETIQUETA sirven para
+-- muchas decisiones. Una pantalla vacía que diga "sin conexión" no sirve para
+-- ninguna.
+--
+-- Se guarda el JSON crudo y no columnas: el tablero crece tarjeta por tarjeta y
+-- una tabla espejo obligaría a una migración del teléfono por cada cifra nueva.
+-- Aquí no hay consultas que hacer —se lee completo y se vuelve a parsear— así
+-- que el crudo no cuesta nada.
+--
+-- `recibido_en` es la hora del TELÉFONO al bajarlo, y es distinta del
+-- `calculado_en` que viene dentro del JSON. Las dos se muestran: el servidor
+-- calculó a las 10:05 y el teléfono lo bajó a las 10:40, así que la cifra tiene
+-- 35 minutos de camino más los que tuviera al calcularse.
+CREATE TABLE tablero_cache (
+    clave           TEXT PRIMARY KEY,   -- 'tablero:2026-10-01' | 'mapa:2026-10-01'
+    cuerpo          TEXT NOT NULL,      -- la respuesta JSON tal como llegó
+    recibido_en     TEXT NOT NULL
+);

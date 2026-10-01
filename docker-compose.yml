@@ -4,6 +4,12 @@
 #   · UPS / no-break: un apagón con 8 rutas sincronizando corrompe la BD.
 #   · Simulacro de restauración: un respaldo que nunca restauraste no lo es.
 #   · Failover 4G en el router.
+#   · ZONA HORARIA. Todos los servicios van en la hora de la operación, no en
+#     UTC. `CURRENT_DATE` y `date.today()` deciden qué es "hoy", y en UTC−6 un
+#     reloj en UTC hace que a partir de las 18:00 locales "hoy" sea ya mañana:
+#     el tablero del día sale vacío por la tarde y el arqueo de la liquidación
+#     no cuadra con el efectivo que la gente tiene en la mano. El síntoma
+#     desconcierta porque a las 11 de la mañana todo funciona.
 
 name: dsd
 
@@ -15,6 +21,7 @@ services:
       POSTGRES_DB: dsd
       POSTGRES_USER: ${DSD_DB_USUARIO:-dsd}
       POSTGRES_PASSWORD: ${DSD_DB_PASSWORD:?define DSD_DB_PASSWORD en .env}
+      TZ: ${DSD_ZONA:-America/Mexico_City}
     volumes:
       - datos_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -29,6 +36,7 @@ services:
     command: alembic upgrade head
     environment:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
+      TZ: ${DSD_ZONA:-America/Mexico_City}
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +50,7 @@ services:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO:?genera uno con 'openssl rand -hex 32'}
       DSD_ENTORNO: produccion
+      TZ: ${DSD_ZONA:-America/Mexico_City}
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +70,7 @@ services:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO}
       DSD_ENTORNO: produccion
+      TZ: ${DSD_ZONA:-America/Mexico_City}
     depends_on:
       migraciones:
         condition: service_completed_successfully
@@ -76,6 +86,7 @@ services:
     # mal escrita no puede tocar la cartera. Crear con db/ops/rol_analitico.sql.
     environment:
       DSD_ANALITICA_URL: postgresql://dsd_analitica:${DSD_CLAVE_ANALITICA:?falta}@postgres:5432/dsd
+      TZ: ${DSD_ZONA:-America/Mexico_City}
     depends_on:
       postgres:
         condition: service_healthy

@@ -49,6 +49,7 @@ NAVEGACION = [
     ("/panel/inventario", "Inventario"),
     ("/panel/ventas", "Ventas"),
     ("/panel/efectividad", "Efectividad"),
+    ("/panel/objetivos", "Objetivos"),
     ("/panel/cuarentena", "Cuarentena"),
     ("/panel/equipo", "Equipo"),
 ]

@@ -721,6 +721,21 @@ async def cerrar(
         clave_unica=f"refrescar_analitica:{cabecera['fecha_operativa']}",
         retraso=timedelta(minutes=1),
     )
+
+    # Y el tablero de Gerencia (Fase 7), que es otra cadencia y otra tabla.
+    #
+    # El cierre puede CAMBIAR las cifras del día —los ajustes de liquidación
+    # mueven inventario— y además es el momento en que un sobrante o faltante
+    # queda declarado. Sin esto, el tablero seguiría mostrando el día tal como
+    # lo dejó la última sincronización, y nadie entendería por qué la merma del
+    # cierre no aparece.
+    await encolar(
+        sesion,
+        "recalcular_tablero",
+        {"motivo": "liquidacion_cerrada", "fecha": str(cabecera["fecha_operativa"])},
+        clave_unica="recalcular_tablero",
+        retraso=timedelta(seconds=30),
+    )
     await sesion.commit()
 
     aviso = f"Liquidación {cabecera['folio']} cerrada. "

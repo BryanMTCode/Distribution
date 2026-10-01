@@ -61,6 +61,14 @@ void main() {
 
     expect(find.byKey(const Key('panel_gerencia')), findsOneWidget);
     expect(find.text('Mi ruta'), findsNothing);
+
+    // Y entrando con el PIN guardado no hay token, así que el tablero no tiene
+    // con qué preguntarle al servidor. Lo dice con esas palabras en vez de
+    // "la sesión venció", que mandaría a resolver algo que no está roto.
+    expect(
+      find.byKey(const Key('tablero_sin_sesion_en_linea')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('salir devuelve al login', (tester) async {

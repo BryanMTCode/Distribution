@@ -6,6 +6,7 @@ library;
 
 export 'src/alta_cliente.dart';
 export 'src/aplicador_deltas.dart';
+export 'src/auth_cliente.dart';
 export 'src/borrador.dart';
 export 'src/canonico.dart';
 export 'src/cobro.dart';
@@ -23,6 +24,8 @@ export 'src/precio.dart';
 export 'src/sincronizador.dart';
 export 'src/sobre.dart';
 export 'src/sync_cliente.dart';
+export 'src/tablero.dart';
+export 'src/tablero_cliente.dart';
 export 'src/ticket.dart';
 export 'src/transporte.dart';
 export 'src/ubicacion.dart';

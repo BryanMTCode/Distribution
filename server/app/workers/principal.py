@@ -66,6 +66,26 @@ async def _refrescar_analitica(payload: dict[str, Any]) -> None:
     log.info("analítica refrescada: %s vistas", len(resultados))
 
 
+@manejador("recalcular_tablero")
+async def _recalcular_tablero(payload: dict[str, Any]) -> None:
+    """Recalcula los modelos de lectura del tablero de Gerencia (Fase 7).
+
+    Lo encola la ingesta de sincronización con `clave_unica` fija, así que ocho
+    camiones subiendo a la vez producen UN job. No recibe fechas: las averigua
+    (ver `app/workers/tablero.py`), y por eso es autorreparable.
+
+    `payload['hoy']` existe solo para las pruebas, que necesitan fijar el día.
+    """
+    from datetime import date
+
+    from app.workers.tablero import recalcular_todo
+
+    hoy = date.fromisoformat(payload["hoy"]) if payload.get("hoy") else None
+    async with CrearSesion() as sesion:
+        resultado = await recalcular_todo(sesion, hoy)
+    log.info("tablero: %s", resultado)
+
+
 async def procesar_uno(job: dict[str, Any]) -> None:
     manejador_fn = MANEJADORES.get(job["tipo"])
     if manejador_fn is None:

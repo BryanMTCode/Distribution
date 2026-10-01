@@ -70,7 +70,6 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Liquidación y retorno** — la ecuación que atrapa descuadres | ✅ 25 pruebas |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
-| Perfil Gerencia móvil (dashboard en el teléfono) | ⛔ Fase 7 del plan |
 | **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
 | **Mermas y devoluciones** — el signo que evita que el faltante sea del vendedor | ✅ 44 pruebas + 32 de ingesta |
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
@@ -80,8 +79,12 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
 | **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
 | **Laboratorio analítico (Streamlit)** — drop size, rotación, clientes en riesgo | ✅ 8 pruebas con `AppTest` |
+| **Tablero de Gerencia en el teléfono** — seis cifras, cada una con su antigüedad | ✅ 26 pruebas de widget |
+| Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
+| **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
+| **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 
-**584 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **439 de Dart** y **186 de widget**, todas en verde.
+**681 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **457 de Dart** y **212 de widget**, todas en verde.
 
 ## Stack
 
@@ -123,15 +126,17 @@ server/
                      liquidaciones.py el cierre del día (Fase 7)
                      cobranza.py      arqueo del día, cobros marcados y antigüedad
                      efectividad.py   visitas, no-drops por categoría y mermas por motivo
+                     objetivos.py     la meta mensual de cada ruta (sin ella el tablero no compara)
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
                      liquidacion.py   la ecuación del cierre del día
                      analitica.py     las métricas del laboratorio, escritas UNA vez
+                     tablero.py       las cifras del tablero de Gerencia, con su frescura
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
-    api/v1/          auth, dispositivos, salud
+    api/v1/          auth, dispositivos, salud, tablero
     workers/         cola sobre PostgreSQL + proceso worker
   db/
     migrations/      SQL: la FUENTE DE VERDAD del esquema
@@ -146,15 +151,16 @@ mobile/
                      borrador, VENTA, COBRO, MERMA, NO-DROP, TICKET ESC/POS +
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
-                     deltas, esquema
-    test/            439 pruebas que corren en segundos
+                     deltas, esquema, TABLERO, login en línea
+    test/            457 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
-                     merma y devolución, no-drop, lienzo espacial, gerencia
-    test/            186 pruebas de widget, sin emulador
+                     merma y devolución, no-drop, lienzo espacial,
+                     gerencia/ (tablero, mapa del día)
+    test/            212 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -172,8 +178,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 584 pruebas de Python
-make movil                          # 439 de Dart + 186 de widget
+make pruebas                        # 681 pruebas de Python
+make movil                          # 457 de Dart + 212 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

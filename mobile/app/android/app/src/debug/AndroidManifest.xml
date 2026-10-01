@@ -4,4 +4,11 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Tráfico sin TLS, SOLO en depuración.
+         Probar contra la PC en la red local significa `http://192.168.x.x:8000`,
+         y Android lo bloquea desde API 28. Este archivo solo se fusiona en los
+         builds de debug: en release sigue prohibido, y está bien que lo esté —
+         la cartera de clientes no viaja en claro por una red de oficina. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

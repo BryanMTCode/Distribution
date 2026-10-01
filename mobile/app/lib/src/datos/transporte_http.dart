@@ -29,7 +29,13 @@ class TransporteHttp implements Transporte {
   final http.Client _cliente;
 
   Map<String, String> get _cabeceras => {
-        'Authorization': 'Bearer $token',
+        // Sin token no se manda la cabecera. Un `Authorization: Bearer ` vacío
+        // no significa "sin credencial": es una credencial mal formada, y el
+        // servidor la contesta con 401 antes de llegar al endpoint. Eso
+        // taparía el 400 explicativo del login —"un vendedor debe iniciar
+        // sesión desde un dispositivo registrado"— que es el único mensaje
+        // útil que hay en ese caso.
+        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
         'Content-Type': 'application/json; charset=utf-8',
       };
 
