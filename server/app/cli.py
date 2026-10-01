@@ -135,8 +135,40 @@ async def crear_usuario_de_oficina() -> int:
     return 0
 
 
+async def refrescar_analitica() -> int:
+    """Recalcula el esquema estrella del laboratorio, ahora mismo.
+
+    Para correrlo a mano y para el cron nocturno. No pasa por la cola: refresca
+    de frente y espera a que termine, porque quien ejecuta esto quiere saber si
+    salió bien — un job encolado devuelve el control de inmediato y el resultado
+    aparece en el log del worker media hora después.
+
+    El disparador normal no es éste: al cerrar una liquidación, el panel encola
+    el job solo. Esto es para el arranque, para después de restaurar un respaldo,
+    y para la noche.
+    """
+    from app.core.db import CrearSesion
+    from app.workers.analitica import refrescar_todo
+
+    print("Recalculando el esquema estrella…")
+    async with CrearSesion() as sesion:
+        try:
+            resultados = await refrescar_todo(sesion)
+        except RuntimeError as e:
+            print(f"\nERROR: {e}")
+            return 1
+
+    for r in resultados:
+        print(f"  {r['vista']:20} {r['renglones']:>8,} renglones  {r['duracion_ms']:>6} ms")
+    print("\nListo. El laboratorio ya muestra estos datos con su hora al lado.")
+    return 0
+
+
 def main() -> int:
-    comandos = {"crear-usuario": crear_usuario_de_oficina}
+    comandos = {
+        "crear-usuario": crear_usuario_de_oficina,
+        "refrescar-analitica": refrescar_analitica,
+    }
     if len(sys.argv) != 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2

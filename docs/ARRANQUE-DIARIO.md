@@ -314,11 +314,56 @@ Hazlo cada vez que recrees la base. `make doctor` avisa cuando no hay ninguno.
   terminó de sincronizar» no aparece**: el dato la sustituye. Si aparece, el cierre quedará marcado
   *sin respaldo de sincronización*, y eso es correcto.
 
-## 1.6 Antes de dar por bueno un cambio
+## 1.6 El laboratorio analítico (Streamlit)
+
+Es la Fase 8: las preguntas que no caben en una pantalla operativa — drop size,
+rotación, clientes que se están yendo.
+
+```bash
+make refrescar-analitica     # recalcula el esquema estrella (segundos)
+make analitica              # levanta el laboratorio en :8501
+```
+
+Abre <http://127.0.0.1:8501>. Ocupa su propia terminal, como `make api`.
+
+**El orden importa.** El laboratorio lee vistas materializadas, no las tablas
+transaccionales: si no has recalculado, muestra la foto del último refresco — y lo
+dice arriba, con su hora. Si nunca se ha recalculado, te dice eso en vez de
+mostrar ceros como si fueran datos.
+
+En producción no hace falta ejecutarlo a mano: **al cerrar una liquidación el
+panel encola el recálculo solo**, porque es el momento en que las cifras del día
+quedan firmes. `make refrescar-analitica` es para el arranque, para después de
+restaurar un respaldo, y para un cron nocturno.
+
+### Qué validar
+
+1. **La barra de arriba, siempre.** Dice de cuándo son los datos **y** cuántos
+   equipos no habían sincronizado cuando se calcularon. Las dos cosas juntas son
+   la advertencia: «actualizado hace 1 min» suena perfecto, pero si un teléfono no
+   había subido su día, el total de ventas es un **piso**, no un total.
+2. **Drop size**: comprueba que «Drop size» e «Importe por visita» sean números
+   **distintos**. El primero divide entre las visitas que vendieron; el segundo
+   entre todas. Son dos métricas, y confundirlas es el error más común al leer un
+   reporte de DSD.
+3. **Clientes en riesgo**: fíjate en la columna `cadencia_dias`. El riesgo se mide
+   contra la cadencia **propia de cada cliente**, no contra un umbral fijo: el que
+   compraba cada semana y lleva 20 días sale en riesgo, y el que siempre compró
+   cada 45 no.
+4. **Rotación**: léela junto a «días con existencia». Una rotación altísima sobre
+   un producto que estuvo tres días en el camión no es éxito de ventas, es
+   desabasto.
+
+> Si una cifra te parece mal, la definición está escrita en
+> `server/app/domain/analitica.py`, al lado de su SQL. El laboratorio no lleva
+> consultas propias: las importa de ahí, para que la misma pregunta no se conteste
+> distinto cada vez.
+
+## 1.7 Antes de dar por bueno un cambio
 
 ```bash
 make lint          # ruff sobre app y tests
-make pruebas       # 584 pruebas de Python — necesita la base arriba
+make pruebas       # 622 pruebas de Python — necesita la base arriba
 make movil         # 439 de Dart + 186 de widget
 ```
 
@@ -571,10 +616,10 @@ su duración estimada (punto medio del rango). Las fases 0–9 suman **27 semana
 | **5** | Crédito y cobranza | 2.5 sem | ✅ completa | 100 % |
 | **6** | Alta en calle, mermas, no-drops | 2.0 sem | ✅ completa | 100 % |
 | **7** | **Perfil Gerencia móvil** | 2.0 sem | ⛔ no empezada | 0 % |
-| **8** | Laboratorio analítico (Streamlit) | 3.5 sem | ⛔ no empezada | 0 % |
+| **8** | Laboratorio analítico (Streamlit) | 3.5 sem | 🟡 **casi** | ~85 % |
 | **9** | Endurecimiento, MDM, RLS | 2.5 sem | ⛔ no empezada | 0 % |
 
-## **Avance general: ≈ 64 %**
+## **Avance general: ≈ 75 %**
 
 El cálculo, semana a semana de plan:
 
@@ -582,10 +627,10 @@ El cálculo, semana a semana de plan:
 Fase 0   2.5 × 1.00 = 2.50      Fase 5   2.5 × 1.00 = 2.50
 Fase 1   2.5 × 1.00 = 2.50      Fase 6   2.0 × 1.00 = 2.00
 Fase 2   3.5 × 1.00 = 3.50      Fase 7   2.0 × 0.00 = 0.00
-Fase 3   3.5 × 0.60 = 2.10      Fase 8   3.5 × 0.00 = 0.00
+Fase 3   3.5 × 0.60 = 2.10      Fase 8   3.5 × 0.85 = 2.98
 Fase 4   2.5 × 0.90 = 2.25      Fase 9   2.5 × 0.00 = 0.00
                                 ─────────────────────────────
-                                17.35 de 27 semanas = 64.3 %
+                                20.33 de 27 semanas = 75.3 %
 ```
 
 ### Qué le falta a lo que está «parcial»
@@ -604,6 +649,13 @@ online de la bodega principal desde la app** (con su estado explícito «requier
 endpoint de inventario en `/v1`, así que el vendedor no puede preguntar desde la calle si hay existencia
 para una reposición.
 
+**Fase 8 (~85 %)** — el esquema estrella, el job de refresco y el laboratorio están hechos y probados,
+con las seis métricas que nombra el plan: drop size, frecuencia de visita, productividad por vendedor,
+rotación, clientes en riesgo y efectividad. Lo que queda del alcance planeado es lo que el plan llama
+«modelos»: pronóstico de demanda y cohortes de retención. Son trabajo de Pandas sobre un esquema que ya
+existe, no de infraestructura — y conviene hacerlo **después** del piloto, cuando haya meses de datos
+reales en vez de los de una semana de pruebas.
+
 ### Una advertencia sobre la numeración
 
 **Los números de fase que usamos al trabajar no coinciden con los de `ARQUITECTURA.md`.** En las
@@ -621,8 +673,9 @@ número sugiere:
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
 2. **Las fases que faltan son las menos riesgosas.** La Fase 2 —el motor de sincronización, la que puede
-   hundir un proyecto de DSD— está cerrada con pruebas de caos. La 8 y la 9 son trabajo conocido sobre
-   un modelo de datos que ya no se mueve.
+   hundir un proyecto de DSD— está cerrada con pruebas de caos. La 9 es trabajo conocido sobre un
+   modelo de datos que ya no se mueve, y la 7 es una pantalla sobre consultas que el laboratorio ya
+   resolvió.
 
 Y una razón por la que está peor:
 
@@ -641,6 +694,10 @@ make db          # base (idempotente: córrelo siempre)
 make doctor      # qué está mal y cómo se arregla
 make migrar      # migraciones pendientes
 make api         # API + panel  →  http://127.0.0.1:8000/panel
+
+# ───── laboratorio analítico ─────
+make refrescar-analitica              # recalcula el esquema estrella
+make analitica                        # Streamlit  →  http://127.0.0.1:8501
 
 # ───── cuando algo se atora ─────
 pkill -f "uvicorn app.main:app"       # el 8000 ocupado

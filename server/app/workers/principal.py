@@ -44,6 +44,28 @@ async def _ping(payload: dict[str, Any]) -> None:
     log.info("ping %s", payload)
 
 
+@manejador("refrescar_analitica")
+async def _refrescar_analitica(payload: dict[str, Any]) -> None:
+    """Recalcula el esquema estrella del laboratorio (Fase 8).
+
+    Abre su propia sesión porque `refrescar_todo` hace commit por vista: cada una
+    queda disponible en cuanto termina, en vez de que todas esperen a la última.
+    La sesión del ciclo no serviría — la usa para marcar el job y haría commit de
+    cosas a medias.
+
+    `payload['vistas']` permite refrescar solo algunas. Sirve para lo de todos los
+    días: tras cerrar una liquidación, lo único que cambió son los hechos, y
+    recalcular las dimensiones no aporta nada.
+    """
+    from app.workers.analitica import VISTAS, refrescar_todo
+
+    pedidas = payload.get("vistas")
+    vistas = tuple(pedidas) if pedidas else VISTAS
+    async with CrearSesion() as sesion:
+        resultados = await refrescar_todo(sesion, vistas)
+    log.info("analítica refrescada: %s vistas", len(resultados))
+
+
 async def procesar_uno(job: dict[str, Any]) -> None:
     manejador_fn = MANEJADORES.get(job["tipo"])
     if manejador_fn is None:

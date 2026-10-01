@@ -1136,3 +1136,124 @@ Las devoluciones de cliente no están ahí —son mercancía vendible que regres
 pérdida— y la pantalla dice **dónde sí** se ven. Decir solo que no están haría que
 la ausencia pareciera un hueco del reporte y alguien pediría que se sumen, que es
 exactamente lo que no debe pasar.
+
+## 26. El laboratorio analítico: una definición, escrita una vez
+
+El riesgo del laboratorio no es que una consulta sea lenta. Es que **la misma
+pregunta se contesta distinto cada vez que alguien la hace.** "Drop size" puede
+significar tres cosas, y dos reportes del mismo mes con dos números destruyen la
+confianza en los dos — incluido el que estaba bien.
+
+Por eso las definiciones viven en `server/app/domain/analitica.py`, con el resto
+del dominio, y el Streamlit las **importa** en vez de llevar su propio SQL. Si la
+definición cambia, cambia en un lugar.
+
+### Vistas materializadas, no un ETL incremental
+
+Es la decisión que más importa, y la razón es propia de un DSD.
+
+Un ETL incremental carga "lo creado desde la última corrida". En un sistema normal
+funciona. Aquí **los datos llegan tarde por diseño**: una venta del lunes puede
+sincronizar el jueves porque el teléfono no tuvo señal. Un incremental por
+`creado_en` la cargaría con fecha de jueves; uno por `fecha_operativa` no la
+cargaría nunca. El lunes quedaría subreportado para siempre, y nada lo avisaría.
+
+Un `REFRESH MATERIALIZED VIEW` completo recalcula desde la verdad transaccional:
+es **imposible** que se desincronice. A miles de tickets diarios cuesta segundos.
+Cuando el volumen lo pida, el camino es particionar por fecha, no volverse
+incremental.
+
+Dos trampas de `CONCURRENTLY`, las dos verificadas contra PostgreSQL 16:
+
+1. **Exige un índice UNIQUE sin WHERE.** Por eso cada vista lleva el suyo, y no es
+   decorativo.
+2. **No funciona sobre una vista nunca poblada.** La migración las crea CON DATOS,
+   y el job además lo comprueba con `pg_class.relispopulated` y cae a un refresh
+   simple si hiciera falta. No existe forma de que falle.
+
+Y una tercera que resultó un no-problema, pero que había que comprobar porque es
+contraintuitiva: `ALTER DEFAULT PRIVILEGES ... GRANT SELECT ON TABLES` **sí**
+alcanza a las vistas materializadas, aunque su `relkind` sea `'m'` y no `'r'`. El
+rol de solo lectura ya las cubría sin tocar nada.
+
+### Una visita es un cliente-día, no un documento
+
+La misma definición que la pantalla de efectividad, ahora materializada en
+`fact_visitas` con el grano `(vendedor, cliente, día)` **como índice único**. Si
+ese índice fallara al refrescar, la definición estaría mal y todo lo que cuelga de
+ella también — así que el refresh es la prueba.
+
+Dos remisiones al mismo cliente el mismo día son una visita. Contar documentos
+infla la efectividad, desinfla el drop size, y premia al vendedor que parte un
+pedido en dos.
+
+### Las tres cosas que se miden mal en un DSD
+
+1. **Drop size sobre documentos.** $1,500 en dos visitas con venta son $750, no
+   $500. Y la efectividad sale 50 %, no 60 %.
+2. **Promediar sobre los días que hubo venta.** Un vendedor que vendió $10,000 en
+   tres de cinco días promedió $2,000, no $3,333. Por eso `dim_tiempo` es una
+   tabla y no un `generate_series`: los días sin venta tienen que existir en el
+   reporte, o el promedio se reparte entre menos días de los que hubo.
+3. **Un umbral fijo de abandono.** "Sin comprar en 30 días" marca como perdido al
+   cliente que siempre compró cada 45, y deja pasar al que compraba cada semana y
+   lleva 20 — que es el que de verdad se está yendo. El riesgo se mide contra la
+   **cadencia propia** de cada cliente: en riesgo a 2× su mediana, perdido a 3×.
+   Con menos de tres compras no hay cadencia, y el cliente aparece como «nuevo» en
+   vez de mezclarse con los que se van: una lista larga de falsos positivos se
+   deja de leer.
+
+### La rotación histórica sale del libro mayor, no de fotos del inventario
+
+No hay snapshots diarios de existencias. `existencias` es una caché del valor
+**actual**, así que no sirve para el pasado.
+
+Pero `movimientos_inventario` es append-only por disparador, así que la existencia
+de cualquier fecha se reconstruye sumando los movimientos hasta ahí. El acumulado
+va sobre **todo** el libro (`m.fecha <= t.fecha`) y no sobre el periodo
+consultado: si arrancara en el primer día del rango, un reporte de la segunda
+quincena daría existencias negativas, porque vería las ventas sin la carga que las
+precedió.
+
+La decisión de que el libro fuera append-only se tomó por auditoría. Resulta que
+paga dos veces.
+
+Y la rotación **se lee junto a «días con existencia»**: una rotación altísima
+sobre un producto que estuvo tres días en el camión no es éxito de ventas, es
+desabasto. Sin esa columna, la métrica premia justo lo que hay que corregir.
+
+### Cada cifra con su antigüedad, y con el estado del mundo
+
+§0.3 otra vez, y aquí es más agudo que en ninguna otra pantalla: las cifras salen
+de una foto de cuando corrió el job. `analitica_refrescos` guarda, por vista,
+cuándo se recalculó **y cuántos equipos no habían sincronizado en ese momento**.
+
+Las dos cosas se muestran juntas porque juntas son la advertencia. «Actualizado
+hace 1 min» suena perfecto; si en ese minuto un teléfono no había subido su día,
+el total de ventas es un **piso**, no un total. Es la parte que se olvida, y la
+que hace que alguien decida con una cifra incompleta creyendo que está completa.
+
+### El refresh se dispara al cerrar la liquidación
+
+Es el momento natural: al cerrar, las cifras del día quedan firmes. La
+`clave_unica` por día lo hace idempotente —cerrar ocho rutas encola UN refresh, no
+ocho— y el job va en la misma transacción que el cierre: si el cierre se deshace,
+no queda encolado un recálculo de algo que no pasó.
+
+Para el arranque, después de restaurar un respaldo y para la noche, está
+`make refrescar-analitica`, que refresca de frente y espera: quien lo ejecuta a
+mano quiere saber si salió bien, no que el resultado aparezca en el log del worker
+media hora después.
+
+### Por qué el laboratorio no escribe nunca
+
+Hay una razón más fuerte que la prudencia del rol de solo lectura: **Streamlit
+re-ejecuta el script completo en cada interacción**, y todo este sistema está
+construido alrededor de no duplicar documentos. Un botón que escribiera ahí se
+dispararía de nuevo al mover un filtro.
+
+Y una que no es de arquitectura sino de pruebas: **un Streamlit roto devuelve HTTP
+200.** El servidor sirve una página vacía y el script corre después, al abrir el
+websocket; una excepción ahí no aparece en ningún código de estado. Por eso el
+laboratorio se prueba con `AppTest`, que ejecuta el script como lo haría el
+navegador — comprobar que "levanta" no comprueba nada.

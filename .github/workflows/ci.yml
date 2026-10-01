@@ -41,7 +41,11 @@ jobs:
         working-directory: server
         run: |
           uv venv --python 3.12
-          uv pip install -e '.[dev]'
+          # `analitica` incluido a propósito: sin streamlit instalado,
+          # `tests/test_laboratorio.py` se SALTA con importorskip y el CI quedaría
+          # verde con el laboratorio roto. Una prueba que se salta en silencio es
+          # peor que no tenerla, porque da la impresión de cubrir algo.
+          uv pip install -e '.[dev,analitica]'
 
       - name: Lint
         working-directory: server

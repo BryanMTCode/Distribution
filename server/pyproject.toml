@@ -28,6 +28,18 @@ dev = [
     "ruff>=0.8",
 ]
 
+# El laboratorio analítico (Fase 8). Va en `dev` y no en un venv aparte porque
+# `make instalar` tiene que dejar TODO funcionando: un segundo entorno que hay
+# que acordarse de crear es un paso más que se olvida, y entonces `make analitica`
+# falla con un ModuleNotFoundError que no dice qué hacer.
+#
+# En producción no se instalan aquí: el laboratorio corre en su propio contenedor
+# con `analytics/requirements.txt`, sin FastAPI ni SQLAlchemy.
+analitica = [
+    "streamlit>=1.64",
+    "pandas>=2.2",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

@@ -66,7 +66,11 @@ services:
         condition: service_completed_successfully
 
   analitica:
-    build: ./analytics
+    # Contexto en la raíz: la imagen necesita `analytics/` y además el módulo de
+    # definiciones `server/app/domain/analitica.py`. Ver su Dockerfile.
+    build:
+      context: .
+      dockerfile: analytics/Dockerfile
     restart: unless-stopped
     # Rol de PostgreSQL SIN permisos de escritura: una consulta exploratoria
     # mal escrita no puede tocar la cartera. Crear con db/ops/rol_analitico.sql.

@@ -14,7 +14,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0019) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0020) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -70,6 +70,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Liquidación y retorno** — la ecuación que atrapa descuadres | ✅ 25 pruebas |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
+| Perfil Gerencia móvil (dashboard en el teléfono) | ⛔ Fase 7 del plan |
 | **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
 | **Mermas y devoluciones** — el signo que evita que el faltante sea del vendedor | ✅ 44 pruebas + 32 de ingesta |
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
@@ -77,6 +78,8 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Cobranza en el panel** — arqueo del día, cobros marcados y antigüedad | ✅ 25 pruebas |
 | **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
+| **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
+| **Laboratorio analítico (Streamlit)** — drop size, rotación, clientes en riesgo | ✅ 8 pruebas con `AppTest` |
 
 **584 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **439 de Dart** y **186 de widget**, todas en verde.
 
@@ -124,6 +127,7 @@ server/
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
                      liquidacion.py   la ecuación del cierre del día
+                     analitica.py     las métricas del laboratorio, escritas UNA vez
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
@@ -151,7 +155,9 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial, gerencia
     test/            186 pruebas de widget, sin emulador
-analytics/           Streamlit (solo lectura)
+analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
+                     app.py  dibuja; las DEFINICIONES viven en
+                             server/app/domain/analitica.py
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
 docs/                arquitectura, modelo de datos y ADRs

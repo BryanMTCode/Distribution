@@ -22,14 +22,14 @@ demuestran que el modelo cumple lo que promete.
 | `mobile/db/schema.sql` | Esquema SQLite/SQLCipher del dispositivo |
 | `server/db/tests/smoke_invariantes.sql` | Prueba de las 6 invariantes del diseño |
 
-**Estado de verificación:** las 19 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
+**Estado de verificación:** las 20 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
 Alembic), y las 6 invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45 (21 tablas,
 1 vista, 9 índices).
 
 > La tabla de arriba lista las migraciones **fundacionales** (0001–0008). Las posteriores —triggers del
 > `change_log`, delta de cartera, importes rígidos, código de cliente, delta de carga, folio de
-> liquidación, catálogos de motivos, motivos de revisión y la cola que el teléfono reporta— se agregaron
-> por fase y cada una explica su
+> liquidación, catálogos de motivos, motivos de revisión, la cola que el teléfono reporta y el esquema
+> estrella del laboratorio— se agregaron por fase y cada una explica su
 > por qué en su propio encabezado. `server/db/migrations/` es la fuente de verdad; Alembic las aplica,
 > no las genera.
 

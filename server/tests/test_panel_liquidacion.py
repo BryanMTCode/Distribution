@@ -829,6 +829,67 @@ async def test_cerrar_sin_respaldo_exige_la_casilla_y_lo_deja_asentado(
     assert fila["operaciones_pendientes"] == 0
 
 
+async def test_cerrar_encola_el_recalculo_del_laboratorio(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Al cerrar, las cifras del día quedan firmes: es el momento de recalcular.
+
+    Antes de esto, el laboratorio mostraba siempre un día a medio sincronizar y
+    no había nada que avisara cuándo dejaba de estarlo.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _cerrar(cliente, liq)
+
+    job = (
+        await sesion.execute(
+            text(
+                "SELECT tipo, payload, clave_unica, estado FROM jobs "
+                " WHERE tipo = 'refrescar_analitica'"
+            )
+        )
+    ).mappings().all()
+    assert len(job) == 1
+    assert job[0]["estado"] == "pendiente"
+    assert job[0]["payload"]["motivo"] == "liquidacion_cerrada"
+
+
+async def test_cerrar_cinco_rutas_encola_un_solo_recalculo(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """La `clave_unica` por día es lo que lo hace idempotente.
+
+    Sin ella, una oficina con ocho rutas encolaría ocho refrescos completos del
+    esquema estrella al final del día: el worker haría ocho veces el mismo
+    trabajo y el último taparía al primero.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _cerrar(cliente, liq)
+
+    # Se simula el cierre de otra ruta del MISMO día encolando con la misma clave,
+    # que es exactamente lo que haría el segundo cierre.
+    from app.workers.cola import encolar
+
+    segundo = await encolar(
+        sesion,
+        "refrescar_analitica",
+        {"motivo": "liquidacion_cerrada"},
+        clave_unica=f"refrescar_analitica:{dia_de_trabajo['dia']}",
+    )
+    await sesion.commit()
+    assert segundo is None, "la segunda vez debe ser un no-op, no un job nuevo"
+
+    cuantos = (
+        await sesion.execute(
+            text("SELECT count(*) FROM jobs WHERE tipo = 'refrescar_analitica'")
+        )
+    ).scalar_one()
+    assert cuantos == 1
+
+
 async def test_el_cierre_dice_sobre_que_descansa(
     cliente, semilla, dia_de_trabajo, sesion
 ):

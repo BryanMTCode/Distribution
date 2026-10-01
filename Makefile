@@ -1,13 +1,18 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda doctor instalar db db-parar db-borrar migrar usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
+
+# El laboratorio se conecta con psycopg "crudo", sin el prefijo +psycopg de
+# SQLAlchemy. En desarrollo va con el usuario de siempre; en producción, con el
+# rol `dsd_analitica` que NO tiene permisos de escritura (db/ops/rol_analitico.sql).
+ANALITICA_URL ?= postgresql://postgres:dsd@127.0.0.1:5432/dsd
 
 ayuda:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 instalar:  ## Crea el venv e instala dependencias
-	cd server && uv venv --python 3.12 && uv pip install -e '.[dev]'
+	cd server && uv venv --python 3.12 && uv pip install -e '.[dev,analitica]'
 
 migrar:  ## Aplica las migraciones (DB=... para apuntar a otra base)
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/alembic upgrade head
@@ -98,6 +103,16 @@ panel:  ## Recuerda cómo entrar al panel
 	@echo "DSD_DEBUG=1 apaga el atributo Secure de la cookie, que es lo que"
 	@echo "permite usar el panel sobre http en desarrollo. En producción va"
 	@echo "detrás de Caddy con TLS y el atributo se enciende solo."
+
+analitica:  ## Levanta el laboratorio analítico (Streamlit) en :8501
+	@echo "Laboratorio: http://127.0.0.1:8501"
+	@echo
+	@echo "Si las cifras salen vacías, falta recalcular: make refrescar-analitica"
+	cd analytics && DSD_ANALITICA_URL="$(ANALITICA_URL)" \
+		../server/.venv/bin/python -m streamlit run app.py
+
+refrescar-analitica:  ## Recalcula el esquema estrella del laboratorio
+	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli refrescar-analitica
 
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal

@@ -65,7 +65,7 @@ signifique algo al día siguiente.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import quote
@@ -84,6 +84,7 @@ from app.api.admin.comun import (
 )
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.liquidacion import RenglonDeLiquidacion, diferencia_de_efectivo
+from app.workers.cola import encolar
 
 router = APIRouter(
     prefix="/panel/liquidaciones", tags=["panel"], include_in_schema=False
@@ -704,6 +705,21 @@ async def cerrar(
     await sesion.execute(
         text("UPDATE cargas SET estado = 'liquidada' WHERE id = :c"),
         {"c": cabecera["carga_id"]},
+    )
+
+    # Y se pide recalcular el laboratorio (Fase 8).
+    #
+    # Éste es el momento natural: al cerrar, las cifras del día quedan firmes, y
+    # hasta ahora el esquema estrella mostraba un día a medio sincronizar. La
+    # `clave_unica` por día lo hace idempotente — cerrar cinco rutas encola UN
+    # refresh, no cinco— y va en la MISMA transacción que el cierre: si el cierre
+    # se deshace, el job no queda encolado pidiendo recalcular algo que no pasó.
+    await encolar(
+        sesion,
+        "refrescar_analitica",
+        {"motivo": "liquidacion_cerrada", "fecha": str(cabecera["fecha_operativa"])},
+        clave_unica=f"refrescar_analitica:{cabecera['fecha_operativa']}",
+        retraso=timedelta(minutes=1),
     )
     await sesion.commit()
 
