@@ -222,6 +222,31 @@ Un par de cosas que conviene saber antes de usarlo en serio:
 - **Una carga confirmada ya no se edita ni se cancela.** Lo que salió se corrige con un
   traspaso o un ajuste; lo que regresa al final del día es un retorno.
 
+### Cobrar en la calle (lo nuevo en el teléfono)
+
+En la lista de ruta, los clientes que **deben algo** traen un botón de billetes a la
+derecha. Ahí se registra el pago:
+
+1. La pantalla muestra lo que debe **y de cuándo es ese número**. No es la verdad:
+   es una caché que puede tener horas y que no incluye los cobros de otros equipos.
+2. Se teclea el importe. «500» se lee como 500.00; «1,250.5» como 1250.50.
+3. Si no es efectivo, pide **referencia** — sin ella la oficina no puede encontrar
+   el pago en el banco.
+4. Se registra, y aparece el folio del recibo. **Imprimir es un toque aparte**,
+   igual que la remisión.
+
+Dos cosas que conviene saber antes de usarlo con vendedores:
+
+- **Se puede cobrar más de lo que dice que debe**, y es a propósito: el dinero ya
+  está sobre el mostrador. El servidor lo registra como saldo a favor y lo marca
+  para que lo revises. Si la pantalla lo impidiera, el vendedor se guardaría
+  efectivo sin documento.
+- **El recibo no imprime el saldo resultante.** Por la misma razón que la remisión:
+  un saldo viejo en un papel que el cliente conserva es una disputa esperando.
+
+A qué factura se aplica lo decide **el servidor**, en orden de vencimiento más
+antiguo. El teléfono solo dice «este cliente pagó tanto».
+
 ### Cerrar el día (liquidación)
 
 Es el paso que convierte la operación en números que cuadran. Al final del día, en

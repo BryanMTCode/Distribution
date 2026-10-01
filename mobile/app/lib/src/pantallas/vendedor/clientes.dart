@@ -13,6 +13,7 @@ import '../../demo.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
+import 'abono.dart';
 import 'alta_cliente.dart';
 import 'catalogo.dart';
 
@@ -124,6 +125,14 @@ class PantallaClientes extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) => _Renglon(
                       cliente: clientes[i],
+                      // El pago es su propio camino, no un paso del carrito: el
+                      // cliente puede pagar sin comprar nada, y es el caso más
+                      // común del día de cobranza.
+                      alCobrar: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PantallaAbono(cliente: clientes[i]),
+                        ),
+                      ),
                       // Tocar un cliente ABRE SU VISITA: fija de quién es el
                       // carrito y entra al catálogo con SUS precios. El catálogo
                       // no existe "en general" — el precio depende de su lista y
@@ -211,10 +220,15 @@ class _BarraPendientes extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _Renglon extends StatelessWidget {
-  const _Renglon({required this.cliente, required this.alTocar});
+  const _Renglon({
+    required this.cliente,
+    required this.alTocar,
+    required this.alCobrar,
+  });
 
   final ClienteEnRuta cliente;
   final VoidCallback alTocar;
+  final VoidCallback alCobrar;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +236,12 @@ class _Renglon extends StatelessWidget {
       if (cliente.codigo != null) cliente.codigo,
       if (cliente.direccion != null) cliente.direccion,
     ].whereType<String>().join(' · ');
+
+    // El botón de cobrar solo aparece si el cliente DEBE algo. Ofrecerlo siempre
+    // llenaría la lista de botones que no hacen nada en la mayoría de los
+    // renglones, y el día de cobranza lo que se busca es justo lo contrario:
+    // encontrar rápido a quién hay que cobrarle.
+    final debe = cliente.credito.saldoEfectivo.centavos > 0;
 
     return ListTile(
       key: Key('cliente_${cliente.id}'),
@@ -242,7 +262,19 @@ class _Renglon extends StatelessWidget {
         ],
       ),
       subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
-      trailing: _Credito(cliente: cliente),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Credito(cliente: cliente),
+          if (debe)
+            IconButton(
+              key: Key('cobrar_${cliente.id}'),
+              tooltip: 'Registrar pago',
+              icon: const Icon(Icons.payments_outlined),
+              onPressed: alCobrar,
+            ),
+        ],
+      ),
       onTap: alTocar,
     );
   }

@@ -337,6 +337,29 @@ void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
 /// Monta la app completa con dependencias de prueba.
 ///
 /// Devuelve la base para poder sembrar datos y verificar efectos.
+/// El rango de folios de COBRO.
+///
+/// Es su propia serie, no la de las ventas: si compartieran contador, un recibo y
+/// una remisión podrían traer el mismo número impreso. `sembrarParaCobrar` siembra
+/// la de ventas; esta siembra la de cobros, y el flujo de pago necesita las dos
+/// porque el equipo tiene que estar registrado.
+void sembrarFoliosDeCobro(
+  BaseLocal base, {
+  int desde = 1,
+  int hasta = 500,
+  int consumidoHasta = 0,
+}) {
+  RepoFolios(base.db).guardar(
+    RangoFolios(
+      tipo: 'cobro',
+      desde: desde,
+      hasta: hasta,
+      consumidoHasta: consumidoHasta,
+    ),
+    asignadoEn: '2026-09-24T07:00:00.000Z',
+  );
+}
+
 Future<BaseLocal> montarApp(
   WidgetTester tester, {
   Map<String, Object?>? credencial,

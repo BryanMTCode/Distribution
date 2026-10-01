@@ -129,6 +129,65 @@
           }
         }
       ]
+    },
+    {
+      "operacion_id": "019283b0-0005-7000-8000-000000000005",
+      "secuencia": 4,
+      "hash_payload": "8a73c34036f774062c08347922280b2ed57df80c4f2a2c199f18dbbe572137fd",
+      "visita_id": "019283c0-0005-7000-8000-000000000005",
+      "operaciones": [
+        {
+          "tipo": "venta.crear",
+          "entidad_id": "019283e0-0002-7000-8000-000000000002",
+          "datos": {
+            "folio_consecutivo": 125,
+            "folio_local": "VEND01-000125",
+            "cliente_id": "019283a0-0005-7000-8000-000000000005",
+            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
+            "tipo": "credito",
+            "lista_precios_id": "019283a0-0007-7000-8000-000000000007",
+            "lista_precios_version": 7,
+            "subtotal": "592.00",
+            "descuento": "0.00",
+            "impuestos": "0.00",
+            "total": "592.00",
+            "fecha_dispositivo": "2026-09-29T18:10:00.000Z",
+            "fecha_operativa": "2026-09-29",
+            "partidas": [
+              {
+                "id": "019283e1-0003-7000-8000-000000000003",
+                "linea": 1,
+                "producto_id": "019283a0-0006-7000-8000-000000000006",
+                "unidad_codigo": "CAJA",
+                "factor_unidad": "24.0000",
+                "cantidad": "2.000",
+                "cantidad_base": "48.000",
+                "precio_unitario": "296.0000",
+                "descuento": "0.00",
+                "importe": "592.00"
+              }
+            ]
+          }
+        },
+        {
+          "tipo": "cobro.crear",
+          "entidad_id": "019283e2-0001-7000-8000-000000000001",
+          "datos": {
+            "folio_consecutivo": 31,
+            "folio_local": "VEND01-000031",
+            "cliente_id": "019283a0-0005-7000-8000-000000000005",
+            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
+            "visita_id": "019283c0-0005-7000-8000-000000000005",
+            "importe": "400.00",
+            "forma_pago": "efectivo",
+            "saldo_cache_disp": "592.00",
+            "lat": "19.4326000",
+            "lng": "-99.1332000",
+            "fecha_dispositivo": "2026-09-29T18:12:00.000Z",
+            "fecha_operativa": "2026-09-29"
+          }
+        }
+      ]
     }
   ]
 }

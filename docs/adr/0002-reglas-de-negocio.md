@@ -733,3 +733,126 @@ Así se ve **en qué movimiento** el inventario se fue a negativo, que es una pr
 distinta de si hoy está negativo — y la que de verdad se hace al investigar. La
 tabla se muestra al revés, con lo más reciente arriba, pero el saldo se calculó
 hacia adelante.
+
+---
+
+## 19. La cobranza en la calle: el papel importa más que en la venta
+
+**Decisión.** El vendedor registra un abono desde la lista de ruta, en su propio
+camino —no como paso del carrito—, y le entrega al cliente un recibo impreso.
+
+Una venta entrega mercancía que se cuenta al final del día. Un cobro recibe
+**efectivo**, y el efectivo no se cuenta: se cuadra. Si un cobro no queda
+registrado, el dinero existe en la bolsa del vendedor y no en el sistema, y en la
+liquidación aparece como un descuadre que nadie puede explicar — o peor, como un
+faltante del cliente que sí pagó.
+
+### El cobro es su propio camino
+
+El cliente puede pagar **sin comprar nada**, y es el caso más común del día de
+cobranza. Colgarlo del carrito obligaría a abrir una venta vacía.
+
+El botón solo aparece en los clientes que **deben algo**: ofrecerlo siempre
+llenaría la lista de botones inertes, y el día de cobranza lo que se busca es lo
+contrario — encontrar rápido a quién cobrarle.
+
+### Cobrar más de lo que debe NO se rechaza
+
+El cliente puede liquidar y dejar anticipo, o ya haber pagado parte por otra vía.
+**El dinero está sobre el mostrador.** Si la pantalla lo impidiera, el vendedor se
+guardaría efectivo sin documento — que es exactamente el descuadre que esta
+pantalla existe para evitar.
+
+Es el §0.1 aplicado al dinero. El servidor lo registra como `saldo_a_favor` y lo
+marca para que la oficina decida si es anticipo o devolución.
+
+### El teléfono NO decide a qué factura se aplica
+
+El dispositivo registra **un abono por un importe**, y nada más. El FIFO lo
+resuelve el servidor, por **vencimiento más antiguo** — lo que reduce el riesgo
+real de la cartera.
+
+La razón es que el teléfono no conoce la cartera completa: trae un saldo en caché
+que puede tener horas y que no incluye los cobros que otros equipos hicieron hoy.
+Si decidiera la aplicación, dos dispositivos cobrando al mismo cliente aplicarían
+los dos abonos a la misma factura, y el servidor tendría que deshacer una decisión
+que ya está impresa en un papel.
+
+Lo que sí viaja es `saldo_cache_disp`: lo que el teléfono **creía**. Es forense, no
+autoridad — permite explicar después por qué el vendedor cobró lo que cobró. Una
+diferencia grande contra el saldo real se marca, porque significa que el equipo
+llevaba horas sin sincronizar.
+
+### El saldo en caché del cliente no se toca al cobrar
+
+Es zona espejo: la escribe el delta de cartera. Si el cobro la bajara, el siguiente
+`pull` la volvería a subir —porque el servidor todavía no tiene el abono— y el
+vendedor vería la deuda reaparecer a media ruta.
+
+El número que ve se **compone al leer**, restando los cobros encolados. Así baja de
+inmediato y ningún delta lo contradice. Y en pantalla va **con su antigüedad**: un
+número sin fecha se trata como la verdad, y éste es una caché (§0.3).
+
+### El recibo no imprime el saldo
+
+Por la misma razón que la remisión (§11). El teléfono solo trae una caché que puede
+tener horas y que no incluye los cobros de otros equipos. Imprimir "le quedan
+$1,500" en un papel que el cliente conserva es crear una disputa donde él sostiene
+el número impreso y la oficina el suyo.
+
+Lo que sí es un hecho de este cobro —cuánto entregó, cuándo, a quién, con qué
+folio— es exactamente lo que va en el papel.
+
+### Lo que no es efectivo exige referencia
+
+Sin ella una transferencia es imposible de conciliar con el banco: la oficina
+tendría un abono registrado y ninguna forma de encontrarlo en el estado de cuenta.
+El efectivo no la necesita porque el papel **es** la prueba.
+
+Y la forma de pago es un catálogo cerrado porque el arqueo de la liquidación suma
+**solo el efectivo** —una transferencia no viene en la bolsa—. Con texto libre,
+`"efectivo "` con un espacio quedaría fuera de la suma y el cuadre fallaría por un
+dato que se ve bien.
+
+### Los folios de cobro son su propia serie
+
+Comparten el formato del prefijo con las ventas pero no el contador. Si
+compartieran serie, un recibo y una remisión podrían traer el mismo número
+impreso, y una aclaración por teléfono sería imposible de resolver.
+
+---
+
+## 20. Dos defectos que solo aparecieron al construir la cobranza
+
+Los dos estaban en la Fase 3, los dos eran silenciosos, y los dos se vuelven daño
+real en cuanto existe un cobro.
+
+### Una venta a crédito no creaba su cuenta por cobrar
+
+**Nada** insertaba en `cuentas_por_cobrar`. Una venta a crédito quedaba registrada
+en `ventas` y la deuda no existía en ningún lado. Consecuencias, todas calladas:
+
+- **El límite de crédito nunca se alcanzaba.** La validación sumaba una cartera
+  vacía, así que un cliente con límite de $5,000 podía llevarse $50,000.
+- **Un cobro no tenía a qué aplicarse** y caía entero como saldo a favor de un
+  cliente que sí debía.
+- El panel y el delta de cartera mostraban cero.
+
+Ahora la cuenta por cobrar se crea en la **misma transacción** que la venta, con su
+vencimiento calculado desde los días de crédito del cliente. Una venta a crédito
+sin su deuda es mercancía entregada que el sistema cree regalada.
+
+### El límite de crédito no contaba las facturas parciales
+
+La validación filtraba `estado = 'abierta'`. Una factura pasa a `'parcial'` en
+cuanto el cliente abona algo, así que **el resto de esa factura dejaba de contar
+contra su límite**: abonaba un peso y recuperaba toda su línea de crédito.
+
+Era invisible hasta esta fase, porque sin cobranza nada producía el estado
+`'parcial'`. Ahora usa `estado <> 'liquidada'`, el mismo criterio que
+`v_cartera_cliente` y el manejador de cobro.
+
+**Los dos los encontró el contrato de sobres**, no una prueba de unidad: el caso 5
+manda una venta a crédito y su cobro en el mismo sobre, y el cobro llegó con
+`importe_aplicado = 0`. Es la clase de defecto que una prueba de unidad no ve,
+porque cada pieza por separado hace exactamente lo que dice.

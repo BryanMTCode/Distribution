@@ -8,6 +8,7 @@ export 'src/alta_cliente.dart';
 export 'src/aplicador_deltas.dart';
 export 'src/borrador.dart';
 export 'src/canonico.dart';
+export 'src/cobro.dart';
 export 'src/carrito.dart';
 export 'src/credencial.dart';
 export 'src/credito.dart';

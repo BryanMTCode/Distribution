@@ -67,9 +67,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Liquidación y retorno** — la ecuación que atrapa descuadres | ✅ 25 pruebas |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
-| Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
+| **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
+| Mermas y no-drops en la app | ⛔ Fase 6 |
 
-**473 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
+**493 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **404 de Dart** y **148 de widget**, todas en verde.
 
 ## Stack
 
@@ -151,8 +152,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 473 pruebas de Python
-make movil                          # 382 de Dart + 125 de widget
+make pruebas                        # 493 pruebas de Python
+make movil                          # 404 de Dart + 148 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

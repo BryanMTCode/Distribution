@@ -167,6 +167,77 @@ List<SobreLocal> construirSobres() => [
           ),
         ],
       ),
+
+      // Caso 5: LA COBRANZA — una venta a crédito y, en el MISMO sobre, el cobro
+      // que la abona. Es el escenario del día de cobranza cuando el cliente
+      // liquida en el momento, y prueba lo que ningún otro caso prueba: que el
+      // servidor aplique el FIFO **sobre una factura que acaba de crear en la
+      // misma transacción**.
+      //
+      // Si el orden se rompiera, el cobro no encontraría a qué aplicarse y los
+      // $400 quedarían como saldo a favor de un cliente que sí debía.
+      SobreLocal(
+        operacionId: '019283b0-0005-7000-8000-000000000005',
+        secuencia: 4,
+        visitaId: '019283c0-0005-7000-8000-000000000005',
+        operaciones: [
+          OperacionLocal(
+            tipo: 'venta.crear',
+            entidadId: '019283e0-0002-7000-8000-000000000002',
+            datos: {
+              'folio_consecutivo': 125,
+              'folio_local': 'VEND01-000125',
+              'cliente_id': _clienteDeLaVenta,
+              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
+              'tipo': 'credito',
+              'lista_precios_id': _listaDePrecios,
+              'lista_precios_version': 7,
+              'subtotal': '592.00',
+              'descuento': '0.00',
+              'impuestos': '0.00',
+              'total': '592.00',
+              'fecha_dispositivo': '2026-09-29T18:10:00.000Z',
+              'fecha_operativa': '2026-09-29',
+              'partidas': [
+                {
+                  'id': '019283e1-0003-7000-8000-000000000003',
+                  'linea': 1,
+                  'producto_id': _productoDeLaVenta,
+                  'unidad_codigo': 'CAJA',
+                  'factor_unidad': '24.0000',
+                  'cantidad': '2.000',
+                  'cantidad_base': '48.000',
+                  'precio_unitario': '296.0000',
+                  'descuento': '0.00',
+                  'importe': '592.00',
+                },
+              ],
+            },
+          ),
+          OperacionLocal(
+            tipo: 'cobro.crear',
+            entidadId: '019283e2-0001-7000-8000-000000000001',
+            datos: {
+              'folio_consecutivo': 31,
+              'folio_local': 'VEND01-000031',
+              'cliente_id': _clienteDeLaVenta,
+              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
+              'visita_id': '019283c0-0005-7000-8000-000000000005',
+              // Abona parte: deja la factura en 'parcial' con $192.00. Un cobro
+              // que liquidara exacto no distinguiría el caso parcial del total.
+              'importe': '400.00',
+              'forma_pago': 'efectivo',
+              // Lo que el teléfono CREÍA que debía. Forense: el servidor no lo
+              // usa para decidir nada.
+              'saldo_cache_disp': '592.00',
+              'lat': '19.4326000',
+              'lng': '-99.1332000',
+              'fecha_dispositivo': '2026-09-29T18:12:00.000Z',
+              'fecha_operativa': '2026-09-29',
+            },
+          ),
+        ],
+      ),
     ];
 
 /// El cliente y el producto de la venta de ejemplo. El servidor los siembra con

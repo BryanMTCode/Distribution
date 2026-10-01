@@ -292,7 +292,7 @@ async def crear_venta(
         await sesion.execute(
             text(
                 "SELECT ruta_id, lista_precios_id, permite_credito, bloqueado, "
-                "limite_credito, lat, lng FROM clientes WHERE id = :id"
+                "limite_credito, dias_credito, lat, lng FROM clientes WHERE id = :id"
             ),
             {"id": cliente_id},
         )
@@ -340,12 +340,21 @@ async def crear_venta(
         if not cliente["permite_credito"]:
             motivos.append(MOTIVO_EXCEDE_CREDITO)
         else:
+            # `estado <> 'liquidada'`, no `= 'abierta'`.
+            #
+            # Una factura pasa a 'parcial' en cuanto el cliente abona algo. Con el
+            # filtro anterior, el resto de esa factura dejaba de contar contra su
+            # límite: abonaba un peso y recuperaba toda su línea de crédito.
+            #
+            # El defecto era invisible hasta la Fase 5, porque sin cobranza nada
+            # producía el estado 'parcial'. Es el mismo criterio que usa
+            # `v_cartera_cliente` y el manejador de cobro.
             saldo = (
                 await sesion.execute(
                     text(
                         "SELECT COALESCE(SUM(importe_original - importe_pagado), 0) AS s "
                         "FROM cuentas_por_cobrar "
-                        "WHERE cliente_id = :c AND estado = 'abierta'"
+                        "WHERE cliente_id = :c AND estado <> 'liquidada'"
                     ),
                     {"c": cliente_id},
                 )
@@ -443,6 +452,49 @@ async def crear_venta(
             raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "partida mal formada")
         await _insertar_partida(sesion, ctx, entidad_id, cruda, motivos, lista_uuid)
 
+    # ------------------------------------------------------------------
+    # LA CUENTA POR COBRAR: una venta a crédito es una deuda, o no es nada.
+    # ------------------------------------------------------------------
+    # Esto faltaba, y el síntoma no se veía hasta que existió la cobranza: sin la
+    # fila en `cuentas_por_cobrar`, el saldo del cliente se quedaba en cero para
+    # siempre. Consecuencias, todas silenciosas:
+    #
+    #   · El límite de crédito NUNCA se alcanzaba: el vendedor podía dar crédito
+    #     sin tope y la validación de arriba siempre pasaba.
+    #   · Un cobro no tenía a qué aplicarse y caía como saldo a favor de un
+    #     cliente que sí debía.
+    #   · El panel y el delta de cartera mostraban una cartera vacía.
+    #
+    # Va en la MISMA transacción que la venta: una venta a crédito sin su deuda es
+    # mercancía entregada que el sistema cree regalada.
+    #
+    # Idempotente por `venta_id`, que es la llave primaria de la tabla: reenviar el
+    # sobre no crea una segunda deuda (y de todos modos el manejador ya salió por
+    # arriba si la venta existía).
+    if tipo == "credito":
+        dias = _entero_de_fila(cliente, "dias_credito")
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO cuentas_por_cobrar
+                  (venta_id, cliente_id, importe_original, importe_pagado,
+                   fecha_emision, fecha_vencimiento, estado, actualizado_en)
+                VALUES (:venta, :cliente, :total, 0, :emision,
+                        CAST(:emision AS date) + CAST(:dias AS integer),
+                        'abierta', :ahora)
+                ON CONFLICT (venta_id) DO NOTHING
+                """
+            ),
+            {
+                "venta": entidad_id,
+                "cliente": cliente_id,
+                "total": total,
+                "emision": fecha_operativa,
+                "dias": dias,
+                "ahora": ctx.recibido_en,
+            },
+        )
+
     if motivos:
         # Se vuelve a escribir porque las partidas pueden agregar motivos
         # (un precio que no coincide con la lista vigente).
@@ -533,6 +585,273 @@ async def _insertar_partida(
             "importe": importe,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Fase 5 · el cobro
+# ---------------------------------------------------------------------------
+#
+# AQUÍ ENTRA DINERO, Y EL DINERO NO SE PUEDE RECONTAR
+#
+# Una venta entrega mercancía que se cuenta al final del día. Un cobro recibe
+# efectivo, y el efectivo no se cuenta: se cuadra. Si este manejador rechaza un
+# cobro legítimo, el dinero existe en la bolsa del vendedor y no en el sistema, y
+# en la liquidación aparece como un descuadre que nadie puede explicar.
+#
+# Por eso aquí §0.1 es todavía más estricto que en la venta: **nada se rechaza
+# salvo un payload que no describe ningún cobro posible.**
+
+# El cobro excedió lo que el cliente debía. No es un error: el cliente pudo
+# liquidar y dejar anticipo, o el saldo del teléfono estaba viejo. Se marca para
+# que la oficina decida si es anticipo o devolución.
+MOTIVO_EXCEDE_DEUDA = "cobro_excede_deuda"
+
+# El cliente no tenía ninguna factura abierta. El dinero entró y queda todo como
+# saldo a favor.
+MOTIVO_SIN_DEUDA = "cobro_sin_deuda"
+
+# Lo que el teléfono creía que debía, contra lo que el servidor sabe. Una
+# diferencia grande significa que el equipo llevaba horas sin sincronizar, y
+# explica por qué el vendedor cobró lo que cobró.
+MOTIVO_SALDO_DESFASADO = "saldo_del_equipo_desfasado"
+DESFASE_DE_SALDO_SOSPECHOSO = Decimal("500.00")
+
+FORMAS_DE_PAGO = ("efectivo", "transferencia", "cheque")
+
+
+@manejador_de("cobro.crear")
+async def crear_cobro(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """Registra un abono y lo aplica a las facturas en orden FIFO.
+
+    Idempotente: el UUID lo generó el teléfono y es la llave primaria. Reenviar el
+    sobre no abona dos veces — que es la peor consecuencia posible de un reintento
+    en este manejador.
+
+    ────────────────────────────────────────────────────────────────────────
+    POR QUÉ EL FIFO LO DECIDE EL SERVIDOR
+    ────────────────────────────────────────────────────────────────────────
+    El teléfono no conoce la cartera completa: trae un saldo en caché que puede
+    tener horas y que no incluye los cobros que otros equipos hicieron hoy. Si
+    decidiera la aplicación, dos dispositivos cobrando al mismo cliente aplicarían
+    los dos abonos a la misma factura, y el servidor tendría que deshacer una
+    decisión que ya está impresa en un papel.
+
+    El orden es por **vencimiento más antiguo**: se paga primero lo que lleva más
+    tiempo vencido, que es lo que reduce el riesgo real de la cartera.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM cobros WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    cliente_id = _uuid_obligatorio(datos, "cliente_id")
+    folio_consecutivo = _entero(datos, "folio_consecutivo", obligatorio=True)
+    folio_local = _texto(datos, "folio_local", obligatorio=True)
+    importe = _decimal_obligatorio(datos, "importe")
+    forma_pago = _texto(datos, "forma_pago") or "efectivo"
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+
+    # Lo único que se rechaza: un payload que no describe ningún cobro posible.
+    if importe <= 0:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, f"un cobro de {importe} no es un cobro"
+        )
+    if forma_pago not in FORMAS_DE_PAGO:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, f"forma de pago inválida: {forma_pago!r}"
+        )
+
+    cliente = (
+        await sesion.execute(
+            text("SELECT ruta_id, nombre_comercial FROM clientes WHERE id = :id"),
+            {"id": cliente_id},
+        )
+    ).mappings().first()
+    if cliente is None:
+        # El cliente viaja en el MISMO sobre cuando se dio de alta en la calle, y
+        # el sobre se aplica en orden. Si no está, el payload referencia algo que
+        # no existe: un cobro sin cliente no se puede aplicar ni auditar.
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"el cobro referencia un cliente que no existe: {cliente_id}",
+        )
+    if cliente["ruta_id"] is not None and ctx.rutas and cliente["ruta_id"] not in ctx.rutas:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "el cliente no pertenece a la ruta del vendedor"
+        )
+
+    motivos: list[str] = []
+
+    # ------------------------------------------------------------------
+    # El saldo que traía el teléfono, contra el real. Forense, no autoridad.
+    # ------------------------------------------------------------------
+    saldo_real = (
+        await sesion.execute(
+            text(
+                "SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar "
+                " WHERE cliente_id = :c AND estado <> 'liquidada'"
+            ),
+            {"c": cliente_id},
+        )
+    ).scalar_one()
+    saldo_real = Decimal(saldo_real)
+
+    saldo_del_equipo = _decimal(datos, "saldo_cache_disp")
+    if (
+        saldo_del_equipo is not None
+        and abs(saldo_del_equipo - saldo_real) > DESFASE_DE_SALDO_SOSPECHOSO
+    ):
+        motivos.append(MOTIVO_SALDO_DESFASADO)
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, visita_id, importe,
+                                forma_pago, referencia, saldo_cache_disp,
+                                lat, lng, estado, fecha_dispositivo, fecha_servidor,
+                                fecha_operativa, requiere_revision, revision_motivos)
+            VALUES (:id, :dispositivo, :folio, :folio_local, :cliente, :vendedor,
+                    :visita, :importe, :forma, :referencia, :saldo_disp,
+                    :lat, :lng, 'confirmado', :fecha_dispositivo, :ahora,
+                    :fecha_operativa, :revision, :motivos)
+            """
+        ),
+        {
+            "id": entidad_id,
+            "dispositivo": ctx.dispositivo_id,
+            "folio": folio_consecutivo,
+            "folio_local": folio_local,
+            "cliente": cliente_id,
+            "vendedor": ctx.usuario_id,
+            "visita": _uuid_opcional(datos, "visita_id"),
+            "importe": importe,
+            "forma": forma_pago,
+            "referencia": _texto(datos, "referencia"),
+            "saldo_disp": saldo_del_equipo,
+            "lat": _decimal(datos, "lat"),
+            "lng": _decimal(datos, "lng"),
+            "fecha_dispositivo": fecha_dispositivo,
+            "ahora": ctx.recibido_en,
+            "fecha_operativa": _texto(datos, "fecha_operativa")
+            or fecha_dispositivo.date().isoformat(),
+            "revision": bool(motivos),
+            "motivos": motivos,
+        },
+    )
+
+    # ------------------------------------------------------------------
+    # La aplicación FIFO.
+    # ------------------------------------------------------------------
+    # `FOR UPDATE` sobre las facturas: dos cobros del mismo cliente llegando en
+    # el mismo lote aplicarían los dos sobre el mismo saldo leído, y el segundo
+    # sobrepasaría `pago_no_excede_original`. Serializar aquí es correcto porque
+    # son las facturas de UN cliente, no de la cartera.
+    facturas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT venta_id, saldo FROM cuentas_por_cobrar
+                 WHERE cliente_id = :c AND estado <> 'liquidada' AND saldo > 0
+                 ORDER BY fecha_vencimiento, fecha_emision
+                 FOR UPDATE
+                """
+            ),
+            {"c": cliente_id},
+        )
+    ).mappings().all()
+
+    if not facturas:
+        motivos.append(MOTIVO_SIN_DEUDA)
+
+    por_aplicar = importe
+    aplicado_total = Decimal("0")
+    for factura in facturas:
+        if por_aplicar <= 0:
+            break
+        # Lo que cabe en esta factura. El sobrante pasa a la siguiente, y lo que
+        # quede al final es saldo a favor.
+        cabe = min(por_aplicar, Decimal(factura["saldo"]))
+        if cabe <= 0:
+            continue
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO cobros_aplicaciones (cobro_id, venta_id, importe, aplicado_en)
+                VALUES (:cobro, :venta, :importe, :ahora)
+                """
+            ),
+            {
+                "cobro": entidad_id,
+                "venta": factura["venta_id"],
+                "importe": cabe,
+                "ahora": ctx.recibido_en,
+            },
+        )
+        # `saldo` es una columna GENERADA (importe_original − importe_pagado): se
+        # actualiza el pagado y la base recalcula. Escribir el saldo a mano daría
+        # dos verdades que tarde o temprano no coinciden.
+        await sesion.execute(
+            text(
+                """
+                UPDATE cuentas_por_cobrar
+                   SET importe_pagado = importe_pagado + :importe,
+                       estado = CASE
+                                  WHEN importe_pagado + :importe >= importe_original
+                                    THEN 'liquidada'
+                                  ELSE 'parcial'
+                                END,
+                       actualizado_en = :ahora
+                 WHERE venta_id = :venta
+                """
+            ),
+            {"importe": cabe, "venta": factura["venta_id"], "ahora": ctx.recibido_en},
+        )
+        por_aplicar -= cabe
+        aplicado_total += cabe
+
+    # ------------------------------------------------------------------
+    # El sobrante es saldo a favor, nunca un error.
+    # ------------------------------------------------------------------
+    # El dinero ya cambió de manos. Rechazar el excedente haría que el vendedor se
+    # guardara efectivo sin documento, que es exactamente lo que este manejador
+    # existe para evitar. Se marca para que la oficina decida si es anticipo o
+    # devolución.
+    if por_aplicar > 0 and facturas:
+        motivos.append(MOTIVO_EXCEDE_DEUDA)
+
+    await sesion.execute(
+        text(
+            "UPDATE cobros SET importe_aplicado = :aplicado, saldo_a_favor = :favor, "
+            "       requiere_revision = :revision, revision_motivos = :motivos "
+            " WHERE id = :id"
+        ),
+        {
+            "aplicado": aplicado_total,
+            "favor": por_aplicar,
+            "revision": bool(motivos),
+            "motivos": motivos,
+            "id": entidad_id,
+        },
+    )
+
+
+def _entero_de_fila(fila: Any, clave: str, *, por_omision: int = 0) -> int:
+    """Un entero de una fila de la base, con omisión.
+
+    `dias_credito` es `NOT NULL DEFAULT 0`, pero la consulta que trae al cliente
+    puede no pedirlo: leerlo con `.get` y caer a cero es más seguro que un
+    `KeyError` que mandaría la venta a cuarentena por un campo de catálogo.
+    """
+    try:
+        valor = fila[clave]
+    except (KeyError, TypeError):
+        return por_omision
+    return int(valor) if valor is not None else por_omision
 
 
 def _entero(datos: dict[str, Any], clave: str, *, obligatorio: bool = False) -> int | None:
