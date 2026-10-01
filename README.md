@@ -62,12 +62,13 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
 | **Carga del camión** — bodega → camión, con su delta y su detalle | ✅ 20 pruebas |
 | El teléfono aplica la carga sin revivir lo ya vendido | ✅ 12 pruebas de Dart |
-| Panel de usuarios, rutas, almacenes y listas de precios | ⛔ lo que falta de la Fase 1 |
+| **Usuarios, rutas, almacenes y listas** desde el panel | ✅ 23 pruebas |
+| Arranque del primer usuario (`make usuario`) — **sin contraseña por omisión** | ✅ con pruebas |
 | Liquidación y retorno al cierre del día | ⛔ Fase 7 |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**412 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
+**435 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -101,6 +102,7 @@ server/
                      productos.py     catálogo y precios (los 4 decimales)
                      clientes.py      confirmar prospectos y decidir el crédito
                      cargas.py        la carga del camión (bodega → camión)
+                     equipo.py        usuarios, rutas, almacenes y listas de precios
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
@@ -144,7 +146,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 ```bash
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
-make pruebas                        # 412 pruebas de Python
+make usuario                        # el primer usuario de oficina — NO hay uno por omisión
+make pruebas                        # 435 pruebas de Python
 make movil                          # 382 de Dart + 125 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

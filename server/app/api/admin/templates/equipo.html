@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block titulo %}Equipo{% endblock %}
+{% block contenido %}
+<h1>Equipo y estructura</h1>
+<p class="subtitulo">
+  Para que un vendedor salga a la calle hacen falta tres cosas atadas entre sí:
+  su <strong>usuario</strong>, su <strong>camión</strong> y su <strong>ruta</strong>.
+  Si falta una, el sistema no avisa: simplemente no deja hacer el trabajo.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{% if vendedores_sin_camion or vendedores_sin_ruta %}
+<div class="aviso-caja error">
+  {% if vendedores_sin_camion %}
+    <div>
+      <strong>Sin camión:</strong>
+      {% for u in vendedores_sin_camion %}{{ u.codigo }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      No se les puede cargar mercancía.
+    </div>
+  {% endif %}
+  {% if vendedores_sin_ruta %}
+    <div style="margin-top:6px">
+      <strong>Sin ruta:</strong>
+      {% for u in vendedores_sin_ruta %}{{ u.codigo }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Su teléfono no va a recibir un solo cliente.
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Usuarios                                                                 #}
+{# ------------------------------------------------------------------------ #}
+<h2>Usuarios</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre y rol</th>
+        <th>Camión y ruta</th>
+        <th>Equipos</th>
+        {% if puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in usuarios %}
+      <tr{% if not u.activo %} style="opacity:.55"{% endif %}>
+        <td>
+          <span class="mono">{{ u.codigo }}</span>
+          {% if not u.activo %}<div class="sutil">desactivado</div>{% endif %}
+        </td>
+        <td>
+          {{ u.nombre }}
+          <div class="sutil">
+            {{ u.rol_codigo }}
+            {% if u.sucursal %} · {{ u.sucursal }}{% endif %}
+            {% if u.rol_codigo == 'vendedor' %}
+              · hasta {{ u.dias_max_offline }} días sin sincronizar
+            {% endif %}
+          </div>
+        </td>
+        <td class="sutil">
+          {% if u.rol_codigo == 'vendedor' %}
+            {% if u.camion %}{{ u.camion }}{% else %}
+              <span style="color:var(--alerta)">sin camión</span>
+            {% endif %}
+            <div>
+              {% if u.rutas %}{{ u.rutas }}{% else %}
+                <span style="color:var(--alerta)">sin ruta</span>
+              {% endif %}
+            </div>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td class="numero sutil">{{ u.equipos or '—' }}</td>
+        {% if puede_editar %}
+        <td>
+          <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password"
+                style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="password" name="password" placeholder="contraseña nueva"
+                   style="width:150px">
+            <button type="submit" class="secundario"
+                    style="padding:3px 9px;font-size:12px">Cambiar</button>
+          </form>
+          <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            {% if u.activo %}
+              <button type="submit" class="secundario"
+                      style="padding:3px 9px;font-size:12px">Desactivar</button>
+            {% else %}
+              <button type="submit" name="activo" value="1" class="secundario"
+                      style="padding:3px 9px;font-size:12px">Activar</button>
+            {% endif %}
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  Un usuario <strong>no se borra</strong>: tiene ventas, cobros y movimientos de
+  inventario firmados con su clave. Al desactivarlo sus sesiones del panel mueren
+  en la siguiente petición y su equipo deja de poder sincronizar.
+</p>
+
+{% if puede_editar %}
+<form method="post" action="/panel/equipo/usuarios"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px;margin-bottom:28px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Nuevo usuario</h2>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="u_codigo">Código de empleado</label>
+      <input type="text" id="u_codigo" name="codigo" required placeholder="VEND02"
+             style="width:100%">
+      <div class="ayuda">
+        <strong>Es el prefijo del folio impreso</strong> (`VEND02-000077`), así que
+        no se puede cambiar después: hay tickets en la calle con él.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="u_nombre">Nombre completo</label>
+      <input type="text" id="u_nombre" name="nombre" required style="width:100%">
+    </div>
+  </div>
+
+  <div class="campo">
+    <label for="u_rol">Rol</label>
+    <select id="u_rol" name="rol_codigo" required style="width:100%">
+      {% for codigo, nombre, que_hace in roles %}
+        <option value="{{ codigo }}">{{ nombre }} — {{ que_hace }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="rejilla">
+    <div class="campo">
+      <label for="u_password">Contraseña</label>
+      <input type="password" id="u_password" name="password" required style="width:100%">
+      <div class="ayuda">
+        Mínimo {{ minimo_password }} caracteres; una frase corta sirve. El hash
+        <strong>viaja al teléfono</strong> para el login sin red, así que una
+        contraseña débil se puede atacar con el equipo en la mano.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="u_dias">Días sin sincronizar</label>
+      <input type="text" id="u_dias" name="dias_max_offline" value="7" inputmode="numeric"
+             style="width:100%">
+      <div class="ayuda">
+        Pasados estos días el teléfono exige entrar en línea. Máximo 30.
+      </div>
+    </div>
+    {% if sucursales %}
+    <div class="campo">
+      <label for="u_sucursal">Sucursal</label>
+      <select id="u_sucursal" name="sucursal_id" style="width:100%">
+        {% for s in sucursales %}
+          <option value="{{ s.id }}">{{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="campo">
+    <label>
+      <input type="checkbox" name="con_camion" value="1" checked>
+      Si es vendedor, crearle también su camión
+    </label>
+    <div class="ayuda">
+      Un camión exige responsable, así que el usuario tiene que existir primero.
+      El panel lo hace en un solo paso para que no haya que saberlo.
+    </div>
+  </div>
+
+  <button type="submit">Crear usuario</button>
+</form>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Rutas                                                                    #}
+{# ------------------------------------------------------------------------ #}
+<h2>Rutas</h2>
+{% if rutas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Titular</th>
+        <th class="numero">Clientes</th>
+        {% if puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rutas %}
+      <tr{% if not r.activo %} style="opacity:.55"{% endif %}>
+        <td><span class="mono">{{ r.codigo }}</span></td>
+        <td>{{ r.nombre }}</td>
+        <td class="sutil">
+          {% if r.vendedor %}{{ r.vendedor_codigo }} · {{ r.vendedor }}{% else %}
+            <span style="color:var(--alerta)">sin titular</span>
+          {% endif %}
+        </td>
+        <td class="numero">{{ r.clientes }}</td>
+        {% if puede_editar %}
+        <td>
+          <form method="post" action="/panel/equipo/rutas/{{ r.id }}/titular"
+                style="display:flex;gap:6px">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <select name="vendedor_id" style="font-size:12px;padding:3px 6px">
+              <option value="">— sin titular —</option>
+              {% for u in usuarios %}
+                {% if u.rol_codigo == 'vendedor' and u.activo %}
+                  <option value="{{ u.id }}"
+                    {% if u.codigo == r.vendedor_codigo %}selected{% endif %}>
+                    {{ u.codigo }}
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+            <button type="submit" class="secundario"
+                    style="padding:3px 9px;font-size:12px">Asignar</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  Cambiar el titular mueve también su <em>alcance</em>: al anterior se le quita, o su
+  teléfono seguiría recibiendo —y pudiendo venderle a— los clientes de una ruta que
+  ya no trabaja. Los clientes no se mueven: siguen siendo de la ruta.
+</p>
+{% else %}
+<div class="vacio">Ninguna ruta todavía. Sin ruta, un teléfono no recibe clientes.</div>
+{% endif %}
+
+{% if puede_editar %}
+<form class="barra" method="post" action="/panel/equipo/rutas" style="margin-top:14px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="text" name="codigo" placeholder="R04" required style="width:110px">
+  <input type="text" name="nombre" placeholder="Nombre de la ruta" required
+         style="min-width:220px">
+  <select name="vendedor_id">
+    <option value="">— titular después —</option>
+    {% for u in usuarios %}
+      {% if u.rol_codigo == 'vendedor' and u.activo %}
+        <option value="{{ u.id }}">{{ u.codigo }} · {{ u.nombre }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Crear ruta</button>
+</form>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Almacenes                                                                #}
+{# ------------------------------------------------------------------------ #}
+<h2>Almacenes</h2>
+{% if almacenes %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Tipo</th>
+        <th>Responsable</th>
+        <th class="numero">Con existencia</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in almacenes %}
+      <tr{% if not a.activo %} style="opacity:.55"{% endif %}>
+        <td><span class="mono">{{ a.codigo }}</span></td>
+        <td>{{ a.nombre }}</td>
+        <td class="sutil">{{ a.tipo }}</td>
+        <td class="sutil">{{ a.responsable or '—' }}</td>
+        <td class="numero">
+          {{ a.productos }}
+          {% if a.negativos %}
+            <div class="sutil" style="color:var(--alerta)">
+              {{ a.negativos }} en negativo
+            </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  Un producto en negativo no es un error del sistema: es un conteo que hay que
+  revisar. Pasa cuando se carga más de lo que la bodega tenía registrado, y se
+  permite a propósito — si el camión ya se llevó la mercancía, rechazarlo haría
+  que saliera sin registrar.
+</p>
+{% else %}
+<div class="vacio">Ningún almacén. Sin bodega no hay de dónde cargar.</div>
+{% endif %}
+
+{% if puede_editar %}
+<form class="barra" method="post" action="/panel/equipo/almacenes" style="margin-top:14px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="text" name="codigo" placeholder="BODEGA_NORTE" required style="width:170px">
+  <input type="text" name="nombre" placeholder="Nombre del almacén" required
+         style="min-width:200px">
+  <select name="tipo">
+    <option value="bodega">bodega</option>
+    <option value="camion">camión</option>
+    <option value="merma">merma</option>
+    <option value="transito">tránsito</option>
+  </select>
+  <select name="responsable_id">
+    <option value="">— sin responsable —</option>
+    {% for u in usuarios %}
+      {% if u.activo %}<option value="{{ u.id }}">{{ u.codigo }} · {{ u.nombre }}</option>{% endif %}
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Crear almacén</button>
+</form>
+<p class="sutil">
+  Un <strong>camión exige responsable</strong>: el dueño exclusivo del almacén es lo
+  que hace que el trabajo offline no tenga conflictos que resolver.
+</p>
+{% endif %}
+
+{# ------------------------------------------------------------------------ #}
+{# Listas de precios                                                        #}
+{# ------------------------------------------------------------------------ #}
+<h2>Listas de precios</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th class="numero">Productos con precio</th>
+        <th class="numero">Clientes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in listas %}
+      <tr{% if not l.activo %} style="opacity:.55"{% endif %}>
+        <td>
+          <span class="mono">{{ l.codigo }}</span>
+          {% if l.es_default %}<div class="sutil">por omisión</div>{% endif %}
+        </td>
+        <td>{{ l.nombre }}</td>
+        <td class="numero">
+          {{ l.productos }}
+          {% if not l.productos %}
+            <div class="sutil" style="color:var(--alerta)">vacía</div>
+          {% endif %}
+        </td>
+        <td class="numero">{{ l.clientes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  La lista <strong>por omisión</strong> es la que se le cotiza a un cliente dado de
+  alta en la calle, que nace sin lista asignada. Cambiar cuál es movería el precio
+  de todos esos clientes de golpe, así que no se hace desde aquí.
+</p>
+
+{% if puede_editar %}
+<form class="barra" method="post" action="/panel/equipo/listas" style="margin-top:14px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="text" name="codigo" placeholder="MAYOREO" required style="width:150px">
+  <input type="text" name="nombre" placeholder="Nombre de la lista" required
+         style="min-width:220px">
+  <button type="submit" class="secundario">Crear lista</button>
+</form>
+{% endif %}
+{% endblock %}

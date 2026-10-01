@@ -535,3 +535,90 @@ Es el almacén del vendedor. Un desplegable de almacén destino permitiría carg
 el camión de otro, y el dueño exclusivo del almacén es la garantía sobre la que
 descansa todo el modelo offline (§0.2): sin ella vuelven los conflictos de
 concurrencia que este diseño existe para no tener.
+
+---
+
+## 15. No hay usuario por omisión, y el primero se crea desde el servidor
+
+**Decisión.** Ninguna migración siembra usuarios. El primero se crea con
+`make usuario`, un comando que pregunta la contraseña por `getpass`. Los demás se
+dan de alta desde el panel.
+
+### Las tres formas de resolver el huevo y la gallina, y por qué esta
+
+Los usuarios se dan de alta en el panel, y al panel se entra con un usuario. Una
+base recién migrada no tiene ninguno.
+
+1. **Sembrar `admin / admin123` en una migración.** Es la que todo el mundo
+   escribe. El problema no es el desarrollo: es que esa fila viaja a producción,
+   nadie se acuerda de cambiarla, y queda un usuario con todos los permisos cuya
+   contraseña está publicada en el repositorio. Con el panel detrás del túnel de
+   Cloudflare, eso es acceso a la operación completa desde internet.
+2. **Una pantalla de "primer arranque" sin autenticar.** Funciona, y deja una ruta
+   que crea administradores sin credenciales. Basta que alguien recree la base, o
+   que la condición "¿ya hay usuarios?" se evalúe mal una vez, para que esa puerta
+   quede abierta.
+3. **Un comando que corre quien tiene acceso al servidor.** Quien puede ejecutarlo
+   ya está dentro de la máquina, así que no concede nada nuevo, y no deja ninguna
+   fila ni ninguna ruta de más cuando termina.
+
+La contraseña se teclea y no se pasa como argumento: un `--password` queda en el
+historial del shell y en la lista de procesos.
+
+Hay una prueba que afirma que **ninguna migración siembra usuarios**. Corre sin el
+fixture de semilla, contra la base tal como la dejan las migraciones, para que
+nadie reintroduzca la opción 1 por comodidad.
+
+### Mínimo doce caracteres, porque el hash viaja al teléfono
+
+`usuarios.password_hash` se replica al dispositivo para permitir el login sin red.
+Eso significa que una contraseña se puede atacar **con el equipo en la mano**, sin
+límite de intentos y sin conexión. Doce caracteres no es una cifra mágica: es
+donde una frase corta ("camion rojo 14") ya resiste fuerza bruta offline con los
+parámetros de Argon2id de este sistema.
+
+### Un usuario no se borra, y desactivarlo corta su sesión de verdad
+
+Tiene ventas, cobros y movimientos de inventario firmados con su id. Se desactiva,
+y en el mismo paso se revocan sus sesiones del panel: eso es posible **porque la
+sesión tiene fila en la base y no es un JWT firmado**, que seguiría siendo válido
+hasta expirar haga lo que haga la oficina.
+
+Dos cosas que el panel no permite, porque dejarían el sistema sin salida: que
+alguien se desactive a sí mismo, y desactivar al último administrador activo. En
+los dos casos el arreglo saldría por línea de comandos en el servidor.
+
+### Cambiar una contraseña no bloquea el teléfono de inmediato
+
+El hash nuevo llega al dispositivo cuando sincroniza. Hasta entonces el vendedor
+entra con la anterior, y eso es correcto: si el cambio cortara el acceso offline
+al instante, cambiar una contraseña dejaría a alguien sin poder trabajar a media
+ruta.
+
+---
+
+## 16. El titular de una ruta y el alcance de datos son dos cosas
+
+**Decisión.** Asignar un vendedor a una ruta escribe **las dos** filas:
+`rutas.vendedor_id` y `usuarios_rutas`.
+
+`rutas.vendedor_id` dice quién es el titular — es información de negocio.
+`usuarios_rutas` es lo que el *scope guard* consulta, y es lo que el filtro del
+pull usa: `ruta_id = ANY(:rutas)`.
+
+Con solo la primera, el vendedor aparece como dueño de la ruta en todas las
+pantallas y **su teléfono no recibe un solo cliente**. No falla, no avisa: la
+sincronización reporta éxito y llega vacía. Es el error que se comete una vez y
+cuesta una tarde de depuración con el teléfono en la mano, así que el panel
+escribe las dos y hay una prueba que lo afirma.
+
+Al cambiar de titular, al anterior **se le quita** el alcance: si se le dejara, su
+teléfono seguiría recibiendo —y pudiendo venderle a— los clientes de una ruta que
+ya no trabaja. Los clientes no se mueven: siguen siendo de la ruta.
+
+### El camión se crea junto con el vendedor
+
+`camion_requiere_responsable` (migración 0004) obliga a que el usuario exista
+antes del almacén, y además el almacén tiene que quedar como `usuarios.almacen_id`
+para que la carga encuentre a dónde ir. Son tres escrituras en un orden que quien
+da de alta a un empleado no tiene por qué conocer: el panel las hace en un paso.

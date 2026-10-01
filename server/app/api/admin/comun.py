@@ -46,6 +46,7 @@ NAVEGACION = [
     ("/panel/cargas", "Cargas"),
     ("/panel/ventas", "Ventas"),
     ("/panel/cuarentena", "Cuarentena"),
+    ("/panel/equipo", "Equipo"),
 ]
 
 SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]

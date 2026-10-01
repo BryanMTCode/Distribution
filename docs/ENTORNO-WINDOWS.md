@@ -106,6 +106,32 @@ make api
 Abre <http://localhost:8000/docs> en tu navegador de Windows: es la documentación interactiva de la API,
 generada sola. Puedes probar el login desde ahí.
 
+### Crear tu usuario (la primera vez, y cada vez que recrees la base)
+
+**No hay usuario ni contraseña por omisión, y es a propósito.** Ninguna migración siembra usuarios.
+
+```bash
+make usuario
+```
+
+Te pregunta código de empleado, nombre, rol y contraseña. La contraseña **se teclea, no se pasa como
+argumento**: un `--password` queda en el historial del shell y en la lista de procesos, donde lo ve
+cualquiera con `ps`.
+
+Si acabas de hacer `make db-parar && make db && make migrar`, la base está limpia y esto es lo primero
+que necesitas. Es el único camino de entrada cuando no hay usuarios.
+
+> **Por qué no hay un `admin / admin123` sembrado.** El problema no es el desarrollo: es que esa fila
+> viaja a producción, nadie se acuerda de cambiarla, y queda un usuario con todos los permisos cuya
+> contraseña está publicada en el repositorio. Con el panel detrás del túnel de Cloudflare, eso es
+> acceso a la operación completa desde internet. La otra opción común —una pantalla de «primer
+> arranque» sin autenticar— deja una ruta que crea administradores sin credenciales; basta que la
+> condición «¿ya hay usuarios?» se evalúe mal una vez para que quede abierta. Quien puede correr
+> `make usuario` ya está dentro del servidor, así que no concede nada nuevo y no deja ninguna puerta.
+
+Los demás usuarios —vendedores, supervisores, gerencia— se dan de alta **desde el panel**, en la
+pantalla de Equipo. Este comando existe solo para el primero.
+
 ### Ver el panel de operación
 
 Con el mismo `make api` corriendo, abre <http://localhost:8000/panel>.
@@ -114,7 +140,7 @@ Entra con un usuario de oficina (rol `admin` o `gerente`). **Un vendedor no pued
 teclea sus datos ahí, el panel le responde que entre por la app del teléfono. Es a propósito — el panel
 ve toda la operación y el teléfono solo la ruta de quien lo trae.
 
-Seis pantallas, y cada una responde una pregunta distinta:
+Siete pantallas, y cada una responde una pregunta distinta:
 
 | Pantalla | Qué contesta |
 |---|---|
@@ -122,6 +148,7 @@ Seis pantallas, y cada una responde una pregunta distinta:
 | **Productos** | el catálogo y los precios. Es por donde entra el negocio real al sistema |
 | **Clientes** | ¿qué prospectos levantó la ruta y esperan código, lista de precios y crédito? |
 | **Cargas** | qué se subió a cada camión hoy. Es el inventario con el que el vendedor puede vender |
+| **Equipo** | usuarios, rutas, almacenes y listas de precios. La estructura sobre la que corre todo |
 | **Ventas marcadas** | ¿qué ventas entraron con una advertencia? Son las que el servidor **sí** aceptó pero marcó |
 | **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
 
@@ -144,6 +171,26 @@ $296.00 exactos, porque el redondeo ocurre **una sola vez, sobre el importe**.
 
 El producto viaja al teléfono en el siguiente `pull`: los disparadores de la base publican el cambio en
 `change_log` solos, sin que ninguna pantalla se tenga que acordar.
+
+### Dar de alta a un vendedor completo
+
+Para que un vendedor salga a la calle hacen falta **tres cosas atadas entre sí**, y si falta una el
+sistema no avisa: simplemente no deja hacer el trabajo.
+
+En **Equipo → Nuevo usuario**, con rol `vendedor` y la casilla «crearle también su camión» marcada,
+quedan dos de las tres en un solo paso. Después, en la misma pantalla, **crea su ruta y asígnalo como
+titular**.
+
+La pantalla marca arriba, en rojo, los vendedores **sin camión** y **sin ruta**. Esa alerta existe
+porque un vendedor incompleto se ve idéntico a uno completo en cualquier lista de usuarios:
+
+- **Sin camión** no se le puede cargar mercancía (la carga no tiene a dónde ir).
+- **Sin ruta** su teléfono no recibe un solo cliente.
+
+Lo segundo tiene una trampa que vale conocer: `rutas.vendedor_id` dice quién es el *titular*, pero lo
+que filtra los datos que viajan al teléfono es la tabla `usuarios_rutas`. Son dos cosas distintas y las
+dos hacen falta. El panel escribe las dos siempre; si algún día lo haces por SQL, acuérdate de la
+segunda o vas a pasar una tarde depurando por qué el teléfono sincroniza bien y llega sin clientes.
 
 ### Cargar el camión de verdad
 
@@ -199,6 +246,7 @@ make ayuda        # lista todo lo disponible
 make db           # levanta la base
 make pruebas      # la suite completa
 make lint         # revisa estilo
+make usuario      # crea el primer usuario de oficina (pregunta la contraseña)
 make api          # API con recarga automática (y el panel en /panel)
 make contratos    # regenera vectores y OpenAPI — REVISA EL DIFF
 make db-parar     # apaga y borra el contenedor de la base
