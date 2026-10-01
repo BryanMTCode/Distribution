@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda instalar db db-parar migrar usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar db db-parar db-borrar migrar usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -15,15 +15,53 @@ migrar:  ## Aplica las migraciones (DB=... para apuntar a otra base)
 pruebas:  ## Corre la suite completa (necesita PostgreSQL+PostGIS arriba)
 	cd server && .venv/bin/python -m pytest -q
 
-db:  ## Levanta PostgreSQL+PostGIS para desarrollo (contenedor desechable)
-	docker run -d --name dsd-postgres -p 5432:5432 		-e POSTGRES_PASSWORD=dsd -e POSTGRES_DB=dsd 		postgis/postgis:17-3.5
+doctor:  ## Revisa el entorno y dice QUÉ comando arregla cada falla
+	@./scripts/doctor.sh
+
+# ---------------------------------------------------------------------------
+# La base de desarrollo
+# ---------------------------------------------------------------------------
+# `db` es IDEMPOTENTE, y eso no es un lujo: al reiniciar la PC, Docker Desktop
+# vuelve pero el contenedor queda parado. Un `docker run` a secas falla ahí con
+# "the container name is already in use", y la salida natural —borrarlo y
+# recrearlo— se lleva la base entera. Pasó: hubo que volver a sembrar el usuario,
+# los productos y la carga para seguir probando.
+#
+# Ahora el arranque diario es siempre el mismo comando, pase lo que pase:
+#
+#     make db        crea el contenedor, o arranca el que ya existe
+#     make db-parar  solo lo detiene — los datos se quedan
+#     make db-borrar el reinicio de verdad, cuando quieres una base limpia
+#
+# Los datos viven en un volumen con nombre (`dsd_pgdata`), así que sobreviven
+# incluso a borrar el contenedor. Por eso `db-borrar` quita las dos cosas: si
+# solo quitara el contenedor, "empezar de cero" no empezaría de cero y el
+# siguiente `make migrar` encontraría las migraciones ya aplicadas.
+db:  ## Levanta PostgreSQL+PostGIS para desarrollo (crea o rearranca)
+	@if [ -n "$$(docker ps -aq -f name='^dsd-postgres$$')" ]; then \
+		docker start dsd-postgres >/dev/null && \
+		echo "Contenedor existente arrancado; tus datos siguen ahí."; \
+	else \
+		docker run -d --name dsd-postgres -p 5432:5432 \
+			-v dsd_pgdata:/var/lib/postgresql/data \
+			-e POSTGRES_PASSWORD=dsd -e POSTGRES_DB=dsd \
+			postgis/postgis:17-3.5 >/dev/null && \
+		echo "Contenedor creado."; \
+	fi
 	@echo "Esperando a que acepte conexiones..."
 	@until docker exec dsd-postgres pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
 	@docker exec dsd-postgres psql -U postgres -d dsd -c 'CREATE EXTENSION IF NOT EXISTS postgis' >/dev/null
 	@echo "Listo en 127.0.0.1:5432 (usuario postgres, clave dsd)"
 
-db-parar:  ## Detiene y borra el contenedor de desarrollo
+db-parar:  ## Detiene la base SIN borrar nada
+	-docker stop dsd-postgres
+
+db-borrar:  ## Borra el contenedor Y el volumen: base limpia de verdad
+	@echo "Esto BORRA la base de desarrollo: usuarios, productos, cargas, todo."
+	@printf 'Escribe BORRAR para confirmar: ' && read r && [ "$$r" = BORRAR ]
 	-docker rm -f dsd-postgres
+	-docker volume rm dsd_pgdata
+	@echo "Listo. Ahora: make db && make migrar && make usuario"
 
 lint:  ## Ruff
 	cd server && .venv/bin/ruff check app tests

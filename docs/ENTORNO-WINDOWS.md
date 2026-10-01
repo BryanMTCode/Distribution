@@ -70,6 +70,10 @@ source ~/.bashrc
 
 ## 2. Arranque
 
+> **Esto es la instalación, una sola vez.** Para el arranque de cada día después de reiniciar la PC
+> —con los comandos exactos, los puertos ocupados, los procesos fantasma y el puente USB— usa
+> [`ARRANQUE-DIARIO.md`](ARRANQUE-DIARIO.md). El atajo es `make db && make doctor`.
+
 ```bash
 git clone https://github.com/BryanMTCode/Distribution.git
 cd Distribution
@@ -77,17 +81,18 @@ git checkout claude/exciting-hamilton-asnv8o
 
 make instalar     # uv baja Python 3.12 y las dependencias
 make db           # PostgreSQL + PostGIS en Docker
-make migrar       # aplica las 8 migraciones
-make pruebas      # deben pasar 148
+make migrar       # aplica las 19 migraciones
+make pruebas      # deben pasar 584
 ```
 
-Si ves `148 passed`, tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `584 passed`, tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
 | `docker: command not found` | Falta la integración WSL | Docker Desktop → Settings → Resources → WSL Integration |
 | `connection refused` en 5432 | La base no está arriba | `make db` |
-| `port is already allocated` | Otro PostgreSQL ocupa el 5432 | `make db-parar` y vuelve a `make db` |
+| `port is already allocated` | Otro PostgreSQL ocupa el 5432 | detén el servicio de Windows (ver [ARRANQUE-DIARIO §1.4](ARRANQUE-DIARIO.md#14-procesos-fantasma-y-puertos-ocupados)) |
+| `container name is already in use` | Ya no pasa: `make db` rearranca el contenedor existente | — |
 
 Para abrir el proyecto en el editor, **desde la terminal de Ubuntu**:
 
@@ -437,7 +442,9 @@ make lint         # revisa estilo
 make usuario      # crea el primer usuario de oficina (pregunta la contraseña)
 make api          # API con recarga automática (y el panel en /panel)
 make contratos    # regenera vectores y OpenAPI — REVISA EL DIFF
-make db-parar     # apaga y borra el contenedor de la base
+make db-parar     # detiene la base SIN borrar nada
+make db-borrar    # base limpia de verdad (pide confirmación)
+make doctor       # revisa el entorno y dice qué arreglar
 ```
 
 ---
@@ -491,9 +498,10 @@ sudo snap install flutter --classic    # dentro de WSL
 
 Y en Windows: **Android Studio** (`winget install Google.AndroidStudio`), solo por el SDK de Android.
 
-> **Aviso:** WSL2 no tiene acceso directo a USB ni a Bluetooth. Para probar en un teléfono real
-> —que es lo único que vale para Bluetooth y GPS— vas a necesitar `usbipd-win`, o instalar Flutter
-> directamente en Windows para la parte móvil. Se resuelve al llegar a la Fase 3; no lo montes ahora.
+> **WSL2 no ve el USB por sí mismo.** Para probar en un teléfono real —lo único que vale para GPS y
+> Bluetooth— hay que ceder el dispositivo con `usbipd-win`. Los pasos exactos, incluido qué activar en
+> el POCO M5s y qué hacer cuando `adb devices` sale vacío, están en
+> [ARRANQUE-DIARIO §2.1](ARRANQUE-DIARIO.md#21-el-puente-usb-pasar-el-teléfono-de-windows-a-ubuntu).
 
 También necesitarás, físicamente:
 

@@ -96,6 +96,9 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 
 ## Documentación
 
+- [`docs/ARRANQUE-DIARIO.md`](docs/ARRANQUE-DIARIO.md) — **manual operativo**: levantar todo desde cero
+  tras reiniciar la PC, puertos ocupados, procesos fantasma, el puente USB al teléfono, los flujos a
+  validar y el avance del proyecto. El atajo es `make db && make doctor`.
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — propuesta arquitectónica: stack, arquitectura de
   datos y plan de desarrollo por fases.
 - [`docs/MODELO-DATOS.md`](docs/MODELO-DATOS.md) — DDL, protocolo de sincronización e invariantes
@@ -168,6 +171,7 @@ make movil                          # 439 de Dart + 186 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
+make doctor                         # revisa el entorno y dice qué arreglar
 make lint
 make api                            # uvicorn con recarga — el panel en /panel
 ```
