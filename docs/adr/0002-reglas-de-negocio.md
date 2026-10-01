@@ -1532,3 +1532,321 @@ trece lugares y en ninguno escrita. Ahora:
 El contenedor toma su zona **al crearse**, no al arrancar, así que arreglar el sistema no basta si el
 contenedor ya existía. `docs/ARRANQUE-DIARIO.md` §1.2-bis tiene los tres comandos que lo recrean sin
 perder los datos.
+
+---
+
+## 34. Logs, métricas y Sentry: tres caminos por los que se fugan los datos
+
+La Fase 9 añade observabilidad, y lo primero que hay que decir de las tres
+piezas es lo que tienen en común: **sacan datos del sistema**. Un log rota en
+disco y se manda por correo para depurar algo; una métrica se scrapea y se
+guarda en una serie temporal que nadie protege como el panel; un evento de
+Sentry viaja a un servidor de un tercero.
+
+Si en alguno de los tres se cuela la cartera, el dato salió y no vuelve. Así que
+las tres se construyeron al revés de lo habitual: primero el filtro de salida,
+después la función.
+
+### Lo que nunca entra en un log
+
+`core/registro.py` redacta por nombre de clave, y la lista incluye lo obvio
+—`authorization`, `password`, `token`— y dos que no lo son:
+
+- **`payload` y `datos`.** Un lote de sincronización trae nombres de clientes,
+  importes y saldos. Un `logger.info(payload)` descuidado es una copia de la
+  cartera en texto plano, rotando en disco.
+- **Las coordenadas.** Un log de lat/lng es un historial de dónde estuvo una
+  persona. Si hace falta para depurar, está en la tabla del documento, con su
+  control de acceso.
+
+De lo que **sí** se registra —qué operación, de qué equipo, con qué resultado—
+alcanza para contestar la pregunta real de un soporte de DSD: *«el vendedor dice
+que la venta 000142 no llegó, ¿qué pasó con ella?»*. Y para eso hace falta la
+otra mitad: el `peticion_id`.
+
+### El `peticion_id` existe porque ocho camiones sincronizan a la vez
+
+Con logs en texto y sin identificador, las líneas de ocho equipos vienen
+intercaladas y no hay forma de saber cuáles pertenecen a la misma petición. Con
+JSON y un `peticion_id` común, es un filtro.
+
+Se devuelve en `X-Peticion-Id` y se respeta el que venga de fuera: Caddy o el
+túnel pueden poner uno, y conservarlo permite cruzar sus logs con los de aquí.
+
+El contexto vive en un `ContextVar`, y la razón importa: con asyncio hay decenas
+de peticiones intercaladas en el mismo hilo, y una variable global haría que el
+log de una venta saliera con el identificador de otra — que es **peor** que no
+tenerlo, porque manda a investigar la petición equivocada. Y el `default` del
+`ContextVar` es `None` y no `{}`: un diccionario como valor por omisión es UNO
+para todo el proceso.
+
+### Las métricas no llevan dinero, y es una decisión
+
+Era tentador exponer la venta del día: ya está calculada en `tablero_dia` y
+sería un renglón más. Es un error, y conviene dejar escrito por qué: un endpoint
+de monitoreo termina scrapeado por un agente, guardado en una serie temporal y
+graficado en un tablero que nadie protege con el mismo cuidado que el panel. La
+facturación diaria del negocio no viaja por ahí.
+
+Lo que se expone es **salud**: profundidad de colas, equipos rezagados,
+operaciones en cuarentena, latencia y errores. Son los números que contestan
+«¿está funcionando?», que es la pregunta que hace un monitor. Hay una prueba que
+falla si aparece la palabra «venta» o «cartera» en la salida.
+
+Dos detalles con su razón:
+
+- **Apagado por omisión, y 404 cuando está apagado.** Un 401 confirma que hay
+  métricas ahí y que solo falta la credencial. Un token equivocado también
+  devuelve 404, porque si devolviera 401 el endpoint sería enumerable probando
+  tokens.
+- **La ruta se etiqueta con la plantilla**, no con la URL: un UUID de cliente en
+  una etiqueta de métrica es un dato de negocio metido en el sistema de
+  monitoreo, además de una explosión de cardinalidad.
+
+### Sentry: el filtro propio es el que no depende de Sentry
+
+`send_default_pii=False` y `include_local_variables=False` existen y están
+puestos. Pero son opciones de Sentry, y pueden cambiar de nombre o de
+comportamiento entre versiones. Así que hay un `before_send` propio que quita el
+cuerpo de la petición, las cookies, las cabeceras secretas y las variables
+locales de cada marco de la traza — en `procesar_lote`, las locales incluyen el
+sobre completo.
+
+Se prueba como función pura, y eso es el punto: es la última línea entre un
+error de producción y una fuga, y no se puede verificar «mirando el panel de
+Sentry a ver qué llegó». Cuando se mira, el dato ya salió.
+
+Lo que sí viaja es el tipo de excepción, la traza sin valores, la ruta como
+plantilla y el `peticion_id` — que es lo que permite ir al log del servidor
+local y ahí sí ver el detalle, con su control de acceso.
+
+Y está **apagado sin DSN**, con el paquete en un extra de `pyproject.toml`: una
+instalación normal no lo trae. Mandar errores a un tercero es una decisión que se
+toma a propósito, no un valor por omisión que viene activado.
+
+---
+
+## 35. RLS: la segunda cerradura, y los dos roles que la hacen posible
+
+El filtrado por ruta ya existía y funcionaba: está en `deps.py` y en el `WHERE`
+de cada consulta. La migración 0022 no lo reemplaza.
+
+### Qué protege exactamente
+
+No protege de un atacante con la contraseña de la base: quien tiene el rol dueño
+salta las políticas por diseño, y tiene que poder — los workers y el CLI no
+pertenecen a ninguna ruta. Protege de lo que de verdad pasa en un sistema que
+sigue creciendo:
+
+- **Una consulta nueva que olvida el filtro.** Es el error más común y el más
+  silencioso: la pantalla funciona, se ve bien, y devuelve clientes de otra
+  ruta. Con RLS devuelve vacío, que es un bug que alguien reporta el mismo día.
+- **Una inyección SQL**, el día que entre por un parámetro mal tratado: lo que
+  puede leer queda acotado al alcance de quien hizo la petición.
+- **Un `JOIN` que se lleva más de lo que debía.**
+
+Dicho de otra forma: el riesgo más probable de este sistema no es un atacante,
+es un bug nuestro. RLS es la red para ese caso.
+
+### `anonimo` no significa «sin restricción»
+
+Es la decisión que hace que todo lo demás sirva. `obtener_sesion` fija el
+alcance anónimo **al abrir la sesión**, antes de cualquier consulta, y las
+políticas rechazan ese rol por completo. Dos consecuencias:
+
+- una conexión reciclada del pool **nunca** conserva el alcance de la petición
+  anterior;
+- un endpoint que se olvide de autenticar no ve nada, en vez de verlo todo.
+
+Fallo cerrado. Si `anonimo` significara «sin restricción», fijarlo sería peor que
+no fijarlo, y hay una prueba dedicada a eso porque es el camino que nadie mira.
+
+### `set_config(..., false)` y no `SET LOCAL`
+
+`SET LOCAL` vive hasta el final de la transacción, y el alcance se perdería en
+el primer `commit()`. Una petición que escribe y luego lee —el alta de un
+cliente, el cierre de una liquidación— empezaría a recibir resultados vacíos
+**después de guardar**. Ese fallo aparecería solo en algunos endpoints y sería
+dificilísimo de atribuir.
+
+El riesgo de ensuciar la conexión del pool se cierra en el otro extremo, con el
+alcance anónimo del párrafo anterior.
+
+### Dos roles de PostgreSQL
+
+El dueño salta las políticas (salvo con `FORCE ROW LEVEL SECURITY`, que aquí no
+se usa a propósito), y eso es exactamente lo que necesitan Alembic, los workers y
+el CLI. Así que la API se conecta con `dsd_api`: no es dueño de nada, no tiene
+`BYPASSRLS`, no puede hacer DDL.
+
+Sin `DSD_DATABASE_URL_API` los dos son el mismo rol y **las políticas quedan
+escritas y sin efecto**. Se permite en desarrollo, `/salud` lo reporta en `rls`,
+y en producción **la API no arranca**: es el mismo criterio que el secreto JWT.
+Un sistema que cree tener RLS y no lo tiene es peor que uno que sabe que no.
+
+### Lo que no lleva políticas, y por qué
+
+**Las tablas de identidad** (`usuarios`, `dispositivos`, `sesiones`, roles,
+permisos). No es un descuido: la autenticación las lee **antes** de saber quién
+manda la petición —es lo que averigua— con el alcance todavía en `anonimo`.
+Ponerlas bajo política dejaría la API sin poder autenticar a nadie.
+
+**Las vistas.** `v_cartera_cliente` se evalúa con los privilegios de su dueño,
+así que las políticas de sus tablas base no se aplican al consultarla. Queda
+escrito porque es contraintuitivo y porque marca la frontera de lo que la 0022
+cubre: en ese camino, el guardia sigue siendo el `alcanza_ruta()` del endpoint.
+
+### La prueba que ninguna de las otras 705 hacía
+
+Toda la suite corre como el rol dueño, que salta las políticas. Es decir: las
+políticas podrían estar escritas al revés y todo seguiría verde.
+
+Así que `tests/test_rls.py` abre su propia conexión con `dsd_api` y **aplica
+`db/ops/rol_api.sql` tal cual, sin copiarlo**. Si el archivo de operaciones se
+separa de lo que la API necesita —una tabla nueva sin `GRANT`, un
+`DEFAULT PRIVILEGES` olvidado— esas pruebas se ponen rojas antes de que el
+síntoma aparezca al desplegar.
+
+Y la fixture que más importa es la que monta **la API completa** sobre el rol
+restringido, porque el modo de fallo de un despliegue con RLS no es una
+excepción: es que el panel abra en blanco y el pull devuelva cero registros, sin
+ningún error en el log. «No ver nada» es una respuesta válida.
+
+### Un hallazgo: la lista de roles de oficina estaba escrita dos veces, distinta
+
+Escribir las políticas obligó a declarar por tercera vez qué roles ven la
+operación completa, y entonces se notó que las dos primeras no coincidían: el
+filtro de la lista de clientes incluía a `supervisor` y `alcanza_ruta()` no. Un
+supervisor veía a todos los clientes en la lista y recibía un 403 al abrir la
+cartera de uno que no fuera de su ruta.
+
+Nadie lo había notado porque las dos cosas se ven correctas por separado. Se
+unificó en `ROLES_DE_OFICINA` incluyendo a `supervisor` — ese rol ya puede cerrar
+la liquidación de cualquier ruta y leer el payload de cualquier equipo en
+cuarentena, así que el límite por ruta era el que estaba fuera de lugar— y hay
+una prueba que compara la constante de Python con la función de PostgreSQL.
+
+---
+
+## 36. El borrado remoto: nunca se borra lo que no se ha entregado
+
+Revocar un equipo y borrarlo son dos cosas distintas, y mezclarlas cuesta dinero
+real. `estado = 'revocado'` existía desde la 0001 y protege los datos del
+**servidor**: mata los tokens. Lo que no hace es quitar la copia que el teléfono
+lleva dentro — la cartera de su ruta, los precios, las ventas del día— que es
+justo lo que importa cuando el equipo se perdió o la persona se fue.
+
+### Por qué no se borra de inmediato
+
+Un borrado inmediato parece lo más seguro y es la decisión más costosa que se
+podría tomar, porque **el motivo real de un borrado casi nunca es un robo**:
+
+- el vendedor renunció y hay que recuperar el equipo;
+- se cambió de teléfono;
+- el equipo se extravió y aún no aparece.
+
+En los tres casos el aparato puede traer dentro un día de ventas sin
+sincronizar. Borrarlas es perder dinero cobrado, sin registro de a quién se le
+vendió ni cuánto, y sin forma de reconstruirlo.
+
+Y en el caso que **sí** es un robo, borrar rápido no gana nada: la base local
+está cifrada con SQLCipher, su llave vive en el Keystore detrás del PIN, y el PIN
+se verifica con Argon2id de 64 MiB. Quien se lleva el teléfono no puede leer nada.
+
+### El flujo, y la pieza que lo hace posible
+
+```
+ORDENAR → DRENAR → BORRAR → CONFIRMAR
+```
+
+La pieza es que **ordenar deja el equipo en `suspendido`, no en `revocado`**, y
+que un equipo suspendido **puede hacer push y no puede hacer pull**: entrega lo
+que trae y no recibe nada nuevo. Es la única razón de que ese estado exista como
+algo más que una etiqueta.
+
+La excepción se declara en el endpoint del push (`ActorQueEntregaDep`) y no en el
+guardia, a propósito: si el relajado fuera el default, cada endpoint nuevo
+nacería aceptando equipos suspendidos y nadie lo notaría.
+
+Si el teléfono no logra entregar —sin señal, apagado— **no borra nada**: queda
+bloqueado mostrando cuántas operaciones le faltan por subir. Ese número es la
+razón de que el equipo no se haya borrado, y verlo convierte «mi teléfono se
+bloqueó» en «tengo que conectarme». Un equipo bloqueado con datos dentro es
+recuperable; uno borrado, no.
+
+### Ordenar no es confirmar
+
+Son dos columnas y no una. La orden prueba que alguien lo pidió; **solo la
+confirmación prueba que ocurrió**, y entre las dos puede pasar una semana. Una
+orden sin confirmar que lleva días no es un dato que esperar: es una decisión que
+tomar — ir por el equipo.
+
+El teléfono confirma **después** de borrar y no antes: si se cortara la red justo
+ahí, el aparato ya está limpio y la oficina lo ve como «orden sin confirmar»,
+que es el lado correcto del que equivocarse. Confirmar antes dejaría al servidor
+creyendo que el equipo está limpio cuando aún tiene todo dentro.
+
+Y se guarda `borrado_cola_al_confirmar`, que debe ser 0. No se rechaza un número
+distinto: se registra. Si algún día llega uno, es que una versión del cliente se
+saltó la regla, y esa columna es la única forma de notarlo.
+
+### El canal de órdenes, y por qué no va en la respuesta del push
+
+`GET /v1/dispositivos/mio` es un viaje aparte al empezar cada sincronización.
+La razón es concreta: **un equipo al que se le ordenó el borrado y que no tiene
+nada en la cola nunca haría push**, así que nunca recibiría la orden si viniera
+dentro de esa respuesta. Sería la única orden del sistema imposible de entregar a
+su destinatario.
+
+De paso resuelve el otro aviso que no tenía dónde vivir: cuántos días le quedan a
+la credencial. Enterarse a las 6 de la mañana, en la bodega, con el camión
+cargado y sin señal, es un día de ruta perdido — y el servidor lo sabe con días
+de antelación.
+
+Lo que **no** es, es una dependencia dura: si esa consulta falla por cualquier
+cosa que no sea un 401 —un 404 contra un servidor más viejo, un 500— se sigue
+adelante sin órdenes. Convertir un endpoint nuevo en requisito para entregar
+ventas sería cambiar una función de administración por la operación del día.
+
+---
+
+## 37. Tres defectos que solo aparecieron al construir la Fase 9
+
+1. **EL BORRADO REVENTABA LA APP JUSTO DESPUÉS DE FUNCIONAR.** La primera
+   versión de `BaseLocal.borrarTodo()` cerraba la base con `dispose()`. Los
+   providers de la pantalla del vendedor —la cola pendiente, la lista de
+   clientes— se recalculan en el mismo cuadro en que el árbol cambia a la
+   pantalla de «equipo borrado», y leían una base ya cerrada: `Bad state: This
+   database has already been closed`. En un teléfono real es una pantalla roja
+   inmediatamente después de un borrado exitoso, que es el peor momento posible
+   para una excepción porque **parece que el borrado falló**.
+
+   La corrección no fue cerrar más tarde: fue **no cerrar**. Se vacían las tablas
+   con `secure_delete` encendido, se compacta con `VACUUM` y se desenlazan los
+   tres archivos, dejando el handle abierto sobre una base vacía. Las lecturas
+   devuelven cero renglones, la transición es limpia, los archivos ya no existen
+   para nadie más y el inodo desaparece cuando el proceso termina.
+
+   De paso quedó claro que un `DELETE FROM` no bastaba por sí solo: SQLite
+   conserva las páginas liberadas con su contenido, y el `-wal` es una copia de
+   las últimas transacciones — justamente las ventas que se acababan de subir.
+
+2. **UNA RESPUESTA INESPERADA EN LAS ÓRDENES ROMPÍA LA SINCRONIZACIÓN ENTERA.**
+   El `try/on Exception` alrededor de la consulta de órdenes no cubría los
+   `Error`, y un JSON con otra forma —la página de error de un proxy, el HTML de
+   un portal cautivo, un servidor más viejo— produce un `TypeError`, que en Dart
+   es un `Error` y no una `Exception`. El resultado: el vendedor no podía
+   entregar sus ventas porque una consulta administrativa devolvió algo raro.
+
+   Lo encontró una prueba de la app que ya existía, cuyo transporte falso
+   contestaba la forma del pull a cualquier GET. Es uno de los dos o tres
+   lugares del sistema donde `catch (_)` es lo correcto, y ahora está escrito al
+   lado por qué.
+
+3. **LAS FILAS COMPARTIDAS DE `change_log` SE VEÍAN SIN AUTENTICAR.** La
+   política decía `ruta_id IS NULL OR ruta_id = ANY(...)`, y con alcance anónimo
+   `ruta_id IS NULL` es verdadero: una conexión sin autenticar podía leer el
+   catálogo y **la lista de precios completa**. Lo delató la prueba del alcance
+   vacío, que recorre tabla por tabla esperando cero. Se añadió
+   `dsd_usuario() IS NOT NULL` como puerta — un usuario cualquiera, no un rol
+   concreto, porque cualquier perfil con dispositivo registrado hace pull.

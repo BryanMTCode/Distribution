@@ -51,7 +51,8 @@ NAVEGACION = [
     ("/panel/efectividad", "Efectividad"),
     ("/panel/objetivos", "Objetivos"),
     ("/panel/cuarentena", "Cuarentena"),
-    ("/panel/equipo", "Equipo"),
+    ("/panel/equipos", "Teléfonos"),
+    ("/panel/equipo", "Usuarios y rutas"),
 ]
 
 SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]

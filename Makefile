@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -9,6 +9,11 @@ DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 # tarde y el arqueo no cuadraría con lo que la gente tiene en la mano.
 # `make doctor` avisa si el sistema y el contenedor no coinciden.
 ZONA ?= America/Mexico_City
+
+# URLs en forma `postgresql://` (sin el `+psycopg` de SQLAlchemy): las usan
+# pg_dump, pg_restore y psql, que no entienden el dialecto.
+RESPALDO_URL ?= postgresql://postgres:dsd@127.0.0.1:5432/dsd
+ADMIN_URL ?= postgresql://postgres:dsd@127.0.0.1:5432/postgres
 
 # El laboratorio se conecta con psycopg "crudo", sin el prefijo +psycopg de
 # SQLAlchemy. En desarrollo va con el usuario de siempre; en producción, con el
@@ -124,6 +129,12 @@ refrescar-analitica:  ## Recalcula el esquema estrella del laboratorio
 
 recalcular-tablero:  ## Recalcula los modelos de lectura del tablero de Gerencia
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli recalcular-tablero
+
+respaldo:  ## Respalda la base (DSD_RESPALDOS para elegir la carpeta)
+	DSD_RESPALDO_URL="$(RESPALDO_URL)" bash scripts/respaldar.sh
+
+simulacro:  ## Restaura el último respaldo en una base desechable y lo verifica
+	DSD_SIMULACRO_ADMIN_URL="$(ADMIN_URL)" bash scripts/simulacro.sh
 
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal

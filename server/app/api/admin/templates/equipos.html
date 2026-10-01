@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block titulo %}Equipos{% endblock %}
+{% block contenido %}
+<h1>Equipos</h1>
+<p class="subtitulo">
+  Los teléfonos de la ruta, ordenados por <strong>rezago</strong>: arriba lo que
+  urge. Un equipo que no ha subido nada vuelve las cifras del día un piso y no un
+  total, y uno al que se le acaba el acceso deja al vendedor parado en la bodega.
+</p>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta {% if rezagados %}aviso{% endif %}">
+    <div class="numero">{{ rezagados }}</div>
+    <div class="etiqueta">equipos sin subir hoy</div>
+    <div class="sutil" style="margin-top:6px">
+      Cada uno puede traer ventas que no están en ninguna cifra del día.
+    </div>
+  </div>
+  <div class="tarjeta {% if por_caducar %}alerta{% endif %}">
+    <div class="numero">{{ por_caducar }}</div>
+    <div class="etiqueta">accesos por caducar</div>
+    <div class="sutil" style="margin-top:6px">
+      {# Enterarse a las 6 de la mañana con el camión cargado es un día perdido. #}
+      Les quedan 2 días o menos de login sin conexión. Avísale al vendedor para
+      que se conecte una vez.
+    </div>
+  </div>
+  <div class="tarjeta {% if borrados_pendientes %}alerta{% endif %}">
+    <div class="numero">{{ borrados_pendientes }}</div>
+    <div class="etiqueta">borrados sin confirmar</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if borrados_pendientes %}
+        El teléfono no se ha conectado para ejecutarlos. Si lleva días, es una
+        decisión que tomar —ir por el equipo—, no un dato que esperar.
+      {% else %}
+        Ninguna orden de borrado pendiente.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Por equipo</h2>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Equipo</th>
+      <th>Quién</th>
+      <th>Estado</th>
+      <th class="numero">Último push</th>
+      <th class="numero">Acceso sin red</th>
+      {% if puede_editar %}<th>Acciones</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for e in equipos %}
+    <tr>
+      <td>
+        <strong>{{ e.etiqueta }}</strong>
+        {% if e.modelo %}<br><span class="sutil">{{ e.modelo }}</span>{% endif %}
+        {% if e.app_version %}
+          <br><span class="sutil mono">app {{ e.app_version }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {{ e.usuario_nombre }}<br>
+        <span class="sutil mono">{{ e.usuario_codigo }}</span>
+        <span class="sutil">· {{ e.rol_codigo }}</span>
+      </td>
+      <td>
+        {% if e.borrado_pendiente %}
+          <span class="etiqueta-motivo">borrado ordenado</span><br>
+          <span class="sutil">
+            {{ e.borrado_motivo }}
+            {% if e.borrado_pedido_por %}<br>por {{ e.borrado_pedido_por }}{% endif %}
+          </span>
+        {% elif e.borrado_confirmado_en %}
+          <span class="sutil">
+            {# Lo único que prueba que el borrado ocurrió. #}
+            Borrado confirmado por el teléfono<br>
+            {{ e.borrado_confirmado_en.strftime('%d/%m/%Y %H:%M') }}
+            {% if e.borrado_cola_al_confirmar is not none %}
+              · cola al borrar: {{ e.borrado_cola_al_confirmar }}
+            {% endif %}
+          </span>
+        {% else %}
+          {{ etiqueta_estado.get(e.estado, e.estado) }}
+          {% if e.revocado_motivo %}
+            <br><span class="sutil">{{ e.revocado_motivo }}</span>
+          {% endif %}
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if e.ultima_sync_push_en %}
+          {{ e.ultima_sync_push_en.strftime('%d/%m %H:%M') }}
+          <br><span class="sutil">
+            {% if e.al_dia %}hoy{% else %}hace {{ e.dias_sin_subir }} día(s){% endif %}
+          </span>
+        {% else %}
+          <span class="sutil">nunca</span>
+        {% endif %}
+        {% if e.cola_pendiente is not none and e.cola_pendiente > 0 %}
+          <br><span class="etiqueta-motivo">{{ e.cola_pendiente }} por subir</span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if e.dias_restantes is none %}
+          <span class="sutil">—</span>
+        {% elif e.dias_restantes < 0 %}
+          <strong>caducado</strong>
+          <br><span class="sutil">tiene que conectarse para entrar</span>
+        {% else %}
+          {{ e.dias_restantes }} día(s)
+          <br><span class="sutil">de {{ e.dias_max_offline }}</span>
+        {% endif %}
+      </td>
+      {% if puede_editar %}
+      <td>
+        {% if e.borrado_pendiente %}
+          <form method="post" action="/panel/equipos/{{ e.id }}/borrado/cancelar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="secundario">Cancelar el borrado</button>
+          </form>
+          <span class="sutil">Solo mientras el teléfono no lo haya ejecutado.</span>
+        {% elif not e.borrado_confirmado_en %}
+          <form method="post" action="/panel/equipos/{{ e.id }}/estado"
+                style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            {% if e.estado == 'activo' %}
+              <input type="hidden" name="destino" value="suspendido">
+              <button type="submit" class="secundario">Suspender</button>
+            {% else %}
+              <input type="hidden" name="destino" value="activo">
+              <button type="submit" class="secundario">Reactivar</button>
+            {% endif %}
+          </form>
+
+          {% if e.estado != 'revocado' %}
+          <form method="post" action="/panel/equipos/{{ e.id }}/estado"
+                style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="destino" value="revocado">
+            <input type="text" name="motivo" placeholder="motivo" style="width:130px"
+                   aria-label="Motivo de la revocación de {{ e.etiqueta }}">
+            <button type="submit" class="peligro">Revocar</button>
+          </form>
+          {% endif %}
+
+          <details style="margin-top:10px">
+            <summary class="sutil">Ordenar borrado remoto</summary>
+            <p class="sutil" style="margin:8px 0">
+              {# La distinción que más cuesta si se confunde. #}
+              <strong>Revocar no borra.</strong> Revocar mata los tokens y protege
+              los datos del servidor; esto quita la copia que el teléfono lleva
+              dentro. El equipo <strong>entrega primero</strong> lo que trae y
+              borra después: nunca se borra lo que no se ha subido.
+            </p>
+            <form method="post" action="/panel/equipos/{{ e.id }}/borrado">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <div class="campo">
+                <label>Motivo</label>
+                <input type="text" name="motivo"
+                       placeholder="el vendedor dejó la empresa"
+                       aria-label="Motivo del borrado de {{ e.etiqueta }}">
+              </div>
+              <div class="campo">
+                <label>Escribe {{ confirmacion }} para confirmar</label>
+                <input type="text" name="confirmacion" autocomplete="off"
+                       aria-label="Confirmación del borrado de {{ e.etiqueta }}">
+                <div class="ayuda">No se deshace una vez que el teléfono lo ejecuta.</div>
+              </div>
+              <button type="submit" class="peligro">Ordenar el borrado</button>
+            </form>
+          </details>
+        {% else %}
+          <span class="sutil">Nada que hacer: este equipo ya se borró.</span>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6">
+      <div class="vacio">
+        No hay equipos registrados. Un teléfono se registra desde la app, la
+        primera vez que entra con señal.
+      </div>
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Qué significa cada acción</h2>
+<p class="sutil">
+  <strong>Suspender</strong> — el equipo deja de recibir datos nuevos pero
+  <em>puede seguir subiendo</em> lo que trae. Es reversible y es el estado en que
+  queda uno al que se le ordenó el borrado, precisamente para que pueda entregar.
+</p>
+<p class="sutil">
+  <strong>Revocar</strong> — sus tokens mueren en la siguiente petición. Protege
+  los datos del <em>servidor</em>. No toca la copia que el teléfono lleva dentro.
+</p>
+<p class="sutil">
+  <strong>Ordenar el borrado</strong> — el teléfono borra su base cifrada y su
+  credencial, <em>después</em> de subir todo lo pendiente, y lo confirma. Mientras
+  no confirme, los datos siguen en el aparato: un equipo bloqueado con datos
+  dentro es recuperable, uno borrado no.
+</p>
+<p class="sutil">
+  La columna <strong>«acceso sin red»</strong> son los días que le quedan al login
+  offline. Al llegar a cero el vendedor necesita conectarse una vez para renovar
+  la credencial; el número está en su ficha de usuario (por omisión
+  {{ dias_max_omision }} días).
+</p>
+{% endblock %}

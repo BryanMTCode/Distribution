@@ -32,6 +32,7 @@ library;
 import 'dart:math' as math;
 
 import 'aplicador_deltas.dart';
+import 'ordenes.dart';
 import 'outbox.dart';
 import 'sync_cliente.dart';
 import 'transporte.dart';
@@ -52,6 +53,22 @@ enum FinDeSync {
 
   /// El servidor está con problemas. Se reintenta más tarde.
   servidorCaido,
+
+  /// Hay orden de borrado y la cola ya quedó VACÍA: toca borrar.
+  ///
+  /// El sincronizador no borra nada por su cuenta — no conoce el archivo de la
+  /// base ni el Keystore— así que devuelve esto y la app ejecuta el borrado y
+  /// después confirma. Separarlo así tiene una ventaja que importa: el borrado
+  /// se puede probar sin red y la decisión de borrar se puede probar sin tocar
+  /// el disco.
+  borradoListo,
+
+  /// Hay orden de borrado y TODAVÍA queda cola por entregar.
+  ///
+  /// No se borra nada. El equipo queda bloqueado mostrando cuántas operaciones
+  /// le faltan por subir: un equipo bloqueado con datos dentro es recuperable,
+  /// uno borrado no.
+  borradoPendiente,
 }
 
 class ResultadoSincronizacion {
@@ -63,6 +80,7 @@ class ResultadoSincronizacion {
     this.deltasDesconocidos = 0,
     this.cursor = 0,
     this.detalle,
+    this.ordenes,
   });
 
   final FinDeSync fin;
@@ -72,6 +90,11 @@ class ResultadoSincronizacion {
   final int deltasDesconocidos;
   final int cursor;
   final String? detalle;
+
+  /// Lo que el servidor ordenó al empezar la corrida. `null` si no se pudo
+  /// preguntar — sin red, o contra un servidor más viejo que no conoce el
+  /// endpoint. Que sea nulo NO detiene la sincronización: ver `sincronizar`.
+  final OrdenesDelServidor? ordenes;
 
   bool get huboActividad =>
       sobresConfirmados > 0 || sobresEnCuarentena > 0 || deltasAplicados > 0;
@@ -123,6 +146,60 @@ class Sincronizador {
     var enCuarentena = 0;
     var tandas = 0;
 
+    // ---- ÓRDENES: qué dice el servidor del equipo -----------------------
+    //
+    // Va primero porque de aquí sale si hay que borrarse, y porque un equipo
+    // suspendido no debe intentar el pull (el servidor se lo niega con 401, y
+    // ese 401 se vería como sesión vencida).
+    //
+    // Y NO es una dependencia dura de la sincronización: si la consulta falla
+    // por cualquier cosa que no sea un 401 —un 404 contra un servidor más
+    // viejo, un 500— se sigue adelante sin órdenes. Convertir un endpoint
+    // nuevo en requisito para entregar ventas sería cambiar una función de
+    // administración por la operación del día.
+    OrdenesDelServidor? ordenes;
+    try {
+      ordenes = await _cliente.ordenes();
+    } on SesionInvalida catch (e) {
+      return ResultadoSincronizacion(
+        fin: FinDeSync.sesionInvalida,
+        cursor: cursorActual,
+        detalle: e.toString(),
+        // Las órdenes viajan aunque la corrida termine mal: el equipo con
+        // orden de borrado tiene que quedar bloqueado también cuando se
+        // cayó la red a media entrega, no solo cuando logró vaciarse.
+        ordenes: ordenes,
+      );
+    } on ErrorDeRed catch (e) {
+      // Sin red tampoco se va a poder pushear ni pullear. Se corta aquí para
+      // no dejar diez reintentos de red encadenados con el teléfono en la mano.
+      return ResultadoSincronizacion(
+        fin: FinDeSync.sinRed,
+        cursor: cursorActual,
+        detalle: e.mensaje,
+        // Las órdenes viajan aunque la corrida termine mal: el equipo con
+        // orden de borrado tiene que quedar bloqueado también cuando se
+        // cayó la red a media entrega, no solo cuando logró vaciarse.
+        ordenes: ordenes,
+      );
+    } catch (_) {
+      // Cualquier otra cosa: se sigue sin órdenes.
+      //
+      // `catch (_)` y no `on Exception`, y es deliberado — es uno de los dos o
+      // tres lugares del sistema donde tragarse TODO es lo correcto. La versión
+      // con `on Exception` dejaba pasar los `Error`, y un JSON con otra forma
+      // —la página de error de un proxy, el HTML de un portal cautivo, un
+      // servidor más viejo que contesta otra cosa— produce un `TypeError`, que
+      // es un `Error` y no una `Exception`.
+      //
+      // El resultado era que una respuesta inesperada en esta consulta rompía
+      // la sincronización COMPLETA: el vendedor no podía entregar sus ventas
+      // porque una consulta administrativa devolvió algo raro. Lo encontró una
+      // prueba de la app que tenía un transporte falso contestando la forma del
+      // pull a cualquier GET.
+      ordenes = null;
+    }
+
     // ---- PUSH: primero sale lo del vendedor -----------------------------
     // El orden importa. Si se trajeran los deltas primero, una actualización de
     // precios podría pisar el espejo mientras la venta que se hizo con el
@@ -162,6 +239,10 @@ class Sincronizador {
           sobresEnCuarentena: enCuarentena,
           cursor: cursorActual,
           detalle: e.mensaje,
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       } on SesionInvalida catch (e) {
         return ResultadoSincronizacion(
@@ -170,6 +251,10 @@ class Sincronizador {
           sobresEnCuarentena: enCuarentena,
           cursor: cursorActual,
           detalle: e.toString(),
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       } on LoteRechazado catch (e) {
         // Reenviar lo mismo fallaría igual: a cuarentena y seguimos.
@@ -186,6 +271,10 @@ class Sincronizador {
           sobresEnCuarentena: enCuarentena,
           cursor: cursorActual,
           detalle: e.toString(),
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       }
 
@@ -207,6 +296,41 @@ class Sincronizador {
       }
     }
 
+    // ---- BORRADO: solo cuando ya no queda nada que entregar -------------
+    //
+    // Es la regla que gobierna el borrado remoto: NUNCA SE BORRA LO QUE NO SE
+    // HA ENTREGADO. Se comprueba DESPUÉS del push —para darle la oportunidad de
+    // vaciarse en esta misma corrida— y ANTES del pull, porque un equipo que se
+    // va a borrar no tiene por qué bajar nada más.
+    if (ordenes != null && ordenes.borrar) {
+      final pendientes = _outbox.resumen().pendientes;
+      return ResultadoSincronizacion(
+        fin: pendientes == 0
+            ? FinDeSync.borradoListo
+            : FinDeSync.borradoPendiente,
+        sobresConfirmados: confirmados,
+        sobresEnCuarentena: enCuarentena,
+        cursor: cursorActual,
+        ordenes: ordenes,
+        detalle: ordenes.borradoMotivo,
+      );
+    }
+
+    // Un equipo suspendido entrega y no recibe. Intentar el pull le daría un
+    // 401 que el sincronizador traduciría a «sesión vencida», y mandaría al
+    // vendedor a teclear su PIN para arreglar algo que no se arregla así.
+    if (ordenes != null && ordenes.soloEntrega) {
+      return ResultadoSincronizacion(
+        fin: _outbox.resumen().pendientes > 0
+            ? FinDeSync.parcial
+            : FinDeSync.completa,
+        sobresConfirmados: confirmados,
+        sobresEnCuarentena: enCuarentena,
+        cursor: cursorActual,
+        ordenes: ordenes,
+      );
+    }
+
     // ---- PULL: después entra lo del servidor ----------------------------
     var cursor = cursorActual;
     var aplicados = 0;
@@ -226,6 +350,10 @@ class Sincronizador {
           deltasDesconocidos: desconocidos,
           cursor: cursor,
           detalle: e.mensaje,
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       } on SesionInvalida catch (e) {
         return ResultadoSincronizacion(
@@ -234,6 +362,10 @@ class Sincronizador {
           deltasAplicados: aplicados,
           cursor: cursor,
           detalle: e.toString(),
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       } on ServidorConProblemas catch (e) {
         return ResultadoSincronizacion(
@@ -242,6 +374,10 @@ class Sincronizador {
           deltasAplicados: aplicados,
           cursor: cursor,
           detalle: e.toString(),
+          // Las órdenes viajan aunque la corrida termine mal: el equipo con
+          // orden de borrado tiene que quedar bloqueado también cuando se
+          // cayó la red a media entrega, no solo cuando logró vaciarse.
+          ordenes: ordenes,
         );
       }
 
@@ -267,6 +403,10 @@ class Sincronizador {
       deltasAplicados: aplicados,
       deltasDesconocidos: desconocidos,
       cursor: cursor,
+      // Las órdenes viajan incluso cuando no hay nada que hacer con ellas: de
+      // ahí sale el aviso de «tu acceso vence en 2 días», que no es una orden
+      // pero sí algo que el vendedor tiene que ver.
+      ordenes: ordenes,
     );
   }
 

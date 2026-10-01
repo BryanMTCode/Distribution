@@ -19,6 +19,7 @@ export 'src/esquema_local.dart';
 export 'src/folios.dart';
 export 'src/merma.dart';
 export 'src/no_drop.dart';
+export 'src/ordenes.dart';
 export 'src/outbox.dart';
 export 'src/precio.dart';
 export 'src/sincronizador.dart';

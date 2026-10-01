@@ -83,8 +83,15 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
 | **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
+| **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
+| **Métricas Prometheus** de salud — apagadas por omisión, y sin dinero dentro | ✅ incluidas en esas 28 |
+| **Sentry opcional** con filtro de salida propio, probado como función pura | ✅ sin payload, sin locales |
+| **Seguridad por renglón (RLS)** con rol restringido — la segunda cerradura | ✅ 25 pruebas contra `dsd_api` |
+| **Borrado remoto** — entrega primero, borra después, y lo confirma | ✅ 25 del servidor + 16 de Dart |
+| **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
+| **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
 
-**681 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **457 de Dart** y **212 de widget**, todas en verde.
+**759 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
 
 ## Stack
 
@@ -109,6 +116,12 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
   datos y plan de desarrollo por fases.
 - [`docs/MODELO-DATOS.md`](docs/MODELO-DATOS.md) — DDL, protocolo de sincronización e invariantes
   verificadas.
+- [`docs/RESPALDOS.md`](docs/RESPALDOS.md) — respaldar, el **simulacro de restauración**, sacar la copia
+  del edificio y cómo restaurar de verdad el día que haga falta. *Un respaldo que nunca restauraste no
+  es un respaldo.*
+- [`docs/SEGURIDAD-OPERATIVA.md`](docs/SEGURIDAD-OPERATIVA.md) — qué hacer cuando un teléfono se pierde
+  o un vendedor se va, el borrado remoto paso a paso, los tres roles de PostgreSQL, rotación de
+  secretos y qué resuelve MDM (y qué no).
 - [`docs/adr/`](docs/adr/) — decisiones de arquitectura registradas.
 
 ## Estructura
@@ -127,7 +140,11 @@ server/
                      cobranza.py      arqueo del día, cobros marcados y antigüedad
                      efectividad.py   visitas, no-drops por categoría y mermas por motivo
                      objetivos.py     la meta mensual de cada ruta (sin ella el tablero no compara)
+                     equipos.py       los teléfonos: rezago, suspensión y borrado remoto
     core/            config, seguridad (Argon2id + JWT), sesión de BD
+                     registro.py      logs estructurados y el peticion_id
+                     metricas.py      /metrics en formato Prometheus, sin dinero
+                     observabilidad.py Sentry opcional, con filtro de salida
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
                      liquidacion.py   la ecuación del cierre del día
@@ -141,7 +158,7 @@ server/
   db/
     migrations/      SQL: la FUENTE DE VERDAD del esquema
     alembic/         aplica ese SQL, no lo genera
-    ops/             scripts operativos (rol de solo lectura)
+    ops/             scripts operativos (rol de la API sin BYPASSRLS, rol analítico)
     tests/           prueba de humo de las invariantes
   tests/             suite de pytest
 mobile/
@@ -152,7 +169,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, login en línea
-    test/            457 pruebas que corren en segundos
+    test/            475 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -160,13 +177,13 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial,
                      gerencia/ (tablero, mapa del día)
-    test/            212 pruebas de widget, sin emulador
+    test/            220 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
-docs/                arquitectura, modelo de datos y ADRs
+docs/                arquitectura, modelo de datos, ADRs, respaldos y seguridad operativa
 ```
 
 ## Desarrollo
@@ -178,8 +195,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 681 pruebas de Python
-make movil                          # 457 de Dart + 212 de widget
+make pruebas                        # 759 pruebas de Python
+make movil                          # 475 de Dart + 220 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

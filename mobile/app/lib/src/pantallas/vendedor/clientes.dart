@@ -177,11 +177,21 @@ String? _mensajeDeSync(EstadoSync estado) => switch (estado) {
       SyncInactiva() || SyncEnCurso() => null,
       SyncSinSesionEnLinea() =>
         'Entraste sin señal. Conéctate para enviar lo pendiente.',
+      // Los dos estados del borrado remoto (Fase 9) no se resuelven con un
+      // aviso: tienen pantalla propia, porque no hay nada más que hacer en esta.
+      // Ver `PortalPorRol`.
+      SyncEquipoBorrado() || SyncBorradoPendiente() => null,
       SyncTerminada(:final resultado) => switch (resultado.fin) {
           FinDeSync.sinRed => 'Sin señal. Nada se perdió, se reintenta luego.',
           FinDeSync.sesionInvalida => 'Tu sesión venció. Vuelve a entrar.',
           FinDeSync.servidorCaido => 'El servidor no responde. Se reintenta luego.',
           FinDeSync.parcial => 'Se envió una parte. Falta cola por subir.',
+          // Los dos de borrado no llegan aquí: `ControladorSync` los convierte
+          // en `SyncEquipoBorrado` / `SyncBorradoPendiente` antes de publicar
+          // el estado. Se enumeran porque el switch es exhaustivo, y así un
+          // valor nuevo del enum rompe la compilación en vez de caer en un
+          // `default` silencioso.
+          FinDeSync.borradoListo || FinDeSync.borradoPendiente => null,
           FinDeSync.completa => resultado.huboActividad
               ? _resumenCompleto(resultado)
               : 'Todo al día.',

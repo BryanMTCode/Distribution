@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import 'ordenes.dart';
 import 'transporte.dart';
 
 /// Lo que el servidor dijo de un sobre.
@@ -180,6 +181,37 @@ class ClienteSync {
     return RespuestaPull.deJson(
       jsonDecode(respuesta.cuerpo) as Map<String, Object?>,
     );
+  }
+
+  /// Lo que el servidor le ordena al equipo. Se pregunta al EMPEZAR la corrida.
+  ///
+  /// Un equipo al que se le ordenó el borrado y que no tiene nada en la cola
+  /// nunca haría push, así que nunca recibiría la orden si viniera dentro de la
+  /// respuesta del push. De ahí que exista este viaje aparte.
+  Future<OrdenesDelServidor> ordenes() async {
+    final respuesta = await _transporte.obtener('/v1/dispositivos/mio');
+    _revisar(respuesta);
+    return OrdenesDelServidor.deJson(
+      jsonDecode(respuesta.cuerpo) as Map<String, Object?>,
+    );
+  }
+
+  /// Confirma que el equipo ya borró su base y su credencial.
+  ///
+  /// `colaPendiente` debe ser 0: el teléfono no borra con cola pendiente. Se
+  /// manda de todas formas para que el servidor pueda DEMOSTRARLO después — si
+  /// algún día llega un número distinto, es que una versión del cliente se
+  /// saltó la regla.
+  ///
+  /// Se llama DESPUÉS de borrar y no antes: si se cortara la red justo aquí, el
+  /// teléfono ya está limpio y la oficina lo verá como «orden sin confirmar»,
+  /// que es el lado correcto del que equivocarse.
+  Future<void> confirmarBorrado({required int colaPendiente}) async {
+    final respuesta = await _transporte.post(
+      '/v1/dispositivos/mio/borrado',
+      {'cola_pendiente': colaPendiente},
+    );
+    _revisar(respuesta);
   }
 
   void _revisar(RespuestaHttp r) {

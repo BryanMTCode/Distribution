@@ -50,7 +50,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, cargar_permisos
 from app.core.config import obtener_config
-from app.core.db import obtener_sesion
+from app.core.db import fijar_alcance, obtener_sesion
+from app.core.registro import ampliar_contexto
 from app.infra.models import Usuario
 
 COOKIE = "dsd_panel"
@@ -173,12 +174,31 @@ async def actor_web_opcional(
         return None
 
     permisos = await cargar_permisos(sesion, usuario)
-    return Actor(
+    rutas = frozenset(
+        (
+            await sesion.execute(
+                text("SELECT ruta_id FROM usuarios_rutas WHERE usuario_id = :u"),
+                {"u": usuario.id},
+            )
+        ).scalars()
+    )
+    actor = Actor(
         usuario_id=usuario.id,
         rol=usuario.rol_codigo,
         permisos=frozenset(permisos),
+        rutas=rutas,
         almacen_id=usuario.almacen_id,
     )
+
+    # El alcance baja a PostgreSQL igual que en la API (Fase 9), y aquí NO es
+    # opcional: `obtener_sesion` deja la sesión en `anonimo`, que las políticas
+    # de la 0022 rechazan. Sin esta línea todas las pantallas del panel saldrían
+    # vacías — y el síntoma, «el panel ya no muestra nada», no apuntaría a RLS.
+    await fijar_alcance(
+        sesion, rol=actor.rol, usuario_id=actor.usuario_id, rutas=actor.rutas
+    )
+    ampliar_contexto(usuario_id=str(actor.usuario_id), rol=actor.rol)
+    return actor
 
 
 async def actor_web(

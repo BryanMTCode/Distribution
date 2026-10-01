@@ -399,9 +399,15 @@ Future<BaseLocal> montarApp(
   DateTime? ahora,
   void Function(BaseLocal base)? sembrar,
   List<Override> extras = const [],
+  /// Un almacén seguro propio, para poder inspeccionarlo después de la prueba.
+  ///
+  /// Lo necesitan las pruebas del borrado remoto: hay que comprobar que la
+  /// credencial y la llave de la base DESAPARECIERON, y con el almacén interno
+  /// no hay forma de mirarlo desde fuera.
+  AlmacenSeguroEnMemoria? almacenPropio,
 }) async {
   final base = BaseLocal.enMemoria();
-  final almacen = AlmacenSeguroEnMemoria();
+  final almacen = almacenPropio ?? AlmacenSeguroEnMemoria();
   if (credencial != null) {
     await almacen.escribir('credencial_local_v1', jsonEncode(credencial));
   }

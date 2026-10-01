@@ -51,6 +51,15 @@ services:
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO:?genera uno con 'openssl rand -hex 32'}
       DSD_ENTORNO: produccion
       TZ: ${DSD_ZONA:-America/Mexico_City}
+      # Endurecimiento (Fase 9). El rol restringido es OBLIGATORIO en
+      # producción: sin él la API no arranca, porque las políticas por renglón
+      # quedarían escritas y sin efecto. Se crea con db/ops/rol_api.sql.
+      DSD_DATABASE_URL_API: postgresql+psycopg://dsd_api:${DSD_CLAVE_API:?falta DSD_CLAVE_API, crea el rol con db/ops/rol_api.sql}@postgres:5432/dsd
+      # Vacío = /metrics no existe (404). Ponerlo solo si hay un monitor.
+      DSD_METRICAS_TOKEN: ${DSD_METRICAS_TOKEN:-}
+      # Vacío = Sentry apagado. Manda errores a un tercero: es una decisión.
+      DSD_SENTRY_DSN: ${DSD_SENTRY_DSN:-}
+      DSD_VERSION: ${DSD_VERSION:-0.1.0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +80,11 @@ services:
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO}
       DSD_ENTORNO: produccion
       TZ: ${DSD_ZONA:-America/Mexico_City}
+      # El worker NO usa el rol restringido, y es deliberado: recalcula el
+      # tablero y refresca la analítica, que son agregados de TODA la operación
+      # y no pertenecen a ninguna ruta. Se conecta con el rol dueño, que salta
+      # las políticas por ser dueño de las tablas (ver ADR §35).
+      DSD_SENTRY_DSN: ${DSD_SENTRY_DSN:-}
     depends_on:
       migraciones:
         condition: service_completed_successfully

@@ -83,6 +83,29 @@ class SyncSinSesionEnLinea extends EstadoSync {
   const SyncSinSesionEnLinea();
 }
 
+/// La oficina ordenó borrar este equipo y el teléfono YA LO HIZO (Fase 9).
+///
+/// Es el final del camino para esta instalación: no hay base, no hay
+/// credencial, no hay nada que mostrar. La pantalla lo dice y no ofrece salida,
+/// porque no hay ninguna que dar desde el teléfono.
+class SyncEquipoBorrado extends EstadoSync {
+  const SyncEquipoBorrado(this.motivo);
+
+  final String? motivo;
+}
+
+/// Hay orden de borrado y todavía queda cola por entregar.
+///
+/// NO se borró nada. El equipo queda bloqueado mostrando cuántas operaciones le
+/// faltan por subir: un equipo bloqueado con datos dentro es recuperable, uno
+/// borrado no.
+class SyncBorradoPendiente extends EstadoSync {
+  const SyncBorradoPendiente({required this.pendientes, this.motivo});
+
+  final int pendientes;
+  final String? motivo;
+}
+
 class ControladorSync extends Notifier<EstadoSync> {
   @override
   EstadoSync build() => const SyncInactiva();
@@ -135,7 +158,66 @@ class ControladorSync extends Notifier<EstadoSync> {
     ref.invalidate(resumenColaProvider);
     ref.invalidate(clientesProvider);
     ref.invalidate(cursorProvider);
+
+    // ---- Orden de borrado (Fase 9) --------------------------------------
+    //
+    // Se atiende al final, después de guardar el cursor y la hora: si la app
+    // muriera a media secuencia, lo ya entregado queda registrado igual.
+    final ordenes = resultado.ordenes;
+    if (ordenes != null && ordenes.borrar) {
+      if (resultado.fin == FinDeSync.borradoListo) {
+        state = await _borrarEsteEquipo(
+          cliente: ClienteSync(transporte),
+          motivo: ordenes.borradoMotivo,
+        );
+        return;
+      }
+      // Hay orden y queda cola: NO se borra nada. La regla completa está en la
+      // migración 0023 — nunca se borra lo que no se ha entregado.
+      state = SyncBorradoPendiente(
+        pendientes: ref.read(outboxProvider).resumen().pendientes,
+        motivo: ordenes.borradoMotivo,
+      );
+      return;
+    }
+
     state = SyncTerminada(resultado);
+  }
+
+  /// Borra la base y la credencial, y recién entonces lo confirma.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// EL ORDEN DE ESTAS TRES COSAS ES LA PARTE DELICADA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// 1. **La credencial primero.** Es lo que permite entrar sin red. Si se
+  ///    cortara la luz entre el paso 1 y el 2, queda un teléfono con datos y
+  ///    sin forma de abrirlos — incómodo pero seguro. Al revés (base primero,
+  ///    credencial después) quedaría un teléfono que todavía entra, a una base
+  ///    que ya no existe, y la app reventaría al abrir.
+  /// 2. **La base después.** Se borra el archivo, no las tablas.
+  /// 3. **La confirmación al final, y si falla no se deshace nada.** El
+  ///    teléfono ya está limpio; la oficina lo verá como «orden sin confirmar»,
+  ///    que es el lado correcto del que equivocarse. Confirmar ANTES dejaría al
+  ///    servidor creyendo que el equipo está limpio cuando aún tiene todo.
+  Future<EstadoSync> _borrarEsteEquipo({
+    required ClienteSync cliente,
+    required String? motivo,
+  }) async {
+    await ref.read(repoCredencialProvider).olvidar();
+    await ref.read(almacenSeguroProvider).borrar('llave_base_local');
+    await ref.read(almacenSeguroProvider).borrar(claveRefreshToken);
+    ref.read(baseLocalProvider).borrarTodo();
+
+    try {
+      await cliente.confirmarBorrado(colaPendiente: 0);
+    } on Exception {
+      // Da igual por qué falló: no hay nada que reintentar desde aquí, porque
+      // ya no hay credencial con la que volver a entrar. La oficina lo ve como
+      // pendiente de confirmar y decide.
+    }
+
+    ref.read(tokenProvider.notifier).state = null;
+    return SyncEquipoBorrado(motivo);
   }
 }
 

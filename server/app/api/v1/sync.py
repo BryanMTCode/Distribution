@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from app.api.deps import ActorDep, SesionDep
+from app.api.deps import ActorDep, ActorQueEntregaDep, SesionDep
 from app.api.esquemas import EntradaBase
 from app.domain.sync.sobres import (
     MAX_SOBRES_POR_LOTE,
@@ -92,7 +92,9 @@ class LoteSalida(BaseModel):
 
 
 @router.post("/push", response_model=LoteSalida)
-async def push(entrada: LoteEntrada, actor: ActorDep, sesion: SesionDep) -> LoteSalida:
+async def push(
+    entrada: LoteEntrada, actor: ActorQueEntregaDep, sesion: SesionDep
+) -> LoteSalida:
     """Recibe la cola del dispositivo.
 
     Reenviar el mismo lote es inofensivo por diseño: cada sobre lleva su llave
@@ -103,6 +105,22 @@ async def push(entrada: LoteEntrada, actor: ActorDep, sesion: SesionDep) -> Lote
     por sobre va en `resultados`, y lo rechazado quedó en cuarentena del lado
     del servidor. Devolver un error de transporte por un sobre malo haría que
     el dispositivo reintentara el lote completo para siempre.
+
+    ────────────────────────────────────────────────────────────────────────
+    ES EL ÚNICO ENDPOINT QUE ACEPTA UN EQUIPO SUSPENDIDO
+    ────────────────────────────────────────────────────────────────────────
+    `ActorQueEntregaDep` en vez de `ActorDep`, y la excepción está declarada
+    aquí —no en el guardia— para que un endpoint nuevo no la herede sin
+    quererlo.
+
+    La razón es la regla del borrado remoto: **nunca se borra lo que no se ha
+    entregado** (migración 0023). Un equipo al que se le ordenó el borrado pasa
+    a `suspendido` precisamente para que pueda subir las ventas que lleva
+    dentro antes de borrarlas. Si este endpoint lo rechazara, cada borrado
+    remoto costaría un día de operación.
+
+    Lo que un equipo suspendido NO puede hacer es `pull`: entrega y no recibe
+    nada nuevo. Ese endpoint sigue con el guardia estricto.
     """
     actor.exigir("ventas.crear")
     if actor.dispositivo_id is None:

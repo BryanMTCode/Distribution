@@ -40,6 +40,17 @@ analitica = [
     "pandas>=2.2",
 ]
 
+# Sentry (Fase 9). Extra aparte y NO incluido en `dev` a propósito: manda los
+# errores a un servidor de un tercero, y eso es una decisión que se toma al
+# desplegar, no algo que venga instalado porque sí.
+#
+# Sin `DSD_SENTRY_DSN` el módulo no lo importa, así que una instalación sin este
+# extra funciona igual — `app/core/observabilidad.py` lo avisa en el log si el
+# DSN está puesto y el paquete falta, en vez de no arrancar.
+observabilidad = [
+    "sentry-sdk>=2.0",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

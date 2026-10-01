@@ -10,9 +10,10 @@ dice el comando exacto, qué debe responder, y qué hacer cuando no responde eso
 > ```
 >
 > `make doctor` revisa Docker, el contenedor, el puerto 5432, las migraciones, si hay usuario de
-> oficina, la **zona horaria**, el puerto 8000, los `.env`, el venv y el teléfono — y para cada falla
-> imprime **el comando exacto que la arregla**. Si dice «Todo listo», salta a [§1.5](#15-abrir-el-panel). El resto de este
-> documento explica cada paso por si el doctor señala algo, o por si quieres entender qué pasa.
+> oficina, la **zona horaria**, el puerto 8000, los `.env`, los **respaldos**, el venv y el teléfono
+> — y para cada falla imprime **el comando exacto que la arregla**. Si dice «Todo listo», salta a
+> [§1.5](#15-abrir-el-panel). El resto de este documento explica cada paso por si el doctor señala
+> algo, o por si quieres entender qué pasa.
 
 ---
 
@@ -440,12 +441,96 @@ lo que ya ajustaste a mano.
 3. **Prueba un objetivo absurdo** (`180000000`): se detiene con un mensaje. Un
    cero de más deja la barra en 0.1 % todo el mes y nadie sabe por qué.
 
+## 1.6-ter Lo que la Fase 9 añadió al arranque
+
+Tres cosas que conviene conocer aunque en desarrollo no hagan falta.
+
+### Los logs ahora son legibles o JSON, según el entorno
+
+En desarrollo salen en texto, con el identificador de petición al frente:
+
+```
+10:41:03 INFO    [a3f91c0b] dsd.http: POST /v1/sync/push → 200
+```
+
+Ese `[a3f91c0b]` es el `peticion_id`, y también viaja en la cabecera
+`X-Peticion-Id` de la respuesta. Cuando el vendedor diga «no me llegó», ese
+identificador es lo que permite encontrar su petición entre las de ocho camiones
+sincronizando a la vez.
+
+En producción los logs salen en JSON, una línea por registro. Lo controla
+`DSD_LOGS_JSON`, que por omisión sigue al entorno.
+
+> **Lo que nunca sale en un log**: el payload de un sobre, las coordenadas, los
+> tokens y las contraseñas. Está en `app/core/registro.py` con la lista completa
+> y la razón de cada una.
+
+### Las métricas están apagadas, y así se encienden
+
+```bash
+# Solo si quieres verlas en local:
+export DSD_METRICAS_TOKEN="$(openssl rand -hex 16)"
+make api
+curl -s -H "Authorization: Bearer $DSD_METRICAS_TOKEN" \
+     http://127.0.0.1:8000/metrics | head -30
+```
+
+Sin el token el endpoint **no existe** (404, no 401). Y nunca lleva dinero: solo
+salud —colas, equipos rezagados, cuarentena, latencia— porque un endpoint de
+monitoreo acaba en una serie temporal que nadie protege como el panel.
+
+Lo que vale la pena mirar:
+
+| Métrica | Si crece |
+|---|---|
+| `dsd_jobs_pendientes` | El worker está caído o atorado. El tablero se congela y la analítica deja de refrescarse **sin que nada más falle** |
+| `dsd_jobs_fallidos` | Algo se reintentó hasta rendirse |
+| `dsd_cuarentena_pendiente` | Dinero que ocurrió en la calle y no está en ninguna cifra |
+| `dsd_equipos_rezagados` | Teléfonos que no han subido hoy |
+
+### RLS: en desarrollo está APAGADO, y el arranque lo dice
+
+Al levantar `make api` verás este aviso:
+
+```
+WARNING dsd.arranque: sin DSD_DATABASE_URL_API: las políticas por renglón
+NO se están aplicando (ver db/ops/rol_api.sql)
+```
+
+Es correcto en desarrollo y **la API de producción no arranca sin esa
+variable**. `curl -s http://127.0.0.1:8000/salud | jq .rls` lo confirma.
+
+Si quieres probar con RLS activo en local —vale la pena una vez, para ver que
+todo sigue funcionando con el rol restringido:
+
+```bash
+psql "postgresql://postgres:dsd@127.0.0.1:5432/dsd" \
+     -v clave_api=rls_local -f server/db/ops/rol_api.sql
+DSD_DATABASE_URL_API="postgresql+psycopg://dsd_api:rls_local@127.0.0.1:5432/dsd" make api
+```
+
+> **Si una pantalla del panel empieza a salir vacía**, lo primero que hay que
+> descartar es RLS: un alcance que no se fijó devuelve cero renglones **sin
+> ningún error en el log**. Es el modo de fallo propio de esta fase y está
+> explicado en el ADR §35.
+
+### Respaldos
+
+```bash
+make respaldo     # a ~/respaldos-dsd, con su checksum
+make simulacro    # lo restaura en una base desechable y lo verifica
+```
+
+El segundo es el que importa: un respaldo que nunca restauraste no es un
+respaldo. Todo lo demás —el cron, sacarlo del edificio, cómo restaurar de
+verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
+
 ## 1.7 Antes de dar por bueno un cambio
 
 ```bash
 make lint          # ruff sobre app y tests
 make pruebas       # 622 pruebas de Python — necesita la base arriba
-make movil         # 457 de Dart + 212 de widget
+make movil         # 475 de Dart + 220 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -714,6 +799,44 @@ Qué validar, en este orden:
 6. **El vendedor sin movimiento** sale marcado en rojo en «Por vendedor». A media
    mañana es el renglón más urgente del tablero.
 
+### Teléfonos y borrado remoto — Panel → Teléfonos
+
+Es la pantalla de la Fase 9, y la que conviene mirar una vez al día en
+producción. Qué validar:
+
+1. **El orden.** Los equipos salen ordenados por rezago: arriba lo que urge.
+   Pon `ultima_sync_push_en` a cuatro días atrás en un equipo de prueba y
+   comprueba que sube al principio y que la columna «acceso sin red» dice los
+   días que le quedan.
+2. **Suspender y reactivar.** Reversible. Con el equipo suspendido, la app
+   **todavía puede subir** y no puede bajar; es la base del borrado remoto.
+3. **Ordenar un borrado.** Exige escribir `BORRAR` en mayúsculas y un motivo.
+   Fíjate en que el equipo queda **suspendido**, no revocado — si lo revocara,
+   no podría entregar lo que trae y el borrado costaría las ventas del día.
+4. **Cancelar la orden.** Funciona mientras el teléfono no la haya ejecutado.
+5. **Lo que NO hace revocar.** Revocar mata los tokens y no toca la copia del
+   teléfono. Es la confusión que más cuesta, y la pantalla lo dice.
+
+El flujo completo con el teléfono en la mano está en
+[`docs/SEGURIDAD-OPERATIVA.md`](SEGURIDAD-OPERATIVA.md) §2.
+
+### El borrado remoto visto desde el teléfono
+
+Con el equipo conectado y un borrado ordenado desde el panel:
+
+1. **Con cola pendiente** (haz una venta sin señal primero): la app muestra la
+   pantalla de equipo bloqueado con el **número** de operaciones por subir y el
+   motivo que escribió la oficina. **Nada se borra.**
+2. **Dale señal y toca «Buscar señal y entregar»**: sube lo pendiente y recién
+   entonces se borra. Aparece la pantalla de «este equipo quedó limpio», sin
+   botones — no hay ninguna salida que dar desde el teléfono.
+3. **Comprueba en el panel** que la columna dice «borrado confirmado» con su
+   hora y `cola al borrar: 0`. Eso es lo único que prueba que ocurrió.
+4. **Cierra y abre la app**: ya no entra, porque la credencial del Keystore se
+   borró con todo lo demás.
+
+> Hazlo con un equipo de prueba. El borrado **no se deshace**.
+
 ### El ciclo completo, si quieres probar la sincronización de verdad
 
 ```bash
@@ -748,9 +871,9 @@ su duración estimada (punto medio del rango). Las fases 0–9 suman **27 semana
 | **6** | Alta en calle, mermas, no-drops | 2.0 sem | ✅ completa | 100 % |
 | **7** | **Perfil Gerencia móvil** | 2.0 sem | ✅ completa | 100 % |
 | **8** | Laboratorio analítico (Streamlit) | 3.5 sem | 🟡 **casi** | ~85 % |
-| **9** | Endurecimiento, MDM, RLS | 2.5 sem | ⛔ no empezada | 0 % |
+| **9** | Endurecimiento, MDM, RLS | 2.5 sem | ✅ completa | 100 % |
 
-## **Avance general: ≈ 83 %**
+## **Avance general: ≈ 92 %**
 
 El cálculo, semana a semana de plan:
 
@@ -759,10 +882,17 @@ Fase 0   2.5 × 1.00 = 2.50      Fase 5   2.5 × 1.00 = 2.50
 Fase 1   2.5 × 1.00 = 2.50      Fase 6   2.0 × 1.00 = 2.00
 Fase 2   3.5 × 1.00 = 3.50      Fase 7   2.0 × 1.00 = 2.00
 Fase 3   3.5 × 0.60 = 2.10      Fase 8   3.5 × 0.85 = 2.98
-Fase 4   2.5 × 0.90 = 2.25      Fase 9   2.5 × 0.00 = 0.00
+Fase 4   2.5 × 0.90 = 2.25      Fase 9   2.5 × 1.00 = 2.50
                                 ─────────────────────────────
-                                22.33 de 27 semanas = 82.7 %
+                                24.83 de 27 semanas = 92.0 %
 ```
+
+**Lo que falta son 2.17 semanas, y 2 de ellas son calendario**: el piloto de la
+Fase 3 con un vendedor real, que no se puede acelerar porque su valor ES el
+calendario. El resto son el socket Bluetooth (media semana, cuando llegue la
+EC-MP200), la consulta online de bodega desde la app, y los modelos de
+pronóstico de la Fase 8 — que conviene hacer DESPUÉS del piloto, con meses de
+datos reales.
 
 ### Qué le falta a lo que está «parcial»
 
@@ -799,13 +929,13 @@ la que vale para medir.
 El 83 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 681 pruebas de Python contra PostgreSQL real, 457 de Dart,
-   212 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
+1. **Lo construido está probado de verdad**: 759 pruebas de Python contra PostgreSQL real, 475 de Dart,
+   220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
 2. **Lo que falta es lo menos riesgoso.** La Fase 2 —el motor de sincronización, la que puede hundir un
-   proyecto de DSD— está cerrada con pruebas de caos. La 9 es trabajo conocido sobre un modelo de datos
-   que ya no se mueve.
+   proyecto de DSD— está cerrada con pruebas de caos, y la 9 (endurecimiento, RLS, borrado remoto) ya
+   está hecha. De lo que queda, dos de las 2.17 semanas son el piloto: calendario, no código.
 
 Y una razón por la que está peor:
 
@@ -831,6 +961,10 @@ make analitica                        # Streamlit  →  http://127.0.0.1:8501
 
 # ───── tablero de Gerencia (Fase 7) ─────
 make recalcular-tablero               # recalcula los modelos de lectura
+
+# ───── respaldos (Fase 9) ─────
+make respaldo                         # a ~/respaldos-dsd, con checksum
+make simulacro                        # lo restaura y lo verifica — ESTE importa
 
 # ───── cuando algo se atora ─────
 pkill -f "uvicorn app.main:app"       # el 8000 ocupado

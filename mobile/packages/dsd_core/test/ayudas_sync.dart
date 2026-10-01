@@ -128,8 +128,38 @@ class TransporteFalso implements Transporte {
     );
   }
 
+  /// Lo que contesta `/v1/dispositivos/mio` cuando la prueba no lo guiona.
+  ///
+  /// Se declara aquí y no como guion porque la consulta de órdenes la hace el
+  /// sincronizador en CADA corrida: si consumiera un guion, cada prueba de push
+  /// o de pull tendría que empezar guionando una respuesta que no le interesa, y
+  /// el primer guion de todas pasaría a contestar la pregunta equivocada.
+  ///
+  /// Las pruebas del borrado remoto lo cambian; las demás no se enteran.
+  Map<String, Object?> ordenes = const {
+    'estado': 'activo',
+    'borrar': false,
+    'borrado_motivo': null,
+    'dias_max_offline': 7,
+    'dias_sin_sincronizar': 0,
+  };
+
+  /// Si la consulta de órdenes debe fallar, y con qué código.
+  ///
+  /// Sirve para la prueba que importa: que un servidor más viejo —que contesta
+  /// 404 a un endpoint que no conoce— no impida sincronizar.
+  int? codigoDeOrdenes;
+
   Future<RespuestaHttp> _responder(String ruta) async {
     llamadas.add(ruta);
+
+    if (ruta.startsWith('/v1/dispositivos/mio')) {
+      if (codigoDeOrdenes != null) {
+        return RespuestaHttp(codigoDeOrdenes!, '{"detail":"guionado"}');
+      }
+      return RespuestaHttp(200, jsonEncode(ordenes));
+    }
+
     final esPull = ruta.contains('pull');
     final guion = _siguiente();
 
@@ -241,9 +271,14 @@ Map<String, Object?> deltaCartera(
       },
     };
 
+/// El sincronizador listo, sobre la base y el transporte dados.
+///
+/// `Transporte` y no `TransporteFalso`: algunas pruebas necesitan un transporte
+/// propio —uno que siempre caiga, por ejemplo— y tipar el parámetro con la
+/// implementación concreta obligaba a copiar esta función para usarlo.
 Sincronizador armarSincronizador(
   Database db,
-  TransporteFalso transporte, {
+  Transporte transporte, {
   int maxSobresPorLote = 50,
 }) =>
     Sincronizador(

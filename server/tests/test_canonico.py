@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from hypothesis import assume, given
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from app.domain.canonico import (
@@ -127,12 +127,27 @@ _valores = st.recursive(
 )
 _payloads = st.dictionaries(st.text(min_size=0, max_size=10), _valores, max_size=6)
 
+# Sin fecha límite por ejemplo.
+#
+# Hypothesis aborta un ejemplo que tarda más de 200 ms y falla la prueba. Estas
+# propiedades son sobre funciones PURAS —determinismo, orden de inserción, hash—
+# y no dicen nada sobre velocidad; lo único que mide ese plazo aquí es si la
+# máquina estaba ocupada. La suite completa corriendo junto a PostgreSQL lo
+# excede de vez en cuando, y una prueba que falla por carga enseña a ignorar los
+# rojos, que es el peor daño que puede hacer una prueba.
+#
+# Si alguna de estas se volviera lenta de verdad, lo que lo delata es el tiempo
+# total de la suite, no un plazo por ejemplo.
+_propiedades = settings(deadline=None)
 
+
+@_propiedades
 @given(payload=_payloads)
 def test_canonizar_es_determinista(payload):
     assert a_texto_canonico(payload) == a_texto_canonico(payload)
 
 
+@_propiedades
 @given(payload=_payloads)
 def test_el_orden_de_insercion_nunca_cambia_el_hash(payload):
     """La propiedad que más importa: dos dicts con las mismas parejas
@@ -141,6 +156,7 @@ def test_el_orden_de_insercion_nunca_cambia_el_hash(payload):
     assert hash_payload(payload) == hash_payload(invertido)
 
 
+@_propiedades
 @given(payload=_payloads, clave=st.text(min_size=1, max_size=8))
 def test_agregar_una_clave_nula_nunca_cambia_el_hash(payload, clave):
     # La clave debe ser nueva: poner en None una que ya tenía valor sí cambia

@@ -138,6 +138,23 @@ class Dispositivo(Base):
     ultimo_cursor_pull: Mapped[int] = mapped_column(default=0)
     registrado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
+    # Profundidad de cola que el propio teléfono reportó (migración 0019).
+    cola_pendiente: Mapped[int | None] = mapped_column(default=None)
+    cola_reportada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Borrado remoto (migración 0023). La orden y la confirmación son columnas
+    # distintas a propósito: la primera prueba que alguien lo pidió y la segunda
+    # que el teléfono lo hizo, y entre las dos puede pasar una semana.
+    borrado_ordenado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    borrado_ordenado_por: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("usuarios.id")
+    )
+    borrado_motivo: Mapped[str | None] = mapped_column(Text)
+    borrado_confirmado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    borrado_cola_al_confirmar: Mapped[int | None] = mapped_column(default=None)
+
     usuario: Mapped[Usuario] = relationship(
         back_populates="dispositivos", lazy="joined", foreign_keys=[usuario_id]
     )

@@ -442,8 +442,16 @@ void main() {
 
     await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
 
-    expect(transporte.llamadas.first, contains('push'));
-    expect(transporte.llamadas[1], contains('pull'));
+    // Las órdenes del servidor van antes que todo (Fase 9): de ahí sale si el
+    // equipo tiene que borrarse, y si está suspendido no debe intentar el pull.
+    expect(transporte.llamadas.first, contains('/v1/dispositivos/mio'));
+
+    // Y entre los dos viajes de DATOS, el push primero.
+    final datos = transporte.llamadas
+        .where((l) => !l.contains('dispositivos/mio'))
+        .toList();
+    expect(datos[0], contains('push'));
+    expect(datos[1], contains('pull'));
   });
 
   test('sin red en el push no se intenta el pull', () async {

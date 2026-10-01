@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, text
 
-from app.api.deps import ActorDep, SesionDep
+from app.api.deps import ROLES_DE_OFICINA, ActorDep, SesionDep
 from app.api.esquemas import Dinero, EntradaBase, EsquemaBase
 from app.domain.credito import EstadoCredito, evaluar_venta
 from app.domain.identificadores import nuevo_id
@@ -49,7 +49,7 @@ def _filtro_de_alcance(actor) -> list:
     La UI oculta, el servidor prohíbe. Si el alcance se aplicara solo en la
     app, bastaría un token y `curl` para leer la cartera completa.
     """
-    if actor.rol in ("admin", "gerente", "supervisor"):
+    if actor.rol in ROLES_DE_OFICINA:
         return []
     if not actor.rutas:
         # Sin rutas asignadas no ve nada. Devolver todo sería el fallo abierto.

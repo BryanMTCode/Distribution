@@ -287,6 +287,73 @@
         }
       }
     },
+    "/v1/dispositivos/mio": {
+      "get": {
+        "tags": [
+          "dispositivos"
+        ],
+        "summary": "Mis Ordenes",
+        "description": "Lo que el equipo pregunta al empezar cada sincronización.\n\nUsa `ActorQueEntregaDep` —acepta un equipo `suspendido`— porque si lo\nrechazara, el equipo al que se le ordenó el borrado no podría leer la orden\nque lo manda a borrarse. Sería la única orden del sistema imposible de\nentregar a su destinatario.",
+        "operationId": "mis_ordenes_v1_dispositivos_mio_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrdenesDelServidor"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/dispositivos/mio/borrado": {
+      "post": {
+        "tags": [
+          "dispositivos"
+        ],
+        "summary": "Confirmar Borrado",
+        "description": "El equipo confirma que ya borró su base y su credencial.\n\nEs lo único que prueba que el borrado OCURRIÓ: la orden sola solo prueba que\nalguien la pidió. A partir de aquí el equipo queda `revocado` y sus sesiones\nmuertas, así que esta petición es la ÚLTIMA que puede hacer — por eso\nconfirma después de borrar y no antes: si se cortara la red justo aquí, el\nteléfono ya está limpio y la oficina lo verá como «orden sin confirmar», que\nes el lado correcto del que equivocarse.",
+        "operationId": "confirmar_borrado_v1_dispositivos_mio_borrado_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmacionDeBorrado"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/catalogo/unidades": {
       "get": {
         "tags": [
@@ -950,7 +1017,7 @@
           "sincronización"
         ],
         "summary": "Push",
-        "description": "Recibe la cola del dispositivo.\n\nReenviar el mismo lote es inofensivo por diseño: cada sobre lleva su llave\nde idempotencia y el servidor responde lo mismo que la primera vez sin\nvolver a aplicar nada.\n\nResponde 200 aunque haya sobres rechazados: el lote se procesó. El detalle\npor sobre va en `resultados`, y lo rechazado quedó en cuarentena del lado\ndel servidor. Devolver un error de transporte por un sobre malo haría que\nel dispositivo reintentara el lote completo para siempre.",
+        "description": "Recibe la cola del dispositivo.\n\nReenviar el mismo lote es inofensivo por diseño: cada sobre lleva su llave\nde idempotencia y el servidor responde lo mismo que la primera vez sin\nvolver a aplicar nada.\n\nResponde 200 aunque haya sobres rechazados: el lote se procesó. El detalle\npor sobre va en `resultados`, y lo rechazado quedó en cuarentena del lado\ndel servidor. Devolver un error de transporte por un sobre malo haría que\nel dispositivo reintentara el lote completo para siempre.\n\n────────────────────────────────────────────────────────────────────────\nES EL ÚNICO ENDPOINT QUE ACEPTA UN EQUIPO SUSPENDIDO\n────────────────────────────────────────────────────────────────────────\n`ActorQueEntregaDep` en vez de `ActorDep`, y la excepción está declarada\naquí —no en el guardia— para que un endpoint nuevo no la herede sin\nquererlo.\n\nLa razón es la regla del borrado remoto: **nunca se borra lo que no se ha\nentregado** (migración 0023). Un equipo al que se le ordenó el borrado pasa\na `suspendido` precisamente para que pueda subir las ventas que lleva\ndentro antes de borrarlas. Si este endpoint lo rechazara, cada borrado\nremoto costaría un día de operación.\n\nLo que un equipo suspendido NO puede hacer es `pull`: entrega y no recibe\nnada nuevo. Ese endpoint sigue con el guardia estricto.",
         "operationId": "push_v1_sync_push_post",
         "requestBody": {
           "content": {
@@ -1668,6 +1735,20 @@
         "title": "CondicionesEntrada",
         "description": "Condiciones comerciales: propiedad exclusiva del servidor."
       },
+      "ConfirmacionDeBorrado": {
+        "properties": {
+          "cola_pendiente": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cola Pendiente"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cola_pendiente"
+        ],
+        "title": "ConfirmacionDeBorrado"
+      },
       "CredencialLocal": {
         "properties": {
           "usuario_id": {
@@ -2190,6 +2271,42 @@
           "entidad_id"
         ],
         "title": "OperacionEntrada"
+      },
+      "OrdenesDelServidor": {
+        "properties": {
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "borrar": {
+            "type": "boolean",
+            "title": "Borrar"
+          },
+          "borrado_motivo": {
+            "type": "string",
+            "title": "Borrado Motivo",
+            "nullable": true
+          },
+          "dias_max_offline": {
+            "type": "integer",
+            "title": "Dias Max Offline"
+          },
+          "dias_sin_sincronizar": {
+            "type": "integer",
+            "title": "Dias Sin Sincronizar",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "estado",
+          "borrar",
+          "borrado_motivo",
+          "dias_max_offline",
+          "dias_sin_sincronizar"
+        ],
+        "title": "OrdenesDelServidor",
+        "description": "Lo que el servidor le tiene que decir al equipo en cada sincronización.\n\nEs el único canal servidor → dispositivo que no son datos, y existe porque\nel teléfono no puede enterarse de otra forma: un equipo al que se le ordenó\nel borrado y que no tiene nada en la cola nunca haría push, y por lo tanto\nnunca recibiría la orden."
       },
       "PaginaClientes": {
         "properties": {
@@ -2957,6 +3074,14 @@
           "migraciones": {
             "type": "integer",
             "title": "Migraciones"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "rls": {
+            "type": "boolean",
+            "title": "Rls"
           }
         },
         "type": "object",
@@ -2964,7 +3089,9 @@
           "ok",
           "base_de_datos",
           "postgis",
-          "migraciones"
+          "migraciones",
+          "version",
+          "rls"
         ],
         "title": "Salud"
       },

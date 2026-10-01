@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import ActorDep, SesionDep
-from app.infra.models import Dispositivo, FolioRango
+from app.api.deps import ActorDep, ActorQueEntregaDep, SesionDep
+from app.core.config import obtener_config
+from app.infra.models import Dispositivo, FolioRango, Usuario
 
 router = APIRouter(prefix="/dispositivos", tags=["dispositivos"])
 
@@ -197,5 +198,144 @@ async def revocar(
             "WHERE dispositivo_id = :dev AND revocada_en IS NULL"
         ),
         {"dev": str(dispositivo_id)},
+    )
+    await sesion.commit()
+
+
+# ---------------------------------------------------------------------------
+# Borrado remoto (Fase 9)
+# ---------------------------------------------------------------------------
+# La regla que gobierna esto: NUNCA SE BORRA LO QUE NO SE HA ENTREGADO.
+#
+# El motivo real de un borrado casi nunca es un robo —es una renuncia, un cambio
+# de teléfono, un equipo extraviado— y en los tres casos el aparato puede traer
+# dentro un día de ventas sin sincronizar. Borrarlas es perder dinero cobrado
+# sin saber a quién se le vendió.
+#
+# Y cuando sí es un robo, borrar rápido no gana nada: la base local está cifrada
+# con SQLCipher y su llave vive en el Keystore detrás del PIN.
+#
+# Así que: ORDENAR → DRENAR → BORRAR → CONFIRMAR. Ver migración 0023.
+
+
+class OrdenesDelServidor(BaseModel):
+    """Lo que el servidor le tiene que decir al equipo en cada sincronización.
+
+    Es el único canal servidor → dispositivo que no son datos, y existe porque
+    el teléfono no puede enterarse de otra forma: un equipo al que se le ordenó
+    el borrado y que no tiene nada en la cola nunca haría push, y por lo tanto
+    nunca recibiría la orden.
+    """
+
+    estado: str
+
+    # Si hay orden de borrado pendiente. El teléfono entrega su cola primero.
+    borrar: bool
+    borrado_motivo: str | None
+
+    # Días que el equipo puede seguir operando sin sincronizar antes de que su
+    # credencial local caduque y el login offline deje de funcionar. Se manda
+    # para poder AVISAR ANTES: que el vendedor se enterara a las 6 de la mañana,
+    # en la bodega, con el camión cargado, es un día perdido evitable.
+    dias_max_offline: int
+    dias_sin_sincronizar: int | None
+
+
+def _dias_sin_sincronizar(dispositivo: Dispositivo) -> int | None:
+    if dispositivo.ultima_sync_push_en is None:
+        return None
+    ultima = dispositivo.ultima_sync_push_en
+    if ultima.tzinfo is None:
+        ultima = ultima.replace(tzinfo=UTC)
+    return max(0, (datetime.now(UTC) - ultima).days)
+
+
+@router.get("/mio", response_model=OrdenesDelServidor)
+async def mis_ordenes(actor: ActorQueEntregaDep, sesion: SesionDep) -> OrdenesDelServidor:
+    """Lo que el equipo pregunta al empezar cada sincronización.
+
+    Usa `ActorQueEntregaDep` —acepta un equipo `suspendido`— porque si lo
+    rechazara, el equipo al que se le ordenó el borrado no podría leer la orden
+    que lo manda a borrarse. Sería la única orden del sistema imposible de
+    entregar a su destinatario.
+    """
+    if actor.dispositivo_id is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "esta consulta exige un token emitido para un dispositivo registrado",
+        )
+    dispositivo = await sesion.get(Dispositivo, actor.dispositivo_id)
+    if dispositivo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "dispositivo no encontrado")
+
+    usuario = await sesion.get(Usuario, dispositivo.usuario_id)
+    cfg = obtener_config()
+    return OrdenesDelServidor(
+        estado=dispositivo.estado,
+        borrar=(
+            dispositivo.borrado_ordenado_en is not None
+            and dispositivo.borrado_confirmado_en is None
+        ),
+        borrado_motivo=dispositivo.borrado_motivo,
+        dias_max_offline=(
+            (usuario.dias_max_offline if usuario else None) or cfg.dias_max_offline
+        ),
+        dias_sin_sincronizar=_dias_sin_sincronizar(dispositivo),
+    )
+
+
+class ConfirmacionDeBorrado(BaseModel):
+    # Cuántos sobres le quedaban al borrar. Tiene que ser 0: el teléfono no
+    # borra con cola pendiente. Se recibe y se guarda para poder DEMOSTRARLO
+    # después — si algún día llega un número distinto, es que una versión del
+    # cliente se saltó la regla, y esta columna es la única forma de notarlo.
+    cola_pendiente: int = Field(ge=0, strict=True)
+
+
+@router.post("/mio/borrado", status_code=status.HTTP_204_NO_CONTENT)
+async def confirmar_borrado(
+    confirmacion: ConfirmacionDeBorrado,
+    actor: ActorQueEntregaDep,
+    sesion: SesionDep,
+) -> None:
+    """El equipo confirma que ya borró su base y su credencial.
+
+    Es lo único que prueba que el borrado OCURRIÓ: la orden sola solo prueba que
+    alguien la pidió. A partir de aquí el equipo queda `revocado` y sus sesiones
+    muertas, así que esta petición es la ÚLTIMA que puede hacer — por eso
+    confirma después de borrar y no antes: si se cortara la red justo aquí, el
+    teléfono ya está limpio y la oficina lo verá como «orden sin confirmar», que
+    es el lado correcto del que equivocarse.
+    """
+    if actor.dispositivo_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "token sin dispositivo")
+
+    dispositivo = await sesion.get(Dispositivo, actor.dispositivo_id)
+    if dispositivo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "dispositivo no encontrado")
+    if dispositivo.borrado_ordenado_en is None:
+        # Nadie ordenó este borrado. Se rechaza en vez de aceptarlo: un cliente
+        # con un bug podría marcar como borrado un equipo que sigue trabajando,
+        # y la oficina lo daría por recuperado.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "no hay orden de borrado para este dispositivo"
+        )
+
+    ahora = datetime.now(UTC)
+    if dispositivo.borrado_confirmado_en is None:
+        dispositivo.borrado_confirmado_en = ahora
+        dispositivo.borrado_cola_al_confirmar = confirmacion.cola_pendiente
+    # Idempotente: un reenvío no cambia la hora de la primera confirmación. Es
+    # la misma regla que el resto del sistema — la red entrega dos veces.
+    dispositivo.estado = "revocado"
+    if dispositivo.revocado_en is None:
+        dispositivo.revocado_en = ahora
+        dispositivo.revocado_motivo = f"borrado remoto: {dispositivo.borrado_motivo}"
+    await sesion.execute(
+        text(
+            "UPDATE sesiones SET revocada_en = now() "
+            "WHERE dispositivo_id = :dev AND revocada_en IS NULL"
+        ),
+        {"dev": str(dispositivo.id)},
     )
     await sesion.commit()

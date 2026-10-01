@@ -46,6 +46,19 @@ class TransporteDePrueba implements Transporte {
   Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
     llamadas.add(ruta);
     if (seCaeLaRed) throw const ErrorDeRed('sin señal');
+
+    // Las órdenes del servidor (Fase 9) se piden al empezar cada corrida. Se
+    // contestan aparte y no con la forma del pull: antes de distinguirlas, este
+    // transporte devolvía un delta a esa consulta y el parseo lanzaba un
+    // `TypeError` — que destapó un fallo de verdad en el sincronizador, y
+    // además hacía que estas pruebas probaran un camino que no existe.
+    if (ruta.startsWith('/v1/dispositivos/mio')) {
+      return const RespuestaHttp(
+        200,
+        '{"estado":"activo","borrar":false,"borrado_motivo":null,'
+        '"dias_max_offline":7,"dias_sin_sincronizar":0}',
+      );
+    }
     return const RespuestaHttp(200, '{"cursor":7,"hay_mas":false,"cambios":[]}');
   }
 }

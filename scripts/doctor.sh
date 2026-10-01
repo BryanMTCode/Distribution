@@ -199,6 +199,31 @@ if [ -f "$RAIZ/.env" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+titulo "Respaldos"
+# ---------------------------------------------------------------------------
+# No falla si no hay: en desarrollo no hacen falta. Avisa, porque el día que
+# esta máquina tenga datos de verdad sí hacen, y el recordatorio más útil es el
+# que aparece antes.
+CARPETA_RESPALDOS="${DSD_RESPALDOS:-$HOME/respaldos-dsd}"
+if [ -d "$CARPETA_RESPALDOS" ]; then
+    CUANTOS="$(ls -1 "$CARPETA_RESPALDOS"/dsd-*.dump 2>/dev/null | wc -l)"
+    if [ "$CUANTOS" -gt 0 ]; then
+        ULTIMO="$(ls -1t "$CARPETA_RESPALDOS"/dsd-*.dump 2>/dev/null | head -1)"
+        HORAS=$(( ( $(date +%s) - $(stat -c %Y "$ULTIMO") ) / 3600 ))
+        bien "$CUANTOS respaldo(s); el más reciente tiene $HORAS h"
+        if [ "$HORAS" -gt 48 ]; then
+            avisa "más de 48 h: ¿está corriendo el cron? (ver docs/RESPALDOS.md §5)"
+        fi
+        # Un respaldo que nunca restauraste no es un respaldo.
+        avisa "comprueba que de verdad se puede restaurar: make simulacro"
+    else
+        avisa "la carpeta existe y está vacía: make respaldo"
+    fi
+else
+    avisa "sin respaldos en $CARPETA_RESPALDOS. Crea uno con: make respaldo"
+fi
+
+# ---------------------------------------------------------------------------
 titulo "Entorno de Python"
 # ---------------------------------------------------------------------------
 if [ -x "$RAIZ/server/.venv/bin/python" ]; then

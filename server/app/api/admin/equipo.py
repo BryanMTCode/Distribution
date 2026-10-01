@@ -198,7 +198,7 @@ async def listar(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Equipo",
+        seccion="Usuarios y rutas",
     )
 
 
