@@ -68,6 +68,8 @@ class AplicadorDeltas {
         'cartera' => _cartera(delta, recibidoEn),
         'lista_precios' => _listaPrecios(delta),
         'carga' => _carga(delta),
+        'motivo_merma' => _motivoMerma(delta),
+        'motivo_no_drop' => _motivoNoDrop(delta),
         // Las promociones todavía no se aplican: se aceptan para no llenar
         // `deltas_desconocidos` con algo que sí sabemos que viene.
         'promocion' => true,
@@ -212,6 +214,74 @@ class AplicadorDeltas {
         l['nombre'],
         (l['es_default'] == true) ? 1 : 0,
         (l['activo'] == false) ? 0 : 1,
+      ],
+    );
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Los catálogos de motivos
+  // -------------------------------------------------------------------------
+
+  /// Los motivos de merma y devolución.
+  ///
+  /// Sin esta tabla llena, la pantalla de merma abre con la lista vacía y el
+  /// vendedor no puede registrar nada — y el motivo es de catálogo cerrado justo
+  /// para que no pueda escribir texto libre. El servidor nunca los publicaba
+  /// (migración 0017); el defecto se nota en la calle, cuando una caja se rompe.
+  ///
+  /// La llave primaria es el `codigo`, no el `entidad_id` del delta: ése es un md5
+  /// del código, estable, que existe solo porque `change_log.entidad_id` es uuid.
+  bool _motivoMerma(Delta delta) {
+    final m = delta.payload;
+    if (m == null) return true;
+    _db.execute(
+      '''
+      INSERT INTO motivos_merma (codigo, nombre, afecta_vendedor, activo)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(codigo) DO UPDATE SET
+        nombre = excluded.nombre,
+        afecta_vendedor = excluded.afecta_vendedor,
+        activo = excluded.activo
+      ''',
+      [
+        m['codigo'],
+        m['nombre'],
+        _aBool(m['afecta_vendedor']),
+        // Sin esto, un motivo que la oficina retiró seguiría apareciendo en la
+        // pantalla del vendedor: para él la desactivación nunca habría pasado.
+        m.containsKey('activo') ? _aBool(m['activo']) : 1,
+      ],
+    );
+    return true;
+  }
+
+  /// Los motivos de visita sin venta.
+  ///
+  /// `orden` viaja porque en la calle, con el cliente esperando, un catálogo
+  /// alfabético obliga a leer diez opciones para encontrar "cerrado".
+  bool _motivoNoDrop(Delta delta) {
+    final m = delta.payload;
+    if (m == null) return true;
+    _db.execute(
+      '''
+      INSERT INTO motivos_no_drop (codigo, nombre, categoria, requiere_nota,
+                                   orden, activo)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(codigo) DO UPDATE SET
+        nombre = excluded.nombre,
+        categoria = excluded.categoria,
+        requiere_nota = excluded.requiere_nota,
+        orden = excluded.orden,
+        activo = excluded.activo
+      ''',
+      [
+        m['codigo'],
+        m['nombre'],
+        m['categoria'],
+        _aBool(m['requiere_nota']),
+        _aNumero(m['orden']) ?? 0,
+        m.containsKey('activo') ? _aBool(m['activo']) : 1,
       ],
     );
     return true;

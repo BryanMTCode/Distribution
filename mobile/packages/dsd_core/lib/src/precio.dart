@@ -25,22 +25,37 @@ import 'dinero.dart';
 /// exacta, y tolerar un espacio suelto aceptaría un payload que en Python
 /// hashearía distinto, escondiendo justo la divergencia que los vectores
 /// buscan.
-int _aEntero(String texto, int decimales, String ejemplo, String queEs) {
-  final coincidencia =
-      RegExp('^(\\d+)\\.(\\d{$decimales})\$').firstMatch(texto);
+int _aEntero(
+  String texto,
+  int decimales,
+  String ejemplo,
+  String queEs, {
+  bool admiteSigno = false,
+}) {
+  final patron = admiteSigno
+      ? '^(-?)(\\d+)\\.(\\d{$decimales})\$'
+      : '^()(\\d+)\\.(\\d{$decimales})\$';
+  final coincidencia = RegExp(patron).firstMatch(texto);
   if (coincidencia == null) {
     throw FormatException("$queEs mal formado: '$texto' (se esperaba p. ej. '$ejemplo')");
   }
   final escala = <int>[1, 10, 100, 1000, 10000][decimales];
-  return int.parse(coincidencia.group(1)!) * escala +
-      int.parse(coincidencia.group(2)!);
+  final signo = coincidencia.group(1) == '-' ? -1 : 1;
+  return signo *
+      (int.parse(coincidencia.group(2)!) * escala +
+          int.parse(coincidencia.group(3)!));
 }
 
 String _aTexto(int valor, int decimales) {
   final escala = <int>[1, 10, 100, 1000, 10000][decimales];
-  final enteros = valor ~/ escala;
-  final resto = (valor % escala).toString().padLeft(decimales, '0');
-  return '$enteros.$resto';
+  // El signo se saca aparte: con `valor ~/ escala` solo, un −0.500 daría "0.500"
+  // —los enteros son cero y el truncado se lo come— y la cantidad cambiaría de
+  // signo al convertirse a texto.
+  final signo = valor < 0 ? '-' : '';
+  final magnitud = valor.abs();
+  final enteros = magnitud ~/ escala;
+  final resto = (magnitud % escala).toString().padLeft(decimales, '0');
+  return '$signo$enteros.$resto';
 }
 
 /// Precio unitario exacto. Cuatro decimales, inmutable.
@@ -95,10 +110,22 @@ class Precio implements Comparable<Precio> {
 class Cantidad implements Comparable<Cantidad> {
   const Cantidad._(this.milesimos);
 
+  /// Admite signo, y eso es deliberado.
+  ///
+  /// `existencias_camion.cant_actual` **puede quedar negativa**: una merma se
+  /// registra aunque el conteo diga que no había (§0.1), y después el camión
+  /// marca −12. Si este tipo no supiera leer ese número, la pantalla de merma
+  /// reventaría al abrirse justo después del caso para el que existe.
+  ///
+  /// Que una cantidad concreta no pueda ser negativa —el renglón de una merma, la
+  /// línea de un carrito— lo decide quien la valida, no el tipo. Es el mismo
+  /// reparto que en `Dinero`, que admite el signo por el saldo a favor.
   factory Cantidad.deTexto(String texto) =>
-      Cantidad._(_aEntero(texto, 3, '12.000', 'cantidad'));
+      Cantidad._(_aEntero(texto, 3, '12.000', 'cantidad', admiteSigno: true));
 
   factory Cantidad.deBase(num valor) => Cantidad.deTexto(valor.toStringAsFixed(3));
+
+  bool get esNegativa => milesimos < 0;
 
   factory Cantidad.deEnteros(int unidades) => Cantidad._(unidades * 1000);
 

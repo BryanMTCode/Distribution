@@ -16,6 +16,8 @@ export 'src/dinero.dart';
 export 'src/escpos.dart';
 export 'src/esquema_local.dart';
 export 'src/folios.dart';
+export 'src/merma.dart';
+export 'src/no_drop.dart';
 export 'src/outbox.dart';
 export 'src/precio.dart';
 export 'src/sincronizador.dart';

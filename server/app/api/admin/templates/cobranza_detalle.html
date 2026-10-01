@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block titulo %}Recibo {{ cobro.folio_local }}{% endblock %}
+{% block contenido %}
+<h1>Recibo {{ cobro.folio_local }}</h1>
+<p class="subtitulo">
+  {{ cobro.cliente }}{% if cobro.codigo_cliente %} · {{ cobro.codigo_cliente }}{% endif %}
+  · cobró {{ cobro.vendedor }} con {{ cobro.dispositivo }}
+</p>
+
+{% if cobro.requiere_revision %}
+<div class="aviso-caja error">
+  <strong>Este cobro está marcado para revisión.</strong>
+  {% for m in cobro.revision_motivos %}
+    <span class="etiqueta-motivo">{{ explicacion.get(m, m) }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">${{ '%.2f'|format(cobro.importe) }}</div>
+    <div class="etiqueta">
+      Recibido en {{ cobro.forma_pago }}{% if not en_arqueo %} — no entra al arqueo{% endif %}
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">${{ '%.2f'|format(cobro.importe_aplicado) }}</div>
+    <div class="etiqueta">Aplicado a facturas</div>
+  </div>
+  {% if cobro.saldo_a_favor and cobro.saldo_a_favor > 0 %}
+  <div class="tarjeta aviso">
+    <div class="numero">${{ '%.2f'|format(cobro.saldo_a_favor) }}</div>
+    <div class="etiqueta">
+      Saldo a favor: cobró más de lo que debía, y eso no es un error
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ------------------------------------------------------------------------- #}
+{# El saldo que el teléfono creía, contra el que había.                      #}
+{# ------------------------------------------------------------------------- #}
+{# Es el número que EXPLICA un cobro marcado: si el equipo traía $0 y el     #}
+{# cliente debía $8,000, el vendedor cobró a ciegas y la causa está en la    #}
+{# sincronización, no en él.                                                 #}
+{% if cobro.saldo_cache_disp is not none %}
+<h2>Qué veía el vendedor</h2>
+<div class="tabla-marco">
+  <table>
+    <tbody>
+      <tr>
+        <th>El teléfono traía</th>
+        <td class="numero">${{ '%.2f'|format(cobro.saldo_cache_disp) }}</td>
+      </tr>
+      {% if desfase is not none %}
+      <tr>
+        <th>Diferencia con lo que había</th>
+        <td class="numero">
+          {% if desfase == 0 %}
+            <span class="sutil">Coincidía</span>
+          {% else %}
+            ${{ '%.2f'|format(desfase) }}
+            <div class="sutil">
+              {% if desfase > 0 %}
+                El cliente debía más de lo que el equipo sabía: le faltaba
+                sincronizar.
+              {% else %}
+                El equipo traía más deuda de la que había: alguien más ya había
+                cobrado.
+              {% endif %}
+            </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>A qué facturas se aplicó</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  El reparto lo hizo el FIFO sobre la cartera real: primero lo que vence antes,
+  que es lo que de verdad reduce el riesgo.
+</p>
+{% if aplicaciones %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Factura</th>
+        <th>Vence</th>
+        <th class="numero">Se le aplicó</th>
+        <th class="numero">Queda</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in aplicaciones %}
+      <tr>
+        <td>
+          <span class="mono">{{ a.folio_local }}</span>
+          <div class="sutil">
+            de ${{ '%.2f'|format(a.importe_original) }} ·
+            emitida {{ a.fecha_emision.strftime('%d/%m/%Y') }}
+          </div>
+        </td>
+        <td>{{ a.fecha_vencimiento.strftime('%d/%m/%Y') }}</td>
+        <td class="numero">${{ '%.2f'|format(a.importe) }}</td>
+        <td class="numero">${{ '%.2f'|format(a.saldo) }}</td>
+        <td>{{ a.estado }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  No se aplicó a ninguna factura: el cliente no tenía nada abierto, así que todo
+  quedó como saldo a favor.
+</div>
+{% endif %}
+
+{% if cartera %}
+<h2>Cómo quedó el cliente</h2>
+<div class="tarjetas">
+  <div class="tarjeta{% if cartera.saldo_vencido and cartera.saldo_vencido > 0 %} alerta{% endif %}">
+    <div class="numero">${{ '%.2f'|format(cartera.saldo) }}</div>
+    <div class="etiqueta">
+      Saldo actual · {{ cartera.facturas_abiertas }} factura{{ '' if cartera.facturas_abiertas == 1 else 's' }} abierta{{ '' if cartera.facturas_abiertas == 1 else 's' }}
+    </div>
+  </div>
+  {% if cartera.facturas_vencidas %}
+  <div class="tarjeta alerta">
+    <div class="numero">${{ '%.2f'|format(cartera.saldo_vencido or 0) }}</div>
+    <div class="etiqueta">
+      Vencido en {{ cartera.facturas_vencidas }} factura{{ '' if cartera.facturas_vencidas == 1 else 's' }}
+      {% if cartera.vencimiento_mas_antiguo %}
+        · la más vieja venció el {{ cartera.vencimiento_mas_antiguo.strftime('%d/%m/%Y') }}
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="tarjeta">
+    <div class="numero">${{ '%.2f'|format(cartera.disponible) }}</div>
+    <div class="etiqueta">Línea disponible de ${{ '%.2f'|format(cartera.limite_credito) }}</div>
+  </div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------------- #}
+{# Dar por revisado NO corrige nada, y ese es el punto.                      #}
+{# ------------------------------------------------------------------------- #}
+{% if cobro.requiere_revision and puede_editar %}
+<h2>Darlo por revisado</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  No cambia el cobro ni su aplicación: el dinero entró y el FIFO lo repartió sobre
+  la cartera real. Esto registra que alguien lo miró, con su nombre, y lo saca de
+  la lista de pendientes para que la lista siga significando algo.
+</p>
+<form method="post" action="/panel/cobranza/{{ cobro.id }}/revisado">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="nota">Qué averiguaste (opcional)</label>
+    <input type="text" id="nota" name="nota" maxlength="200"
+           placeholder="El equipo tenía tres días sin sincronizar">
+    <div class="ayuda">
+      Se guarda junto al motivo original, no en su lugar: por qué se marcó es
+      parte del historial.
+    </div>
+  </div>
+  <button type="submit">Dar por revisado</button>
+</form>
+{% endif %}
+
+<p style="margin-top:28px">
+  <a href="/panel/cobranza">← Volver a cobranza</a>
+</p>
+{% endblock %}

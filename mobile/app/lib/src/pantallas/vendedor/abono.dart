@@ -38,6 +38,7 @@ import '../../datos/repo_clientes.dart';
 import '../../estado/abonos.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
+import 'comunes.dart';
 import 'vista_ticket.dart';
 
 class PantallaAbono extends ConsumerStatefulWidget {
@@ -224,7 +225,7 @@ class _EstadoAbono extends ConsumerState<PantallaAbono> {
 
           if (folios != null && folios.porAgotarse) ...[
             const SizedBox(height: 16),
-            _Aviso(
+            Aviso(
               'Te quedan ${folios.restantes} folios de cobro. Sincroniza cuando '
               'tengas señal para pedir más.',
             ),
@@ -232,11 +233,11 @@ class _EstadoAbono extends ConsumerState<PantallaAbono> {
 
           if (estado is AbonoFallido) ...[
             const SizedBox(height: 16),
-            _Aviso(estado.mensaje, grave: true),
+            Aviso(estado.mensaje, grave: true),
           ],
           if (estado is AbonoSinIdentidad) ...[
             const SizedBox(height: 16),
-            const _Aviso(
+            const Aviso(
               'Este equipo no tiene credencial o no está registrado. Vuelve a '
               'entrar con señal.',
               grave: true,
@@ -394,9 +395,9 @@ class _EstadoRecibo extends ConsumerState<_Recibo> {
           ),
           const SizedBox(height: 24),
 
-          if (_error != null) _Aviso(_error!, grave: true),
+          if (_error != null) Aviso(_error!, grave: true),
           if (_dondeQuedo != null)
-            _Aviso('Recibo guardado en $_dondeQuedo'),
+            Aviso('Recibo guardado en $_dondeQuedo'),
 
           const SizedBox(height: 8),
           FilledButton.icon(
@@ -467,31 +468,4 @@ String antiguedadDelSaldo(String? sincronizadoEn, {DateTime? ahora}) {
   final dias = transcurrido.inDays;
   return 'Actualizado hace $dias día${dias == 1 ? '' : 's'}. '
       'Sincroniza antes de discutir el saldo con el cliente.';
-}
-
-class _Aviso extends StatelessWidget {
-  const _Aviso(this.texto, {this.grave = false});
-
-  final String texto;
-  final bool grave;
-
-  @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: grave ? esquema.errorContainer : esquema.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        texto,
-        style: TextStyle(
-          color: grave ? esquema.onErrorContainer : esquema.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
 }

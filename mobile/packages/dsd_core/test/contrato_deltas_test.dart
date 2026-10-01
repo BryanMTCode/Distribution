@@ -46,7 +46,8 @@ void main() {
   test('el fixture trae las entidades que el dispositivo necesita', () {
     final entidades = _deltas.map((d) => d.entidad).toSet();
     expect(entidades, containsAll(['producto', 'producto_unidad', 'precio',
-      'cliente', 'cartera', 'lista_precios', 'carga']));
+      'cliente', 'cartera', 'lista_precios', 'carga', 'motivo_merma',
+      'motivo_no_drop']));
   });
 
   test('la carga del servidor real llena el camión', () {
@@ -193,6 +194,94 @@ void main() {
       evaluarVenta(estado, Dinero.deTexto('3800.01'), aCredito: true).permitida,
       isFalse,
     );
+  });
+
+  test('los motivos de merma llegan con lo que decide si se le descuenta', () {
+    // Sin este delta, la pantalla de merma se abre con la lista vacía y el
+    // vendedor no puede registrar la caja que se le reventó: la pérdida acaba
+    // como faltante suyo.
+    AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
+
+    final fila = db.select(
+      "SELECT nombre, afecta_vendedor, activo FROM motivos_merma "
+      "WHERE codigo = 'ROTO'",
+    ).single;
+    expect(fila['nombre'], equals('Empaque roto'));
+    // El servidor manda booleanos de JSON, no 0/1: es el tipo que el aplicador
+    // tiene que convertir, y adivinarlo es el error que este contrato evita.
+    expect(fila['afecta_vendedor'], equals(1));
+    expect(fila['activo'], equals(1));
+
+    final registro = RegistroDeMerma(
+      db: db,
+      vendedorId: 'VEND01',
+      dispositivoId: 'equipo-1',
+      outbox: Outbox(db),
+      folios: RepoFolios(db),
+      nuevoUuid: () => 'id-1',
+      ahora: () => '2026-09-28T10:00:00.000Z',
+    );
+    expect(
+      registro.motivos().map((m) => m.codigo),
+      contains('ROTO'),
+    );
+  });
+
+  test('los motivos de no-drop llegan en el orden de la oficina', () {
+    AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
+
+    final fila = db.select(
+      "SELECT nombre, categoria, requiere_nota, orden, activo "
+      "FROM motivos_no_drop WHERE codigo = 'CERRADO'",
+    ).single;
+    expect(fila['nombre'], equals('Cerrado'));
+    // La categoría es lo que después permite preguntar cuántas visitas perdidas
+    // son culpa nuestra.
+    expect(fila['categoria'], equals('cliente'));
+    expect(fila['requiere_nota'], equals(0));
+    // `orden` entero: en la calle, con el cliente esperando, un catálogo
+    // alfabético obliga a leer diez opciones para encontrar "cerrado".
+    expect(fila['orden'], equals(10));
+    expect(fila['activo'], equals(1));
+  });
+
+  test('un motivo desactivado por la oficina deja de ofrecerse', () {
+    // El delta de desactivación es un upsert con `activo: false`. Si el aplicador
+    // lo ignorara, el vendedor seguiría viendo el motivo que la oficina retiró y
+    // escogería uno que el servidor va a marcar sin que él hiciera nada mal.
+    final aplicador = AplicadorDeltas(db);
+    aplicador.aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
+
+    final original = _deltas.firstWhere((d) => d.entidad == 'motivo_merma');
+    aplicador.aplicar(
+      [
+        Delta(
+          cursor: 9999,
+          entidad: 'motivo_merma',
+          entidadId: original.entidadId,
+          operacion: 'upsert',
+          payload: {...original.payload!, 'activo': false},
+        ),
+      ],
+      recibidoEn: '2026-09-28T11:00:00.000Z',
+    );
+
+    expect(
+      db.select(
+        "SELECT activo FROM motivos_merma WHERE codigo = 'ROTO'",
+      ).single['activo'],
+      equals(0),
+    );
+    final registro = RegistroDeMerma(
+      db: db,
+      vendedorId: 'VEND01',
+      dispositivoId: 'equipo-1',
+      outbox: Outbox(db),
+      folios: RepoFolios(db),
+      nuevoUuid: () => 'id-1',
+      ahora: () => '2026-09-28T10:00:00.000Z',
+    );
+    expect(registro.motivos().map((m) => m.codigo), isNot(contains('ROTO')));
   });
 
   test('aplicar el fixture dos veces no duplica nada', () {

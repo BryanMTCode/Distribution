@@ -49,6 +49,19 @@
     </div>
   </div>
 
+  <a class="tarjeta {% if indicadores.cobros_en_revision %}aviso{% endif %}"
+     href="/panel/cobranza?solo_revision=1" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.cobros_en_revision }}</div>
+    <div class="etiqueta">cobros por revisar</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.cobros_en_revision %}
+        Cobró de más, cobró sin deuda, o el teléfono traía otro saldo.
+      {% else %}
+        Todos los cobros entraron limpios.
+      {% endif %}
+    </div>
+  </a>
+
   <div class="tarjeta">
     <div class="numero">{{ indicadores.ventas_hoy }}</div>
     <div class="etiqueta">ventas recibidas hoy</div>
@@ -58,6 +71,25 @@
       Solo lo que ya sincronizó.
     </div>
   </div>
+
+  <a class="tarjeta" href="/panel/cobranza"
+     style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.efectivo_hoy }}</div>
+    <div class="etiqueta">efectivo a entregar hoy</div>
+    <div class="sutil" style="margin-top:6px">
+      Solo efectivo: una transferencia entra al sistema pero no a la bolsa del
+      vendedor.
+    </div>
+  </a>
+
+  <a class="tarjeta {% if indicadores.hay_cartera_vencida %}alerta{% endif %}"
+     href="/panel/cobranza/cartera/antiguedad" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.cartera_vencida }}</div>
+    <div class="etiqueta">cartera vencida</div>
+    <div class="sutil" style="margin-top:6px">
+      Lo que ya pasó su fecha de pago. La antigüedad dice desde cuándo.
+    </div>
+  </a>
 </div>
 
 <h2>Catálogo</h2>

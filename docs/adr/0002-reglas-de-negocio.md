@@ -856,3 +856,164 @@ Era invisible hasta esta fase, porque sin cobranza nada producía el estado
 manda una venta a crédito y su cobro en el mismo sobre, y el cobro llegó con
 `importe_aplicado = 0`. Es la clase de defecto que una prueba de unidad no ve,
 porque cada pieza por separado hace exactamente lo que dice.
+
+## 21. Mermas y no-drops: los dos documentos que explican una diferencia
+
+Ninguno de los dos mueve dinero, y por eso es fácil tratarlos como papeleo. No lo
+son: son los únicos documentos que explican **por qué el cierre no cuadra**.
+
+Sin la merma, la caja que se revienta en el camión llega a la liquidación como
+faltante, y un faltante sin explicación se le carga al vendedor. Es el caso que le
+duele a un vendedor honesto y el único que no puede corregir después: para el
+cierre, el cartón roto ya se tiró.
+
+Sin el no-drop, un día de 20 visitas con 12 ventas se ve igual que uno de 12
+visitas con 12 ventas. Desde la oficina son indistinguibles, y el primero tiene
+ocho clientes que necesitan algo.
+
+### Dos signos, un documento
+
+    merma               la mercancía SALE del camión
+    devolucion_cliente  la mercancía ENTRA al camión
+
+Es la misma tabla porque son el mismo hecho visto al revés —mercancía que cambia de
+manos sin dinero de por medio— y porque la liquidación los necesita juntos:
+
+    esperado = cargado − vendido − merma + devuelto
+
+Equivocar el signo produce un descuadre del **doble** del tamaño de la operación.
+
+Lo mermado va a un almacén de tipo `merma` si la empresa configuró uno, para que la
+pérdida quede contabilizada donde se puede contar. Si no existe, la mercancía sale
+del sistema y queda solo el movimiento de salida: lo que no se puede perder es el
+registro de que salió.
+
+### La merma es la regla OPUESTA a la de la venta
+
+La venta exige existencia (`cant_actual >= cantidad`) porque la mercancía todavía no
+cambió de manos: si el catálogo está desfasado, el vendedor puede revisar y no
+vender.
+
+La merma no la exige porque **el cartón ya está roto**. Si el camión marca 2 y se
+rompieron 3, el que está mal es el conteo, no el mundo. Bloquearla haría que la
+pérdida no se registrara, y entonces aparece en la liquidación como faltante del
+vendedor — exactamente lo que este documento existe para evitar. El servidor la
+marca con `merma_sin_existencia` y la registra; la existencia del camión **queda
+negativa a propósito**, porque mentir sobre el inventario es peor que admitir que el
+conteo está mal.
+
+La pantalla muestra lo que el camión dice que trae —sirve para notar un dedazo— y
+deja capturar más.
+
+### La única excepción a «marcar, no rechazar» de todo el sistema
+
+El §0.1 dice que el servidor acepta y marca, porque el hecho físico ya ocurrió y
+negarlo no lo deshace. Un no-drop sin ubicación es el único caso distinto: **no hay
+hecho que preservar.** Lo único que afirma el documento es "estuve ahí y no compró",
+y sin coordenadas es indistinguible de "no fui". Guardarlo marcado metería una
+visita no verificable a cada reporte de efectividad.
+
+Y no se pierde nada: el rechazo manda el sobre completo a cuarentena, con su payload
+íntegro, donde la oficina lo ve y decide. El dispositivo ni lo produce —el registro
+local exige `Ubicacion` y `no_drops.lat` es NOT NULL en las dos bases—, así que
+llegar ahí sin ella significa un cliente viejo o alterado, que es justo lo que la
+cuarentena existe para atrapar.
+
+La pantalla no habilita el botón sin lectura de GPS, y explica cada falla donde se
+resuelve: el permiso en los ajustes, el GPS apagado prendiéndolo, el satélite que no
+respondió saliendo del techado. Un "no se pudo obtener la ubicación" no lleva a
+ninguna de las tres.
+
+### Los motivos son catálogo cerrado, y el catálogo viaja
+
+Texto libre son datos que nunca se van a poder analizar: "cerrado", "estaba
+cerrado", "cerrado!!" y "crrado" son cuatro categorías para cualquier reporte.
+
+`motivos_merma` trae `afecta_vendedor`, que decide si la pérdida se le descuenta en
+la liquidación. **Lo decide la oficina en el catálogo, nunca el vendedor al
+capturar** —dejarlo en sus manos sería pedirle que elija si se le cobra—, pero el
+teléfono se lo **muestra**: enterarse en la liquidación de que ese motivo se le
+descuenta es lo que rompe la confianza.
+
+`motivos_no_drop` trae `categoria` (cliente, operación, producto, vendedor), que es
+lo que después permite preguntar cuántas visitas perdidas son culpa nuestra, y
+`orden`, porque en la calle, con el cliente esperando, un catálogo alfabético obliga
+a leer diez opciones para encontrar "cerrado".
+
+## 22. Tres defectos que solo aparecieron al construir la Fase 6
+
+### Los catálogos de motivos nunca llegaban al teléfono
+
+`motivos_merma` y `motivos_no_drop` existían en las dos bases y **ningún disparador
+los publicaba**. Las pantallas de merma y no-drop habrían abierto con la lista
+vacía, y como el motivo es obligatorio, no se habría podido registrar nada: la
+pérdida como faltante del vendedor y la visita perdida fuera de todo reporte.
+
+La migración 0017 agrega los disparadores con una `entidad_id` derivada del código
+(`md5(codigo)::uuid`, porque la llave primaria de esas tablas es texto y `change_log`
+pide un UUID) y hace el relleno inicial, idempotente.
+
+### `activo` no viajaba, así que desactivar un motivo no servía de nada
+
+El disparador publicaba el motivo completo, pero el aplicador de Dart ignoraba
+`activo` y el esquema local ni siquiera tenía la columna. Un motivo que la oficina
+retiraba seguía apareciendo en la pantalla del vendedor: **para él la desactivación
+nunca había pasado.** Y el no-drop lo rechazaba, mandando a cuarentena la visita de
+un vendedor que no hizo nada mal.
+
+Ahora `activo` viaja, el catálogo local lo filtra, y el servidor cambió de criterio:
+un motivo **inactivo** se acepta y se marca con `motivo_fuera_de_catalogo`, porque el
+teléfono le ofreció ese motivo y castigarlo por una edición de escritorio sería
+injusto; uno que **no existe** sigue rechazándose, porque no hay nada a lo que
+mapearlo.
+
+### `Cantidad` no sabía leer un número negativo
+
+Y la existencia del camión **puede quedar negativa**, justo después de la merma que
+el conteo tenía mal. `Cantidad.deTexto` exigía `^(\d+)\.(\d{3})$`, así que
+`Cantidad.deBase(-12)` lanzaba `FormatException` y la pantalla de merma reventaba al
+abrirse **inmediatamente después del caso para el que existe**.
+
+Ahora admite signo, igual que `Dinero` por el saldo a favor. Que una cantidad
+concreta no pueda ser negativa —el renglón de una merma, la línea de un carrito— lo
+decide quien la valida, no el tipo. `Precio` y `Factor` siguen rechazándolo: un
+precio negativo no significa nada, y aceptarlo convertiría un dedazo del catálogo en
+una venta que paga la empresa.
+
+El `_aTexto` también se arregló: con `valor ~/ escala` solo, un −0.500 salía como
+"0.500" —los enteros son cero y el truncado se come el signo— y la cantidad cambiaba
+de sentido al convertirse a texto.
+
+## 23. La cobranza en el panel: mirar es la otra mitad de marcar
+
+`cobro.crear` es el manejador más permisivo del sistema, y a propósito: en un cobro
+el dinero ya está sobre el mostrador. Cobrar más de lo que el cliente debía se
+registra como saldo a favor; cobrarle a quien no debía nada se registra igual; un
+saldo de caché muy desfasado se registra igual. Las tres cosas se **marcan**.
+
+Marcar sin que nadie mire convierte la bandera en ruido, y entonces el permiso del
+manejador deja de ser una decisión y se vuelve un agujero. Hasta esta pantalla, esos
+cobros marcados solo se alcanzaban con SQL a mano, que es lo mismo que no
+alcanzarlos.
+
+### Solo el efectivo entra al arqueo
+
+El corte del día separa `efectivo` de todo lo demás. Una transferencia entra al
+sistema pero no a la bolsa del vendedor, y sumarlas haría que la caja nunca cuadre y
+que el descuadre se le atribuyera a la persona equivocada.
+
+### La antigüedad se cuenta desde el vencimiento
+
+La pregunta que importa no es cuánto nos deben sino desde cuándo: $40,000 al
+corriente y $40,000 a noventa días son dos empresas distintas, y el total solo no las
+distingue. Los tramos salen de `fecha_vencimiento`, no de la emisión: un cliente a 30
+días no está vencido el día 15, y contarlo así haría que la pantalla gritara todos
+los días.
+
+### Lo que el panel NO puede hacer
+
+No cancela cobros ni reasigna aplicaciones. El dinero entró y el reparto lo decidió
+el FIFO sobre la cartera real; un botón para moverlo permitiría maquillar una cartera
+sin que quede rastro. Lo que sí puede es **dar por revisado**, que es un acto de
+auditoría y no una corrección: deja quién lo vio y cuándo, y conserva el motivo
+original al lado en vez de borrarlo, porque por qué se marcó es parte del historial.

@@ -188,6 +188,62 @@
           }
         }
       ]
+    },
+    {
+      "operacion_id": "019283b0-0006-7000-8000-000000000006",
+      "secuencia": 5,
+      "hash_payload": "b783c7515c21d1e1a585675daded279fb1333a3dccbb2cb91fdb1f682bb9eb36",
+      "visita_id": "019283c0-0006-7000-8000-000000000006",
+      "operaciones": [
+        {
+          "tipo": "merma.crear",
+          "entidad_id": "019283e3-0001-7000-8000-000000000001",
+          "datos": {
+            "folio_consecutivo": 7,
+            "folio_local": "VEND01-000007",
+            "tipo": "merma",
+            "motivo_codigo": "ROTO",
+            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
+            "almacen_id": null,
+            "cliente_id": null,
+            "venta_origen_id": null,
+            "observaciones": "Se cayó la tarima al frenar",
+            "fecha_dispositivo": "2026-09-29T18:30:00.000Z",
+            "fecha_operativa": "2026-09-29",
+            "lat": "19.4326000",
+            "lng": "-99.1332000",
+            "ubicacion_precision_m": "12.50",
+            "ubicacion_origen": "gps",
+            "detalle": [
+              {
+                "id": "019283e3-0002-7000-8000-000000000002",
+                "producto_id": "019283a0-0006-7000-8000-000000000006",
+                "cantidad_base": "48.000"
+              }
+            ]
+          }
+        },
+        {
+          "tipo": "no_drop.crear",
+          "entidad_id": "019283e4-0001-7000-8000-000000000001",
+          "datos": {
+            "folio_consecutivo": 12,
+            "cliente_id": "019283a0-0005-7000-8000-000000000005",
+            "vendedor_id": "019283a0-0001-7000-8000-000000000001",
+            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
+            "ruta_id": null,
+            "visita_id": "019283c0-0006-7000-8000-000000000006",
+            "motivo_codigo": "AGOTADO_EN_CAMION",
+            "nota": "Pidió la presentación de 2 litros",
+            "fecha_dispositivo": "2026-09-29T18:40:00.000Z",
+            "fecha_operativa": "2026-09-29",
+            "lat": "19.4330000",
+            "lng": "-99.1340000",
+            "ubicacion_precision_m": "8.00",
+            "ubicacion_origen": "gps"
+          }
+        }
+      ]
     }
   ]
 }

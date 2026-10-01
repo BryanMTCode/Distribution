@@ -61,6 +61,16 @@ async def _cab_vendedor(cliente, sesion, semilla) -> dict:
 
 async def _sembrar(sesion, semilla) -> None:
     """Un catálogo mínimo y un cliente con cartera, con los ids fijos."""
+    # Los catálogos de motivos son dato de REFERENCIA: la migración los publica
+    # una vez y el TRUNCATE entre pruebas se lleva esos renglones del change_log
+    # sin volver a crearlos. Se tocan aquí para que sus deltas entren al fixture,
+    # que es donde el aplicador de Dart queda fijado.
+    await sesion.execute(
+        text("UPDATE motivos_merma SET nombre = nombre WHERE codigo = 'ROTO'")
+    )
+    await sesion.execute(
+        text("UPDATE motivos_no_drop SET nombre = nombre WHERE codigo = 'CERRADO'")
+    )
     await sesion.execute(
         text("""
             INSERT INTO productos (id, sku, codigo_barras, nombre, unidad_base,
@@ -277,6 +287,32 @@ async def test_generar_y_verificar_deltas(cliente, semilla, sesion):
         "así que no puede depender de qué corrió antes."
     )
     assert listas[0]["payload"]["es_default"] is True
+
+    # ------------------------------------------------------------------
+    # Los catálogos de motivos, que son los que habilitan la Fase 6.
+    # ------------------------------------------------------------------
+    # Sin estos deltas, las pantallas de merma y no-drop se abren con la lista
+    # vacía y el vendedor no puede registrar nada: la pérdida queda como faltante
+    # suyo y la visita perdida desaparece de los reportes.
+    motivo_merma = next(c for c in cambios if c["entidad"] == "motivo_merma")
+    assert motivo_merma["payload"]["codigo"] == "ROTO"
+    # `afecta_vendedor` decide si la pérdida se le descuenta, y el teléfono lo
+    # MUESTRA al capturar: sin él la elección del motivo sería a ciegas.
+    assert motivo_merma["payload"]["afecta_vendedor"] is True
+    # `activo` viaja porque si no, un motivo que la oficina retiró seguiría
+    # apareciendo en la pantalla del vendedor: para él la desactivación nunca
+    # habría pasado.
+    assert motivo_merma["payload"]["activo"] is True
+
+    motivo_no_drop = next(c for c in cambios if c["entidad"] == "motivo_no_drop")
+    assert motivo_no_drop["payload"]["codigo"] == "CERRADO"
+    assert motivo_no_drop["payload"]["categoria"] == "cliente"
+    assert motivo_no_drop["payload"]["requiere_nota"] is False
+    # `orden` existe para que los más frecuentes queden arriba: en la calle, con
+    # el cliente esperando, un catálogo alfabético obliga a leer diez opciones
+    # para encontrar "cerrado". Entero sin comillas, no texto.
+    assert motivo_no_drop["payload"]["orden"] == 10
+    assert motivo_no_drop["payload"]["activo"] is True
 
     # ------------------------------------------------------------------
     # La carga, con su detalle DENTRO del mismo delta.

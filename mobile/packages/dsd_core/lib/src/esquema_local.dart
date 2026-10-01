@@ -173,12 +173,23 @@ CREATE TABLE motivos_no_drop (
     nombre          TEXT NOT NULL,
     categoria       TEXT NOT NULL,
     requiere_nota   INTEGER NOT NULL DEFAULT 0,
-    orden           INTEGER NOT NULL DEFAULT 0
+    orden           INTEGER NOT NULL DEFAULT 0,
+    activo          INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE motivos_merma (
     codigo          TEXT PRIMARY KEY,
-    nombre          TEXT NOT NULL
+    nombre          TEXT NOT NULL,
+    -- Si la pérdida se le carga al vendedor en la liquidación. Lo decide la
+    -- OFICINA en el catálogo, y el teléfono lo MUESTRA al capturar: el vendedor
+    -- está eligiendo un motivo que decide si el dinero sale de su bolsa, y
+    -- esconderlo haría que esa elección fuera a ciegas.
+    afecta_vendedor INTEGER NOT NULL DEFAULT 0,
+    -- La oficina puede retirar un motivo del catálogo. Viaja al teléfono porque
+    -- si no, el vendedor seguiría viéndolo y escogiéndolo: para él la
+    -- desactivación no habría pasado, y el servidor marcaría su merma por un
+    -- motivo que no eligió mal.
+    activo          INTEGER NOT NULL DEFAULT 1
 );
 
 -- Credencial para login offline: hash Argon2id replicado desde el servidor.

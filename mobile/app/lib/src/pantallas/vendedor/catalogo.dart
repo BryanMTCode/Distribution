@@ -25,6 +25,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/repo_catalogo.dart';
 import '../../estado/carrito.dart';
 import 'carrito.dart';
+import 'merma.dart';
+import 'no_drop.dart';
 
 class PantallaCatalogo extends ConsumerStatefulWidget {
   const PantallaCatalogo({super.key});
@@ -62,6 +64,49 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
     return Scaffold(
       appBar: AppBar(
         title: Text(cliente?.nombreComercial ?? 'Catálogo'),
+        // Las dos salidas de la visita que NO son una venta. Viven aquí, dentro
+        // de la visita, porque las dos necesitan al cliente: un no-drop sin
+        // cliente no mide nada, y una devolución sin él no se puede revisar
+        // contra su venta.
+        //
+        // En un menú y no como botones: lo que se busca en esta pantalla es
+        // vender, y dos iconos compitiendo con el carrito harían más lento el
+        // caso normal para acelerar el excepcional.
+        actions: [
+          if (cliente != null)
+            PopupMenuButton<String>(
+              key: const Key('menu_de_visita'),
+              icon: const Icon(Icons.more_vert),
+              onSelected: (opcion) {
+                final destino = opcion == 'no_drop'
+                    ? MaterialPageRoute<void>(
+                        builder: (_) => PantallaNoDrop(cliente: cliente),
+                      )
+                    : MaterialPageRoute<void>(
+                        builder: (_) => PantallaMerma(cliente: cliente),
+                      );
+                Navigator.of(context).push(destino);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'no_drop',
+                  child: ListTile(
+                    leading: Icon(Icons.do_not_disturb_on_outlined),
+                    title: Text('No me compró'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'devolucion',
+                  child: ListTile(
+                    leading: Icon(Icons.undo),
+                    title: Text('Me devolvió mercancía'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(

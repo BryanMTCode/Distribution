@@ -238,6 +238,78 @@ List<SobreLocal> construirSobres() => [
           ),
         ],
       ),
+
+      // Caso 6: LO QUE EXPLICA UNA DIFERENCIA — una merma del camión y un
+      // no-drop, en un solo sobre.
+      //
+      // Ninguno de los dos mueve dinero, y por eso es fácil que una divergencia
+      // de contrato pase inadvertida: no hay un total que no cuadre. Lo que se
+      // rompe es más sutil y peor — una merma que cae en cuarentena por un
+      // nombre de campo deja la pérdida como faltante del vendedor, y un no-drop
+      // perdido borra la visita de los reportes de efectividad.
+      //
+      // El no-drop lleva geosello porque **el servidor lo rechaza sin él**: es el
+      // único documento del sistema que lo hace, y este sobre prueba que el
+      // cliente Dart siempre lo manda.
+      SobreLocal(
+        operacionId: '019283b0-0006-7000-8000-000000000006',
+        secuencia: 5,
+        visitaId: '019283c0-0006-7000-8000-000000000006',
+        operaciones: [
+          OperacionLocal(
+            tipo: 'merma.crear',
+            entidadId: '019283e3-0001-7000-8000-000000000001',
+            datos: {
+              'folio_consecutivo': 7,
+              'folio_local': 'VEND01-000007',
+              'tipo': 'merma',
+              'motivo_codigo': 'ROTO',
+              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
+              'almacen_id': null,
+              'cliente_id': null,
+              'venta_origen_id': null,
+              'observaciones': 'Se cayó la tarima al frenar',
+              'fecha_dispositivo': '2026-09-29T18:30:00.000Z',
+              'fecha_operativa': '2026-09-29',
+              'lat': '19.4326000',
+              'lng': '-99.1332000',
+              'ubicacion_precision_m': '12.50',
+              'ubicacion_origen': 'gps',
+              'detalle': [
+                {
+                  'id': '019283e3-0002-7000-8000-000000000002',
+                  'producto_id': _productoDeLaVenta,
+                  // Dos cajas de 24 capturadas como 48 piezas: la conversión la
+                  // hace el teléfono, y lo que viaja es SIEMPRE unidad base.
+                  'cantidad_base': '48.000',
+                },
+              ],
+            },
+          ),
+          OperacionLocal(
+            tipo: 'no_drop.crear',
+            entidadId: '019283e4-0001-7000-8000-000000000001',
+            datos: {
+              'folio_consecutivo': 12,
+              'cliente_id': _clienteDeLaVenta,
+              'vendedor_id': '019283a0-0001-7000-8000-000000000001',
+              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
+              'ruta_id': null,
+              'visita_id': '019283c0-0006-7000-8000-000000000006',
+              'motivo_codigo': 'AGOTADO_EN_CAMION',
+              // Este motivo exige nota: 'no traigo lo que pidió' sin decir qué
+              // pidió no sirve para nada.
+              'nota': 'Pidió la presentación de 2 litros',
+              'fecha_dispositivo': '2026-09-29T18:40:00.000Z',
+              'fecha_operativa': '2026-09-29',
+              'lat': '19.4330000',
+              'lng': '-99.1340000',
+              'ubicacion_precision_m': '8.00',
+              'ubicacion_origen': 'gps',
+            },
+          ),
+        ],
+      ),
     ];
 
 /// El cliente y el producto de la venta de ejemplo. El servidor los siembra con

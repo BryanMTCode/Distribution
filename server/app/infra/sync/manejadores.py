@@ -840,6 +840,409 @@ async def crear_cobro(
     )
 
 
+# ---------------------------------------------------------------------------
+# Fase 6 · mermas, devoluciones y no-drops
+# ---------------------------------------------------------------------------
+#
+# LO QUE ESTOS DOCUMENTOS EVITAN
+#
+# Sin la merma, una caja que se rompe en el camión aparece en la liquidación como
+# un faltante que el sistema no puede explicar, y **se le carga al vendedor**. Es
+# el caso que le duele a un vendedor honesto y el único que no puede corregir
+# después: para el cierre, el cartón roto ya se tiró.
+#
+# Sin el no-drop, un día de 20 visitas y 12 ventas se ve igual que un día de 12
+# visitas y 12 ventas. Desde la oficina son indistinguibles, y el primero tiene
+# ocho clientes que necesitan algo.
+
+MOTIVO_SIN_EXISTENCIA_PARA_MERMA = "merma_sin_existencia"
+MOTIVO_NO_DROP_SIN_NOTA = "no_drop_sin_nota"
+
+# Un motivo que la oficina retiró DESPUÉS de que el vendedor capturó.
+#
+# No se rechaza: el teléfono le ofreció ese motivo porque era el catálogo que
+# tenía, y mandar su merma a cuarentena lo castigaría por una edición de
+# escritorio que ocurrió mientras él andaba en la calle. Un motivo que no existe
+# en absoluto sí se rechaza, porque no hay nada a lo que mapearlo.
+MOTIVO_MOTIVO_INACTIVO = "motivo_fuera_de_catalogo"
+
+TIPOS_DE_MERMA = ("merma", "devolucion_cliente")
+
+
+@manejador_de("merma.crear")
+async def crear_merma(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """Registra una merma o una devolución de cliente.
+
+    ────────────────────────────────────────────────────────────────────────
+    LOS DOS SIGNOS, Y POR QUÉ IMPORTAN TANTO
+    ────────────────────────────────────────────────────────────────────────
+        merma               la mercancía SALE del camión
+        devolucion_cliente  la mercancía ENTRA al camión
+
+    Es el mismo documento visto al revés, y la liquidación los necesita juntos:
+    `esperado = cargado − vendido − merma + devuelto`. Equivocar el signo produce
+    un descuadre del **doble** del tamaño de la operación.
+
+    ────────────────────────────────────────────────────────────────────────
+    UNA MERMA NO SE RECHAZA POR FALTA DE EXISTENCIA
+    ────────────────────────────────────────────────────────────────────────
+    Si el camión marca 2 y se rompieron 3, el que está mal es el conteo. Se marca
+    para que la oficina lo revise y se registra igual: rechazarla haría que la
+    pérdida apareciera como faltante del vendedor, que es exactamente lo que este
+    documento existe para evitar.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM mermas WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    tipo = _texto(datos, "tipo", obligatorio=True)
+    if tipo not in TIPOS_DE_MERMA:
+        raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, f"tipo inválido: {tipo!r}")
+
+    motivo_codigo = _texto(datos, "motivo_codigo", obligatorio=True)
+    cliente_id = _uuid_opcional(datos, "cliente_id")
+    if tipo == "devolucion_cliente" and cliente_id is None:
+        # Lo impone también un CHECK de la base (`devolucion_requiere_cliente`),
+        # pero su error no explica nada: sin cliente no se sabe a quién se le
+        # recibió ni contra qué venta revisarlo.
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO,
+            "una devolución sin cliente no se puede revisar contra su venta",
+        )
+
+    detalle = datos.get("detalle")
+    if not isinstance(detalle, list) or not detalle:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, "una merma sin renglones no es una merma"
+        )
+
+    motivo = (
+        await sesion.execute(
+            text("SELECT activo FROM motivos_merma WHERE codigo = :c"),
+            {"c": motivo_codigo},
+        )
+    ).mappings().first()
+    if motivo is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"el motivo de merma {motivo_codigo!r} no existe en el catálogo",
+        )
+
+    # El almacén sale del contexto si el payload no lo trae: es el camión del
+    # vendedor, y dejar que el dispositivo lo declare permitiría mermar el
+    # inventario de otro.
+    almacen_id = ctx.almacen_id or _uuid_opcional(datos, "almacen_id")
+    if almacen_id is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "no se sabe de qué almacén sale la mercancía",
+        )
+
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    motivos: list[str] = []
+    if not motivo["activo"]:
+        motivos.append(MOTIVO_MOTIVO_INACTIVO)
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO mermas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                tipo, almacen_id, vendedor_id, cliente_id,
+                                venta_origen_id, visita_id, motivo_codigo,
+                                observaciones, lat, lng, estado,
+                                fecha_dispositivo, fecha_servidor, fecha_operativa)
+            VALUES (:id, :dispositivo, :folio, :folio_local, :tipo, :almacen,
+                    :vendedor, :cliente, :venta_origen, :visita, :motivo,
+                    :observaciones, :lat, :lng, 'confirmada',
+                    :fecha_dispositivo, :ahora, :fecha_operativa)
+            """
+        ),
+        {
+            "id": entidad_id,
+            "dispositivo": ctx.dispositivo_id,
+            "folio": _entero(datos, "folio_consecutivo", obligatorio=True),
+            "folio_local": _texto(datos, "folio_local", obligatorio=True),
+            "tipo": tipo,
+            "almacen": almacen_id,
+            "vendedor": ctx.usuario_id,
+            "cliente": cliente_id,
+            "venta_origen": _uuid_opcional(datos, "venta_origen_id"),
+            "visita": _uuid_opcional(datos, "visita_id"),
+            "motivo": motivo_codigo,
+            "observaciones": _texto(datos, "observaciones"),
+            "lat": _decimal(datos, "lat"),
+            "lng": _decimal(datos, "lng"),
+            "fecha_dispositivo": fecha_dispositivo,
+            "ahora": ctx.recibido_en,
+            "fecha_operativa": _texto(datos, "fecha_operativa")
+            or fecha_dispositivo.date().isoformat(),
+        },
+    )
+
+    # El signo: una merma sale del camión, una devolución entra.
+    sale = tipo == "merma"
+
+    # Hacia dónde va lo mermado. Si la empresa configuró un almacén de merma, la
+    # pérdida queda contabilizada ahí y el libro mayor cuadra en los dos lados; si
+    # no existe, la mercancía sale del sistema y solo queda el movimiento de
+    # salida. Lo que no se puede perder es el registro de que salió.
+    #
+    # Se busca UNA vez, no por renglón: una merma de quince productos no necesita
+    # quince consultas para contestar siempre lo mismo.
+    destino_merma: uuid.UUID | None = None
+    if sale:
+        destino_merma = (
+            await sesion.execute(
+                text(
+                    "SELECT id FROM almacenes WHERE tipo = 'merma' AND activo "
+                    " ORDER BY codigo LIMIT 1"
+                )
+            )
+        ).scalar_one_or_none()
+
+    for cruda in detalle:
+        if not isinstance(cruda, dict):
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "renglón mal formado")
+
+        producto_id = _uuid_obligatorio(cruda, "producto_id")
+        cantidad = _decimal_obligatorio(cruda, "cantidad_base")
+        if cantidad <= 0:
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO,
+                f"un renglón de {cantidad} no describe ninguna merma",
+            )
+
+        if sale:
+            disponible = (
+                await sesion.execute(
+                    text(
+                        "SELECT cantidad FROM existencias "
+                        " WHERE almacen_id = :a AND producto_id = :p"
+                    ),
+                    {"a": almacen_id, "p": producto_id},
+                )
+            ).scalar_one_or_none()
+            # Se MARCA, no se rechaza. El cartón ya está roto.
+            if (
+                disponible is None or Decimal(disponible) < cantidad
+            ) and MOTIVO_SIN_EXISTENCIA_PARA_MERMA not in motivos:
+                motivos.append(MOTIVO_SIN_EXISTENCIA_PARA_MERMA)
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO merma_detalle (id, merma_id, producto_id, cantidad_base, lote)
+                VALUES (:id, :merma, :p, :cantidad, :lote)
+                ON CONFLICT (merma_id, producto_id) DO UPDATE
+                   SET cantidad_base = merma_detalle.cantidad_base + excluded.cantidad_base
+                """
+            ),
+            {
+                "id": _uuid_opcional(cruda, "id") or uuid.uuid4(),
+                "merma": entidad_id,
+                "p": producto_id,
+                "cantidad": cantidad,
+                "lote": _texto(cruda, "lote"),
+            },
+        )
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO movimientos_inventario
+                  (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
+                   documento_tipo, documento_id, usuario_id, dispositivo_id,
+                   fecha_dispositivo, fecha_servidor)
+                VALUES (:tipo, :origen, :destino, :p, :cantidad, 'merma', :doc,
+                        :quien, :equipo, :fecha_dispositivo, :ahora)
+                """
+            ),
+            {
+                "tipo": "merma" if sale else "devolucion",
+                "origen": almacen_id if sale else None,
+                "destino": destino_merma if sale else almacen_id,
+                "p": producto_id,
+                "cantidad": cantidad,
+                "doc": entidad_id,
+                "quien": ctx.usuario_id,
+                "equipo": ctx.dispositivo_id,
+                "fecha_dispositivo": fecha_dispositivo,
+                "ahora": ctx.recibido_en,
+            },
+        )
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO existencias (almacen_id, producto_id, cantidad, actualizado_en)
+                VALUES (:a, :p, :delta, :ahora)
+                ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                   SET cantidad = existencias.cantidad + :delta, actualizado_en = :ahora
+                """
+            ),
+            {
+                "a": almacen_id,
+                "p": producto_id,
+                "delta": -cantidad if sale else cantidad,
+                "ahora": ctx.recibido_en,
+            },
+        )
+        if sale and destino_merma is not None:
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO existencias (almacen_id, producto_id, cantidad,
+                                             actualizado_en)
+                    VALUES (:a, :p, :cantidad, :ahora)
+                    ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                       SET cantidad = existencias.cantidad + :cantidad,
+                           actualizado_en = :ahora
+                    """
+                ),
+                {
+                    "a": destino_merma,
+                    "p": producto_id,
+                    "cantidad": cantidad,
+                    "ahora": ctx.recibido_en,
+                },
+            )
+
+    if motivos:
+        await sesion.execute(
+            text(
+                "UPDATE mermas SET requiere_revision = true, revision_motivos = :m "
+                " WHERE id = :id"
+            ),
+            {"id": entidad_id, "m": motivos},
+        )
+
+    await sesion.flush()
+
+
+@manejador_de("no_drop.crear")
+async def crear_no_drop(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """Registra una visita que no terminó en venta.
+
+    No mueve inventario ni dinero: es un **dato de efectividad**. Lo que mide es la
+    diferencia entre un día de 20 visitas con 12 ventas y uno de 12 visitas con 12
+    ventas, que desde la oficina son indistinguibles sin esto.
+
+    Es el único documento del sistema que **rechaza** por falta de ubicación en vez
+    de marcarla, y la razón está escrita donde se hace la validación: sin el sello
+    de GPS no queda ningún hecho que preservar.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM no_drops WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    cliente_id = _uuid_obligatorio(datos, "cliente_id")
+    motivo_codigo = _texto(datos, "motivo_codigo", obligatorio=True)
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+
+    motivo = (
+        await sesion.execute(
+            text(
+                "SELECT requiere_nota, activo FROM motivos_no_drop WHERE codigo = :c"
+            ),
+            {"c": motivo_codigo},
+        )
+    ).mappings().first()
+    if motivo is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"el motivo de no-drop {motivo_codigo!r} no existe en el catálogo",
+        )
+
+    cliente = (
+        await sesion.execute(
+            text("SELECT ruta_id FROM clientes WHERE id = :id"), {"id": cliente_id}
+        )
+    ).mappings().first()
+    if cliente is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"el no-drop referencia un cliente que no existe: {cliente_id}",
+        )
+    if cliente["ruta_id"] is not None and ctx.rutas and cliente["ruta_id"] not in ctx.rutas:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "el cliente no pertenece a la ruta del vendedor"
+        )
+
+    motivos: list[str] = []
+    if not motivo["activo"]:
+        motivos.append(MOTIVO_MOTIVO_INACTIVO)
+    lat, lng = _decimal(datos, "lat"), _decimal(datos, "lng")
+    nota = _texto(datos, "nota")
+
+    if lat is None or lng is None:
+        # LA ÚNICA EXCEPCIÓN A «MARCAR, NO RECHAZAR» (§0.1).
+        #
+        # En todo lo demás el servidor acepta y marca, porque el hecho físico ya
+        # ocurrió y negarlo no lo deshace. Un no-drop sin ubicación es distinto:
+        # NO HAY HECHO QUE PRESERVAR. Lo único que afirma el documento es "estuve
+        # ahí y no compró", y sin coordenadas es indistinguible de "no fui".
+        # Guardarlo marcado metería una visita no verificable a cada reporte de
+        # efectividad; `no_drops.lat` es NOT NULL en las dos bases por esto.
+        #
+        # Y no se pierde: el rechazo manda el SOBRE COMPLETO a cuarentena, donde
+        # la oficina lo ve con su payload intacto y decide. El dispositivo ni lo
+        # produce —el registro local exige `Ubicacion`— así que llegar aquí sin
+        # ella significa un cliente viejo o alterado, justo lo que la cuarentena
+        # existe para atrapar.
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "un no-drop sin ubicación no se distingue de una visita que no se hizo",
+        )
+
+    if motivo["requiere_nota"] and not nota:
+        # Se marca y entra: el dato de que el cliente no compró vale aunque la
+        # explicación venga vacía, y la oficina puede pedirla.
+        motivos.append(MOTIVO_NO_DROP_SIN_NOTA)
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO no_drops (id, dispositivo_id, folio_consecutivo, cliente_id,
+                                  vendedor_id, ruta_id, visita_id, motivo_codigo,
+                                  nota, lat, lng, ubicacion_precision_m,
+                                  fecha_dispositivo, fecha_servidor, fecha_operativa,
+                                  requiere_revision, revision_motivos)
+            VALUES (:id, :dispositivo, :folio, :cliente, :vendedor, :ruta, :visita,
+                    :motivo, :nota, :lat, :lng, :precision,
+                    :fecha_dispositivo, :ahora, :fecha_operativa, :revision, :motivos)
+            """
+        ),
+        {
+            "id": entidad_id,
+            "dispositivo": ctx.dispositivo_id,
+            "folio": _entero(datos, "folio_consecutivo", obligatorio=True),
+            "cliente": cliente_id,
+            "vendedor": ctx.usuario_id,
+            "ruta": cliente["ruta_id"],
+            "visita": _uuid_opcional(datos, "visita_id"),
+            "motivo": motivo_codigo,
+            "nota": nota,
+            "lat": lat,
+            "lng": lng,
+            "precision": _decimal(datos, "ubicacion_precision_m"),
+            "fecha_dispositivo": fecha_dispositivo,
+            "ahora": ctx.recibido_en,
+            "fecha_operativa": _texto(datos, "fecha_operativa")
+            or fecha_dispositivo.date().isoformat(),
+            "revision": bool(motivos),
+            "motivos": motivos,
+        },
+    )
+    await sesion.flush()
+
+
 def _entero_de_fila(fila: Any, clave: str, *, por_omision: int = 0) -> int:
     """Un entero de una fila de la base, con omisión.
 

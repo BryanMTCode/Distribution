@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block titulo %}Cobranza{% endblock %}
+{% block contenido %}
+<h1>{% if solo_revision %}Cobros por revisar{% else %}Cobros del día{% endif %}</h1>
+<p class="subtitulo">
+  En un cobro el dinero ya está sobre el mostrador, así que el servidor no rechaza
+  casi nada: <strong>marca</strong>. Esta pantalla es la otra mitad de esa regla.
+  <a href="/panel/cobranza/cartera/antiguedad">Ver la cartera por antigüedad →</a>
+</p>
+
+<form class="barra" method="get" action="/panel/cobranza">
+  <input type="date" name="dia" value="{{ dia }}">
+  <button type="submit" name="solo_revision" value="0"
+          class="{% if solo_revision %}secundario{% endif %}">Del día</button>
+  <button type="submit" name="solo_revision" value="1"
+          class="{% if not solo_revision %}secundario{% endif %}">
+    Por revisar{% if pendientes %} ({{ pendientes }}){% endif %}
+  </button>
+</form>
+
+{# ------------------------------------------------------------------------- #}
+{# El corte del día: lo que tiene que cuadrar contra la mano del vendedor.   #}
+{# ------------------------------------------------------------------------- #}
+{% if corte %}
+<h2>Qué entregar hoy</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  Solo el efectivo entra al arqueo. Una transferencia entra al sistema pero no a
+  la bolsa del vendedor, y sumarlas haría que la caja nunca cuadre.
+</p>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Vendedor</th>
+        <th class="numero">Efectivo a entregar</th>
+        <th class="numero">Otras formas</th>
+        <th class="numero">Cobros</th>
+        <th>Por revisar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in corte %}
+      <tr>
+        <td>{{ c.vendedor }}</td>
+        <td class="numero"><strong>${{ '%.2f'|format(c.efectivo) }}</strong></td>
+        <td class="numero sutil">${{ '%.2f'|format(c.otras_formas) }}</td>
+        <td class="numero">{{ c.cuantos }}</td>
+        <td>
+          {% if c.marcados %}
+            <span class="etiqueta-motivo">{{ c.marcados }} marcado{{ '' if c.marcados == 1 else 's' }}</span>
+          {% else %}
+            <span class="sutil">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>{% if solo_revision %}Los que hay que mirar{% else %}Los cobros{% endif %}</h2>
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Recibo</th>
+        <th>Cliente</th>
+        <th>Vendedor</th>
+        <th class="numero">Importe</th>
+        <th>Qué revisar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <a href="/panel/cobranza/{{ f.id }}" class="mono">{{ f.folio_local }}</a>
+          <div class="sutil">
+            {{ f.fecha_operativa.strftime('%d/%m') }}
+            {% if not f.impreso %}· sin imprimir{% endif %}
+          </div>
+        </td>
+        <td>
+          {{ f.cliente }}
+          {% if f.codigo_cliente %}<div class="sutil">{{ f.codigo_cliente }}</div>{% endif %}
+        </td>
+        <td class="sutil">{{ f.vendedor }}</td>
+        <td class="numero">
+          ${{ '%.2f'|format(f.importe) }}
+          <div class="sutil">
+            {{ f.forma_pago }}{% if f.forma_pago not in formas_en_arqueo %} (no arqueo){% endif %}
+          </div>
+          {% if f.saldo_a_favor and f.saldo_a_favor > 0 %}
+            <div class="sutil">${{ '%.2f'|format(f.saldo_a_favor) }} a favor</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if f.requiere_revision %}
+            {% for m in f.revision_motivos %}
+              <span class="etiqueta-motivo">{{ explicacion.get(m, m) }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="sutil">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  {% if solo_revision %}
+    Ningún cobro marcado. Todo lo que entró venía limpio.
+  {% else %}
+    No entró ningún cobro ese día.
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

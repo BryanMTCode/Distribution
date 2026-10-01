@@ -51,6 +51,59 @@ class ProductoEnCatalogo {
   bool get agotado => !vaEnLaCarga || existenciaBase.esCero;
 }
 
+/// Un producto para mermar o recibir en devolución.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// POR QUÉ NO SE REUSA `ProductoEnCatalogo`
+/// ─────────────────────────────────────────────────────────────────────────
+/// El catálogo vendible **exige precio**: su consulta hace `JOIN precios`, y una
+/// presentación sin renglón de precio no se ofrece, porque un renglón de $0.00 en
+/// un ticket es peor que un producto que no aparece.
+///
+/// Una merma no tiene precio. Un refresco que se reventó se reventó aunque la
+/// oficina nunca le haya puesto tarifa a esa lista, y esconderlo haría que el
+/// vendedor cargara con un faltante que no puede explicar. Por eso esta consulta
+/// no toca `precios` y parte de lo que el camión trae, no de lo que se le puede
+/// vender a un cliente.
+class ProductoDelCamion {
+  const ProductoDelCamion({
+    required this.id,
+    required this.sku,
+    required this.nombre,
+    required this.existenciaBase,
+    required this.unidades,
+    this.codigoBarras,
+  });
+
+  final String id;
+  final String sku;
+  final String nombre;
+  final String? codigoBarras;
+
+  /// Lo que el camión dice que queda. Es referencia, **no tope**: la merma se
+  /// registra aunque el conteo diga que no había (§0.1).
+  final Cantidad existenciaBase;
+
+  /// Las presentaciones con su factor, para capturar en cajas y guardar en
+  /// piezas. La de omisión va primero.
+  final List<UnidadDelProducto> unidades;
+
+  UnidadDelProducto get porOmision => unidades.first;
+}
+
+/// Una presentación, sin precio: nombre y cuántas unidades base trae.
+class UnidadDelProducto {
+  const UnidadDelProducto({
+    required this.codigo,
+    required this.factor,
+    required this.esDefault,
+  });
+
+  final String codigo;
+  final Factor factor;
+  final bool esDefault;
+}
+
 /// Con qué lista se cotiza, y si es la suya o la de respaldo.
 ///
 /// La distinción se muestra en pantalla: cotizar con la lista por omisión a un
@@ -165,6 +218,71 @@ class RepoCatalogo {
         f['producto_id'] as String:
             Cantidad.deBase((f['cant_actual'] as num).toDouble()),
     });
+  }
+
+  /// Lo que trae el camión, con sus presentaciones y sin precios.
+  ///
+  /// Parte de `existencias_camion`, no de `productos`: lo que se puede mermar es
+  /// lo que subió al camión. Un producto del catálogo que nunca subió no se
+  /// ofrece aquí, porque mermarlo sería registrar la pérdida de algo que el
+  /// vendedor no traía.
+  ///
+  /// Se incluyen los que quedaron en cero o en negativo: un producto que se
+  /// agotó vendiendo sigue pudiendo tener una caja reventada en el piso del
+  /// camión, y el renglón en cero es justo el caso que el conteo tiene mal.
+  List<ProductoDelCamion> enElCamion({String? busqueda, int limite = 400}) {
+    final filtro = (busqueda ?? '').trim();
+    final tieneFiltro = filtro.isNotEmpty;
+
+    final filas = _db.select(
+      '''
+      SELECT p.id,
+             p.sku,
+             p.nombre,
+             p.codigo_barras,
+             e.cant_actual AS existencia,
+             u.unidad_codigo,
+             u.factor,
+             u.es_default
+        FROM existencias_camion e
+        JOIN productos p ON p.id = e.producto_id
+        JOIN producto_unidades u ON u.producto_id = p.id
+       WHERE (?1 = 0 OR p.nombre LIKE ?2 OR p.sku LIKE ?2 OR p.codigo_barras = ?3)
+       ORDER BY p.nombre, u.es_default DESC, u.factor DESC
+       LIMIT ?4
+      ''',
+      [tieneFiltro ? 1 : 0, '%$filtro%', filtro, limite * 4],
+    );
+
+    final porProducto = <String, List<Row>>{};
+    for (final f in filas) {
+      porProducto.putIfAbsent(f['id'] as String, () => []).add(f);
+    }
+
+    final productos = <ProductoDelCamion>[];
+    for (final entrada in porProducto.entries) {
+      if (productos.length >= limite) break;
+      final primera = entrada.value.first;
+      productos.add(
+        ProductoDelCamion(
+          id: entrada.key,
+          sku: primera['sku'] as String,
+          nombre: primera['nombre'] as String,
+          codigoBarras: primera['codigo_barras'] as String?,
+          existenciaBase:
+              Cantidad.deBase((primera['existencia'] as num).toDouble()),
+          unidades: [
+            for (final f in entrada.value)
+              UnidadDelProducto(
+                codigo: f['unidad_codigo'] as String,
+                factor: Factor.deBase((f['factor'] as num).toDouble()),
+                esDefault: (f['es_default'] as int) == 1,
+              ),
+          ],
+        ),
+      );
+    }
+    return productos;
   }
 
   /// Con qué lista se le cotiza a este cliente.

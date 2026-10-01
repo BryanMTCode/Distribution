@@ -247,6 +247,82 @@ Dos cosas que conviene saber antes de usarlo con vendedores:
 A qué factura se aplica lo decide **el servidor**, en orden de vencimiento más
 antiguo. El teléfono solo dice «este cliente pagó tanto».
 
+### Registrar lo que se perdió (merma) y a quién no se le vendió (no-drop)
+
+Son los dos documentos que explican por qué el cierre no cuadra, y los dos están en
+el teléfono.
+
+**La merma del camión** está en el icono de bote de basura, arriba a la derecha de la
+lista de ruta. Vive ahí y no dentro de la visita a un cliente porque la caja se
+revienta entre tienda y tienda:
+
+1. Escoge el motivo. Es catálogo cerrado: viene del panel, no se escribe a mano.
+2. Busca el producto y teclea cuántas. Si capturas **cajas**, la pantalla te muestra
+   abajo en cuántas piezas se convierte — ahí se atrapa el dedazo antes de guardar.
+3. Registra.
+
+Tres cosas que conviene saber antes de darlo a vendedores:
+
+- **Se puede mermar más de lo que el camión dice que trae.** La pantalla avisa y lo
+  registra igual. El cartón ya está roto: si lo bloqueara, la pérdida no quedaría
+  registrada y en la liquidación aparecería como **faltante del vendedor**, que es
+  exactamente lo que este documento existe para evitar. El servidor lo marca y lo ves
+  en el panel.
+- **El motivo decide si se le descuenta.** Lo decides tú en el catálogo
+  (`afecta_vendedor`), nunca el vendedor al capturar — pero el teléfono **se lo
+  dice**: enterarse en la liquidación de que ese motivo se le cobra es lo que rompe
+  la confianza.
+- Lo mermado va a un almacén de tipo `merma` si creaste uno en **Equipo**. Si no
+  existe, la mercancía sale del sistema y solo queda el movimiento de salida.
+
+**La devolución de un cliente** se registra desde su visita: entra al cliente y usa
+el menú de los tres puntos → «Me devolvió mercancía». Tiene que ser desde ahí porque
+sin cliente la oficina no puede revisarla contra su venta. El signo es el contrario:
+la mercancía **entra** al camión y regresa a la bodega en la liquidación.
+
+**El no-drop** —la visita que no terminó en venta— está en el mismo menú, en «No me
+compró». Es el único documento del sistema que **exige GPS**, y el botón no se
+habilita sin lectura: sin coordenadas, «estuve ahí y no compró» es indistinguible de
+«no fui», y una visita no verificable en el reporte de efectividad es peor que
+ninguna. Si el satélite no aparece, la pantalla te dice qué falló y dónde se arregla
+—el permiso en los ajustes, el GPS apagado prendiéndolo, bajo techo saliendo a la
+calle— y hay un botón para volver a leer sin salir.
+
+Algunos motivos **exigen explicación** (`requiere_nota` en el catálogo): «no le
+interesa el producto» sin decir por qué no sirve para nada. El motivo trae además su
+categoría, y es lo que después contesta la pregunta que importa: cuántas visitas
+perdidas son culpa nuestra y cuántas del cliente.
+
+> **Si las listas de motivos salen vacías**, el equipo no ha recibido el catálogo:
+> sincroniza con señal y vuelve a entrar. La pantalla lo dice con esas palabras en vez
+> de mostrar un desplegable vacío, porque un desplegable vacío parece una falla de la
+> aplicación.
+
+### Revisar la cobranza desde el panel
+
+En **Cobranza** se contestan las tres preguntas de la tarde:
+
+1. **Cuánto efectivo tiene que entregar cada vendedor.** El corte de arriba separa el
+   efectivo de las transferencias y los cheques: esos entraron al sistema pero no a su
+   bolsa, y sumarlos haría que la caja nunca cuadre y que el descuadre se le atribuyera
+   a quien no fue.
+2. **Qué cobro hay que mirar, y por qué.** El botón «Por revisar» trae los marcados con
+   el motivo en español. Entra a uno y verás a qué facturas se aplicó el dinero (en
+   orden de vencimiento más antiguo, que lo decide el servidor) y **qué saldo traía el
+   teléfono** contra el que había de verdad. Ese segundo número es el que distingue un
+   vendedor que cobró a ciegas —su equipo tenía días sin sincronizar— de uno que cobró
+   mal.
+3. **Qué nos deben y desde cuándo.** El enlace «Ver la cartera por antigüedad» reparte
+   cada cliente en tramos desde su **vencimiento**, no desde la emisión: un cliente a 30
+   días no está vencido el día 15.
+
+El panel **no cancela cobros ni mueve aplicaciones**, y es deliberado: el dinero entró
+y el reparto lo decidió el servidor sobre la cartera real. Lo que sí puedes hacer es
+**dar por revisado**, que no cambia nada del cobro — registra que alguien lo miró, con
+tu nombre y tu nota, y lo saca de la lista de pendientes para que la lista siga
+significando algo. El motivo original se queda al lado: por qué se marcó es parte del
+historial.
+
 ### Cerrar el día (liquidación)
 
 Es el paso que convierte la operación en números que cuadran. Al final del día, en
@@ -361,9 +437,9 @@ meses después en miles de tickets en cuarentena. Que falle el CI es exactamente
 
 ---
 
-## 4. Para la Fase 3 (todavía no)
+## 4. Para compilar la app móvil
 
-Cuando llegue la app móvil:
+La app ya existe; esto es lo que hace falta para compilarla y correrla desde Windows:
 
 ```bash
 sudo snap install flutter --classic    # dentro de WSL

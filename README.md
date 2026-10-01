@@ -5,13 +5,15 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fase 3 cerrada — el ciclo completo del vendedor funciona offline.** Fases 0, 1 y 2 hechas. Reglas de negocio
+**Fases 0 a 7 hechas — el día completo del vendedor y su cierre.** Sale el camión cargado, se vende y se
+cobra offline, se registra lo que se perdió y a quién no se le vendió, y la liquidación cuadra contra la
+ecuación. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0013) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0018) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -68,9 +70,12 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
-| Mermas y no-drops en la app | ⛔ Fase 6 |
+| **Mermas y devoluciones** — el signo que evita que el faltante sea del vendedor | ✅ 44 pruebas + 32 de ingesta |
+| **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
+| Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
+| **Cobranza en el panel** — arqueo del día, cobros marcados y antigüedad | ✅ 25 pruebas |
 
-**493 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **404 de Dart** y **148 de widget**, todas en verde.
+**552 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **435 de Dart** y **186 de widget**, todas en verde.
 
 ## Stack
 
@@ -107,6 +112,7 @@ server/
                      equipo.py        usuarios, rutas, almacenes y listas de precios
                      inventario.py    existencias y libro mayor por almacén
                      liquidaciones.py el cierre del día (Fase 7)
+                     cobranza.py      arqueo del día, cobros marcados y antigüedad
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
@@ -126,17 +132,18 @@ mobile/
   db/schema.sql      esquema local del dispositivo — FUENTE DE VERDAD
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, precio de 4 decimales, carrito,
-                     borrador, VENTA, TICKET ESC/POS + vista previa, crédito,
-                     credencial, folios, outbox, sobres, ubicación, alta de
-                     clientes, sincronizador, aplicador de deltas, esquema
-    test/            367 pruebas que corren en segundos
+                     borrador, VENTA, COBRO, MERMA, NO-DROP, TICKET ESC/POS +
+                     vista previa, crédito, credencial, folios, outbox, sobres,
+                     ubicación, alta de clientes, sincronizador, aplicador de
+                     deltas, esquema
+    test/            435 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
-    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket,
-                     lienzo espacial, gerencia
-    test/            125 pruebas de widget, sin emulador
+    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
+                     merma y devolución, no-drop, lienzo espacial, gerencia
+    test/            186 pruebas de widget, sin emulador
 analytics/           Streamlit (solo lectura)
 contracts/           vectores compartidos + OpenAPI
 deploy/              Caddyfile
@@ -152,8 +159,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 493 pruebas de Python
-make movil                          # 404 de Dart + 148 de widget
+make pruebas                        # 552 pruebas de Python
+make movil                          # 435 de Dart + 186 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

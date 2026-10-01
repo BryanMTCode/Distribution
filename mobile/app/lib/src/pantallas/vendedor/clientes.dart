@@ -16,6 +16,7 @@ import '../../estado/sincronizacion.dart';
 import 'abono.dart';
 import 'alta_cliente.dart';
 import 'catalogo.dart';
+import 'merma.dart';
 
 class PantallaClientes extends ConsumerWidget {
   const PantallaClientes({super.key});
@@ -87,6 +88,17 @@ class PantallaClientes extends ConsumerWidget {
             onPressed: sync is SyncEnCurso
                 ? null
                 : () => ref.read(syncProvider.notifier).sincronizar(),
+          ),
+          // La merma del camión no pertenece a ninguna visita: la caja se
+          // revienta entre tienda y tienda. Por eso vive aquí y no dentro del
+          // catálogo de un cliente.
+          IconButton(
+            key: const Key('boton_merma'),
+            tooltip: 'Registrar merma',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PantallaMerma()),
+            ),
           ),
           IconButton(
             key: const Key('boton_salir'),

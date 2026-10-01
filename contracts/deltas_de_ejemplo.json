@@ -4,6 +4,32 @@
   "cambios": [
     {
       "cursor": 1,
+      "entidad": "motivo_merma",
+      "entidad_id": "uuid-de-la-semilla-1",
+      "operacion": "upsert",
+      "payload": {
+        "activo": true,
+        "codigo": "ROTO",
+        "nombre": "Empaque roto",
+        "afecta_vendedor": true
+      }
+    },
+    {
+      "cursor": 2,
+      "entidad": "motivo_no_drop",
+      "entidad_id": "uuid-de-la-semilla-2",
+      "operacion": "upsert",
+      "payload": {
+        "orden": 10,
+        "activo": true,
+        "codigo": "CERRADO",
+        "nombre": "Cerrado",
+        "categoria": "cliente",
+        "requiere_nota": false
+      }
+    },
+    {
+      "cursor": 3,
       "entidad": "producto",
       "entidad_id": "019283e0-0001-7000-8000-000000000001",
       "operacion": "upsert",
@@ -25,7 +51,7 @@
       }
     },
     {
-      "cursor": 2,
+      "cursor": 4,
       "entidad": "producto_unidad",
       "entidad_id": "019283e0-0001-7000-8000-000000000001",
       "operacion": "upsert",
@@ -38,7 +64,7 @@
       }
     },
     {
-      "cursor": 3,
+      "cursor": 5,
       "entidad": "producto_unidad",
       "entidad_id": "019283e0-0001-7000-8000-000000000001",
       "operacion": "upsert",
@@ -51,21 +77,21 @@
       }
     },
     {
-      "cursor": 4,
+      "cursor": 6,
       "entidad": "precio",
       "entidad_id": "019283e0-0001-7000-8000-000000000001",
       "operacion": "upsert",
       "payload": {
         "precio": 25.5,
         "version": 1,
-        "lista_id": "uuid-de-la-semilla-1",
+        "lista_id": "uuid-de-la-semilla-3",
         "producto_id": "019283e0-0001-7000-8000-000000000001",
         "precio_minimo": 24.0,
         "unidad_codigo": "PZA"
       }
     },
     {
-      "cursor": 5,
+      "cursor": 7,
       "entidad": "cliente",
       "entidad_id": "019283e0-0002-7000-8000-000000000002",
       "operacion": "upsert",
@@ -80,7 +106,7 @@
         "numero": "145",
         "colonia": "Centro",
         "estatus": "activo",
-        "ruta_id": "uuid-de-la-semilla-2",
+        "ruta_id": "uuid-de-la-semilla-4",
         "telefono": "5512345678",
         "bloqueado": false,
         "municipio": null,
@@ -98,7 +124,7 @@
         "contacto_nombre": null,
         "permite_credito": true,
         "revision_motivo": null,
-        "lista_precios_id": "uuid-de-la-semilla-1",
+        "lista_precios_id": "uuid-de-la-semilla-3",
         "nombre_comercial": "La Esquina de Ñoño 🏪",
         "ubicacion_origen": "gps",
         "fecha_dispositivo": null,
@@ -107,13 +133,13 @@
       }
     },
     {
-      "cursor": 6,
+      "cursor": 8,
       "entidad": "cartera",
       "entidad_id": "019283e0-0002-7000-8000-000000000002",
       "operacion": "upsert",
       "payload": {
         "saldo": 1200.0,
-        "ruta_id": "uuid-de-la-semilla-2",
+        "ruta_id": "uuid-de-la-semilla-4",
         "bloqueado": false,
         "cliente_id": "019283e0-0002-7000-8000-000000000002",
         "disponible": 3800.0,
@@ -127,7 +153,7 @@
       }
     },
     {
-      "cursor": 7,
+      "cursor": 9,
       "entidad": "carga",
       "entidad_id": "019283e0-0004-7000-8000-000000000004",
       "operacion": "upsert",
@@ -143,22 +169,22 @@
             "producto_id": "019283e0-0001-7000-8000-000000000001"
           }
         ],
-        "ruta_id": "uuid-de-la-semilla-2",
+        "ruta_id": "uuid-de-la-semilla-4",
         "version": 1,
-        "vendedor_id": "uuid-de-la-semilla-3",
-        "confirmada_por": "uuid-de-la-semilla-4",
+        "vendedor_id": "uuid-de-la-semilla-5",
+        "confirmada_por": "uuid-de-la-semilla-6",
         "fecha_operativa": "2026-09-28",
-        "almacen_origen_id": "uuid-de-la-semilla-5",
-        "almacen_destino_id": "uuid-de-la-semilla-6"
+        "almacen_origen_id": "uuid-de-la-semilla-7",
+        "almacen_destino_id": "uuid-de-la-semilla-8"
       }
     },
     {
-      "cursor": 8,
+      "cursor": 10,
       "entidad": "lista_precios",
-      "entidad_id": "uuid-de-la-semilla-1",
+      "entidad_id": "uuid-de-la-semilla-3",
       "operacion": "upsert",
       "payload": {
-        "id": "uuid-de-la-semilla-1",
+        "id": "uuid-de-la-semilla-3",
         "activo": true,
         "codigo": "GENERAL",
         "nombre": "Precio general",

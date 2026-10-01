@@ -25,6 +25,7 @@ vieja.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, status
@@ -163,6 +164,18 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                   (SELECT COALESCE(sum(total), 0) FROM ventas
                     WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada')
                     AS importe_hoy,
+                  (SELECT count(*) FROM cobros
+                    WHERE requiere_revision AND estado = 'confirmado')
+                    AS cobros_en_revision,
+                  -- Solo el efectivo: una transferencia entra al sistema pero no a
+                  -- la bolsa del vendedor, y sumarlas haría que la caja nunca
+                  -- cuadre y que el descuadre se atribuyera a quien no fue.
+                  (SELECT COALESCE(sum(importe), 0) FROM cobros
+                    WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmado'
+                      AND forma_pago = 'efectivo') AS efectivo_hoy,
+                  (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
+                    WHERE estado IN ('abierta', 'parcial')
+                      AND fecha_vencimiento < CURRENT_DATE) AS cartera_vencida,
                   (SELECT count(*) FROM productos WHERE activo) AS productos,
                   (SELECT count(*) FROM clientes WHERE estatus <> 'inactivo') AS clientes,
                   (SELECT count(*) FROM clientes WHERE estatus = 'prospecto')
@@ -180,6 +193,12 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
 
     indicadores = dict(fila)
     indicadores["importe_hoy"] = dinero(fila["importe_hoy"])
+    indicadores["efectivo_hoy"] = dinero(fila["efectivo_hoy"])
+    # La bandera va aparte del texto: si la plantilla comparara el número ya
+    # formateado contra "$0.00", el día que cambie el separador de miles la alerta
+    # se encendería sola y nadie sabría por qué.
+    indicadores["hay_cartera_vencida"] = Decimal(fila["cartera_vencida"] or 0) > 0
+    indicadores["cartera_vencida"] = dinero(fila["cartera_vencida"])
 
     return render(
         peticion,

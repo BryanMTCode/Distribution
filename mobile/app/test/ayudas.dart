@@ -334,24 +334,21 @@ void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
   }
 }
 
-/// Monta la app completa con dependencias de prueba.
+/// Un rango de folios de la serie que se le pida.
 ///
-/// Devuelve la base para poder sembrar datos y verificar efectos.
-/// El rango de folios de COBRO.
-///
-/// Es su propia serie, no la de las ventas: si compartieran contador, un recibo y
-/// una remisión podrían traer el mismo número impreso. `sembrarParaCobrar` siembra
-/// la de ventas; esta siembra la de cobros, y el flujo de pago necesita las dos
-/// porque el equipo tiene que estar registrado.
-void sembrarFoliosDeCobro(
+/// Cada tipo de documento tiene la suya: si venta, cobro, merma y no-drop
+/// compartieran contador, un recibo y una remisión podrían traer el mismo número
+/// impreso, y el cliente tendría dos papeles distintos con el mismo folio.
+void sembrarFolios(
   BaseLocal base, {
+  required String tipo,
   int desde = 1,
   int hasta = 500,
   int consumidoHasta = 0,
 }) {
   RepoFolios(base.db).guardar(
     RangoFolios(
-      tipo: 'cobro',
+      tipo: tipo,
       desde: desde,
       hasta: hasta,
       consumidoHasta: consumidoHasta,
@@ -360,6 +357,42 @@ void sembrarFoliosDeCobro(
   );
 }
 
+void sembrarFoliosDeCobro(
+  BaseLocal base, {
+  int desde = 1,
+  int hasta = 500,
+  int consumidoHasta = 0,
+}) =>
+    sembrarFolios(
+      base,
+      tipo: 'cobro',
+      desde: desde,
+      hasta: hasta,
+      consumidoHasta: consumidoHasta,
+    );
+
+/// Los catálogos cerrados de motivos, como los dejaría un delta del servidor.
+///
+/// Sin ellos las pantallas de merma y no-drop se niegan a capturar —y hay prueba
+/// de eso—, así que casi toda prueba de esas dos pantallas empieza aquí.
+void sembrarMotivos(BaseLocal base) {
+  base.db.execute(
+    'INSERT INTO motivos_merma (codigo, nombre, afecta_vendedor, activo) VALUES '
+    "('CADUCADO', 'Producto caducado', 0, 1), "
+    "('ROTO', 'Empaque roto', 1, 1), "
+    "('DEVOLUCION_CLIENTE', 'Devolución del cliente', 0, 1)",
+  );
+  base.db.execute(
+    'INSERT INTO motivos_no_drop (codigo, nombre, categoria, requiere_nota, '
+    'orden, activo) VALUES '
+    "('CERRADO', 'Cerrado', 'cliente', 0, 10, 1), "
+    "('AGOTADO_EN_CAMION', 'No traigo lo que pidió', 'producto', 1, 70, 1)",
+  );
+}
+
+/// Monta la app completa con dependencias de prueba.
+///
+/// Devuelve la base para poder sembrar datos y verificar efectos.
 Future<BaseLocal> montarApp(
   WidgetTester tester, {
   Map<String, Object?>? credencial,

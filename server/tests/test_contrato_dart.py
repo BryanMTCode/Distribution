@@ -359,3 +359,93 @@ async def test_reenviar_el_cobro_de_dart_no_abona_dos_veces(cliente, semilla, se
         )
     ).scalar_one()
     assert aplicado <= Decimal("400.00")
+
+
+@pytest.mark.asyncio
+async def test_la_merma_que_arma_dart_sale_del_camion(cliente, semilla, sesion):
+    """La merma del teléfono tiene que llegar con su signo y su detalle.
+
+    Es el documento más fácil de romper sin que se note: no hay un total que no
+    cuadre, así que una divergencia de contrato no se ve en ningún número. Lo que
+    se ve es más tarde y peor — la merma cae en cuarentena, la pérdida queda sin
+    explicar, y en la liquidación aparece como **faltante del vendedor**.
+    """
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    r = await cliente.post("/v1/sync/push", json=_cuerpo(), headers=cab)
+    assert r.status_code == 200, r.text
+
+    merma = (
+        await sesion.execute(
+            text(
+                "SELECT tipo, motivo_codigo, almacen_id, observaciones "
+                "  FROM mermas WHERE folio_local = 'VEND01-000007'"
+            )
+        )
+    ).mappings().one()
+    assert merma["tipo"] == "merma"
+    assert merma["motivo_codigo"] == "ROTO"
+    # El almacén sale del CONTEXTO, no del payload: Dart lo manda en null a
+    # propósito, y dejar que lo declarara permitiría mermar el camión de otro.
+    assert merma["almacen_id"] == semilla["camion"]
+    assert merma["observaciones"] == "Se cayó la tarima al frenar"
+
+    # Las dos cajas viajan como 48 piezas: la conversión la hace el teléfono y lo
+    # que cruza es SIEMPRE unidad base.
+    renglon = (
+        await sesion.execute(
+            text(
+                "SELECT d.cantidad_base FROM merma_detalle d "
+                "  JOIN mermas m ON m.id = d.merma_id "
+                " WHERE m.folio_local = 'VEND01-000007'"
+            )
+        )
+    ).scalar_one()
+    assert renglon == Decimal("48.000")
+
+    # Y el movimiento sale del camión. Equivocar el signo produce un descuadre
+    # del doble del tamaño de la operación.
+    movimiento = (
+        await sesion.execute(
+            text(
+                "SELECT i.tipo, i.almacen_origen_id FROM movimientos_inventario i "
+                "  JOIN mermas m ON m.id = i.documento_id "
+                " WHERE m.folio_local = 'VEND01-000007'"
+            )
+        )
+    ).mappings().one()
+    assert movimiento["tipo"] == "merma"
+    assert movimiento["almacen_origen_id"] == semilla["camion"]
+
+
+@pytest.mark.asyncio
+async def test_el_no_drop_que_arma_dart_llega_con_su_geosello(
+    cliente, semilla, sesion
+):
+    """Es el único documento que el servidor rechaza sin ubicación.
+
+    Esta prueba fija que el cliente Dart siempre la manda: si un día dejara de
+    hacerlo, todas las visitas perdidas del día se irían a cuarentena y el reporte
+    de efectividad quedaría mostrando un vendedor que no visitó a nadie.
+    """
+    cab = await _cab_vendedor(cliente, sesion, semilla)
+    r = await cliente.post("/v1/sync/push", json=_cuerpo(), headers=cab)
+    assert r.status_code == 200, r.text
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT motivo_codigo, nota, lat, lng, ubicacion_precision_m, "
+                "       vendedor_id, requiere_revision "
+                "  FROM no_drops WHERE folio_consecutivo = 12"
+            )
+        )
+    ).mappings().one()
+    assert fila["motivo_codigo"] == "AGOTADO_EN_CAMION"
+    assert fila["nota"] == "Pidió la presentación de 2 litros"
+    assert fila["lat"] == Decimal("19.4330000")
+    assert fila["lng"] == Decimal("-99.1340000")
+    assert fila["ubicacion_precision_m"] == Decimal("8.00")
+    # El vendedor sale del contexto, no del payload.
+    assert fila["vendedor_id"] == semilla["vendedor"]
+    # Trae su nota, así que no hay nada que revisar.
+    assert fila["requiere_revision"] is False

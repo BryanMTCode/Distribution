@@ -69,6 +69,32 @@ void main() {
       expect(Cantidad.deEnteros(3).textoCorto, equals('3'));
       expect(Cantidad.deTexto('1.500').textoCorto, equals('1.500'));
     });
+
+    test('lee y escribe cantidades negativas', () {
+      // `existencias_camion.cant_actual` puede quedar negativa: una merma se
+      // registra aunque el conteo diga que no había (§0.1). Si este tipo no
+      // supiera leer −12, la pantalla de merma reventaría al abrirse justo
+      // después del caso para el que existe.
+      expect(Cantidad.deTexto('-12.000').milesimos, equals(-12000));
+      expect(Cantidad.deBase(-12).texto, equals('-12.000'));
+      expect(Cantidad.deBase(-12).esNegativa, isTrue);
+      expect(Cantidad.deTexto('-14.500').textoCorto, equals('-14.500'));
+    });
+
+    test('un negativo entre −1 y 0 no pierde el signo', () {
+      // El caso que un `~/` solo se come: los enteros son cero y el truncado
+      // borra el signo, así que −0.500 saldría como '0.500' y la cantidad
+      // cambiaría de sentido al convertirse a texto.
+      expect(Cantidad.deTexto('-0.500').texto, equals('-0.500'));
+      expect(Cantidad.deBase(-0.5).milesimos, equals(-500));
+    });
+
+    test('ni el precio ni el factor admiten signo', () {
+      // Un precio o un factor negativos no significan nada, y aceptarlos
+      // convertiría un dedazo del catálogo en una venta que paga la empresa.
+      expect(() => Precio.deTexto('-12.3333'), throwsFormatException);
+      expect(() => Factor.deTexto('-24.0000'), throwsFormatException);
+    });
   });
 
   group('el importe de una partida', () {
