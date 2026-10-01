@@ -5,15 +5,16 @@ offline y panel web analítico.
 
 ## Estado
 
-**Fases 0 a 7 hechas — el día completo del vendedor y su cierre.** Sale el camión cargado, se vende y se
-cobra offline, se registra lo que se perdió y a quién no se le vendió, y la liquidación cuadra contra la
-ecuación. Reglas de negocio
+**Fases 0 a 7 hechas — el día completo del vendedor, su cierre y su lectura.** Sale el camión cargado,
+se vende y se cobra offline, se registra lo que se perdió y a quién no se le vendió, la liquidación
+cuadra contra la ecuación, y la oficina puede leer lo que pasó: cobros marcados, cartera por antigüedad
+y efectividad de visita por causa. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0018) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0019) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -74,8 +75,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
 | **Cobranza en el panel** — arqueo del día, cobros marcados y antigüedad | ✅ 25 pruebas |
+| **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
+| **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
 
-**552 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **435 de Dart** y **186 de widget**, todas en verde.
+**584 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **439 de Dart** y **186 de widget**, todas en verde.
 
 ## Stack
 
@@ -113,6 +116,7 @@ server/
                      inventario.py    existencias y libro mayor por almacén
                      liquidaciones.py el cierre del día (Fase 7)
                      cobranza.py      arqueo del día, cobros marcados y antigüedad
+                     efectividad.py   visitas, no-drops por categoría y mermas por motivo
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
@@ -136,7 +140,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema
-    test/            435 pruebas que corren en segundos
+    test/            439 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -159,8 +163,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 552 pruebas de Python
-make movil                          # 435 de Dart + 186 de widget
+make pruebas                        # 584 pruebas de Python
+make movil                          # 439 de Dart + 186 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

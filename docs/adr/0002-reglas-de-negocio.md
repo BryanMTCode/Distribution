@@ -1017,3 +1017,122 @@ el FIFO sobre la cartera real; un botón para moverlo permitiría maquillar una 
 sin que quede rastro. Lo que sí puede es **dar por revisado**, que es un acto de
 auditoría y no una corrección: deja quién lo vio y cuándo, y conserva el motivo
 original al lado en vez de borrarlo, porque por qué se marcó es parte del historial.
+
+## 24. El teléfono reporta su cola, y `sync_completa` deja de ser una casilla
+
+`liquidaciones.sync_completa` existía desde la migración 0004 y hasta ahora se
+escribía en `true` porque una persona marcaba una casilla antes de cerrar. Era lo
+único honesto que se podía hacer —el servidor no tiene forma de ver la bandeja de
+salida de un teléfono— pero el dato que dejaba era indistinguible de un hecho: al
+auditar un cierre con sobrante, lo primero que se pregunta es si el equipo estaba al
+día, y ese `true` contestaba con una afirmación disfrazada de hecho.
+
+Ahora el push lo trae. El dispositivo manda cuántos sobres quedan en su cola
+**después** del lote que está entregando, y el servidor lo guarda en
+`dispositivos.cola_pendiente` con su hora.
+
+### `NULL` y `0` no son lo mismo
+
+    NULL  este equipo nunca lo ha reportado (app vieja, o nunca sincronizó)
+    0     el equipo dijo que no le queda nada
+
+De esa diferencia depende si el cierre puede descansar en un dato o tiene que
+seguir pidiendo la confirmación de una persona. Un `DEFAULT 0` habría borrado la
+distinción y habría hecho que cada equipo con app vieja pareciera estar al día
+desde el primer día.
+
+Por la misma razón el push lo trae **opcional**: la primera consecuencia de este
+cambio no puede ser un vendedor que no puede subir sus ventas por no haber
+actualizado. Y un lote sin el campo **no borra** lo último reportado: el `COALESCE`
+va sobre el parámetro, no sobre la columna.
+
+### El número se mide antes de mandar, y se resta la tanda
+
+El dispositivo calcula `pendientes − tamaño de la tanda` antes del envío, en vez de
+medirlo después: el servidor necesita el número que corresponde al estado en que lo
+deja **ese** push, y medirlo después obligaría a un segundo viaje solo para decirlo.
+Si la tanda acaba en cuarentena el número sigue valiendo, porque esos sobres también
+salen de `pendiente`.
+
+Es un dato con la honestidad del §0.3: dice lo que el teléfono sabía en ese momento.
+Una venta levantada un segundo después ya no está contada, y **por eso se guarda la
+hora junto al número**.
+
+### Qué cambió en el cierre
+
+- Si algún equipo activo del vendedor reportó pendientes > 0, **bloquea**. Ya no es
+  una sospecha: cada sobre que le queda puede ser la venta que explica el sobrante
+  que el cierre está por declarar por escrito.
+- Si **todos** reportaron cero **después** del día de la carga, la casilla
+  desaparece y `sync_completa` queda en `true`. Un cero de anteayer no sirve: el
+  equipo pudo levantar veinte ventas desde entonces.
+- Si no hay respaldo, se sigue pidiendo la confirmación —cerrar el día no puede
+  quedar atorado por una actualización pendiente— pero `sync_completa` queda en
+  `false` y la liquidación cerrada lo dice con esas palabras.
+
+El campo va con `strict=True` en Pydantic. Sin eso aceptaría `"3"` y también `true`
+—`bool` es subclase de `int` en Python, así que una cola de «sí» valdría una
+operación pendiente— y el contrato se volvería una sugerencia en el único campo del
+que depende el cierre.
+
+## 25. Efectividad de visita: capturar sin leer es el mismo problema que marcar sin mirar
+
+El no-drop existe porque sin él un día de 20 visitas con 12 ventas se ve igual que
+uno de 12 visitas con 12 ventas. Pero capturar el dato y no leerlo deja el problema
+intacto, y añade uno: el vendedor dedica tiempo a registrar visitas perdidas, nadie
+las mira, y en cuanto eso se nota deja de registrarlas. Es exactamente lo que pasa
+con una venta marcada para revisión que nadie revisa.
+
+### La pregunta que contesta, y que ningún otro reporte puede
+
+No es cuánto vendimos —eso lo dice el reporte de ventas— sino **cuántas visitas
+perdidas podemos arreglar nosotros**. La categoría del motivo es lo que lo permite:
+
+    cliente    cerrado, no estaba quien decide, no tiene dinero hoy
+    operación  se le acabó el crédito
+    producto   no traigo lo que pidió, le pareció caro
+    vendedor   no alcancé a visitarlo
+
+Las tres últimas son nuestras. Un día con ocho no-drops por «no traigo lo que
+pidió» no es un problema de ventas: es un problema de carga, y se arregla en la
+bodega a la mañana siguiente. Sin la categoría, las ocho se ven como «no compró» y
+nadie cambia nada.
+
+### Una visita es un cliente visitado, no un documento
+
+No hay tabla `visitas` y no hace falta: la venta y el no-drop cubren los dos
+desenlaces posibles de pararse frente a una tienda. Pero se cuenta por **(vendedor,
+cliente, día)**, no por documento: dos remisiones al mismo cliente el mismo día son
+una visita, y contarlas como dos premiaría al vendedor que parte un pedido en dos.
+
+Las visitas perdidas se cuentan por cliente-día y los motivos por documento, así
+que las dos cifras pueden diferir y las dos están bien. Pasa cuando se pasó dos veces
+por el mismo negocio el mismo día: si a la segunda compró, la visita cuenta como
+vendida —el desenlace fue la venta— pero su no-drop sigue contando como causa,
+porque la primera vez no compró; si no compró ninguna de las dos, es una visita
+perdida con dos motivos. La pantalla lo explica en vez de esconderlo: un total que no
+cuadra con su desglose sin explicación destruye la confianza en todo el reporte.
+
+El `FULL OUTER JOIN` implícito —un `UNION ALL` agrupado— no es un detalle: con un
+`JOIN` normal entre ventas y no-drops, el vendedor que vendió a todos desaparecería
+del reporte **por haber tenido un día perfecto**.
+
+### El rango por omisión son siete días
+
+Una efectividad del 60% sobre 20 visitas y una del 60% sobre 140 son dos cosas
+distintas, y la primera es ruido: con 20 visitas, dos clientes cerrados mueven el
+número diez puntos. Abrir en «hoy» invitaría a decidir sobre esa clase de número
+justo cuando el día todavía no termina de sincronizar. Por eso el porcentaje se
+muestra siempre **con su base**.
+
+### Las mermas comparten la pantalla, y la razón
+
+Tenían el mismo problema: el vendedor captura el motivo y nadie lo sumaba. Y el dato
+que de verdad importa no es cuánto se perdió, sino **cuánto se le está cobrando a
+alguien**: `afecta_vendedor` decide si la pérdida sale de su bolsa en la
+liquidación, así que la tabla separa las dos cifras.
+
+Las devoluciones de cliente no están ahí —son mercancía vendible que regresa, no
+pérdida— y la pantalla dice **dónde sí** se ven. Decir solo que no están haría que
+la ausencia pareciera un hueco del reporte y alguien pediría que se sumen, que es
+exactamente lo que no debe pasar.

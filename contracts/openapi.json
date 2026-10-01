@@ -2021,6 +2021,19 @@
               }
             ],
             "title": "App Version"
+          },
+          "cola_pendiente": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cola Pendiente",
+            "description": "Sobres que quedan en la cola del dispositivo después de este lote. Omitirlo se registra como 'no reportado'."
           }
         },
         "additionalProperties": false,

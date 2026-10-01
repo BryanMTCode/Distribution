@@ -1809,6 +1809,13 @@
             "type": "string",
             "title": "App Version",
             "nullable": true
+          },
+          "cola_pendiente": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cola Pendiente",
+            "description": "Sobres que quedan en la cola del dispositivo después de este lote. Omitirlo se registra como 'no reportado'.",
+            "nullable": true
           }
         },
         "additionalProperties": false,

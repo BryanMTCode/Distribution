@@ -31,11 +31,19 @@ Lo que el servidor **puede** comprobar hoy:
     registrada, seguro falta algo. Se muestra siempre y **bloquea** si el equipo
     no ha sincronizado después de confirmarse la carga.
 
-Lo que **no** puede comprobar: cuántas operaciones le quedan en la bandeja de
-salida al teléfono. Eso solo lo sabe el teléfono, y hasta que lo reporte —un campo
-en el push, Fase 6— la pantalla pide una confirmación explícita y la guarda. Decir
-"sync_completa = true" sin un dato que lo respalde sería peor que no tener la
-columna.
+  · **cuántas operaciones le quedan en la bandeja al teléfono.** Esto solo lo sabe
+    el teléfono, y ahora lo reporta en cada push (`dispositivos.cola_pendiente`,
+    migración 0019). Si dice que le quedan, **bloquea**: cada sobre pendiente puede
+    ser la venta que explica el sobrante que el cierre está por declarar.
+
+Y con eso `sync_completa` dejó de ser una casilla. Se escribe `true` solo cuando
+**todos** los equipos activos del vendedor reportaron cero pendientes **después**
+del día de la carga; un cero de anteayer no dice nada sobre hoy (§0.3). Cuando no
+hay ese respaldo —un equipo con app vieja, por ejemplo— se sigue pidiendo la
+confirmación de la persona, porque cerrar el día no puede quedar bloqueado por una
+actualización pendiente, pero la columna queda en `false`: al revisar un cierre con
+sobrante, lo primero que se pregunta es si el equipo estaba al día, y un `true` sin
+respaldo contesta esa pregunta con una afirmación disfrazada de hecho.
 
 ────────────────────────────────────────────────────────────────────────────
 QUÉ PASA AL CERRAR
@@ -375,12 +383,14 @@ async def detalle(
     divergencias = [r for r in renglones if not r["coincide_con_la_base"]]
 
     bloqueos = await _bloqueos_para_cerrar(sesion, cabecera)
+    respaldo = await _respaldo_de_sincronizacion(sesion, cabecera)
 
     return render(
         peticion,
         "liquidacion_detalle.html",
         {
             "c": cabecera,
+            "respaldo": respaldo,
             "renglones": renglones,
             "descuadres": descuadres,
             "divergencias": divergencias,
@@ -574,12 +584,13 @@ async def cerrar(
             liquidacion_id,
             error="No se puede cerrar: " + " ".join(bloqueos),
         )
-    if not confirmo_sincronizado:
+    respaldo = await _respaldo_de_sincronizacion(sesion, cabecera)
+    if not respaldo["respaldado"] and not confirmo_sincronizado:
         return _volver(
             liquidacion_id,
-            error="Confirma que el teléfono terminó de sincronizar. Una venta que "
-            "entre después del cierre convierte un sobrante en un cuadre, y el "
-            "cierre ya dijo lo contrario por escrito.",
+            error="Confirma que el teléfono terminó de sincronizar: "
+            f"{respaldo['motivo']}. Una venta que entre después del cierre convierte "
+            "un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.",
         )
 
     renglones = (
@@ -670,14 +681,23 @@ async def cerrar(
         )
     ).scalar_one()
 
+    # `sync_completa` dice si el cierre descansa en un DATO o en la palabra de
+    # quien lo cerró, y por eso no se escribe `true` a secas. Un `true` sin
+    # respaldo contesta "¿estaba el equipo al día?" con una afirmación disfrazada
+    # de hecho, y esa es justo la pregunta que se hace al auditar un sobrante.
     await sesion.execute(
         text(
             "UPDATE liquidaciones "
             "   SET estado = 'cerrada', cerrada_en = :ahora, cerrada_por = :quien, "
-            "       sync_completa = true, operaciones_pendientes = 0 "
+            "       sync_completa = :respaldada, operaciones_pendientes = 0 "
             " WHERE id = :l"
         ),
-        {"ahora": ahora, "quien": actor.usuario_id, "l": liquidacion_id},
+        {
+            "ahora": ahora,
+            "quien": actor.usuario_id,
+            "l": liquidacion_id,
+            "respaldada": respaldo["respaldado"],
+        },
     )
 
     # Este UPDATE publica el delta que VACÍA `existencias_camion` en el teléfono.
@@ -854,9 +874,10 @@ async def _efectivo_esperado(sesion, vendedor_id, fecha_operativa) -> Decimal:
 async def _bloqueos_para_cerrar(sesion, cabecera) -> list[str]:
     """Lo que el servidor SÍ puede comprobar antes de permitir el cierre.
 
-    Cada bloqueo es un hecho verificable, no una sospecha. Lo que no se puede
-    verificar —cuántas operaciones le quedan en la bandeja al teléfono— se pide
-    como confirmación explícita y se guarda, en vez de darlo por cierto.
+    Cada bloqueo es un hecho verificable, no una sospecha. Lo que el servidor no
+    puede ver por sí mismo —cuántas operaciones le quedan en la bandeja al
+    teléfono— ahora llega **reportado por el teléfono** en cada push, así que ya es
+    un hecho más y no una casilla: ver `_respaldo_de_sincronizacion`.
     """
     bloqueos: list[str] = []
 
@@ -899,7 +920,96 @@ async def _bloqueos_para_cerrar(sesion, cabecera) -> list[str]:
             "día de la carga: lo que hayan hecho no está aquí todavía."
         )
 
+    # Lo que el teléfono dijo de su propia cola. Es la única fuente que lo sabe, y
+    # cuando dice que le quedan operaciones eso ya no es una sospecha: es un
+    # bloqueo, porque cada sobre pendiente puede ser la venta que explica el
+    # sobrante que esta liquidación está por declarar.
+    con_cola = (
+        await sesion.execute(
+            text(
+                """
+                SELECT d.etiqueta, d.cola_pendiente
+                  FROM dispositivos d
+                 WHERE d.usuario_id = :v AND d.estado = 'activo'
+                   AND COALESCE(d.cola_pendiente, 0) > 0
+                 ORDER BY d.cola_pendiente DESC
+                """
+            ),
+            {"v": cabecera["vendedor_id"]},
+        )
+    ).mappings().all()
+    for equipo in con_cola:
+        bloqueos.append(
+            f"«{equipo['etiqueta']}» reportó {equipo['cola_pendiente']} operación(es) "
+            "sin subir en su última sincronización. Cualquiera puede ser la venta que "
+            "explica una diferencia: sincroniza el equipo y vuelve a abrir el conteo."
+        )
+
     return bloqueos
+
+
+async def _respaldo_de_sincronizacion(sesion, cabecera) -> dict:
+    """¿Hay un DATO que respalde que el equipo terminó de subir todo?
+
+    Esto es la diferencia entre `sync_completa = true` significando algo y
+    significando "alguien marcó una casilla". Al auditar un cierre con sobrante, lo
+    primero que se pregunta es si el equipo estaba al día; un `true` sin respaldo
+    contesta esa pregunta con una afirmación disfrazada de hecho.
+
+    El respaldo existe cuando **todos** los equipos activos del vendedor reportaron
+    cero pendientes, y lo reportaron **después** del día de la carga. Un cero de
+    anteayer no dice nada sobre hoy (§0.3): el equipo pudo levantar veinte ventas
+    desde entonces.
+
+    Cuando no hay respaldo se sigue pidiendo la confirmación de la persona —cerrar
+    el día no puede quedar bloqueado porque un vendedor no actualizó la app— pero
+    `sync_completa` se queda en `false`, que es lo que de verdad pasó.
+    """
+    equipos = (
+        await sesion.execute(
+            text(
+                """
+                SELECT d.etiqueta, d.cola_pendiente, d.cola_reportada_en
+                  FROM dispositivos d
+                 WHERE d.usuario_id = :v AND d.estado = 'activo'
+                """
+            ),
+            {"v": cabecera["vendedor_id"]},
+        )
+    ).mappings().all()
+
+    if not equipos:
+        return {"respaldado": False, "motivo": "el vendedor no tiene equipos activos"}
+
+    desde = cabecera["fecha_operativa"]
+    for d in equipos:
+        if d["cola_pendiente"] is None or d["cola_reportada_en"] is None:
+            return {
+                "respaldado": False,
+                "motivo": f"«{d['etiqueta']}» nunca ha reportado su cola "
+                "(probablemente trae una versión vieja de la app)",
+            }
+        if d["cola_reportada_en"].date() < desde:
+            return {
+                "respaldado": False,
+                "motivo": f"«{d['etiqueta']}» reportó su cola el "
+                f"{d['cola_reportada_en'].date().isoformat()}, antes del día de la "
+                "carga: ese cero no dice nada sobre hoy",
+            }
+        if d["cola_pendiente"] > 0:
+            # Lo normal es que `_bloqueos_para_cerrar` ya haya frenado el cierre por
+            # esto. Se vuelve a comprobar porque la pantalla de detalle llama a las
+            # dos funciones por separado, y sin esta línea diría «no le queda nada
+            # por subir» justo arriba del bloqueo que dice que le quedan tres. Dos
+            # afirmaciones contrarias en la misma pantalla cuestan más que el
+            # problema que explican.
+            return {
+                "respaldado": False,
+                "motivo": f"«{d['etiqueta']}» reportó {d['cola_pendiente']} "
+                "operación(es) sin subir",
+            }
+
+    return {"respaldado": True, "motivo": None}
 
 
 def _leer_cantidad(texto: str) -> Decimal:

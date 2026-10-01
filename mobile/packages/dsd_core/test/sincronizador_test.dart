@@ -345,6 +345,88 @@ void main() {
   });
 
   // =========================================================================
+  // La profundidad de cola que el teléfono reporta
+  // =========================================================================
+  // Es el único dato del sistema que SOLO el teléfono puede dar, y el cierre del
+  // día descansa en él: sin esto, la liquidación tiene que pedirle a una persona
+  // que jure que el equipo terminó de subir todo, y ese juramento queda guardado
+  // como si fuera un hecho.
+
+  test('el push declara cuántos sobres quedan después de la tanda', () async {
+    for (var i = 0; i < 5; i++) {
+      encolarAlta(outbox, db, 'c$i');
+    }
+    // Tandas de dos: la primera deja tres.
+    final transporte = TransporteFalso(
+      [const AceptaLoEnviado()],
+      repiteUltimo: true,
+    );
+
+    await armarSincronizador(db, transporte, maxSobresPorLote: 2)
+        .sincronizar(cursorActual: 0);
+
+    final declarados = transporte.cuerposEnviados
+        .where((c) => c.containsKey('sobres'))
+        .map((c) => c['cola_pendiente'])
+        .toList();
+    // 5 → 3 → 1 → 0. El último push vacía la cola.
+    expect(declarados, equals([3, 1, 0]));
+  });
+
+  test('es un entero sin comillas, no un texto', () async {
+    // `contracts/README.md` §1.4: los conteos van como entero de JSON. Mandarlo
+    // como texto haría que el servidor rechazara el lote entero por un campo que
+    // no tiene nada que ver con la venta.
+    encolarAlta(outbox, db, 'c1');
+    final transporte = TransporteFalso([const AceptaLoEnviado()]);
+
+    await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
+
+    final enviado = transporte.cuerposEnviados.first['cola_pendiente'];
+    expect(enviado, isA<int>());
+    expect(enviado, equals(0));
+  });
+
+  test('una tanda que acaba en cuarentena también vacía la cola', () async {
+    // Los rechazados salen de 'pendiente' igual que los aceptados, así que el
+    // número declarado sigue valiendo. Si contara los rechazados como pendientes,
+    // la liquidación quedaría bloqueada para siempre por un sobre que el servidor
+    // ya decidió no aplicar.
+    encolarAlta(outbox, db, 'c1');
+    encolarAlta(outbox, db, 'c2');
+    final transporte = TransporteFalso([
+      const AceptaLoEnviado(
+        estado: 'rechazada',
+        errorCodigo: 'payload_invalido',
+      ),
+    ]);
+
+    await armarSincronizador(db, transporte, maxSobresPorLote: 2)
+        .sincronizar(cursorActual: 0);
+
+    expect(transporte.cuerposEnviados.first['cola_pendiente'], equals(0));
+    expect(outbox.resumen().pendientes, equals(0));
+  });
+
+  test('un corte de red no declara una cola vacía', () async {
+    // El sobre se queda, así que lo que se declaró en el intento fallido no puede
+    // haber dicho que no quedaba nada: el servidor lo habría guardado como "al
+    // día" y la liquidación habría cerrado sobre un equipo con ventas sin subir.
+    encolarAlta(outbox, db, 'c1');
+    encolarAlta(outbox, db, 'c2');
+    final transporte = TransporteFalso([const SeCaeLaRed()]);
+
+    final r = await armarSincronizador(db, transporte, maxSobresPorLote: 1)
+        .sincronizar(cursorActual: 0);
+
+    expect(r.fin, equals(FinDeSync.sinRed));
+    // Declaró 1 —el que no iba en la tanda— y el push ni llegó, así que el
+    // servidor no guardó nada. La cola real sigue en 2.
+    expect(transporte.cuerposEnviados.first['cola_pendiente'], equals(1));
+    expect(outbox.resumen().pendientes, equals(2));
+  });
+
+  // =========================================================================
   // Orden y reintentos
   // =========================================================================
 

@@ -29,6 +29,24 @@
   {% endif %}.
   El retorno y los ajustes ya están en el libro mayor, y el camión quedó en cero.
 </div>
+{# ----------------------------------------------------------------------- #}
+{# Sobre QUÉ descansó este cierre.                                         #}
+{# ----------------------------------------------------------------------- #}
+{# Es la primera pregunta al revisar un cierre con sobrante: ¿estaba el     #}
+{# equipo al día? Si no se dijera aquí, habría que creerlo.                 #}
+{% if c.sync_completa %}
+<div class="aviso-caja neutro" id="cierre_respaldado">
+  El equipo había reportado <strong>cero operaciones pendientes</strong> cuando se
+  cerró: este cierre descansa en un dato del teléfono.
+</div>
+{% else %}
+<div class="aviso-caja neutro" id="cierre_sin_respaldo">
+  Se cerró <strong>sin respaldo de sincronización</strong>: el equipo no reportó su
+  cola ese día —o lo último que reportó era de antes de la carga—, así que el cierre
+  descansa en la confirmación de quien lo cerró. Si aparece una operación de ese día
+  después de esta fecha, es la explicación que hay que buscar primero.
+</div>
+{% endif %}
 {% endif %}
 
 {# ------------------------------------------------------------------------ #}
@@ -205,6 +223,20 @@
         <strong>vacía su inventario</strong> en la siguiente sincronización.</li>
   </ol>
 
+  {# ----------------------------------------------------------------------- #}
+  {# La casilla solo aparece cuando NO hay un dato que la sustituya.          #}
+  {# ----------------------------------------------------------------------- #}
+  {# Cuántas operaciones le quedan en la bandeja al teléfono solo lo sabe el  #}
+  {# teléfono, y ahora lo reporta en cada push. Cuando ese dato existe y es   #}
+  {# de hoy, pedir que alguien lo jure además sería pedirle que respalde con  #}
+  {# su nombre algo que el sistema ya sabe.                                   #}
+  {% if respaldo.respaldado %}
+  <div class="aviso-caja bien" id="respaldo_sincronizacion">
+    <strong>El equipo reportó que no le queda nada por subir</strong>, y lo reportó
+    hoy. El cierre queda marcado como respaldado por ese dato, no por una
+    confirmación de escritorio.
+  </div>
+  {% else %}
   <div class="campo">
     <label>
       <input type="checkbox" name="confirmo_sincronizado" value="1" required>
@@ -213,11 +245,14 @@
     <div class="ayuda">
       No es una formalidad. Una venta que entre <strong>después</strong> del cierre
       convierte un sobrante en un cuadre, y el cierre ya dijo lo contrario por
-      escrito, con nombre y fecha. El servidor comprueba lo que puede —cuarentena y
-      último envío del equipo—, pero cuántas operaciones le quedan en la bandeja
-      solo lo sabe el teléfono.
+      escrito, con nombre y fecha.
+      <br>
+      Hace falta porque {{ respaldo.motivo }}. Este cierre quedará marcado
+      <strong>sin respaldo de sincronización</strong>: al revisarlo después se
+      sabrá que descansó en tu palabra y no en un dato del equipo.
     </div>
   </div>
+  {% endif %}
 
   <button type="submit" class="peligro" {% if bloqueos %}disabled{% endif %}>
     Cerrar la liquidación

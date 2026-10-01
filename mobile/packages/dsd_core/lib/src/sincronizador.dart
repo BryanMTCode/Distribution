@@ -132,12 +132,26 @@ class Sincronizador {
       if (lote.isEmpty) break;
       tandas++;
 
+      // Cuántos sobres quedarán después de esta tanda.
+      //
+      // Se calcula ANTES de mandarla y se resta el tamaño de la tanda, en vez de
+      // medirlo después: el servidor necesita el número que corresponde al estado
+      // en que lo deja ESTE push, y medirlo después obligaría a un segundo viaje
+      // solo para decirlo. Si la tanda acaba en cuarentena el número sigue
+      // valiendo, porque esos sobres también salen de 'pendiente'.
+      //
+      // Es un dato con la honestidad de §0.3: dice lo que el teléfono sabía en ese
+      // momento. Una venta levantada un segundo después ya no está contada, y por
+      // eso el servidor guarda la HORA junto al número.
+      final restantes = _outbox.resumen().pendientes - lote.length;
+
       final RespuestaPush respuesta;
       try {
         respuesta = await _cliente.push(
           loteId: nuevoLoteId?.call() ?? _loteIdPorDefecto(lote),
           sobres: lote.map((s) => s.payload).toList(),
           appVersion: appVersion,
+          colaPendiente: restantes < 0 ? 0 : restantes,
         );
       } on ErrorDeRed catch (e) {
         // No se sabe si llegó. Se conserva todo y se reintenta.

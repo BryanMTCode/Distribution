@@ -8,6 +8,7 @@ existen en PostgreSQL. Una suite que no los ejerce no prueba este sistema.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -45,6 +46,26 @@ def texto_plano(respuesta) -> str:
     con esto el assert dice lo que quiere decir.
     """
     return " ".join(respuesta.text.split())
+
+
+def solo_texto(respuesta) -> str:
+    """Lo que la persona REALMENTE lee: sin etiquetas y con los espacios colapsados.
+
+    `texto_plano` colapsa los espacios pero deja el HTML, así que afirmar una frase
+    que la plantilla parte con un `<strong>` —"De 30 unidades mermadas, **24** salen
+    de la bolsa"— falla por una etiqueta que nadie ve. La alternativa era escribir
+    los `<strong>` dentro del assert, y entonces la prueba se rompe cada vez que
+    alguien cambia la tipografía de una cifra, que es justo lo que no debería
+    importarle.
+
+    También quita el `<style>` y el `<script>`: su contenido no es texto que alguien
+    lea, y una regla de CSS que mencione una palabra haría pasar un assert por
+    accidente.
+    """
+    crudo = re.sub(
+        r"<(style|script)\b[^>]*>.*?</\1>", " ", respuesta.text, flags=re.S | re.I
+    )
+    return " ".join(re.sub(r"<[^>]+>", " ", crudo).split())
 
 
 TABLAS_VOLATILES = [

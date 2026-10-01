@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import cobranza as panel_cobranza
+from app.api.admin import efectividad as panel_efectividad
 from app.api.admin import equipo as panel_equipo
 from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
@@ -57,6 +58,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_inventario.router)
     app.include_router(panel_liquidaciones.router)
     app.include_router(panel_cobranza.router)
+    app.include_router(panel_efectividad.router)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

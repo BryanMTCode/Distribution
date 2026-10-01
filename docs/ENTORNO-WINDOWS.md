@@ -323,6 +323,37 @@ tu nombre y tu nota, y lo saca de la lista de pendientes para que la lista siga
 significando algo. El motivo original se queda al lado: por qué se marcó es parte del
 historial.
 
+### Leer la efectividad de la ruta
+
+En **Efectividad** está la pregunta que ningún otro reporte contesta: no cuánto
+vendimos, sino **cuántas visitas perdidas podemos arreglar nosotros**.
+
+Abre con los últimos siete días, no con hoy, y eso es a propósito: una efectividad
+del 60% sobre 20 visitas es ruido —dos clientes cerrados mueven el número diez
+puntos— y sobre 140 ya es un dato. El porcentaje siempre va con su base al lado.
+
+Tres cosas que vale saber leer:
+
+- **Una visita es un cliente visitado, no un documento.** Si un pedido se partió en
+  dos remisiones, es una visita. Contarlas por separado haría que la efectividad
+  subiera sin que nadie visitara a nadie más.
+- **La columna «de quién depende» es el reporte.** «Cerrado» es el mundo y no se
+  arregla; «no traigo lo que pidió» es la bodega y se arregla mañana por la mañana.
+  Si ves ocho visitas perdidas por ese motivo en la semana, el problema no está en
+  ventas.
+- **Si los motivos no suman lo mismo que las visitas perdidas**, las dos cifras
+  están bien: las visitas se cuentan por cliente y día, los motivos por no-drop
+  registrado. Pasa cuando se pasó dos veces por el mismo negocio el mismo día. La
+  pantalla lo explica ahí mismo.
+
+Abajo están las **pérdidas por motivo de merma**, y la cifra que importa ahí no es
+cuánto se perdió sino cuánto se le está cobrando a un vendedor: lo decide
+`afecta_vendedor` en el catálogo, que tú controlas. Conviene verlo antes de que la
+liquidación lo cobre.
+
+> Si no hay no-drops registrados y sí hubo días flojos, revisa que los equipos estén
+> sincronizando: un no-drop que no llega se ve igual que una visita que no se hizo.
+
 ### Cerrar el día (liquidación)
 
 Es el paso que convierte la operación en números que cuadran. Al final del día, en
@@ -342,9 +373,22 @@ La cuenta es `esperado = cargado − vendido − merma + devuelto`, y la diferen
 **positivo es sobrante**, que casi siempre es una venta que el teléfono no ha
 sincronizado.
 
-Por eso el panel **no te deja cerrar** si hay sobres en cuarentena de ese equipo, o si
-el equipo no ha sincronizado desde el día de la carga: una venta que entre después del
-cierre convierte un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.
+Por eso el panel **no te deja cerrar** si hay sobres en cuarentena de ese equipo, si
+el equipo no ha sincronizado desde el día de la carga, o si **el propio teléfono
+reportó que le quedan operaciones sin subir**: una venta que entre después del cierre
+convierte un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.
+
+Ese último dato lo manda el teléfono en cada sincronización, y cambia lo que la
+pantalla te pide:
+
+- Si el equipo reportó **cero pendientes hoy**, la casilla de «confirmo que terminó
+  de sincronizar» **no aparece**: el sistema ya lo sabe, y pedirte que lo jures
+  además sería pedirte que respaldes con tu nombre un dato que no produjiste.
+- Si **nunca lo reportó** —el equipo trae una versión vieja de la app— la casilla
+  sigue ahí y el cierre queda marcado **sin respaldo de sincronización**. No bloquea:
+  cerrar el día no puede quedar atorado por una actualización pendiente. Pero al
+  revisar ese cierre más adelante se verá que descansó en tu palabra y no en un dato
+  del equipo, que es la verdad.
 
 Al cerrar, el camión queda en cero (con el retorno a bodega más un ajuste por la
 diferencia) y el teléfono vacía su inventario en la siguiente sincronización.

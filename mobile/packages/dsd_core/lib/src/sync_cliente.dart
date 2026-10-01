@@ -146,15 +146,24 @@ class ClienteSync {
 
   final Transporte _transporte;
 
+  /// Entrega una tanda de sobres.
+  ///
+  /// `colaPendiente` es cuántos sobres quedan en la cola DESPUÉS de esta tanda. Es
+  /// el único dato del sistema que solo el teléfono puede dar, y el cierre del día
+  /// depende de él: sin esto, la liquidación tiene que pedirle a una persona que
+  /// jure que el equipo terminó de subir todo.
   Future<RespuestaPush> push({
     required String loteId,
     required List<Map<String, Object?>> sobres,
     String? appVersion,
+    int? colaPendiente,
   }) async {
     final respuesta = await _transporte.post('/v1/sync/push', {
       'lote_id': loteId,
       'sobres': sobres,
       if (appVersion != null) 'app_version': appVersion,
+      // Entero sin comillas: es un conteo, no dinero (contracts/README.md §1.4).
+      if (colaPendiente != null) 'cola_pendiente': colaPendiente,
     });
     _revisar(respuesta);
     return RespuestaPush.deJson(

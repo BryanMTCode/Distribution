@@ -50,6 +50,30 @@ class LoteEntrada(EntradaBase):
     sobres: list[SobreEntrada] = Field(min_length=1, max_length=MAX_SOBRES_POR_LOTE)
     app_version: str | None = None
 
+    # Cuántos sobres le quedan al dispositivo DESPUÉS de este lote.
+    #
+    # Es el único dato del sistema que solo el teléfono puede dar, y el cierre del
+    # día depende de él: hasta ahora `liquidaciones.sync_completa` se escribía
+    # porque alguien marcaba una casilla, y al auditar un cierre con sobrante ese
+    # `true` parecía un hecho cuando era una afirmación.
+    #
+    # Opcional a propósito: un equipo con app vieja sigue sincronizando igual, y la
+    # ausencia del campo se guarda como NULL —"nunca lo reportó"—, que no es lo
+    # mismo que cero.
+    cola_pendiente: int | None = Field(
+        default=None,
+        ge=0,
+        # Entero de JSON, sin comillas: `contracts/README.md` §1.4. Sin `strict`,
+        # Pydantic aceptaría "3" y también `true` —`bool` es subclase de `int` en
+        # Python— y el contrato se volvería una sugerencia en el único campo del
+        # que depende el cierre del día.
+        strict=True,
+        description=(
+            "Sobres que quedan en la cola del dispositivo después de este lote. "
+            "Omitirlo se registra como 'no reportado'."
+        ),
+    )
+
 
 class ResultadoSobreSalida(BaseModel):
     operacion_id: uuid.UUID
@@ -110,7 +134,12 @@ async def push(entrada: LoteEntrada, actor: ActorDep, sesion: SesionDep) -> Lote
 
     try:
         resultado = await procesar_lote(
-            sesion, contexto, entrada.lote_id, sobres, app_version=entrada.app_version
+            sesion,
+            contexto,
+            entrada.lote_id,
+            sobres,
+            app_version=entrada.app_version,
+            cola_pendiente=entrada.cola_pendiente,
         )
     except LoteInvalido as e:
         # El contenedor está mal formado: no se procesa nada, porque no se

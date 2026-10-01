@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block titulo %}Efectividad{% endblock %}
+{% block contenido %}
+<h1>Efectividad de visita</h1>
+<p class="subtitulo">
+  La pregunta no es cuánto vendimos, sino <strong>cuántas visitas perdidas podemos
+  arreglar nosotros</strong>. Una visita es una venta o un no-drop, y se cuenta por
+  cliente visitado: dos remisiones al mismo cliente el mismo día son una visita.
+</p>
+
+<form class="barra" method="get" action="/panel/efectividad">
+  <input type="date" name="desde" value="{{ desde }}">
+  <input type="date" name="hasta" value="{{ hasta }}">
+  <select name="ruta">
+    <option value="">Todas las rutas</option>
+    {% for r in rutas %}
+      <option value="{{ r.codigo }}" {% if r.codigo == ruta %}selected{% endif %}>
+        {{ r.codigo }} · {{ r.nombre }}
+      </option>
+    {% endfor %}
+  </select>
+  <button type="submit">Ver</button>
+</form>
+
+{% if visitas %}
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">{{ visitas }}</div>
+    <div class="etiqueta">visitas</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ ventas }} terminaron en venta, {{ perdidas }} no.
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ efectividad }}%</div>
+    <div class="etiqueta">efectividad</div>
+    <div class="sutil" style="margin-top:6px">
+      {# Un porcentaje sin su base invita a decidir sobre ruido. #}
+      Sobre {{ visitas }} visitas. Con pocas, dos clientes cerrados mueven el
+      número varios puntos.
+    </div>
+  </div>
+  <div class="tarjeta {% if nuestras %}aviso{% endif %}">
+    <div class="numero">{{ nuestras }}</div>
+    <div class="etiqueta">visitas perdidas que son nuestras</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if perdidas %}
+        {{ arreglables }}% de las perdidas. No traíamos lo que pidió, se le acabó
+        el crédito, o no se alcanzó a visitar.
+      {% else %}
+        No se perdió ninguna visita.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ----------------------------------------------------------------------- #}
+{# Si el desglose no suma lo mismo que el total, se dice.                  #}
+{# ----------------------------------------------------------------------- #}
+{# Pasa cuando un cliente tuvo venta Y no-drop el mismo día —se volvió a   #}
+{# pasar y a la segunda compró—. Un total que no cuadra con su desglose    #}
+{# sin explicación destruye la confianza en todo el reporte.               #}
+{% if con_motivo != perdidas %}
+<div class="aviso-caja neutro" style="margin-top:18px">
+  Los motivos de abajo suman {{ con_motivo }} y las visitas perdidas son
+  {{ perdidas }}, y las dos cifras están bien: cuentan cosas distintas.
+  <strong>Las visitas se cuentan por cliente y día; los motivos, por no-drop
+  registrado.</strong> La diferencia aparece cuando se pasó dos veces por el mismo
+  negocio el mismo día: si a la segunda compró, la visita cuenta como vendida —el
+  desenlace fue la venta— pero su no-drop sigue contando como causa, porque la
+  primera vez no compró; y si no compró ninguna de las dos, es una visita perdida
+  con dos motivos.
+</div>
+{% endif %}
+
+<h2>Por qué no compraron</h2>
+{% if motivos %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Motivo</th>
+        <th>De quién depende</th>
+        <th class="numero">Visitas</th>
+        <th class="numero">Clientes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in motivos %}
+      <tr>
+        <td>
+          {{ m.nombre }}
+          {% if m.categoria in nuestra_culpa %}
+            <div class="sutil">Lo podemos arreglar nosotros</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.categoria in nuestra_culpa %}
+            <span class="etiqueta-motivo">{{ etiqueta_categoria.get(m.categoria, m.categoria) }}</span>
+          {% else %}
+            <span class="sutil">{{ etiqueta_categoria.get(m.categoria, m.categoria) }}</span>
+          {% endif %}
+        </td>
+        <td class="numero"><strong>{{ m.cuantas }}</strong></td>
+        <td class="numero sutil">{{ m.clientes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  No se registró ninguna visita perdida en este periodo. Si hubo días sin ventas,
+  revisa que los equipos estén sincronizando: un no-drop que no llega se ve igual
+  que una visita que no se hizo.
+</div>
+{% endif %}
+
+<h2>Por vendedor</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Vendedor</th>
+        <th class="numero">Visitas</th>
+        <th class="numero">Ventas</th>
+        <th class="numero">Perdidas</th>
+        <th class="numero">Efectividad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in por_vendedor %}
+      <tr>
+        <td>
+          {{ v.vendedor }}
+          <div class="sutil">{{ v.vendedor_codigo }}</div>
+        </td>
+        <td class="numero">{{ v.visitas }}</td>
+        <td class="numero">{{ v.ventas }}</td>
+        <td class="numero">{{ v.perdidas }}</td>
+        <td class="numero"><strong>{{ v.efectividad }}%</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  No hay visitas registradas en este periodo.
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------------- #}
+{# Las mermas viven aquí por la misma razón que los no-drops.              #}
+{# ----------------------------------------------------------------------- #}
+{# El vendedor captura el motivo y hasta ahora nadie lo sumaba. Y el dato  #}
+{# que de verdad importa no es cuánto se perdió, sino cuánto se le está    #}
+{# cobrando a alguien.                                                     #}
+<h2>Pérdidas por motivo</h2>
+{% if mermas %}
+<p class="sutil" style="margin:-6px 0 12px">
+  De {{ unidades_mermadas|entero }} unidades mermadas,
+  <strong>{{ unidades_al_vendedor|entero }}</strong> salen de la bolsa de un
+  vendedor. Eso lo decide la oficina en el catálogo de motivos, no el vendedor al
+  capturar — pero conviene saber cuánto se está cobrando antes de que la
+  liquidación lo haga.
+</p>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Motivo</th>
+        <th>¿Se le descuenta?</th>
+        <th class="numero">Unidades</th>
+        <th class="numero">Documentos</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mermas %}
+      <tr>
+        <td>{{ m.nombre }}</td>
+        <td>
+          {% if m.afecta_vendedor %}
+            <span class="etiqueta-motivo">Sí, al vendedor</span>
+          {% else %}
+            <span class="sutil">No, la absorbe la empresa</span>
+          {% endif %}
+        </td>
+        <td class="numero"><strong>{{ m.unidades|entero }}</strong></td>
+        <td class="numero sutil">{{ m.documentos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil" style="margin-top:10px">
+  Las devoluciones de cliente no están aquí: no son pérdida, son mercancía que
+  regresa vendible. Se ven en la liquidación, sumando a lo que el camión debe traer.
+</p>
+{% else %}
+<div class="vacio">
+  No se registró ninguna merma en este periodo.
+</div>
+{% endif %}
+{% endblock %}

@@ -34,7 +34,7 @@ import pytest
 from sqlalchemy import text
 
 from app.domain.liquidacion import RenglonDeLiquidacion
-from tests.conftest import PASSWORD_VENDEDOR
+from tests.conftest import PASSWORD_VENDEDOR, texto_plano
 
 pytestmark = pytest.mark.asyncio
 
@@ -688,11 +688,127 @@ async def test_no_se_cierra_si_el_equipo_no_ha_sincronizado(
     assert "no han sincronizado" in r.text
 
 
-async def test_cerrar_exige_la_confirmacion_explicita(
+async def _reportar_cola(sesion, dispositivo, pendientes, *, dias_atras=0):
+    """Simula lo que el teléfono manda en su push: cuántos sobres le quedan.
+
+    `dias_atras` sirve para el caso que importa: un cero viejo. Un equipo que
+    reportó cero anteayer pudo levantar veinte ventas desde entonces, así que ese
+    dato no respalda el cierre de hoy (§0.3).
+    """
+    await sesion.execute(
+        text(
+            "UPDATE dispositivos "
+            "   SET cola_pendiente = :n, "
+            "       cola_reportada_en = now() - make_interval(days => :dias) "
+            " WHERE id = :d"
+        ),
+        {"n": pendientes, "dias": dias_atras, "d": dispositivo},
+    )
+    await sesion.commit()
+
+
+async def _leer_cierre(sesion, liq) -> dict:
+    return dict(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT estado, sync_completa, operaciones_pendientes "
+                    "  FROM liquidaciones WHERE id = :l"
+                ),
+                {"l": uuid.UUID(liq)},
+            )
+        ).mappings().one()
+    )
+
+
+async def test_una_cola_reportada_bloquea_el_cierre(
     cliente, semilla, dia_de_trabajo, sesion
 ):
-    """Lo que el servidor no puede verificar —cuántas operaciones le quedan en la
-    bandeja al teléfono— se pide y se guarda, en vez de darlo por cierto."""
+    """Cuando el teléfono dice que le quedan operaciones, eso no es una sospecha.
+
+    Es el único dato del sistema que solo el teléfono puede dar, y cada sobre que le
+    queda puede ser la venta que explica el sobrante que este cierre está por
+    declarar por escrito.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _reportar_cola(sesion, dia_de_trabajo["dispositivo"], 4)
+
+    r = await _cerrar(cliente, liq)
+    assert "reportó 4 operación(es) sin subir" in texto_plano(r)
+    assert (await _leer_cierre(sesion, liq))["estado"] != "cerrada"
+
+    # Y la pantalla NO puede decir al mismo tiempo que el equipo está al día: dos
+    # afirmaciones contrarias en la misma vista cuestan más que el problema que
+    # explican.
+    plano = texto_plano(await cliente.get(f"/panel/liquidaciones/{liq}"))
+    assert "reportó 4 operación(es) sin subir" in plano
+    assert "El equipo reportó que no le queda nada por subir" not in plano
+
+
+async def test_con_cero_reportado_hoy_ya_no_se_pide_la_casilla(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """El dato sustituye a la confirmación, que es el punto de todo esto.
+
+    Pedirle a una persona que jure algo que el sistema ya sabe es pedirle que
+    respalde con su nombre un dato que no produjo.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _reportar_cola(sesion, dia_de_trabajo["dispositivo"], 0)
+
+    detalle = await cliente.get(f"/panel/liquidaciones/{liq}")
+    plano = texto_plano(detalle)
+    assert "El equipo reportó que no le queda nada por subir" in plano
+    assert "Confirmo que el teléfono terminó de sincronizar" not in plano
+
+    # Y cierra SIN mandar la casilla.
+    r = await cliente.post(
+        f"/panel/liquidaciones/{liq}/cerrar",
+        data={"csrf": _csrf(cliente, detalle)},
+        follow_redirects=True,
+    )
+    assert "Confirma que el teléfono" not in r.text
+
+    fila = await _leer_cierre(sesion, liq)
+    assert fila["estado"] == "cerrada"
+    assert fila["sync_completa"] is True
+
+
+async def test_un_cero_de_anteayer_no_respalda_el_cierre_de_hoy(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """§0.3 otra vez: el dato vale por su hora, no solo por su valor.
+
+    El equipo reportó cero hace dos días y desde entonces pudo levantar veinte
+    ventas. Si ese cero bastara, el respaldo diría "estaba al día" sobre un equipo
+    que lleva dos días sin hablar.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _reportar_cola(sesion, dia_de_trabajo["dispositivo"], 0, dias_atras=2)
+
+    detalle = await cliente.get(f"/panel/liquidaciones/{liq}")
+    plano = texto_plano(detalle)
+    assert "Confirmo que el teléfono terminó de sincronizar" in plano
+    assert "antes del día de la carga" in plano
+
+
+async def test_cerrar_sin_respaldo_exige_la_casilla_y_lo_deja_asentado(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Un equipo que nunca reportó su cola —app vieja— no bloquea el cierre.
+
+    Cerrar el día no puede quedar atorado por una actualización pendiente. Pero
+    `sync_completa` queda en **false**, que es lo que de verdad pasó: al revisar
+    después un sobrante, lo primero que se pregunta es si el equipo estaba al día, y
+    un `true` sin respaldo contesta esa pregunta con una afirmación disfrazada de
+    hecho.
+    """
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
     await _contar(cliente, liq, sesion, "60")
@@ -704,20 +820,26 @@ async def test_cerrar_exige_la_confirmacion_explicita(
         follow_redirects=True,
     )
     assert "Confirma que el teléfono terminó de sincronizar" in r.text
+    assert "nunca ha reportado su cola" in texto_plano(r)
 
-    # Y al cerrar bien, queda registrado que se confirmó.
     await _cerrar(cliente, liq)
-    fila = (
-        await sesion.execute(
-            text(
-                "SELECT sync_completa, operaciones_pendientes "
-                "  FROM liquidaciones WHERE id = :l"
-            ),
-            {"l": uuid.UUID(liq)},
-        )
-    ).mappings().one()
-    assert fila["sync_completa"] is True
+    fila = await _leer_cierre(sesion, liq)
+    assert fila["estado"] == "cerrada"
+    assert fila["sync_completa"] is False
     assert fila["operaciones_pendientes"] == 0
+
+
+async def test_el_cierre_dice_sobre_que_descansa(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Al abrir una liquidación cerrada hay que poder saber en qué se apoyó."""
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "60")
+    await _cerrar(cliente, liq)
+
+    plano = texto_plano(await cliente.get(f"/panel/liquidaciones/{liq}"))
+    assert "sin respaldo de sincronización" in plano
 
 
 # ---------------------------------------------------------------------------

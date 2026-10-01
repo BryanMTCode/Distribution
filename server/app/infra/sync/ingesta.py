@@ -162,6 +162,7 @@ async def procesar_lote(
     sobres: list[Sobre],
     *,
     app_version: str | None = None,
+    cola_pendiente: int | None = None,
 ) -> ResultadoLote:
     """Aplica un lote completo. Hace commit al final."""
     ordenados = validar_lote(sobres)   # LoteInvalido sale hacia el endpoint
@@ -190,9 +191,22 @@ async def procesar_lote(
                 "r": resultado.rechazadas,
             },
         )
+        # La profundidad de cola se guarda SOLO si vino, con un COALESCE sobre el
+        # parámetro y no sobre la columna: un equipo con app vieja no debe borrar lo
+        # último que sí reportó, porque el cierre del día lee ese número.
         await sesion.execute(
-            text("UPDATE dispositivos SET ultima_sync_push_en = now() WHERE id = :dev"),
-            {"dev": ctx.dispositivo_id},
+            text(
+                """
+                UPDATE dispositivos
+                   SET ultima_sync_push_en = now(),
+                       cola_pendiente = COALESCE(CAST(:cola AS integer), cola_pendiente),
+                       cola_reportada_en = CASE
+                           WHEN :cola IS NULL THEN cola_reportada_en ELSE now()
+                       END
+                 WHERE id = :dev
+                """
+            ),
+            {"dev": ctx.dispositivo_id, "cola": cola_pendiente},
         )
 
     await sesion.commit()
