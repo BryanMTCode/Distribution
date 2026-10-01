@@ -34,6 +34,19 @@ URL_PRUEBAS = os.environ.get(
 # lista de precios por defecto) NO están aquí: los siembra la migración 0009 y
 # el código depende de sus códigos literales. Vaciarlos entre pruebas sería
 # probar contra un sistema que no existe en producción.
+
+
+def texto_plano(respuesta) -> str:
+    """El HTML con los espacios colapsados, para afirmar frases completas.
+
+    Una plantilla parte las frases donde se le acaba el renglón, así que
+    `"sin bodega no hay de dónde cargar" in respuesta.text` falla por un salto de
+    línea que no le importa a nadie. Costó dos pruebas rojas sobre código correcto;
+    con esto el assert dice lo que quiere decir.
+    """
+    return " ".join(respuesta.text.split())
+
+
 TABLAS_VOLATILES = [
     "sesiones",
     "folios_rangos",

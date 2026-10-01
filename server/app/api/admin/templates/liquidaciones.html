@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block titulo %}Liquidación{% endblock %}
+{% block contenido %}
+<h1>Liquidación del día</h1>
+<p class="subtitulo">
+  El cierre: se cuenta lo que regresó en el camión y se compara contra lo que el
+  sistema dice que debía regresar.
+  <strong>Es la única pantalla que atrapa un descuadre</strong> — todo lo demás
+  registra, esto compara.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+<div class="aviso-caja neutro">
+  <span class="mono">esperado = cargado − vendido − merma + devuelto</span><br>
+  <span class="mono">diferencia = retornado − esperado</span>
+  <div class="sutil" style="margin-top:6px">
+    Negativo es <strong>faltante</strong>: salió mercancía sin documento.
+    Positivo es <strong>sobrante</strong>, y casi siempre es una venta que el
+    teléfono no ha sincronizado.
+  </div>
+</div>
+
+<h2>Cargas por cerrar</h2>
+{% if pendientes %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Carga</th>
+        <th>Vendedor</th>
+        <th class="numero">Ventas del día</th>
+        <th class="numero">Antigüedad</th>
+        {% if puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pendientes %}
+      <tr>
+        <td>
+          <span class="mono">{{ p.folio }}</span>
+          <div class="sutil">
+            {{ p.fecha_operativa.strftime('%d/%m/%Y') }} · {{ p.estado }}
+          </div>
+        </td>
+        <td>
+          {{ p.vendedor }}
+          <div class="sutil">{{ p.camion }}</div>
+        </td>
+        <td class="numero">
+          {{ p.ventas }}
+          <div class="sutil">${{ '%.2f'|format(p.importe) }}</div>
+        </td>
+        <td class="numero">
+          {% if p.dias > 0 %}
+            <span {% if p.dias > 1 %}style="color:var(--alerta)"{% endif %}>
+              {{ p.dias }} día{% if p.dias != 1 %}s{% endif %}
+            </span>
+          {% else %}
+            <span class="sutil">hoy</span>
+          {% endif %}
+        </td>
+        {% if puede_editar %}
+        <td>
+          <form method="post" action="/panel/liquidaciones/abrir">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="carga_id" value="{{ p.id }}">
+            <button type="submit" class="secundario"
+                    style="padding:3px 9px;font-size:12px">Abrir cierre</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  Una carga de hace días sin cerrar significa que nadie contó ese camión, y cada día
+  que pasa el conteo vale menos: la mercancía siguió moviéndose.
+</p>
+{% else %}
+<div class="vacio">
+  Ninguna carga esperando cierre. Todos los camiones que salieron ya se contaron.
+</div>
+{% endif %}
+
+<h2>Liquidaciones</h2>
+{% if liquidaciones %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Vendedor</th>
+        <th class="numero">Efectivo</th>
+        <th class="numero">Productos con diferencia</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in liquidaciones %}
+      <tr>
+        <td>
+          <a href="/panel/liquidaciones/{{ l.id }}">
+            <span class="mono">{{ l.folio }}</span>
+          </a>
+          <div class="sutil">
+            {{ l.fecha_operativa.strftime('%d/%m/%Y') }} · carga {{ l.carga }}
+          </div>
+        </td>
+        <td>{{ l.vendedor }}</td>
+        <td class="numero">
+          ${{ '%.2f'|format(l.efectivo_entregado) }}
+          {% if l.diferencia_efectivo != 0 %}
+            <div class="sutil"
+                 style="color:{% if l.diferencia_efectivo < 0 %}var(--alerta){% else %}var(--aviso){% endif %}">
+              {% if l.diferencia_efectivo < 0 %}faltan{% else %}sobran{% endif %}
+              ${{ '%.2f'|format(l.diferencia_efectivo|abs) }}
+            </div>
+          {% endif %}
+        </td>
+        <td class="numero">
+          {% if l.faltantes %}
+            <span style="color:var(--alerta)">{{ l.faltantes }}</span>
+          {% else %}
+            <span class="sutil">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if l.estado == 'cerrada' %}
+            <span class="etiqueta-motivo"
+                  style="background:var(--acento-suave);color:var(--acento)">cerrada</span>
+            <div class="sutil">{{ l.cerrada_en.strftime('%d/%m %H:%M') }}</div>
+          {% else %}
+            <span class="etiqueta-motivo">{{ l.estado }} · falta contar o cerrar</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Todavía no se ha cerrado ningún día.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block titulo %}{{ cabecera.nombre }} en {{ cabecera.almacen }}{% endblock %}
+{% block contenido %}
+<h1>{{ cabecera.nombre }}</h1>
+<p class="subtitulo">
+  <span class="mono">{{ cabecera.sku }}</span>
+  en <strong>{{ cabecera.almacen }}</strong>
+  · <a href="/panel/inventario?almacen={{ cabecera.almacen_id }}">volver al inventario</a>
+</p>
+
+<div class="tarjetas" style="margin-bottom:22px">
+  <div class="tarjeta {% if cabecera.cantidad < 0 %}alerta{% endif %}">
+    <div class="numero">{{ cabecera.cantidad|entero }}</div>
+    <div class="etiqueta">existencia ({{ cabecera.unidad_base }})</div>
+  </div>
+  <div class="tarjeta {% if not cuadra %}alerta{% endif %}">
+    <div class="numero">{{ segun_libro|entero }}</div>
+    <div class="etiqueta">
+      según el libro mayor
+      {% if cuadra %}· cuadra{% else %}· <strong>NO cuadra</strong>{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if not cuadra %}
+<div class="aviso-caja error">
+  <strong>La caché de existencias y el libro mayor no coinciden.</strong>
+  Eso no es un dato operativo: es un bug. Alguna transacción escribió el movimiento
+  y no la existencia, o al revés. El libro mayor es append-only, así que es el que
+  tiene razón.
+</div>
+{% endif %}
+
+{% if renglones %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Qué</th>
+        <th class="numero">Movimiento</th>
+        <th class="numero">Saldo después</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in renglones %}
+      <tr>
+        <td class="sutil">{{ m.fecha_servidor.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>
+          <strong>{{ m.tipo }}</strong>
+          <div class="sutil">
+            {% if m.origen and m.destino %}
+              {{ m.origen }} → {{ m.destino }}
+            {% elif m.destino %}
+              entra desde fuera del sistema
+            {% else %}
+              sale del sistema
+            {% endif %}
+            {% if m.quien %} · {{ m.quien }}{% endif %}
+            {% if m.lote %} · lote {{ m.lote }}{% endif %}
+          </div>
+        </td>
+        <td class="numero" {% if not m.entra %}style="color:var(--alerta)"{% endif %}>
+          {% if m.entra %}+{% endif %}{{ m.delta|entero }}
+        </td>
+        <td class="numero"
+            {% if m.saldo < 0 %}style="color:var(--alerta)"{% endif %}>
+          {{ m.saldo|entero }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  El saldo se calculó en orden cronológico y la tabla se muestra al revés, con lo
+  más reciente arriba. Así se ve <strong>en qué movimiento</strong> el inventario se
+  fue a negativo, que es una pregunta distinta de si hoy está negativo.
+</p>
+<p class="sutil">
+  Estos renglones <strong>no se pueden editar ni borrar</strong>:
+  <span class="mono">movimientos_inventario</span> es append-only, garantizado por un
+  disparador de la base. Un error se corrige con un documento compensatorio, que
+  deja rastro de las dos cosas — el error y la corrección.
+</p>
+{% else %}
+<div class="vacio">
+  Este producto nunca se movió en {{ cabecera.almacen }}.
+</div>
+{% endif %}
+{% endblock %}

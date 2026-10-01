@@ -64,11 +64,12 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | El teléfono aplica la carga sin revivir lo ya vendido | ✅ 12 pruebas de Dart |
 | **Usuarios, rutas, almacenes y listas** desde el panel | ✅ 23 pruebas |
 | Arranque del primer usuario (`make usuario`) — **sin contraseña por omisión** | ✅ con pruebas |
-| Liquidación y retorno al cierre del día | ⛔ Fase 7 |
+| **Liquidación y retorno** — la ecuación que atrapa descuadres | ✅ 25 pruebas |
+| **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | Cobranza, mermas y no-drops | ⛔ Fases 5 y 6 |
 
-**435 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
+**473 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **382 de Dart** y **125 de widget**, todas en verde.
 
 ## Stack
 
@@ -103,9 +104,12 @@ server/
                      clientes.py      confirmar prospectos y decidir el crédito
                      cargas.py        la carga del camión (bodega → camión)
                      equipo.py        usuarios, rutas, almacenes y listas de precios
+                     inventario.py    existencias y libro mayor por almacén
+                     liquidaciones.py el cierre del día (Fase 7)
     core/            config, seguridad (Argon2id + JWT), sesión de BD
     domain/          REGLAS PURAS — sin imports de framework
                      canonico.py      formato canónico y hash del payload
+                     liquidacion.py   la ecuación del cierre del día
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
@@ -147,7 +151,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 435 pruebas de Python
+make pruebas                        # 473 pruebas de Python
 make movil                          # 382 de Dart + 125 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

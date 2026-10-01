@@ -140,7 +140,7 @@ Entra con un usuario de oficina (rol `admin` o `gerente`). **Un vendedor no pued
 teclea sus datos ahí, el panel le responde que entre por la app del teléfono. Es a propósito — el panel
 ve toda la operación y el teléfono solo la ruta de quien lo trae.
 
-Siete pantallas, y cada una responde una pregunta distinta:
+Nueve pantallas, y cada una responde una pregunta distinta:
 
 | Pantalla | Qué contesta |
 |---|---|
@@ -148,6 +148,8 @@ Siete pantallas, y cada una responde una pregunta distinta:
 | **Productos** | el catálogo y los precios. Es por donde entra el negocio real al sistema |
 | **Clientes** | ¿qué prospectos levantó la ruta y esperan código, lista de precios y crédito? |
 | **Cargas** | qué se subió a cada camión hoy. Es el inventario con el que el vendedor puede vender |
+| **Liquidación** | el cierre: ¿cuadra lo que regresó en el camión con lo que debía regresar? |
+| **Inventario** | qué hay en cada almacén ahora, y el libro mayor de cada producto |
 | **Equipo** | usuarios, rutas, almacenes y listas de precios. La estructura sobre la que corre todo |
 | **Ventas marcadas** | ¿qué ventas entraron con una advertencia? Son las que el servidor **sí** aceptó pero marcó |
 | **Cuarentena** | ¿qué rechazó el servidor, y por qué? Con el sobre completo, tal como llegó |
@@ -219,6 +221,47 @@ Un par de cosas que conviene saber antes de usarlo en serio:
   sistema. Rechazarlo haría que el camión saliera con mercancía sin registrar.
 - **Una carga confirmada ya no se edita ni se cancela.** Lo que salió se corrige con un
   traspaso o un ajuste; lo que regresa al final del día es un retorno.
+
+### Cerrar el día (liquidación)
+
+Es el paso que convierte la operación en números que cuadran. Al final del día, en
+**Liquidación**:
+
+1. **Abrir cierre** sobre la carga del vendedor. El sistema trae lo cargado, lo vendido,
+   las mermas y las devoluciones de sus propios documentos.
+2. **Cuenta el camión** y captura lo que regresó, producto por producto. El campo nace en
+   cero a propósito: si viniera prellenado con lo esperado, cerrar sin contar daría cuadre
+   perfecto y el cierre no significaría nada.
+3. **Captura el efectivo** que entregó. El esperado son las ventas de contado más los
+   cobros en efectivo; el crédito no suma porque no se cobró nada.
+4. **Cerrar la liquidación.**
+
+La cuenta es `esperado = cargado − vendido − merma + devuelto`, y la diferencia es
+`retornado − esperado`. **Negativo es faltante** (salió mercancía sin documento) y
+**positivo es sobrante**, que casi siempre es una venta que el teléfono no ha
+sincronizado.
+
+Por eso el panel **no te deja cerrar** si hay sobres en cuarentena de ese equipo, o si
+el equipo no ha sincronizado desde el día de la carga: una venta que entre después del
+cierre convierte un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.
+
+Al cerrar, el camión queda en cero (con el retorno a bodega más un ajuste por la
+diferencia) y el teléfono vacía su inventario en la siguiente sincronización.
+
+### Ver el inventario
+
+En **Inventario** eliges almacén y ves lo que hay ahora. El camión es un almacén como
+cualquier otro, así que ahí ves lo que cada vendedor trae.
+
+Dos cosas que vale saber leer:
+
+- Un número **en negativo** no es un error del sistema: es un conteo que hay que revisar.
+  Pasa cuando se cargó más de lo que la bodega tenía registrado, o cuando una venta
+  offline entró después de que el camión ya marcaba cero.
+- Si la pantalla dice que **la caché no cuadra con el libro mayor**, eso sí es un bug:
+  alguna transacción escribió el movimiento y no la existencia. Entra al producto y el
+  libro mayor te dice en qué movimiento se separaron. El libro es append-only, así que es
+  el que tiene razón.
 
 ### Confirmar un prospecto levantado en ruta
 

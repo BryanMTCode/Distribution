@@ -44,6 +44,8 @@ NAVEGACION = [
     ("/panel/productos", "Productos"),
     ("/panel/clientes", "Clientes"),
     ("/panel/cargas", "Cargas"),
+    ("/panel/liquidaciones", "Liquidación"),
+    ("/panel/inventario", "Inventario"),
     ("/panel/ventas", "Ventas"),
     ("/panel/cuarentena", "Cuarentena"),
     ("/panel/equipo", "Equipo"),

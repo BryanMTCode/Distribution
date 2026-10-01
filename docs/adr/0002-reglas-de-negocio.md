@@ -622,3 +622,114 @@ ya no trabaja. Los clientes no se mueven: siguen siendo de la ruta.
 antes del almacén, y además el almacén tiene que quedar como `usuarios.almacen_id`
 para que la carga encuentre a dónde ir. Son tres escrituras en un orden que quien
 da de alta a un empleado no tiene por qué conocer: el panel las hace en un paso.
+
+---
+
+## 17. La liquidación: la única pantalla que compara
+
+**Decisión.** El cierre del día calcula `esperado = cargado − vendido − merma +
+devuelto` de sus propios documentos, y lo compara contra un **conteo físico** del
+camión. La diferencia es lo único que importa del cierre.
+
+Todas las demás pantallas **registran**. Esta compara, y es por eso la única que
+puede atrapar un descuadre.
+
+### El devuelto suma, y es el signo que se escribe mal
+
+Una devolución de cliente **entra** al camión, así que tiene que volver a la
+bodega. Restarla haría aparecer un faltante del tamaño exacto de las devoluciones
+del día, y el vendedor pagaría por mercancía que devolvió bien.
+
+La ecuación vive en `app/domain/liquidacion.py`, en la columna generada
+`liquidacion_detalle.diferencia` de PostgreSQL, y —cuando llegue la Fase 6— en el
+teléfono. Hay una prueba que compara el módulo de dominio contra la columna
+generada con cuatro conteos distintos: si divergieran, el vendedor y la oficina
+estarían discutiendo sobre dos números, cada uno convencido de tener el del
+sistema.
+
+### El conteo nace en cero, no en el esperado
+
+Prellenarlo con el esperado haría que cerrar sin contar diera cuadre perfecto, y
+entonces el cierre no significaría nada: sería un botón que dice que todo está
+bien. Contar el camión es el único dato que esta pantalla no puede calcular, y es
+justamente el que le da sentido a los demás.
+
+Y un campo **vacío vale cero**, no "no lo cambies": al contar un camión, el
+producto que no se anotó es el que no venía. Con la otra semántica, un producto que
+se terminó quedaría con el conteo de un intento anterior y el faltante
+desaparecería sin que nadie lo decidiera.
+
+### Al cerrar, el camión queda EXACTAMENTE en cero
+
+Tres cosas en una transacción:
+
+1. **`retorno`** camión → bodega por lo contado. Es el movimiento físico.
+2. **`ajuste`** por el faltante o el sobrante. Es el paso que se olvida: sin él el
+   camión arrastra un saldo fantasma para siempre, el faltante de hoy queda como
+   existencia, y el cierre de mañana empieza con un sobrante que nadie puso ahí.
+3. La carga pasa a **`liquidada`**, y ese `UPDATE` publica el delta que **vacía
+   `existencias_camion` en el teléfono** (§14). Sin esto el vendedor saldría mañana
+   con el inventario de ayer en la pantalla.
+
+El ajuste se calcula leyendo la existencia **después** del retorno, no deduciéndola
+de `diferencia`: si las dos no coincidieran, el que tiene razón es el inventario, y
+el objetivo es dejar el camión en cero.
+
+Un faltante sale del sistema (`origen = camión`, `destino = NULL`) y es la pérdida
+que se le carga al vendedor. Un sobrante entra al camión, para que el retorno ya
+registrado cuadre — si el signo estuviera al revés, el camión quedaría al doble en
+negativo.
+
+### No se cierra con operaciones pendientes, y por una razón concreta
+
+Un sobrante casi siempre es **una venta que el teléfono no ha sincronizado**. Una
+venta que entra después del cierre convierte ese sobrante en un cuadre, y el cierre
+ya dijo lo contrario por escrito, con el nombre del vendedor. Es §2.3 de
+arquitectura, y la regla que más tienta a saltarse cuando el vendedor tiene prisa.
+
+Lo que el servidor **puede** verificar, y bloquea:
+
+- **sobres en cuarentena** de ese equipo: cada uno es una operación que no entró, y
+  cualquiera puede ser la venta que explica la diferencia;
+- que el equipo **haya sincronizado** desde el día de la carga.
+
+Lo que **no** puede verificar: cuántas operaciones le quedan en la bandeja de
+salida al teléfono. Eso solo lo sabe el teléfono. Hasta que lo reporte, la pantalla
+pide una confirmación explícita y la guarda en `sync_completa`. Poner esa columna en
+`true` sin un dato que lo respalde sería peor que no tenerla.
+
+### El esperado de efectivo se recalcula al guardar el arqueo
+
+Entre abrir y cerrar pueden entrar ventas de contado y cobros que el teléfono
+sincronizó tarde. Usar el número calculado al abrir haría aparecer un faltante de
+efectivo del tamaño exacto de lo que llegó en medio.
+
+Solo suman las ventas de **contado** y los cobros en **efectivo**: una venta a
+crédito no cobró nada, y una transferencia no viene en la bolsa.
+
+---
+
+## 18. El inventario se puede ver sin abrir una carga
+
+**Decisión.** Una pantalla de existencias por almacén, con el libro mayor de cada
+producto a un clic.
+
+Las existencias estaban visibles solo de refilón, al armar un borrador de carga.
+Para saber qué había en la bodega había que empezar a cargar un camión — absurdo, y
+además peligroso: se abre un borrador para consultar y alguien lo confirma.
+
+### La pantalla compara las dos tablas, porque la caché no se puede auditar sola
+
+`existencias` es una caché transaccional; `movimientos_inventario` es el libro mayor
+append-only. Si la suma del libro no cuadra con la caché, hay un bug en alguna
+transacción que escribió una y no la otra — y eso **no se puede detectar mirando la
+caché**, por definición: el número está ahí y se ve razonable. El job de
+reconciliación nocturno existe para esto; la pantalla permite verlo sin esperar a
+la noche, y dice cuál de las dos tiene razón.
+
+### El saldo corriente va en orden cronológico
+
+Así se ve **en qué movimiento** el inventario se fue a negativo, que es una pregunta
+distinta de si hoy está negativo — y la que de verdad se hace al investigar. La
+tabla se muestra al revés, con lo más reciente arriba, pero el saldo se calculó
+hacia adelante.

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block titulo %}Inventario{% endblock %}
+{% block contenido %}
+<h1>Inventario</h1>
+<p class="subtitulo">
+  Lo que hay en cada almacén <strong>ahora mismo</strong>. El camión es un almacén
+  como cualquier otro: lo que ves en él es lo que su vendedor trae, hasta donde ha
+  sincronizado.
+</p>
+
+{% if not almacenes %}
+<div class="vacio">
+  Ningún almacén. Créalos en <a href="/panel/equipo">Equipo</a>: sin bodega no hay
+  de dónde cargar.
+</div>
+{% else %}
+
+<div class="tarjetas" style="margin-bottom:22px">
+  {% for a in almacenes %}
+    <a class="tarjeta {% if a.negativos %}alerta{% endif %}"
+       href="/panel/inventario?almacen={{ a.id }}&filtro={{ filtro }}"
+       style="text-decoration:none;color:inherit
+              {% if elegido and a.id == elegido.id %};outline:2px solid var(--acento){% endif %}">
+      <div class="numero">{{ a.renglones }}</div>
+      <div class="etiqueta">{{ a.nombre }}</div>
+      <div class="sutil" style="margin-top:6px">
+        {{ a.tipo }}{% if a.responsable %} · {{ a.responsable }}{% endif %}
+        <div>{{ a.piezas|entero }} unidades base</div>
+        {% if a.negativos %}
+          <div style="color:var(--alerta)">{{ a.negativos }} en negativo</div>
+        {% endif %}
+      </div>
+    </a>
+  {% endfor %}
+</div>
+
+<h2>{{ elegido.nombre }}</h2>
+
+<form class="barra" method="get" action="/panel/inventario">
+  <input type="hidden" name="almacen" value="{{ elegido.id }}">
+  <input type="hidden" name="filtro" value="{{ filtro }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Nombre, SKU o código de barras"
+         style="min-width:260px">
+  <button type="submit">Buscar</button>
+</form>
+
+<form class="barra" method="get" action="/panel/inventario">
+  <input type="hidden" name="almacen" value="{{ elegido.id }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <button type="submit" name="filtro" value="con_existencia"
+          class="{% if filtro != 'con_existencia' %}secundario{% endif %}">Con existencia</button>
+  <button type="submit" name="filtro" value="negativos"
+          class="{% if filtro != 'negativos' %}secundario{% endif %}">En negativo</button>
+  <button type="submit" name="filtro" value="todos"
+          class="{% if filtro != 'todos' %}secundario{% endif %}">Todos</button>
+</form>
+
+{% if descuadres %}
+<div class="aviso-caja error">
+  <strong>{{ descuadres|length }} producto(s) donde la caché no cuadra con el libro mayor.</strong>
+  Eso no es un dato: es un bug. Alguna transacción escribió el movimiento y no la
+  existencia, o al revés. Entra al detalle del producto para ver en qué movimiento
+  se separaron.
+</div>
+{% endif %}
+
+{% if filas %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Producto</th>
+        <th class="numero">Existencia</th>
+        <th>Equivale a</th>
+        <th class="numero">Actualizado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <a href="/panel/inventario/{{ elegido.id }}/{{ f.id }}">
+            <strong>{{ f.nombre }}</strong>
+          </a>
+          <div class="sutil">
+            <span class="mono">{{ f.sku }}</span>
+            {% if not f.activo %} · producto desactivado{% endif %}
+          </div>
+        </td>
+        <td class="numero"
+            {% if f.cantidad < 0 %}style="color:var(--alerta)"{% endif %}>
+          <strong>{{ f.cantidad|entero }}</strong> {{ f.unidad_base }}
+          {% if f.cantidad != f.segun_libro %}
+            <div class="sutil" style="color:var(--alerta)">
+              el libro dice {{ f.segun_libro|entero }}
+            </div>
+          {% endif %}
+        </td>
+        <td class="sutil">
+          {% if f.presentaciones %}
+            {% for p in f.presentaciones %}
+              {% if p.factor|entero != '1' and f.cantidad %}
+                {{ (f.cantidad|float / p.factor|float)|round(2) }} {{ p.unidad }}
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        </td>
+        <td class="numero sutil">
+          {{ f.actualizado_en.strftime('%d/%m %H:%M') }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tbody>
+      <tr>
+        <td><strong>Total</strong></td>
+        <td class="numero"><strong>{{ total_piezas|entero }}</strong> unidades base</td>
+        <td colspan="2"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  Un número en <strong>negativo</strong> no es un error del sistema: es un conteo
+  que hay que revisar. Pasa cuando se cargó más de lo que la bodega tenía
+  registrado, o cuando una venta offline entró después de que el camión ya marcaba
+  cero. Se permite a propósito — la mercancía ya se movió en el mundo físico, y
+  rechazar el registro no la devuelve.
+</p>
+{% else %}
+<div class="vacio">
+  {% if q %}
+    Nada que coincida con «{{ q }}» en {{ elegido.nombre }}.
+  {% elif filtro == 'negativos' %}
+    Ningún producto en negativo en {{ elegido.nombre }}. Así debe verse.
+  {% else %}
+    {{ elegido.nombre }} está vacío.
+    {% if elegido.tipo == 'camion' %}
+      Es lo normal si su carga de hoy no se ha confirmado, o si ya se liquidó.
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
