@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block titulo %}Compras{% endblock %}
+{% block contenido %}
+<h1>Compras</h1>
+<p class="subtitulo">
+  Tres preguntas que el sistema no podía contestar: <strong>a quién le
+  compramos</strong>, <strong>cuánto dinero hay en el almacén</strong> y
+  <strong>a quién le debemos y cuándo vence</strong>. La mercancía se recibe en
+  <a href="/panel/entradas">Entradas</a>; el costo se captura ahí y de ahí sale
+  todo esto.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">${{ '{:,.2f}'.format(valor_total) }}</div>
+    <div class="etiqueta">valor del inventario</div>
+    <div class="sutil" style="margin-top:6px">
+      Al costo promedio ponderado. Incluye lo que traen los camiones: es
+      inventario de la empresa aunque esté en la calle.
+    </div>
+  </div>
+  <div class="tarjeta {% if sin_costo %}aviso{% endif %}">
+    <div class="numero">{{ sin_costo }}</div>
+    <div class="etiqueta">productos con existencia y sin costo</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if sin_costo %}
+        No se valúan en cero —eso haría que el total se viera bajo sin decir por
+        qué— así que quedan fuera de la cifra de arriba. Su costo entra con la
+        primera compra que los incluya.
+      {% else %}
+        Todo lo que hay en existencia tiene costo.
+      {% endif %}
+    </div>
+  </div>
+  <div class="tarjeta {% if saldo_total %}aviso{% endif %}">
+    <div class="numero">${{ '{:,.2f}'.format(saldo_total) }}</div>
+    <div class="etiqueta">por pagar a proveedores</div>
+  </div>
+  <div class="tarjeta {% if vencido %}alerta{% endif %}">
+    <div class="numero">${{ '{:,.2f}'.format(vencido) }}</div>
+    <div class="etiqueta">ya vencido</div>
+    <div class="sutil" style="margin-top:6px">
+      Contado desde el <strong>vencimiento</strong>, no desde la emisión: un
+      proveedor a 30 días no está vencido el día 15.
+    </div>
+  </div>
+</div>
+
+{# ───────────────────────── lo que hay que pagar ───────────────────────── #}
+<h2>Cuentas por pagar</h2>
+{% if cuentas %}
+<p class="sutil" style="margin:-4px 0 10px">
+  Ordenadas por lo que vence primero, que es el orden en que alguien decide qué
+  pagar esta semana.
+</p>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Proveedor</th>
+      <th>Entrada</th>
+      <th>Factura</th>
+      <th class="numero">Importe</th>
+      <th class="numero">Pagado</th>
+      <th class="numero">Saldo</th>
+      <th>Vence</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in cuentas %}
+    <tr {% if c.dias < 0 %}style="background:var(--alerta-suave)"{% endif %}>
+      <td>{{ c.proveedor }}</td>
+      <td>
+        <a href="/panel/compras/cuenta/{{ c.entrada_id }}" class="mono">{{ c.folio }}</a>
+      </td>
+      <td class="mono sutil">{{ c.referencia or '—' }}</td>
+      <td class="numero">${{ '{:,.2f}'.format(c.importe_original) }}</td>
+      <td class="numero sutil">
+        {% if c.importe_pagado %}${{ '{:,.2f}'.format(c.importe_pagado) }}{% else %}—{% endif %}
+      </td>
+      <td class="numero"><strong>${{ '{:,.2f}'.format(c.saldo) }}</strong></td>
+      <td>
+        {{ c.fecha_vencimiento.strftime('%d/%m/%Y') }}
+        <div class="sutil">
+          {% if c.dias < 0 %}
+            <strong style="color:var(--alerta)">vencida hace {{ -c.dias }} día(s)</strong>
+          {% elif c.dias == 0 %}vence hoy
+          {% else %}en {{ c.dias }} día(s){% endif %}
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="vacio">
+    Sin cuentas abiertas. Se generan al confirmar una entrada con motivo
+    <strong>compra</strong> y un proveedor del catálogo.
+  </div>
+{% endif %}
+
+{% if cartera %}
+<h2>Por proveedor</h2>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Proveedor</th>
+      <th class="numero">Cuentas</th>
+      <th class="numero">Al corriente</th>
+      <th class="numero">Vencido ≤30 d</th>
+      <th class="numero">Vencido &gt;30 d</th>
+      <th class="numero">Saldo</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in cartera %}
+    <tr>
+      <td>{{ c.nombre }} <span class="sutil mono">{{ c.codigo }}</span></td>
+      <td class="numero">{{ c.cuentas }}</td>
+      <td class="numero">${{ '{:,.2f}'.format(c.al_corriente) }}</td>
+      <td class="numero">
+        {% if c.vencido_30 %}<span style="color:var(--aviso)">${{ '{:,.2f}'.format(c.vencido_30) }}</span>
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="numero">
+        {% if c.vencido_mas %}<strong style="color:var(--alerta)">${{ '{:,.2f}'.format(c.vencido_mas) }}</strong>
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="numero"><strong>${{ '{:,.2f}'.format(c.saldo) }}</strong></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{# ───────────────────────── el valor del inventario ───────────────────────── #}
+<h2>Valor del inventario</h2>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Almacén</th>
+      <th>Tipo</th>
+      <th class="numero">Valor al promedio</th>
+      <th class="numero">Unidades sin costo</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for v in valor %}
+    <tr>
+      <td>{{ v.nombre }} <span class="sutil mono">{{ v.codigo }}</span></td>
+      <td class="sutil">{{ v.tipo }}</td>
+      <td class="numero">${{ '{:,.2f}'.format(v.valor) }}</td>
+      <td class="numero sutil">
+        {% if v.productos_sin_costo %}
+          {{ v.unidades_sin_costo | entero }} en {{ v.productos_sin_costo }} producto(s)
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil" style="margin-top:8px">
+  El costo es <strong>promedio ponderado por producto</strong> y no por almacén:
+  el producto cuesta lo que cuesta, en el anaquel o en la calle, y una carga de
+  bodega a camión no es una compra. Se eligió el promedio sobre PEPS porque con
+  existencias en varios camiones y ventas que llegan con horas de retraso, «en
+  qué orden se consumieron las capas» es una pregunta que el sistema no puede
+  contestar con honestidad.
+</p>
+
+{# ───────────────────────── el catálogo ───────────────────────── #}
+<h2>Proveedores</h2>
+{% if puede_editar %}
+<form method="post" action="/panel/compras/proveedor"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin-bottom:18px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="rejilla">
+    <div class="campo">
+      <label for="codigo">Código</label>
+      <input type="text" id="codigo" name="codigo" required placeholder="ABARR01">
+      <div class="ayuda">Se guarda en mayúsculas: es la llave con la que se busca.</div>
+    </div>
+    <div class="campo">
+      <label for="nombre">Nombre o razón social</label>
+      <input type="text" id="nombre" name="nombre" required
+             placeholder="Abarrotes del Centro S.A. de C.V.">
+    </div>
+    <div class="campo">
+      <label for="dias_credito">Días de crédito</label>
+      <input type="text" id="dias_credito" name="dias_credito" inputmode="numeric"
+             value="0">
+      <div class="ayuda">
+        Cero es contado. De aquí sale el <strong>vencimiento</strong> de cada
+        cuenta por pagar.
+      </div>
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="rfc">RFC</label>
+      <input type="text" id="rfc" name="rfc" placeholder="ABC123456XY1">
+      <div class="ayuda">
+        No se valida su forma: rechazar un RFC raro justo al capturar una
+        factura real costaría más de lo que vale, y el dato no alimenta ningún
+        cálculo.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="contacto">Contacto</label>
+      <input type="text" id="contacto" name="contacto" placeholder="Don Chuy">
+    </div>
+    <div class="campo">
+      <label for="telefono">Teléfono</label>
+      <input type="text" id="telefono" name="telefono">
+    </div>
+  </div>
+  <div class="campo">
+    <label for="notas">Notas</label>
+    <input type="text" id="notas" name="notas" style="width:100%"
+           placeholder="Entrega martes y viernes; pide el pedido con 2 días">
+  </div>
+  <button type="submit">Dar de alta</button>
+</form>
+{% endif %}
+
+{% if proveedores %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Proveedor</th>
+      <th>Contacto</th>
+      <th class="numero">Crédito</th>
+      <th class="numero">Compras</th>
+      <th class="numero">Saldo</th>
+      {% if puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in proveedores %}
+    <tr {% if not p.activo %}style="opacity:.55"{% endif %}>
+      <td>
+        <strong>{{ p.nombre }}</strong>
+        <div class="sutil mono">{{ p.codigo }}{% if p.rfc %} · {{ p.rfc }}{% endif %}</div>
+        {% if not p.activo %}<span class="etiqueta-motivo">inactivo</span>{% endif %}
+        {% if p.notas %}<div class="sutil">{{ p.notas }}</div>{% endif %}
+      </td>
+      <td class="sutil">
+        {{ p.contacto or '—' }}
+        {% if p.telefono %}<div>{{ p.telefono }}</div>{% endif %}
+      </td>
+      <td class="numero">
+        {% if p.dias_credito %}{{ p.dias_credito }} días{% else %}contado{% endif %}
+      </td>
+      <td class="numero">
+        {{ p.compras }}
+        {% if p.ultima_compra %}
+          <div class="sutil">última {{ p.ultima_compra.strftime('%d/%m/%y') }}</div>
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if p.saldo %}<strong>${{ '{:,.2f}'.format(p.saldo) }}</strong>
+          <div class="sutil">{{ p.cuentas }} cuenta(s)</div>
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      {% if puede_editar %}
+      <td>
+        <form method="post" action="/panel/compras/proveedor/{{ p.id }}/estado">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="secundario">
+            {% if p.activo %}Desactivar{% else %}Activar{% endif %}
+          </button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil" style="margin-top:8px">
+  Un proveedor no se borra: las entradas de hace dos años apuntan a él, y
+  borrarlo dejaría una compra sin saber de quién fue. Desactivado deja de
+  ofrecerse al capturar, y sus cuentas por pagar siguen vivas — se le puede
+  dejar de comprar y seguirle debiendo.
+</p>
+{% else %}
+  <div class="vacio">
+    Sin proveedores. Hasta que haya uno, una compra se puede capturar con el
+    nombre escrito a mano y <strong>no genera cuenta por pagar</strong>.
+  </div>
+{% endif %}
+{% endblock %}

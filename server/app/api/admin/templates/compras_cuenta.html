@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block titulo %}{{ cuenta.folio }}{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/compras">← Compras</a></p>
+<h1>Cuenta por pagar · {{ cuenta.proveedor }}</h1>
+<p class="subtitulo">
+  Entrada <a href="/panel/entradas/{{ cuenta.entrada_id }}" class="mono">{{ cuenta.folio }}</a>
+  a {{ cuenta.bodega }} ·
+  {{ cuenta.fecha_emision.strftime('%d/%m/%Y') }}
+  {% if cuenta.referencia %} · factura <span class="mono">{{ cuenta.referencia }}</span>{% endif %}
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero">${{ '{:,.2f}'.format(cuenta.importe_original) }}</div>
+    <div class="etiqueta">importe de la factura</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">${{ '{:,.2f}'.format(cuenta.importe_pagado) }}</div>
+    <div class="etiqueta">pagado</div>
+  </div>
+  <div class="tarjeta {% if cuenta.saldo and dias < 0 %}alerta{% elif cuenta.saldo %}aviso{% else %}{% endif %}">
+    <div class="numero">${{ '{:,.2f}'.format(cuenta.saldo) }}</div>
+    <div class="etiqueta">saldo</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if cuenta.estado == 'liquidada' %}
+        Liquidada.
+      {% elif dias < 0 %}
+        <strong>Vencida hace {{ -dias }} día(s)</strong>
+        ({{ cuenta.fecha_vencimiento.strftime('%d/%m/%Y') }}).
+      {% elif dias == 0 %}
+        Vence hoy.
+      {% else %}
+        Vence en {{ dias }} día(s), el
+        {{ cuenta.fecha_vencimiento.strftime('%d/%m/%Y') }}
+        {% if cuenta.dias_credito %}({{ cuenta.dias_credito }} días de crédito){% endif %}.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if puede_pagar and cuenta.estado not in ('liquidada', 'cancelada') %}
+<form method="post" action="/panel/compras/cuenta/{{ cuenta.entrada_id }}/pago"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin:18px 0">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Registrar un pago</h2>
+  <p class="sutil" style="margin-top:-4px">
+    El pago se aplica a <strong>esta</strong> factura, no «a lo que se le debe».
+    A un proveedor se le paga una factura concreta, con su referencia, y así se
+    puede conciliar contra su estado de cuenta.
+  </p>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="importe">Importe</label>
+      <input type="text" id="importe" name="importe" required
+             placeholder="{{ '{:.2f}'.format(cuenta.saldo) }}">
+      <div class="ayuda">Máximo el saldo: ${{ '{:,.2f}'.format(cuenta.saldo) }}.</div>
+    </div>
+    <div class="campo">
+      <label for="forma_pago">Forma de pago</label>
+      <select id="forma_pago" name="forma_pago">
+        {% for f in formas %}
+          <option value="{{ f }}" {% if f == 'transferencia' %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="referencia">Referencia</label>
+      <input type="text" id="referencia" name="referencia"
+             placeholder="SPEI 0012345 · cheque 418">
+      <div class="ayuda">Con qué se puede encontrar el pago en el banco.</div>
+    </div>
+    <div class="campo">
+      <label for="fecha">Fecha del pago</label>
+      <input type="date" id="fecha" name="fecha" value="{{ hoy }}" max="{{ hoy }}">
+    </div>
+  </div>
+  <div class="campo">
+    <label for="nota">Nota</label>
+    <input type="text" id="nota" name="nota" style="width:100%">
+  </div>
+  <button type="submit">Registrar el pago</button>
+</form>
+{% elif not puede_pagar %}
+  <div class="aviso-caja neutro">
+    Puedes ver la cuenta y no pagarla: eso necesita el permiso
+    <span class="mono">compras.pagar</span>. Recibir mercancía y pagarla son dos
+    manos distintas.
+  </div>
+{% endif %}
+
+<h2>Pagos</h2>
+{% if pagos %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th class="numero">Importe</th>
+      <th>Forma</th>
+      <th>Referencia</th>
+      <th>Quién</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in pagos %}
+    <tr>
+      <td>{{ g.fecha_pago.strftime('%d/%m/%Y') }}</td>
+      <td class="numero"><strong>${{ '{:,.2f}'.format(g.importe) }}</strong></td>
+      <td class="sutil">{{ g.forma_pago }}</td>
+      <td class="mono sutil">
+        {{ g.referencia or '—' }}
+        {% if g.nota %}<div>{{ g.nota }}</div>{% endif %}
+      </td>
+      <td class="sutil">{{ g.registrado_por or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="vacio">Sin pagos todavía.</div>
+{% endif %}
+{% endblock %}

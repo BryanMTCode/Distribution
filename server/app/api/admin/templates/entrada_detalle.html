@@ -40,6 +40,31 @@
   <p class="sutil"><strong>Nota:</strong> {{ entrada.nota }}</p>
 {% endif %}
 
+{% if cuenta %}
+  <div class="aviso-caja {% if cuenta.estado == 'liquidada' %}bien{% else %}neutro{% endif %}">
+    <strong>Cuenta por pagar a {{ cuenta.proveedor }}:</strong>
+    ${{ '{:,.2f}'.format(cuenta.importe_original) }} ·
+    pagado ${{ '{:,.2f}'.format(cuenta.importe_pagado) }} ·
+    <strong>saldo ${{ '{:,.2f}'.format(cuenta.saldo) }}</strong> ·
+    vence {{ cuenta.fecha_vencimiento.strftime('%d/%m/%Y') }}
+    {% if cuenta.estado != 'liquidada' %}
+      · <a href="/panel/compras/cuenta/{{ entrada.id }}">registrar un pago</a>
+    {% endif %}
+  </div>
+{% elif entrada.estado == 'confirmada' and entrada.motivo == 'compra' %}
+  <div class="aviso-caja neutro">
+    Sin cuenta por pagar: la compra no tiene proveedor del catálogo, así que se
+    registró como de contado y no hay deuda que rastrear.
+  </div>
+{% endif %}
+
+{% if sin_costo and entrada.estado == 'borrador' and exige_costo %}
+  <div class="aviso-caja error">
+    <strong>{{ sin_costo | length }} renglón(es) sin costo, y es una compra.</strong>
+    El confirmar lo va a rechazar: sin costo no hay cuenta por pagar ni promedio.
+  </div>
+{% endif %}
+
 {% if editable and puede_editar %}
 <form method="post" action="/panel/entradas/{{ entrada.id }}/renglon"
       style="background:var(--papel); border:1px solid var(--linea);
@@ -64,6 +89,20 @@
       <label for="cantidad">Cuántos bultos</label>
       <input type="text" id="cantidad" name="cantidad" inputmode="numeric" required>
       <div class="ayuda">Enteros: nadie recibe media caja.</div>
+    </div>
+    <div class="campo">
+      <label for="costo">Costo por {{ '' }}bulto{% if exige_costo %} *{% endif %}</label>
+      <input type="text" id="costo" name="costo"
+             {% if exige_costo %}required{% endif %} placeholder="296.00">
+      <div class="ayuda">
+        {% if exige_costo %}
+          Como viene en la factura: <strong>por bulto</strong>, no por pieza. El
+          sistema divide entre el factor y pondera el promedio del producto.
+        {% else %}
+          Opcional en este motivo. En blanco se valúa al promedio vigente y el
+          promedio no se mueve — nadie compró estas unidades.
+        {% endif %}
+      </div>
     </div>
     <div class="campo">
       <label for="lote">Lote</label>
@@ -92,6 +131,8 @@
       <th>Lote / caducidad</th>
       <th class="numero">Capturado</th>
       <th class="numero">En unidad base</th>
+      <th class="numero">Costo unitario</th>
+      <th class="numero">Importe</th>
       <th class="numero">Existencia hoy</th>
       {% if editable and puede_editar %}<th></th>{% endif %}
     </tr>
@@ -120,6 +161,19 @@
         <strong>{{ r.cantidad | entero }}</strong>
         <span class="sutil">{{ r.unidad_base }}</span>
       </td>
+      <td class="numero">
+        {% if r.costo_unitario %}
+          ${{ r.costo_unitario | precio }}
+        {% else %}
+          <span class="sutil">
+            {% if r.costo_promedio %}al promedio{% else %}sin costo{% endif %}
+          </span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if importes.get(r.id) %}${{ '{:,.2f}'.format(importes[r.id]) }}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
       <td class="numero sutil">
         {{ r.existencia | entero }}
         {% if entrada.estado == 'borrador' %}
@@ -145,6 +199,8 @@
     <tr>
       <th colspan="3">Total</th>
       <th class="numero">{{ total_piezas | entero }}</th>
+      <th></th>
+      <th class="numero">${{ '{:,.2f}'.format(importe_capturado) }}</th>
       <th colspan="{% if editable and puede_editar %}2{% else %}1{% endif %}"></th>
     </tr>
   </tfoot>

@@ -795,8 +795,11 @@ async def test_entra_sale_y_la_cache_cuadra_con_el_libro_mayor(
     )
     await cliente.post(
         f"/panel/entradas/{entrada_id}/renglon",
+        # Con costo: desde la migración 0027 es obligatorio en una compra. $240
+        # la caja de 24 son $10 la pieza, redondo para no arrastrar decimales.
         data={"csrf": _csrf(cliente), "producto": "COCA600",
-              "unidad_codigo": "CAJA", "cantidad": "10", "lote": "", "caducidad": ""},
+              "unidad_codigo": "CAJA", "cantidad": "10", "costo": "240.00",
+              "lote": "", "caducidad": ""},
         follow_redirects=False,
     )
     await cliente.post(

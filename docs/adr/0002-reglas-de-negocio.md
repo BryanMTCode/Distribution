@@ -2242,3 +2242,159 @@ Su faltante se descubre y se cobra en la **liquidación**, que compara lo cargad
 contra lo retornado y ya tiene su pantalla. Ajustarlo por el panel registraría
 el mismo faltante dos veces. Es la contraparte de la regla de la §39: a un
 camión no se le mete mercancía desde la oficina (§0.2), y tampoco se le saca.
+
+---
+
+## 41. El costo no vive en `productos`, y el promedio es ponderado
+
+El módulo de compras —Fase 10 del plan— se apoya en una sola pieza: **el
+costo**. Y antes de construirlo, el sistema entero no sabía lo que cuesta nada.
+
+La huella estaba a la vista desde la migración 0006.
+`merma_detalle.costo_unitario` existe con el comentario *«Costo congelado al
+momento, para valuar la pérdida»*, es **la única columna de costo del esquema
+completo**, y ningún código la escribe jamás: un campo diseñado para valuar
+pérdidas que nunca tuvo un costo que congelar. La misma huella que
+`inventario.ajustar` antes de la §39.
+
+Tres cosas que el sistema parecía poder hacer y no podía:
+
+- el **laboratorio de la Fase 8 no tiene ni una métrica de margen**. No se
+  olvidó: no había con qué calcularla;
+- una merma de 300 piezas es «300 piezas», no una cantidad de dinero, así que no
+  se puede comparar con nada ni priorizar;
+- «¿cuánto dinero hay en el almacén?» no tenía respuesta.
+
+### La fuga que lo obvio habría causado
+
+Lo natural era `productos.costo_promedio`. Habría sido una fuga de datos del
+negocio al teléfono de cada vendedor, y silenciosa.
+
+`fn_registrar_cambio` (migración 0010) publica **`to_jsonb(NEW)` — la fila
+completa** — en `change_log`, y el disparador de `productos` lo hace con
+`ruta_id = NULL`, que significa *a todos los dispositivos*. Una columna de costo
+ahí viajaría en el siguiente pull al SQLite de cada teléfono, y cualquier
+vendedor vería el margen de cada producto de la empresa. En un aparato que se
+pierde.
+
+**Nadie lo habría notado revisando el diff:** la columna se agrega en un lugar y
+el dato sale por otro, diecisiete migraciones más atrás. Es la misma clase de
+defecto que la Fase 9 encontró en `change_log` con la lista de precios, y la
+razón de que ahí la prueba recorra tabla por tabla esperando cero.
+
+De ahí `producto_costos`: tabla aparte, **sin disparador de change_log**, con
+una prueba que afirma que no lo tiene y otra que afirma que `productos` no tiene
+columnas de costo. La separación no es organizativa — es la frontera entre lo
+que el teléfono necesita (precio de venta) y lo que no debe salir de la oficina
+(lo que nos cuesta).
+
+### Promedio ponderado, y la elección se escribe
+
+| Método | Por qué no, o por qué sí |
+|---|---|
+| Último costo | miente cada vez que el proveedor sube: revalúa de golpe todo lo viejo que sigue en el anaquel |
+| PEPS por capas | el más exacto y el más caro: exige saber **en qué orden se consumieron las capas**, con el inventario en cinco camiones y ventas que llegan con horas de retraso |
+| **Promedio ponderado** | una cifra por producto, sobrevive al consumo parcial sin rastrear nada, y es de las opciones que NIF C-4 permite |
+
+La razón que decide es la segunda: con §0.3 —«tiempo real es el tiempo real de
+lo que ha sincronizado»— el orden de consumo de las capas es una pregunta que
+este sistema **no puede contestar con honestidad**. Un método de valuación que
+depende de un dato que no se tiene produce cifras exactas y falsas.
+
+El costo es **por producto y no por almacén**: un promedio por almacén
+divergiría entre la bodega y cada camión, y entonces una carga —que no es una
+compra— cambiaría el costo del producto solo por moverlo.
+
+Se pondera contra las existencias de **todos los almacenes menos los de merma**:
+un camión cargado trae inventario de la empresa aunque esté en la calle, y lo
+que ya se mermó es pérdida, no inventario.
+
+Y contra las unidades que había **antes** de la entrada. Ponderar contra la
+existencia ya actualizada contaría las unidades que entran dos veces y el
+promedio se quedaría a medio camino del costo nuevo: con 240@10 + 240@20 daría
+16.67 en vez de 15.
+
+### El centavo que rompía el pago
+
+Es el defecto más caro que encontró la construcción, y aparece en la aritmética
+más inocente:
+
+```
+10 cajas × $296.00        = $2,960.00   ← lo que dice la factura
+296.00 / 24               = $12.3333…   ← el costo por pieza, inexacto
+240 piezas × $12.3333     = $2,959.99   ← lo que daba el sistema
+```
+
+Un centavo. Y rompe la operación completa: la cuenta por pagar nace en
+$2,959.99, alguien captura el pago de $2,960.00 que de verdad hizo, y el sistema
+lo **rechaza por exceder el saldo** — con el `CHECK pago_no_excede_el_original`
+esperando detrás.
+
+Así que son dos verdades distintas y se guardan las dos:
+
+| Campo | Qué es | Cómo se calcula |
+|---|---|---|
+| `importe` | lo que se le debe al proveedor | sobre lo **capturado**: bultos × costo por bulto |
+| `costo_unitario` | con qué se valúa el inventario | por unidad base, para el promedio |
+
+Es la misma regla del §2 —el importe redondea una sola vez y al final— aplicada
+donde de verdad importa: **la multiplicación final es sobre las cajas que venían
+en la factura, no sobre las piezas en que se convirtieron.**
+
+La diferencia de un centavo entre «valor del inventario» y «lo que se pagó» no
+desaparece y no debe: es inherente a cualquier costo por unidad, y en
+contabilidad vive en una cuenta de redondeo. Lo que no puede diferir es la
+cuenta por pagar contra la factura.
+
+### Un costo nulo no es cero
+
+`costo_unitario` nulo significa **«se valúa al promedio vigente»** y el promedio
+no se mueve. Es obligatorio en una compra —ahí está la factura— y opcional en un
+inventario inicial o un ajuste por conteo, donde nadie compró esas unidades.
+
+Valuarlas al promedio es el tratamiento estándar de lo que aparece en un conteo.
+Guardar un cero arrastraría el promedio a la baja con un costo que nadie pagó, y
+es el error que un `COALESCE(costo, 0)` comete sin avisar. Y si no hay promedio
+previo ni costo capturado, el producto **queda sin costo**: la pantalla de valor
+de inventario lo cuenta aparte en vez de valuarlo en cero, que haría que el
+total se viera bajo sin decir por qué.
+
+### Un pago se aplica a una cuenta, sin FIFO
+
+Y es deliberadamente **distinto de la cobranza**, donde el servidor aplica FIFO.
+
+Un cobro del vendedor llega como «un abono» y hay que repartirlo: el cliente
+paga lo que debe sin decir cuál factura. Un pago a proveedor es al revés — se
+paga **la factura F-45821**, con su transferencia y su referencia. Inventar un
+FIFO aquí repartiría un pago entre facturas que nadie quiso pagar, y después
+nadie podría conciliar contra el estado de cuenta del proveedor.
+
+### Dos permisos, porque son dos manos
+
+`compras.administrar` para el catálogo y los costos; `compras.pagar` para
+registrar un pago. Recibir mercancía y pagarla son actos distintos, y que la
+misma persona pueda hacer las dos sin que nadie más lo vea es la receta de una
+factura inventada. El supervisor tiene el primero —ya recibe mercancía, necesita
+capturar su costo— y **solo gerencia tiene el segundo**.
+
+Y aquí gerencia **sí escribe**, sin contradecir «gerencia es de solo lectura
+sobre la operación» (§0): un proveedor y un costo de compra no son la operación
+de la calle —no mueven inventario ni tocan una venta— son la relación comercial
+de la empresa, que es precisamente lo que gerencia dirige.
+
+### Lo que sigue faltando del módulo
+
+**Las órdenes de compra.** Su valor es anticipar —«¿qué viene en camino?»— y
+eso importa a una escala que este negocio todavía no tiene: con un puñado de
+proveedores, quien ordena recuerda lo que ordenó. Además agrega frición a un
+flujo que ya funciona sin ellas, porque la recepción no necesita una orden
+previa. Cuando se construyan, la entrada las referenciará y lo que valdrá la
+pena medir es **lo ordenado contra lo recibido**: el proveedor que entrega de
+menos no se detecta de ninguna otra forma.
+
+**Los anticipos.** Un pago mayor que el saldo se rechaza diciendo que eso es un
+anticipo y que los anticipos no están construidos. Es mejor decirlo que
+guardarlo mal.
+
+**El CFDI y la integración contable** siguen siendo Fase 10 y no bloquean nada:
+el RFC del proveedor ya se guarda, que es lo que hará falta el día que existan.

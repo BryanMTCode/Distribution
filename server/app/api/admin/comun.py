@@ -50,6 +50,7 @@ NAVEGACION = [
     # bodega y se usan juntas: se recibe y se verifica que quedó la cifra.
     # Y va ANTES, que es el orden en que ocurren — sin una entrada, la
     # pantalla de inventario solo puede mostrar ceros.
+    ("/panel/compras", "Compras"),
     ("/panel/entradas", "Entradas"),
     ("/panel/salidas", "Salidas"),
     ("/panel/inventario", "Inventario"),

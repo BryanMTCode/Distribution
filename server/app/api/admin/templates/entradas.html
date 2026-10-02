@@ -64,10 +64,33 @@
   </div>
   <div class="rejilla">
     <div class="campo">
-      <label for="proveedor">Proveedor</label>
+      <label for="proveedor_id">Proveedor</label>
+      <select id="proveedor_id" name="proveedor_id">
+        <option value="">— sin proveedor del catálogo —</option>
+        {% for pr in proveedores %}
+          <option value="{{ pr.id }}">
+            {{ pr.nombre }}{% if pr.dias_credito %} ({{ pr.dias_credito }} días){% else %} (contado){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        {% if not proveedores %}
+          No hay proveedores. Se dan de alta en <a href="/panel/compras">Compras</a>.
+        {% else %}
+          <strong>La cuenta por pagar solo se crea con proveedor del catálogo</strong>,
+          y su vencimiento sale de los días de crédito. Sin él es una compra de
+          contado que no deja deuda que rastrear.
+        {% endif %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="proveedor">O escribe el nombre</label>
       <input type="text" id="proveedor" name="proveedor"
-             placeholder="Abarrotes del Centro S.A.">
-      <div class="ayuda">Texto libre: no hay catálogo de proveedores todavía.</div>
+             placeholder="Central de abastos, puesto 12">
+      <div class="ayuda">
+        Para una compra de contado de quien no está en el catálogo. Se guarda el
+        nombre y no genera cuenta por pagar.
+      </div>
     </div>
     <div class="campo">
       <label for="referencia">Remisión o factura</label>
@@ -117,7 +140,9 @@
       <th>De quién / con qué papel</th>
       <th class="numero">Renglones</th>
       <th class="numero">Piezas</th>
+      <th class="numero">Importe</th>
       <th>Estado</th>
+      <th>Pago</th>
     </tr>
   </thead>
   <tbody>
@@ -133,6 +158,10 @@
       </td>
       <td class="numero">{{ e.renglones }}</td>
       <td class="numero">{{ e.piezas | entero }}</td>
+      <td class="numero">
+        {% if e.importe_total %}${{ '{:,.2f}'.format(e.importe_total) }}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
       <td>
         {% if e.estado == 'confirmada' %}
           <span style="color:var(--acento)">confirmada</span>
@@ -140,6 +169,17 @@
           <span style="color:var(--aviso)">borrador</span>
         {% else %}
           <span class="sutil">cancelada</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if e.estado_pago == 'liquidada' %}
+          <span style="color:var(--acento)">pagada</span>
+        {% elif e.estado_pago %}
+          <a href="/panel/compras/cuenta/{{ e.id }}">
+            debe ${{ '{:,.2f}'.format(e.saldo_por_pagar) }}</a>
+          <div class="sutil">vence {{ e.fecha_vencimiento.strftime('%d/%m') }}</div>
+        {% else %}
+          <span class="sutil">{% if e.motivo == 'compra' %}contado{% else %}—{% endif %}</span>
         {% endif %}
       </td>
     </tr>

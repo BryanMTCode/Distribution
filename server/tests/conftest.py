@@ -73,6 +73,17 @@ TABLAS_VOLATILES = [
     # el CASCADE las alcanzaría, pero van explícitas por la misma razón que las
     # del piloto — leer esta lista no debería exigir seguir llaves foráneas en la
     # cabeza.
+    # Compras: `pagos_proveedor` cuelga de `cuentas_por_pagar`, que cuelga de
+    # `entradas`, que cuelga de `almacenes`. El CASCADE llegaría, y van
+    # explícitas por lo mismo que las demás.
+    #
+    # `producto_costos` también: cuelga de `productos`, y un costo que sobreviva
+    # entre pruebas haría que la de "la primera compra fija el promedio" midiera
+    # una segunda compra.
+    "pagos_proveedor",
+    "cuentas_por_pagar",
+    "producto_costos",
+    "proveedores",
     "salida_detalle",
     "salidas",
     "entrada_detalle",

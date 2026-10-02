@@ -91,11 +91,12 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
 | **Entradas de mercancía** — compra, inventario inicial y ajuste, con documento | ✅ 32 pruebas |
 | **Salidas de bodega** — conteo físico y merma, y nunca dejan negativo | ✅ 37 pruebas |
+| **Compras** — proveedores, **costo promedio ponderado** y cuentas por pagar | ✅ 35 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**899 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
+**935 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
 
 ## Stack
 
@@ -202,7 +203,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 899 pruebas de Python
+make pruebas                        # 935 pruebas de Python
 make movil                          # 475 de Dart + 220 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

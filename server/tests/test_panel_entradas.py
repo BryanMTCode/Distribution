@@ -141,12 +141,20 @@ def _id_de(respuesta) -> uuid.UUID:
 
 
 async def _renglon(cliente, entrada_id, *, sku="COCA600", unidad="CAJA",
-                   cantidad="10", lote="", caducidad=""):
+                   cantidad="10", lote="", caducidad="", costo="240.00"):
+    """Un renglón, con costo por omisión.
+
+    El costo es obligatorio en una compra desde la migración 0027: sin él no hay
+    promedio ponderado ni cuenta por pagar. Estas pruebas no son del costo
+    —están en `test_compras.py`— así que pasan uno redondo: $240 la caja de 24
+    son $10 la pieza, que no arrastra decimales a ninguna aserción.
+    """
     csrf = _csrf(cliente)
     return await cliente.post(
         f"/panel/entradas/{entrada_id}/renglon",
         data={"csrf": csrf, "producto": sku, "unidad_codigo": unidad,
-              "cantidad": cantidad, "lote": lote, "caducidad": caducidad},
+              "cantidad": cantidad, "lote": lote, "caducidad": caducidad,
+              "costo": costo},
         follow_redirects=False,
     )
 
@@ -436,6 +444,25 @@ async def test_la_conversion_caja_pieza_se_hace_una_vez_y_se_dice(
     # que dice «10 cajas».
     assert fila["unidad_codigo"] == "CAJA"
     assert fila["unidades_capturadas"] == Decimal("10.000")
+
+
+async def test_una_compra_necesita_costo_en_cada_renglon(cliente, sesion, semilla):
+    """La regla que la 0027 agregó, afirmada desde esta pantalla.
+
+    El detalle del promedio ponderado está en `test_compras.py`; aquí importa
+    que la pantalla de entradas no deje pasar una compra sin costo — dejaría una
+    cuenta por pagar de cero, que es una deuda invisible.
+    """
+    await _entrar(cliente)
+    await _producto(sesion)
+    entrada = _id_de(await _abrir(cliente, semilla, motivo="compra"))
+    sin_costo = await _renglon(cliente, entrada, costo="")
+    assert "obligatorio" in sin_costo.headers["location"]
+
+    # Y en un ajuste no: nadie compró esas unidades.
+    otra = _id_de(await _abrir(cliente, semilla, motivo="ajuste"))
+    con_blanco = await _renglon(cliente, otra, costo="")
+    assert "240" in con_blanco.headers["location"]
 
 
 async def test_media_caja_se_rechaza(cliente, sesion, semilla):

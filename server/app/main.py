@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import cobranza as panel_cobranza
+from app.api.admin import compras as panel_compras
 from app.api.admin import efectividad as panel_efectividad
 from app.api.admin import entradas as panel_entradas
 from app.api.admin import equipo as panel_equipo
@@ -103,6 +104,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_cargas.router)
     app.include_router(panel_equipo.router)
     app.include_router(panel_entradas.router)
+    app.include_router(panel_compras.router)
     app.include_router(panel_salidas.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_liquidaciones.router)

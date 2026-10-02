@@ -340,6 +340,37 @@ que nada se queje (`existencias` no lleva CHECK de signo a propósito — §0.1)
    le escribe existencias. Mercancía nueva entra a la bodega y de ahí sube con una carga, que es lo que
    el teléfono sabe recibir.
 
+**Compras** — <http://127.0.0.1:8000/panel/compras>
+
+Contesta tres preguntas que el sistema no podía: a quién le compramos, cuánto dinero hay en el
+almacén, y a quién le debemos y cuándo vence.
+
+1. **Da de alta un proveedor** con sus días de crédito. De ahí sale el **vencimiento** de cada cuenta
+   por pagar; cero días es contado y vence el mismo día.
+2. **Recibe una compra** en *Entradas* eligiendo ese proveedor y capturando el costo **por bulto**,
+   como viene en la factura. El sistema divide entre el factor, pondera el promedio del producto y
+   crea la cuenta por pagar.
+3. **Comprueba el centavo.** 10 cajas a $296.00 tienen que dar una cuenta por pagar de **$2,960.00**
+   exactos — no $2,959.99. El costo por pieza es 296/24 = 12.3333… que no es exacto, así que el
+   importe se calcula sobre las cajas capturadas y no sobre las piezas en que se convirtieron. Con el
+   centavo de menos, el pago de la factura completa se rechazaría por exceder el saldo.
+4. **Registra un pago parcial y luego el resto.** El pago se aplica a **esa** factura, no «a lo que se
+   le debe»: a un proveedor se le paga una factura concreta y así se puede conciliar contra su estado
+   de cuenta. (La cobranza sí aplica FIFO, y es a propósito: un cliente paga un abono sin decir cuál
+   factura.)
+5. **Mira el valor del inventario.** Está al promedio ponderado e incluye lo que traen los camiones:
+   es inventario de la empresa aunque esté en la calle. Los productos con existencia y **sin costo**
+   se cuentan aparte en vez de valuarse en cero.
+
+Dos cosas que conviene entender antes de usarlo:
+
+- **El costo NO está en `productos`**, y no es un detalle de organización. La migración 0010 publica la
+  *fila completa* de esa tabla en `change_log` con `ruta_id = NULL`, o sea a todos los teléfonos: una
+  columna de costo ahí pondría el margen de la empresa en el SQLite de cada vendedor. Vive en
+  `producto_costos`, sin disparador, y hay dos pruebas que lo defienden.
+- **Pagar necesita otro permiso** (`compras.pagar`, solo gerencia). Recibir mercancía y pagarla son dos
+  manos distintas.
+
 **Salidas de bodega** — <http://127.0.0.1:8000/panel/salidas>
 
 La otra mitad: lo que sale de la bodega sin ir a un camión. Dos clases, y la diferencia entre ellas es
@@ -1002,8 +1033,14 @@ Y las **salidas** también: `/panel/salidas`, con el conteo físico que encuentr
 bodega. Las dos direcciones del ajuste están construidas, y con ellas un negativo de bodega ya tiene
 cómo arreglarse — la pantalla de inventario lo dice en el renglón mismo.
 
-Lo que **sigue faltando** de esta familia es el **módulo de compras** (proveedores como catálogo,
-órdenes de compra, costos, cuentas por pagar), que es Fase 10 y no bloquea operar.
+Y el **módulo de compras** (Fase 10) también: `/panel/compras`, con el catálogo de proveedores, el
+**costo promedio ponderado** y las **cuentas por pagar**. Con eso el sistema sabe por primera vez lo
+que cuesta el inventario — el laboratorio de la Fase 8 no tenía ni una métrica de margen porque no
+había con qué calcularla.
+
+Lo que **sigue faltando** de esa familia son las **órdenes de compra** (su valor es anticipar lo que
+viene en camino, y eso importa a una escala que este negocio todavía no tiene), los **anticipos** a
+proveedor, y el **CFDI**. Ninguno bloquea operar.
 
 ### Una advertencia sobre la numeración
 
@@ -1017,7 +1054,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 899 pruebas de Python contra PostgreSQL real, 475 de Dart,
+1. **Lo construido está probado de verdad**: 935 pruebas de Python contra PostgreSQL real, 475 de Dart,
    220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -1028,7 +1065,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 899 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 935 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que
