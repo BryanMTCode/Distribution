@@ -51,6 +51,7 @@ NAVEGACION = [
     # Y va ANTES, que es el orden en que ocurren — sin una entrada, la
     # pantalla de inventario solo puede mostrar ceros.
     ("/panel/entradas", "Entradas"),
+    ("/panel/salidas", "Salidas"),
     ("/panel/inventario", "Inventario"),
     ("/panel/ventas", "Ventas"),
     ("/panel/efectividad", "Efectividad"),

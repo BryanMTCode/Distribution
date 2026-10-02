@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block titulo %}Salidas{% endblock %}
+{% block contenido %}
+<h1>Salidas de bodega</h1>
+<p class="subtitulo">
+  Lo que sale de la bodega sin ir a un camión: el <strong>ajuste por conteo
+  físico</strong> cuando se encuentra menos de lo registrado, y la
+  <strong>merma</strong> de lo que se dañó, caducó o se perdió ahí mismo.
+  Lo que entra se registra en <a href="/panel/entradas">Entradas</a>.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="aviso-caja neutro">
+  <strong>Una salida nunca deja la existencia en negativo.</strong>
+  No contradice §0.1 —«el mundo físico ya ocurrió»— lo confirma: ese principio
+  es para hechos que pasaron en la calle y llegan tarde, y una salida de bodega
+  la está tecleando alguien con el anaquel a la vista. El anaquel no puede tener
+  menos que nada, así que una salida de más es un dedazo — y un asiento
+  equivocado en un libro <em>append-only</em> no se borra, se arrastra.
+</div>
+
+{% if puede_editar %}
+<form method="post" action="/panel/salidas/nueva"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin-bottom:22px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Registrar una salida</h2>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="tipo">Qué clase de salida</label>
+      <select id="tipo" name="tipo" required>
+        <option value="">—</option>
+        {% for codigo, datos in tipos.items() %}
+          <option value="{{ codigo }}">{{ datos[1] }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        {% for codigo, datos in tipos.items() %}
+          <strong>{{ datos[1] }}:</strong> {{ datos[2] }}<br>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="almacen_origen_id">De qué bodega</label>
+      <select id="almacen_origen_id" name="almacen_origen_id" required>
+        <option value="">—</option>
+        {% for b in bodegas %}
+          <option value="{{ b.id }}">{{ b.codigo }} · {{ b.nombre }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        Solo bodegas: el faltante de un camión se descubre y se cobra en su
+        <a href="/panel/liquidaciones">liquidación</a>, que compara lo cargado
+        contra lo retornado.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="motivo_codigo">Motivo (solo en merma)</label>
+      <select id="motivo_codigo" name="motivo_codigo">
+        <option value="">—</option>
+        {% for m in motivos %}
+          <option value="{{ m.codigo }}">{{ m.nombre }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        Del catálogo cerrado que ya usa el teléfono. Un faltante de
+        <strong>conteo</strong> va <strong>sin motivo</strong>: su causa no se
+        conoce —si se supiera, se habría capturado como merma el día que pasó— y
+        elegir uno sin saber convierte un dato duro en una acusación inventada.
+      </div>
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="fecha">Fecha</label>
+      <input type="date" id="fecha" name="fecha" value="{{ hoy }}" max="{{ hoy }}">
+    </div>
+    <div class="campo" style="grid-column: span 2">
+      <label for="nota">Nota</label>
+      <input type="text" id="nota" name="nota" style="width:100%" required
+             placeholder="Conteo del anaquel 3, con Beto, 2 de octubre">
+      <div class="ayuda">
+        Obligatoria: en un conteo hace falta saber quién contó, y en una merma
+        qué pasó más allá del código del motivo.
+      </div>
+    </div>
+  </div>
+  <button type="submit">Abrir borrador</button>
+</form>
+{% else %}
+  <div class="aviso-caja neutro">
+    Puedes ver las salidas y no capturarlas: eso necesita el permiso
+    <span class="mono">inventario.ajustar</span>. Una salida es la operación con
+    la que se puede tapar un robo, así que quien mide no la firma.
+  </div>
+{% endif %}
+
+{% if borradores %}
+  <div class="aviso-caja aviso">
+    <strong>{{ borradores }} borrador(es) sin confirmar.</strong>
+    Un borrador no mueve inventario: el faltante sigue contando como existencia
+    buena, y una carga hecha con esa cifra se lleva mercancía que no está.
+  </div>
+{% endif %}
+
+{% if salidas %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Folio</th>
+      <th>Fecha</th>
+      <th>Clase</th>
+      <th>Bodega</th>
+      <th>Motivo / nota</th>
+      <th class="numero">Renglones</th>
+      <th class="numero">Piezas</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in salidas %}
+    <tr>
+      <td><a href="/panel/salidas/{{ s.id }}" class="mono">{{ s.folio }}</a></td>
+      <td>{{ s.fecha_operativa.strftime('%d/%m/%Y') }}</td>
+      <td>{{ tipos.get(s.tipo, (None, s.tipo))[1] }}</td>
+      <td>{{ s.bodega }}</td>
+      <td>
+        {% if s.motivo %}<strong>{{ s.motivo }}</strong><br>{% endif %}
+        <span class="sutil">{{ s.nota or '' }}</span>
+      </td>
+      <td class="numero">{{ s.renglones }}</td>
+      <td class="numero">{{ s.piezas | entero }}</td>
+      <td>
+        {% if s.estado == 'confirmada' %}
+          <span style="color:var(--acento)">confirmada</span>
+        {% elif s.estado == 'borrador' %}
+          <span style="color:var(--aviso)">borrador</span>
+        {% else %}
+          <span class="sutil">cancelada</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="vacio">
+    Sin salidas registradas. Es lo normal hasta el primer conteo físico.
+  </div>
+{% endif %}
+{% endblock %}

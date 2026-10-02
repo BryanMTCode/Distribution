@@ -73,6 +73,8 @@ TABLAS_VOLATILES = [
     # el CASCADE las alcanzaría, pero van explícitas por la misma razón que las
     # del piloto — leer esta lista no debería exigir seguir llaves foráneas en la
     # cabeza.
+    "salida_detalle",
+    "salidas",
     "entrada_detalle",
     "entradas",
     # Las tablas del piloto (Fase 3) van explícitas aunque el CASCADE de

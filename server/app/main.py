@@ -21,6 +21,7 @@ from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import panel
 from app.api.admin import piloto as panel_piloto
 from app.api.admin import productos as panel_productos
+from app.api.admin import salidas as panel_salidas
 from app.api.admin.sesion_web import SinSesionWeb
 from app.api.middleware import Observabilidad
 from app.api.v1 import auth, catalogo, clientes, dispositivos, salud, sync, tablero
@@ -102,6 +103,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_cargas.router)
     app.include_router(panel_equipo.router)
     app.include_router(panel_entradas.router)
+    app.include_router(panel_salidas.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_liquidaciones.router)
     app.include_router(panel_cobranza.router)

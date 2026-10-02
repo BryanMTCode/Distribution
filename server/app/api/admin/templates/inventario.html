@@ -6,8 +6,9 @@
   Lo que hay en cada almacén <strong>ahora mismo</strong>. El camión es un almacén
   como cualquier otro: lo que ves en él es lo que su vendedor trae, hasta donde ha
   sincronizado.
-  La mercancía entra por <a href="/panel/entradas">Entradas</a> y sube al camión
-  con una <a href="/panel/cargas">carga</a>.
+  La mercancía entra por <a href="/panel/entradas">Entradas</a>, sube al camión
+  con una <a href="/panel/cargas">carga</a>, y se corrige o se merma por
+  <a href="/panel/salidas">Salidas</a>.
 </p>
 
 {% if not almacenes %}
@@ -128,6 +129,15 @@
   registrado, o cuando una venta offline entró después de que el camión ya marcaba
   cero. Se permite a propósito — la mercancía ya se movió en el mundo físico, y
   rechazar el registro no la devuelve.
+  {% if elegido.tipo == 'camion' %}
+    En un camión se arregla al cerrar su
+    <a href="/panel/liquidaciones">liquidación</a>, que compara lo cargado contra
+    lo retornado.
+  {% else %}
+    En una bodega se arregla contando el anaquel: si hay más de lo que dice el
+    sistema, una <a href="/panel/entradas">entrada con motivo «ajuste»</a>; si hay
+    menos, una <a href="/panel/salidas">salida por conteo</a>.
+  {% endif %}
 </p>
 {% else %}
 <div class="vacio">

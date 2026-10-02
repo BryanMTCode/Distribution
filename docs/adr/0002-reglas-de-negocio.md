@@ -2106,14 +2106,139 @@ verdad.
 
 ### Lo que esta pantalla NO hace, dicho aquí para que no se dé por hecho
 
-**Las salidas por ajuste.** Un conteo físico que encuentra **menos** de lo
-registrado necesita un documento en sentido contrario, y no está construido: el
-documento de entrada solo suma. Mientras no exista, un faltante de bodega se
-sigue arreglando como siempre — y es la mitad adyacente de este mismo trabajo,
-no un descubrimiento para después.
+**Las salidas por ajuste** se construyeron después, y tienen su propia sección
+(§40): el documento de entrada solo suma, así que un conteo que encuentra
+**menos** necesitaba uno en sentido contrario.
 
 **El módulo de compras** (proveedores como catálogo, órdenes de compra, costos,
 cuentas por pagar) sigue siendo Fase 10. El proveedor aquí es texto libre a
 propósito: inventar la tabla obligaría a mantener un catálogo que nada más usa, y
 lo que de verdad se necesita el día de la auditoría es poder leer de quién llegó
 y con qué papel.
+
+---
+
+## 40. A lo que ya pasó se le cree; a lo que se está capturando se le revisa
+
+La §39 dejó el inventario entrando y faltaba la otra dirección: un conteo físico
+que encuentra **menos** de lo registrado. Y al construirla apareció la pregunta
+que parecía contradecir el principio fundacional del sistema.
+
+**§0.1 dice que el servidor marca y no rechaza**, porque el mundo físico ya
+ocurrió: una venta offline que llega tarde, una merma del camión sin existencia.
+El manejador de sincronización lo dice con todas sus letras — *«se MARCA, no se
+rechaza, el cartón ya está roto»*— y hay pruebas de eso.
+
+Entonces, ¿por qué una salida de bodega **sí** se rechaza cuando dejaría la
+existencia en negativo?
+
+Porque no son la misma clase de dato, y confundirlas es el error:
+
+| | De dónde viene | Qué se hace |
+|---|---|---|
+| Venta o merma del camión | **ya pasó en la calle**, llega tarde por sync | se acepta y se **marca** |
+| Salida de bodega | **se está tecleando ahora**, con el anaquel a la vista | se **revisa** |
+
+Si el sistema dice 3 y alguien captura una salida de 5, no hay ningún hecho
+físico que respaldar: **el anaquel no puede tener menos que nada.** Es un dedazo.
+Y bloquearlo no niega la realidad — la protege, porque un asiento equivocado en
+un libro *append-only* no se borra: se arrastra, y la corrección exige otro
+documento que a su vez hay que explicar.
+
+    A lo que ya pasó se le cree; a lo que se está capturando se le revisa.
+
+La validación va **dentro** de la transacción y después de tomar el candado de
+cada renglón de `existencias`, en orden de producto. Validarla al capturar sería
+mirar un número que cualquier carga puede mover un segundo después: lo que
+importa es la existencia en el instante en que se escribe el asiento. Y se suman
+todos los renglones del mismo producto antes de comparar — dos lotes de 60
+contra una existencia de 100 no pasan, aunque ninguno exceda por separado.
+
+### En un conteo se captura lo que se contó, no la diferencia
+
+Quien hace un conteo anota lo que ve en el anaquel: «80». No anota «faltan 20»,
+porque eso exige restar a mano, a las siete de la mañana, producto por producto
+— y la resta hecha a mano es exactamente de donde salen los errores que este
+documento viene a corregir.
+
+El renglón guarda las tres cifras y **la base de datos impone la aritmética**:
+
+```sql
+CONSTRAINT conteo_cuadra
+    CHECK (contado IS NULL OR cantidad = existencia_al_capturar - contado)
+```
+
+Un bug en el panel no puede escribir un renglón de conteo que no cuadre con su
+propia resta. Y si el conteo encuentra **más**, esto no es el documento: la
+pantalla lo dice y manda a una entrada con motivo «ajuste», en vez de aceptar
+una salida negativa.
+
+Un conteo es **por producto y no por lote**, y eso tampoco es una limitación de
+la pantalla: `existencias` guarda un número por `(almacén, producto)` y no tiene
+dimensión de lote. Aceptar un lote prometería una precisión que la tabla contra
+la que se compara no tiene. En una merma sí se captura, que es la que se
+identifica por tarima.
+
+### La cifra congelada solo vale contra el momento en que se congeló
+
+El renglón de conteo guarda la existencia del momento de capturar. Si al
+confirmar la existencia ya es otra —salió una carga entre el conteo y el
+cierre—, la resta guardada **ya no describe nada**: el anaquel también perdió
+esas piezas, así que aplicarla descontaría dos veces.
+
+Se rechaza el documento diciendo exactamente eso, en vez de hacer la aritmética
+equivocada en silencio. Es el mismo razonamiento que el cuadre del piloto (§38),
+donde la cifra del sistema se congela al capturar el papel: **una cifra
+congelada solo vale contra el momento en que se congeló.**
+
+### Un faltante de conteo no tiene motivo, y no se le inventa uno
+
+El catálogo de motivos ya existía y es cerrado desde la Fase 6 (`motivos_merma`:
+`CADUCADO`, `DANADO_BODEGA`, `ROBO`, `MUESTRA`…), así que no se inventó uno
+nuevo: se reutiliza el que el teléfono ya sincroniza.
+
+Pero el motivo es **obligatorio en una merma y prohibido en un conteo**, y esa
+asimetría es la decisión:
+
+> Un faltante de conteo es, por definición, un faltante **cuya causa no se
+> conoce**. Si se supiera, se habría capturado como merma el día que pasó.
+
+Obligar a elegir un motivo haría que alguien marcara `ROBO` o `DANADO_BODEGA`
+sin saber, y eso convierte un dato duro —«faltan 20 piezas»— en **una acusación
+inventada** que después alguien va a leer como un hecho. En un negocio donde el
+faltante se le puede descontar a una persona, esa diferencia no es académica.
+
+Las dos clases **sí** exigen nota, por lo mismo que el inventario inicial de la
+§39: en un conteo hace falta saber quién contó, y en una merma qué pasó más allá
+del código.
+
+### Contar dos veces reemplaza; mermar dos veces suma
+
+Es la misma tabla, el mismo `ON CONFLICT`, y el comportamiento opuesto — porque
+el significado es opuesto:
+
+- **Contar dos veces el mismo producto** significa que la primera cuenta estaba
+  mal. Se **reemplaza**: no hay el doble de faltante.
+- **Mermar dos veces la misma tarima** son dos pérdidas distintas. Se **suma**,
+  igual que en las entradas.
+
+### Dos tipos del libro mayor, al contrario que en las entradas
+
+En la §39, `inicial` y `ajuste` comparten el asiento `'ajuste'`. Aquí no:
+`conteo` → `'ajuste'` y `merma` → `'merma'`. La diferencia entre **una pérdida
+identificada** y **un descuadre sin explicar** es la que decide si hay algo que
+arreglar en la bodega, y poder separarlas leyendo el libro mayor vale más que la
+simetría con las entradas.
+
+Y una merma de bodega viaja al **almacén de merma** si hay uno activo, igual que
+la del camión: el libro mayor dice origen y destino, y las existencias de los
+dos lados lo reflejan — si no, el almacén de merma quedaría siempre en cero. Sin
+almacén de merma configurado, el destino queda en `NULL`, que el `CHECK` del
+libro mayor permite porque solo exige uno de los dos lados.
+
+### Un camión no se ajusta por aquí
+
+Su faltante se descubre y se cobra en la **liquidación**, que compara lo cargado
+contra lo retornado y ya tiene su pantalla. Ajustarlo por el panel registraría
+el mismo faltante dos veces. Es la contraparte de la regla de la §39: a un
+camión no se le mete mercancía desde la oficina (§0.2), y tampoco se le saca.

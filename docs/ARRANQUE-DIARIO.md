@@ -340,8 +340,32 @@ que nada se queje (`existencias` no lleva CHECK de signo a propósito — §0.1)
    le escribe existencias. Mercancía nueva entra a la bodega y de ahí sube con una carga, que es lo que
    el teléfono sabe recibir.
 
-El flujo completo de la bodega es **Entradas → Inventario → Cargas**, y las tres pantallas están
-enlazadas entre sí en ese orden.
+**Salidas de bodega** — <http://127.0.0.1:8000/panel/salidas>
+
+La otra mitad: lo que sale de la bodega sin ir a un camión. Dos clases, y la diferencia entre ellas es
+la que decide si hay algo que arreglar en la bodega.
+
+1. **Abre un conteo físico.** La nota es obligatoria: hace falta saber quién contó.
+2. **Captura lo que CONTASTE**, no la diferencia — el sistema resta. El renglón guarda las tres cifras y
+   la base de datos impone que la resta cuadre (`CONSTRAINT conteo_cuadra`), así que un bug en el panel
+   no puede escribir un conteo que no cuadre con su propia aritmética.
+3. **Cuenta de más, a propósito**: si capturas más de lo que el sistema tiene, te manda a *Entradas* con
+   motivo «ajuste». Encontrar sobrante no es una salida.
+4. **Intenta sacar más de lo que hay.** Se rechaza, y el mensaje dice cuánto hay y cuánto sale. Esto
+   **no** contradice §0.1: ese principio es para hechos que ya pasaron en la calle y llegan tarde —el
+   teléfono manda una merma sin existencia y el servidor la MARCA, no la rechaza— mientras que una
+   salida de bodega la está tecleando alguien con el anaquel a la vista. El anaquel no puede tener menos
+   que nada.
+5. **Cuenta, luego mueve inventario, luego confirma.** Si entre el conteo y el cierre salió una carga,
+   el confirmar lo rechaza: el anaquel también perdió esas piezas, así que aplicar la resta guardada
+   descontaría dos veces. Vuelve a capturar el renglón y queda.
+6. **Una merma lleva motivo** del catálogo cerrado de la Fase 6 (`DANADO_BODEGA`, `CADUCADO`, `ROBO`…);
+   un **faltante de conteo no lo lleva**, y el intento se rechaza con su razón: la causa de un faltante
+   de conteo no se conoce —si se supiera, se habría capturado como merma el día que pasó— y elegir uno
+   sin saber convierte un dato duro en una acusación inventada.
+
+El flujo completo de la bodega es **Entradas → Inventario → Cargas**, con **Salidas** para corregir, y
+las cuatro pantallas están enlazadas entre sí.
 
 **Cobranza** — <http://127.0.0.1:8000/panel/cobranza>
 
@@ -974,8 +998,12 @@ motivos (compra, inventario inicial, ajuste por conteo). **El porcentaje general
 correcto que no se mueva: no era alcance planeado de las fases 0–9. Lo que cambia es que el sistema se
 puede operar sin tocar la base de datos a mano.
 
-Lo que **sigue faltando** de esa misma mitad: las **salidas por ajuste**. Un conteo físico que encuentra
-*menos* de lo registrado necesita un documento en sentido contrario, y el de entrada solo suma.
+Y las **salidas** también: `/panel/salidas`, con el conteo físico que encuentra menos y la merma de
+bodega. Las dos direcciones del ajuste están construidas, y con ellas un negativo de bodega ya tiene
+cómo arreglarse — la pantalla de inventario lo dice en el renglón mismo.
+
+Lo que **sigue faltando** de esta familia es el **módulo de compras** (proveedores como catálogo,
+órdenes de compra, costos, cuentas por pagar), que es Fase 10 y no bloquea operar.
 
 ### Una advertencia sobre la numeración
 
@@ -989,7 +1017,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 862 pruebas de Python contra PostgreSQL real, 475 de Dart,
+1. **Lo construido está probado de verdad**: 899 pruebas de Python contra PostgreSQL real, 475 de Dart,
    220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -1000,7 +1028,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 862 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 899 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que

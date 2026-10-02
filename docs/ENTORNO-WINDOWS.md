@@ -81,11 +81,11 @@ git checkout claude/exciting-hamilton-asnv8o
 
 make instalar     # uv baja Python 3.12 y las dependencias
 make db           # PostgreSQL + PostGIS en Docker
-make migrar       # aplica las 25 migraciones
-make pruebas      # deben pasar 862
+make migrar       # aplica las 26 migraciones
+make pruebas      # deben pasar 899
 ```
 
-Si ves `862 passed` (o `861 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `899 passed` (o `898 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|

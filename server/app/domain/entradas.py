@@ -80,3 +80,73 @@ EXIGEN_NOTA = ("inicial",)
 # descuadre le aparecería en su liquidación como un sobrante del que no sabe
 # nada.
 TIPOS_DE_DESTINO = ("bodega",)
+
+
+# ===========================================================================
+# El otro sentido: las salidas
+# ===========================================================================
+# Viven en este módulo y no en uno propio porque son la otra mitad de la misma
+# regla: de qué tipo de documento sale qué asiento del libro mayor. Separarlas
+# dejaría la traducción escrita en dos archivos que nadie lee juntos, que es
+# exactamente cómo se separan dos reglas que deberían ser una.
+
+# Los dos tipos de salida, con su asiento y su etiqueta.
+#
+# Aquí SÍ se usan dos tipos distintos del libro mayor, al contrario que en las
+# entradas —donde 'inicial' y 'ajuste' comparten uno—: la diferencia entre una
+# pérdida identificada y un descuadre sin explicar es la que decide si hay algo
+# que arreglar en la bodega, y poder separarlas leyendo el libro mayor vale más
+# que la simetría con las entradas.
+TIPOS_DE_SALIDA: dict[str, tuple[str, str, str]] = {
+    "conteo": (
+        "ajuste",
+        "Ajuste por conteo físico",
+        "El conteo encontró MENOS de lo que decía el sistema. Se captura lo que "
+        "se contó, no la diferencia.",
+    ),
+    "merma": (
+        "merma",
+        "Merma de bodega",
+        "Se dañó, caducó o se perdió en la bodega. Lleva motivo del catálogo.",
+    ),
+}
+
+
+def tipo_de_movimiento_de_salida(tipo: str) -> str:
+    """Con qué tipo queda el asiento. Un tipo desconocido no se adivina."""
+    if tipo not in TIPOS_DE_SALIDA:
+        raise ValueError(f"tipo de salida desconocido: {tipo!r}")
+    return TIPOS_DE_SALIDA[tipo][0]
+
+
+def etiqueta_de_salida(tipo: str) -> str:
+    return TIPOS_DE_SALIDA[tipo][1] if tipo in TIPOS_DE_SALIDA else tipo
+
+
+def explicacion_de_salida(tipo: str) -> str:
+    return TIPOS_DE_SALIDA[tipo][2] if tipo in TIPOS_DE_SALIDA else ""
+
+
+# El tipo que captura LO CONTADO en vez de lo que sale.
+#
+# Quien hace un conteo anota lo que ve en el anaquel —«80»—, no «faltan 20»: eso
+# exige restar a mano, a las siete de la mañana, por cada producto. Y la resta
+# hecha a mano es de donde salen los errores que este documento viene a
+# corregir. La base impone que la resta cuadre (`CONSTRAINT conteo_cuadra`).
+CAPTURA_LO_CONTADO = ("conteo",)
+
+# El tipo que exige motivo del catálogo cerrado de la Fase 6, y el que lo
+# prohíbe.
+#
+# Un faltante de conteo es, por definición, un faltante CUYA CAUSA NO SE CONOCE:
+# si se supiera, se habría capturado como merma el día que pasó. Obligar a
+# elegir un motivo haría que alguien marcara 'ROBO' o 'DANADO_BODEGA' sin saber,
+# y eso convierte un dato duro —«faltan 20 piezas»— en una acusación inventada
+# que después alguien va a leer como un hecho.
+EXIGEN_MOTIVO = ("merma",)
+PROHIBEN_MOTIVO = ("conteo",)
+
+# Y los dos exigen nota, por lo mismo que el inventario inicial: es el documento
+# que alguien va a leer el día que la cifra no cuadre. En un conteo hace falta
+# saber quién contó; en una merma, qué pasó más allá del código del motivo.
+SALIDAS_EXIGEN_NOTA = ("conteo", "merma")

@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block titulo %}{{ salida.folio }}{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/salidas">← Salidas</a></p>
+<h1>{{ salida.folio }} · {{ tipo_etiqueta }}</h1>
+<p class="subtitulo">
+  De {{ salida.bodega }} ({{ salida.bodega_nombre }}) ·
+  {{ salida.fecha_operativa.strftime('%d/%m/%Y') }}
+  {% if salida.motivo %} · <strong>{{ salida.motivo }}</strong>{% endif %}
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{% if salida.estado == 'borrador' %}
+  <div class="aviso-caja aviso">
+    <strong>Borrador: todavía no mueve inventario.</strong>
+    El faltante sigue contando como existencia buena. Al confirmar se escriben el
+    libro mayor y las existencias en una sola transacción, y a partir de ahí el
+    renglón no se edita — se compensa con una entrada de ajuste.
+  </div>
+{% elif salida.estado == 'confirmada' %}
+  <div class="aviso-caja bien">
+    <strong>Confirmada</strong>
+    {% if salida.confirmada_en %}
+      el {{ salida.confirmada_en.strftime('%d/%m/%Y a las %H:%M') }}
+    {% endif %}
+    {% if salida.confirmada_por_nombre %} por {{ salida.confirmada_por_nombre }}{% endif %}.
+    La existencia de {{ salida.bodega }} ya bajó.
+  </div>
+{% else %}
+  <div class="aviso-caja neutro">
+    <strong>Cancelada.</strong> {{ salida.cancelacion_motivo }}
+  </div>
+{% endif %}
+
+{% if salida.nota %}
+  <p class="sutil"><strong>Nota:</strong> {{ salida.nota }}</p>
+{% endif %}
+
+{% if negativos and salida.estado == 'borrador' %}
+  <div class="aviso-caja error">
+    <strong>Esto dejaría la bodega en negativo:</strong>
+    {% for n in negativos %}{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    El confirmar lo va a rechazar — se avisa aquí para no enterarse al final de
+    veinte renglones.
+  </div>
+{% endif %}
+
+{% if movidos and salida.estado == 'borrador' %}
+  <div class="aviso-caja error">
+    <strong>La existencia se movió desde que se contó:</strong>
+    {% for n in movidos %}{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    Salió o entró mercancía en medio, así que la resta guardada ya no describe el
+    anaquel. Quita esos renglones y vuelve a contarlos.
+  </div>
+{% endif %}
+
+{% if editable and puede_editar %}
+<form method="post" action="/panel/salidas/{{ salida.id }}/renglon"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin:18px 0">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">
+    {% if cuenta %}Capturar lo que contaste{% else %}Agregar un renglón{% endif %}
+  </h2>
+  {% if cuenta %}
+    <p class="sutil" style="margin-top:-4px">
+      Se captura <strong>lo que hay en el anaquel</strong>, no la diferencia: el
+      sistema hace la resta. Restar a mano, producto por producto, a las siete de
+      la mañana, es de donde salen los errores que este documento viene a
+      corregir.
+    </p>
+  {% endif %}
+  <div class="rejilla">
+    <div class="campo">
+      <label for="producto">Producto</label>
+      <input type="text" id="producto" name="producto" required autofocus
+             placeholder="SKU o código de barras">
+    </div>
+    <div class="campo">
+      <label for="unidad_codigo">Presentación</label>
+      <select id="unidad_codigo" name="unidad_codigo" required>
+        {% for u in presentaciones %}<option value="{{ u }}">{{ u }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="cantidad">
+        {% if cuenta %}Cuánto contaste{% else %}Cuántos bultos salieron{% endif %}
+      </label>
+      <input type="text" id="cantidad" name="cantidad" inputmode="numeric" required>
+      <div class="ayuda">
+        {% if cuenta %}
+          Cero si el anaquel está vacío. Si contaste <strong>más</strong> de lo
+          que el sistema tiene, eso es una
+          <a href="/panel/entradas">entrada con motivo «ajuste»</a>, no una
+          salida.
+        {% else %}
+          Enteros.
+        {% endif %}
+      </div>
+    </div>
+    {% if not cuenta %}
+    <div class="campo">
+      <label for="lote">Lote</label>
+      <input type="text" id="lote" name="lote">
+      <div class="ayuda">Obligatorio si el producto maneja lote.</div>
+    </div>
+    {% endif %}
+  </div>
+  <button type="submit">
+    {% if cuenta %}Capturar el conteo{% else %}Agregar{% endif %}
+  </button>
+  {% if cuenta %}
+    <span class="sutil" style="margin-left:8px">
+      Contar dos veces el mismo producto <strong>reemplaza</strong>: la primera
+      cuenta estaba mal, no hay el doble de faltante.
+    </span>
+  {% endif %}
+</form>
+{% endif %}
+
+{% if renglones %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Producto</th>
+      {% if cuenta %}
+        <th class="numero">Había</th>
+        <th class="numero">Contaste</th>
+      {% else %}
+        <th>Lote</th>
+        <th class="numero">Capturado</th>
+      {% endif %}
+      <th class="numero">Sale</th>
+      <th class="numero">Existencia hoy</th>
+      {% if editable and puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in renglones %}
+    <tr {% if proyectado[r.producto_id] < 0 %}style="background:var(--alerta-suave)"{% endif %}>
+      <td>
+        {{ r.nombre }}
+        <div class="sutil mono">{{ r.sku }}</div>
+      </td>
+      {% if cuenta %}
+        <td class="numero sutil">{{ r.existencia_al_capturar | entero }}</td>
+        <td class="numero">{{ r.contado | entero }}</td>
+      {% else %}
+        <td>{{ r.lote or '—' }}</td>
+        <td class="numero">
+          {% if r.unidades_capturadas and r.unidad_codigo %}
+            {{ r.unidades_capturadas | entero }} {{ r.unidad_codigo }}
+          {% else %}
+            <span class="sutil">varias presentaciones</span>
+          {% endif %}
+        </td>
+      {% endif %}
+      <td class="numero">
+        <strong>−{{ r.cantidad | entero }}</strong>
+        <span class="sutil">{{ r.unidad_base }}</span>
+      </td>
+      <td class="numero sutil">
+        {{ r.existencia | entero }}
+        {% if salida.estado == 'borrador' %}
+          {# Por PRODUCTO y no por renglón: con dos lotes del mismo producto,
+             restar solo lo del renglón daría dos flechas y ninguna el total. #}
+          → {{ proyectado[r.producto_id] | entero }}
+        {% endif %}
+      </td>
+      {% if editable and puede_editar %}
+      <td>
+        <form method="post"
+              action="/panel/salidas/{{ salida.id }}/renglon/{{ r.id }}/quitar">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="secundario">Quitar</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th colspan="3">Total que sale</th>
+      <th class="numero">−{{ total_piezas | entero }}</th>
+      <th colspan="{% if editable and puede_editar %}2{% else %}1{% endif %}"></th>
+    </tr>
+  </tfoot>
+</table>
+</div>
+{% else %}
+  <div class="vacio">
+    Sin renglones.
+    {% if cuenta %}Captura lo que contaste en el anaquel.{% endif %}
+  </div>
+{% endif %}
+
+{% if editable and puede_editar %}
+<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:22px">
+  <form method="post" action="/panel/salidas/{{ salida.id }}/confirmar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="peligro"
+            {% if not renglones %}disabled{% endif %}>
+      Confirmar la salida
+    </button>
+    <div class="sutil" style="margin-top:4px; max-width:420px">
+      Baja la existencia y escribe el asiento. No se deshace editando: se
+      compensa con una entrada de ajuste.
+    </div>
+  </form>
+  <form method="post" action="/panel/salidas/{{ salida.id }}/cancelar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="motivo" placeholder="Por qué se cancela" required
+           style="width:220px">
+    <button type="submit" class="secundario">Cancelar el borrador</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
