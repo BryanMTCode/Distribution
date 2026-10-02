@@ -186,8 +186,20 @@ El del medio es el que hace que RLS sirva. Sin `DSD_DATABASE_URL_API`, la API se
 conecta con el rol dueño y **las políticas quedan escritas y sin efecto**. En
 producción la API no arranca sin esa variable; `/salud` lo reporta en `rls`.
 
+En el despliegue con compose **los dos roles los crea el servicio `roles`**, que
+corre después de las migraciones y aplica `db/ops/rol_api.sql` y
+`db/ops/rol_analitico.sql` con las claves del `.env`. Es idempotente y se repite
+en cada `up`, así que **rotar una de esas dos claves es cambiarla en `.env` y
+volver a levantar**:
+
 ```bash
-# Crear o rotar la clave del rol de la API
+docker compose up -d        # reaplica el script antes de que la API arranque
+```
+
+A mano, fuera de compose —o al restaurar un respaldo, donde los roles no vienen
+en el dump (`docs/RESPALDOS.md`)—:
+
+```bash
 psql -d dsd -v clave_api="$(openssl rand -hex 24)" -f server/db/ops/rol_api.sql
 ```
 

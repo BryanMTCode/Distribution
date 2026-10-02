@@ -42,6 +42,55 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # ---------------------------------------------------------------------------
+  # Los dos roles restringidos de PostgreSQL
+  # ---------------------------------------------------------------------------
+  # Sin esto, `docker compose up -d` en una máquina limpia NO LEVANTA: `api` se
+  # conecta como `dsd_api` y `analitica` como `dsd_analitica`, y ninguno de los
+  # dos roles existe hasta que alguien aplica los scripts de `db/ops/`. Los dos
+  # servicios se quedarían reiniciándose con «role does not exist» — un fallo que
+  # aparece en el servidor de la oficina el día del despliegue y no antes.
+  #
+  # Corre DESPUÉS de las migraciones porque los GRANT son sobre tablas que las
+  # migraciones crean, y se vuelve a correr en cada `up`: los dos scripts son
+  # idempotentes a propósito, así que ejecutarlos siempre es lo que mantiene los
+  # permisos al día cuando una migración nueva agrega tablas. El
+  # `ALTER DEFAULT PRIVILEGES` cubre las futuras, pero una función nueva o un
+  # GRANT que hubiera que ajustar se arregla solo si el script pasa otra vez.
+  #
+  # Usa la imagen de PostgreSQL, que ya trae `psql`, en vez de instalar el
+  # cliente en la imagen de la aplicación.
+  #
+  # Y aplica los archivos de `db/ops/` TAL CUAL, montados de solo lectura: las
+  # pruebas de RLS aplican esos MISMOS archivos (ADR §35), así que lo que se
+  # prueba y lo que se despliega no se pueden separar.
+  roles:
+    image: postgis/postgis:17-3.5
+    entrypoint: ["/bin/bash", "-c"]
+    # Un solo elemento de lista, no una cadena: compose parte una cadena por
+    # espacios, y con `entrypoint: bash -c` eso dejaría `bash -c set -e` —el
+    # servicio saldría con cero habiendo hecho NADA, y `api` arrancaría contra un
+    # rol que no existe. Con la lista, el script llega como un argumento.
+    command:
+      - |
+        set -e
+        psql -v ON_ERROR_STOP=1 -v clave_api="$$DSD_CLAVE_API" -f /ops/rol_api.sql
+        psql -v ON_ERROR_STOP=1 -v clave_analitica="$$DSD_CLAVE_ANALITICA" -f /ops/rol_analitico.sql
+    environment:
+      PGHOST: postgres
+      PGUSER: ${DSD_DB_USUARIO:-dsd}
+      PGPASSWORD: ${DSD_DB_PASSWORD}
+      PGDATABASE: dsd
+      DSD_CLAVE_API: ${DSD_CLAVE_API:?falta DSD_CLAVE_API en .env, es la clave del rol con el que la API aplica RLS}
+      DSD_CLAVE_ANALITICA: ${DSD_CLAVE_ANALITICA:?falta DSD_CLAVE_ANALITICA en .env, es la clave del rol de solo lectura del laboratorio}
+      TZ: ${DSD_ZONA:-America/Mexico_City}
+    volumes:
+      - ./server/db/ops:/ops:ro
+    depends_on:
+      migraciones:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     build: ./server
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3
@@ -64,6 +113,8 @@ services:
       postgres:
         condition: service_healthy
       migraciones:
+        condition: service_completed_successfully
+      roles:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/salud')"]
@@ -99,11 +150,13 @@ services:
     # Rol de PostgreSQL SIN permisos de escritura: una consulta exploratoria
     # mal escrita no puede tocar la cartera. Crear con db/ops/rol_analitico.sql.
     environment:
-      DSD_ANALITICA_URL: postgresql://dsd_analitica:${DSD_CLAVE_ANALITICA:?falta}@postgres:5432/dsd
+      DSD_ANALITICA_URL: postgresql://dsd_analitica:${DSD_CLAVE_ANALITICA:?falta DSD_CLAVE_ANALITICA en .env}@postgres:5432/dsd
       TZ: ${DSD_ZONA:-America/Mexico_City}
     depends_on:
       postgres:
         condition: service_healthy
+      roles:
+        condition: service_completed_successfully
 
   caddy:
     image: caddy:2-alpine

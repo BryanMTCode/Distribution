@@ -82,10 +82,10 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y las dependencias
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 945
+make pruebas      # deben pasar 956
 ```
 
-Si ves `945 passed` (o `944 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `956 passed` (o `955 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
@@ -635,4 +635,148 @@ make movil-demo   # las pruebas de widget del camino demo
 - Cuenta gratuita de Cloudflare para el túnel
 - Cuenta de Backblaze B2 o S3 para los respaldos
 
-Ahí el despliegue es `cp .env.example .env`, rellenar, y `docker compose up -d`.
+### El despliegue, paso por paso
+
+```bash
+git clone https://github.com/BryanMTCode/Distribution.git
+cd Distribution
+cp .env.example .env
+```
+
+Rellena el `.env`. Lo que **no** puede quedar vacío —`docker compose` falla de
+inmediato nombrando la variable, no arranca a medias—:
+
+```bash
+# Las cuatro claves. Cada una distinta: son cuatro cosas distintas.
+openssl rand -hex 32    # DSD_DB_PASSWORD
+openssl rand -hex 32    # DSD_JWT_SECRETO
+openssl rand -hex 32    # DSD_CLAVE_API         ← el rol que hace que RLS sirva
+openssl rand -hex 32    # DSD_CLAVE_ANALITICA   ← el rol de solo lectura
+```
+
+**Hexadecimal y no `-base64`, para las tres de PostgreSQL.** Las tres se
+incrustan en una URL de conexión dentro de `docker-compose.yml`, y `-base64`
+produce `/` y `+` cerca de la mitad de las veces. libpq —el que usa el
+laboratorio analítico— parte mal una URI cuya contraseña trae `/`: intenta
+resolver el **nombre del rol** como si fuera el servidor y falla con
+«`failed to resolve host 'dsd_analitica'`», que no apunta ni de lejos a la causa.
+Y SQLAlchemy sí la tolera, así que la API arrancaría bien y solo el laboratorio
+quedaría roto — lo peor de los dos mundos para diagnosticar.
+
+Y `DSD_TUNNEL_TOKEN`, que te lo da Cloudflare al crear el túnel.
+
+**`DSD_ZONA` se deja en la hora de la operación** (`America/Mexico_City` por
+omisión). En UTC, a partir de las 18:00 locales «hoy» ya es mañana para
+`CURRENT_DATE`: el tablero del día sale vacío por la tarde y el arqueo no cuadra
+con el efectivo que la gente tiene en la mano. Desconcierta porque a las 11 de la
+mañana todo funciona.
+
+Luego:
+
+```bash
+docker compose up -d
+docker compose logs -f api
+```
+
+Eso levanta, en este orden, y cada paso espera al anterior:
+
+| | Servicio | Qué hace |
+|---|---|---|
+| 1 | `postgres` | La base, sin puertos publicados: solo la red interna |
+| 2 | `migraciones` | `alembic upgrade head` — las 28 migraciones |
+| 3 | **`roles`** | Aplica `db/ops/rol_api.sql` y `db/ops/rol_analitico.sql` |
+| 4 | `api`, `worker`, `analitica` | La operación |
+| 5 | `caddy`, `tunel` | La puerta de entrada |
+
+El paso 3 es el que faltaba y por el que esto se documenta: `api` se conecta como
+`dsd_api` y `analitica` como `dsd_analitica`, y **ninguno de los dos roles existe
+hasta que esos scripts corren**. Sin ese servicio los dos se quedan
+reiniciándose con «role "dsd_api" does not exist» — un fallo que aparece en la
+oficina el día del despliegue y en ningún otro momento. Corre después de las
+migraciones porque sus `GRANT` son sobre tablas que las migraciones crean, y se
+repite en cada `up`: los dos scripts son idempotentes, así que ejecutarlos
+siempre es lo que mantiene los permisos al día cuando una migración agrega
+tablas.
+
+### Comprobar que quedó bien
+
+Primero, que todo esté arriba y sano:
+
+```bash
+docker compose ps
+```
+
+`migraciones` y `roles` deben aparecer como `exited (0)` —son de un disparo— y el
+resto `running`, con `api` en `healthy`.
+
+Y la respuesta de `/salud`. **No se consulta con `curl` desde el servidor**: `api`
+no publica puertos a propósito, solo existe en la red interna de compose. Se
+pregunta desde dentro, igual que lo hace su propio `healthcheck`:
+
+```bash
+docker compose exec api python -c \
+  "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/salud').read().decode())"
+```
+
+Una vez que el túnel responde, también desde fuera: `curl -s https://api.tudominio.com/salud`.
+
+Lo que importa de esa respuesta:
+
+```json
+{ "ok": true, "base_de_datos": true, "postgis": true, "rls": true }
+```
+
+**`"rls": false` significa que la API se está conectando con el rol dueño y las
+políticas por renglón están escritas y sin efecto** — un teléfono podría ver la
+cartera completa. En `produccion` la API no debería ni arrancar así; si ves ese
+`false`, revisa `DSD_CLAVE_API` en el `.env` y los registros de `roles`:
+
+```bash
+docker compose logs roles
+docker compose exec postgres psql -U dsd -d dsd \
+  -c "SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname LIKE 'dsd_%'"
+```
+
+Deben salir `dsd_api` y `dsd_analitica`, los dos con `rolbypassrls = f`.
+
+### Rotar una de esas dos claves
+
+Cambia el valor en `.env` y vuelve a levantar: el servicio `roles` reaplica el
+script con la clave nueva antes de que la API arranque.
+
+```bash
+docker compose up -d
+```
+
+### Después del despliegue, y antes del primer vendedor
+
+1. **Crear el primer usuario** — lo mismo que `make usuario` en desarrollo, con
+   el CLI dentro del contenedor, que ya trae la conexión en su entorno:
+
+   ```bash
+   docker compose exec api python -m app.cli crear-usuario
+   ```
+
+   Pregunta los datos y la contraseña se teclea. No hay usuario sembrado, y esto
+   es el único camino de entrada cuando no hay ninguno.
+2. **Programar el respaldo y correr el simulacro** — `docs/RESPALDOS.md`. Un
+   respaldo que nunca restauraste no es un respaldo.
+3. **La revisión del piloto** — `docs/PILOTO.md`. Dice si falta algo antes de que
+   alguien suba a un camión.
+
+   En desarrollo es `make piloto-listo VENDEDOR=VEND01`. Aquí no: el script
+   necesita `psql` y la base, y la base **no publica puerto** por diseño. Así que
+   se corre desde dentro de la red de compose, con la imagen que ya trae el
+   cliente:
+
+   ```bash
+   docker compose run --rm --no-deps --entrypoint bash \
+     -v .:/repo \
+     -e DSD_DATABASE_URL="postgresql://dsd:$DSD_DB_PASSWORD@postgres:5432/dsd" \
+     postgres /repo/scripts/piloto_listo.sh VEND01
+   ```
+
+   Se monta **el repositorio completo** y no solo `scripts/`: el script compara la
+   migración aplicada contra la última que hay en
+   `server/db/alembic/versions/`, y sin ese directorio a la vista reportaría un
+   desfase que no existe.

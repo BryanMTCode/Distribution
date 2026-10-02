@@ -2528,3 +2528,156 @@ Ahora se escribe el conteo que reportaron los equipos, que ya se calculaba en
 devuelve en las cinco salidas de esa función: si cada rama la calculara, la
 próxima rama se olvidaría — y el campo que se olvida en una rama es el que acaba
 guardando un cero que parece un dato.
+
+---
+
+## 43. El procedimiento de despliegue no levantaba, y nadie lo habría sabido hasta la oficina
+
+`docs/ENTORNO-WINDOWS.md` §5 decía, en una línea:
+
+> Ahí el despliegue es `cp .env.example .env`, rellenar, y `docker compose up -d`.
+
+Seguido al pie de la letra, eso **no levanta** en una máquina limpia. Tres
+defectos —el tercero apareció al revisar el arreglo de los dos primeros—, todos
+invisibles en desarrollo porque en desarrollo nadie usa compose:
+
+**1. `.env.example` no mencionaba `DSD_CLAVE_API`.** `docker-compose.yml` la exige
+con `:?`, así que el primer comando del procedimiento falla nombrando una
+variable que el archivo que te dicen copiar no tiene. Es el fallo benigno de los
+dos: ruidoso e inmediato.
+
+**2. Nada creaba los roles `dsd_api` ni `dsd_analitica`.** Este es el serio. `api`
+se conecta con el primero y `analitica` con el segundo, y los dos roles existen
+solo después de aplicar `db/ops/rol_api.sql` y `db/ops/rol_analitico.sql` — que el
+despliegue nunca aplicaba. Los dos servicios se quedan reiniciándose con
+«role "dsd_api" does not exist», con PostgreSQL arriba y las migraciones
+aplicadas: el síntoma no apunta a lo que falta.
+
+La misma huella de siempre, otra vez. El rol estaba diseñado, escrito, probado
+(las pruebas de RLS aplican ese archivo tal cual) y documentado en tres lugares
+—`SEGURIDAD-OPERATIVA.md`, `RESPALDOS.md`, el encabezado del propio SQL—, y el
+camino que de verdad se iba a usar no lo ejecutaba.
+
+### La decisión: un servicio, no un párrafo más
+
+Se podía documentar el orden —«levanta postgres, corre las migraciones, aplica
+los dos scripts, levanta el resto»— y habría sido correcto y frágil. Un
+procedimiento manual de cuatro pasos se hace bien la primera vez, cuando se está
+leyendo el documento, y mal la segunda.
+
+Así que el orden lo impone compose: un servicio `roles` que depende de
+`migraciones` y del que dependen `api` y `analitica`. `docker compose up -d`
+vuelve a ser un comando.
+
+Tres cosas de cómo quedó:
+
+- **Corre en cada `up`, no una sola vez.** Los dos scripts son idempotentes a
+  propósito, y repetirlos es lo que mantiene los permisos al día cuando una
+  migración agrega tablas. De paso, **rotar una de las dos claves es cambiarla en
+  `.env` y volver a levantar**, sin recordar ningún `psql`.
+- **Monta `server/db/ops` de solo lectura y aplica esos archivos tal cual.** Las
+  pruebas de RLS aplican los mismos (§35). Una copia dentro del compose
+  permitiría que lo que se prueba y lo que se despliega se separaran sin que nada
+  avisara.
+- **Usa la imagen de PostgreSQL**, que ya trae `psql`, en vez de meter el cliente
+  en la imagen de la aplicación por un servicio que corre tres segundos.
+
+### El defecto que apareció al escribirlo
+
+El `command` se escribió primero como cadena con `>`:
+
+```yaml
+command: >
+  set -e;
+  psql ... -f /ops/rol_api.sql;
+  psql ... -f /ops/rol_analitico.sql
+```
+
+**Compose parte una cadena por espacios.** Con `entrypoint: ["/bin/bash", "-c"]`
+eso llega al contenedor como `bash -c set -e`, que **sale con cero sin ejecutar un
+solo `psql`**. El servicio puesto para evitar que `api` arranque contra un rol
+inexistente habría reportado éxito y dejado pasar exactamente eso.
+
+Lo delató `docker compose config`, que imprime el `command` ya interpretado —
+`["set", "-e"]`—. La forma correcta es una lista de un elemento (`- |`), que
+mantiene el script como un argumento. Hay una prueba de esa forma, porque el
+fallo es silencioso y no se vuelve a ver a ojo.
+
+### El tercer defecto: `openssl rand -base64`
+
+`.env.example` decía `openssl rand -base64 24` para las tres claves de
+PostgreSQL. Las tres se incrustan en una URL de conexión dentro de
+`docker-compose.yml`, y base64 produce `/` y `+` **cerca de la mitad de las
+veces**.
+
+Lo que pasa entonces no se parece a lo que es:
+
+```
+OperationalError: failed to resolve host 'dsd_analitica':
+    Servname not supported for ai_socktype
+```
+
+libpq parte mal una URI cuya contraseña trae `/` y acaba tomando el **nombre del
+rol** por el nombre del servidor. Y lo que lo vuelve traicionero es la asimetría:
+**SQLAlchemy sí la tolera**, así que la API arranca perfecta, `/salud` dice
+`rls: true`, y solo el laboratorio analítico queda roto con un error que habla de
+DNS. Quien despliegue tendría una posibilidad entre dos de toparse con eso y
+ninguna pista de dónde mirar.
+
+En hexadecimal el problema no existe, y es lo que `SEGURIDAD-OPERATIVA.md` ya
+usaba para `clave_api` sin que la razón estuviera escrita en ninguna parte. Ahora
+lo está, y hay dos pruebas: una exige `-hex` para esas tres claves, y la otra
+comprueba que las tres sigan yendo dentro de una URL — para que si eso cambia,
+alguien relea la exigencia en vez de arrastrarla.
+
+Se encontró releyendo el propio diff, no operando: la sospecha era que `/`
+rompería la URL de la API, y resultó estar equivocada ahí y acertada en el
+laboratorio. Se comprobó conectando de verdad con una contraseña
+`ab/cd+ef=gh` contra PostgreSQL, por las dos rutas.
+
+### Y once pruebas, porque un documento se desactualiza solo
+
+`tests/test_despliegue.py` lee `docker-compose.yml` y `.env.example` como texto y
+afirma lo que el procedimiento necesita: que toda variable marcada `:?` esté en el
+ejemplo; que el ejemplo no pida variables que nadie lee (con las excepciones
+nombradas y justificadas); que **cualquier** servicio que se conecte con un rol
+restringido dependa de `roles`; que `roles` vaya después de las migraciones, use
+los archivos de `db/ops` y aborte al primer error; y la forma del `command`.
+
+No comprueban por nombre de servicio sino por el hecho, así que un servicio nuevo
+que use uno de esos roles rompe la prueba en vez de romper el despliegue.
+
+Se lee el YAML como texto y no con `pyyaml` a propósito: `pyyaml` no es una
+dependencia declarada de este proyecto —entra de rebote con `uvicorn[standard]`—
+y una prueba del despliegue que dependa de un paquete que nadie pidió es otra
+cosa que se puede romper sola.
+
+### Dos cosas más que el procedimiento afirmaba y no eran ciertas
+
+Salieron de releer lo que se acababa de escribir, no de operar:
+
+- **`curl -s http://127.0.0.1:8000/salud` desde el servidor no funciona.** `api`
+  **no publica puertos** a propósito: solo existe en la red interna de compose.
+  Se pregunta desde dentro del contenedor, igual que hace su propio
+  `healthcheck`, o desde fuera por el túnel. Un comando de verificación que falla
+  por una razón ajena a lo que verifica es peor que no tenerlo: manda a buscar un
+  problema inexistente.
+- **`make piloto-listo` no se puede correr en el servidor como en desarrollo.**
+  Necesita `psql` y la base, y la base tampoco publica puerto. Se corre desde
+  dentro de la red con la imagen de PostgreSQL, que ya trae el cliente — y
+  montando **el repositorio completo**, no solo `scripts/`: el script compara la
+  migración aplicada contra la última de `server/db/alembic/versions/`, y con solo
+  `scripts/` montado esa comparación daría vacío y reportaría un desfase
+  inventado.
+
+### Lo que esto no arregla
+
+El `.env` del servidor sigue siendo un archivo con cuatro secretos en texto plano
+en la mini PC. Un gestor de secretos es infraestructura que este negocio no tiene
+y no va a tener pronto, así que lo que protege ese archivo es el disco y la puerta
+de la oficina — y ahí hay un hueco que conviene nombrar en vez de dar por
+cubierto: `SEGURIDAD-OPERATIVA.md` exige cifrado en el TELÉFONO y en los
+RESPALDOS, y **no dice nada del disco de la mini PC**. Quien se lleve el equipo
+—no es un escenario exótico en una oficina de distribución— se lleva el `.env`, la
+base y los respaldos locales. Falta decidir y escribir eso; no lo arregla esta
+sección y no se finge que sí.
