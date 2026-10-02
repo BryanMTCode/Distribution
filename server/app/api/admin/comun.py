@@ -53,6 +53,11 @@ NAVEGACION = [
     ("/panel/cuarentena", "Cuarentena"),
     ("/panel/equipos", "Teléfonos"),
     ("/panel/equipo", "Usuarios y rutas"),
+    # Al final y no al principio: el piloto es temporal por naturaleza —dos
+    # semanas— y la pantalla misma explica qué hacer cuando no hay uno
+    # activo. Ponerlo entre las pantallas de operación diaria le daría una
+    # permanencia que no tiene.
+    ("/panel/piloto", "Piloto"),
 ]
 
 SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]

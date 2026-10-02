@@ -90,8 +90,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Borrado remoto** — entrega primero, borra después, y lo confirma | ✅ 25 del servidor + 16 de Dart |
 | **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
+| **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
+| **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**759 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
+**830 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
 
 ## Stack
 
@@ -119,6 +121,9 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 - [`docs/RESPALDOS.md`](docs/RESPALDOS.md) — respaldar, el **simulacro de restauración**, sacar la copia
   del edificio y cómo restaurar de verdad el día que haga falta. *Un respaldo que nunca restauraste no
   es un respaldo.*
+- [`docs/PILOTO.md`](docs/PILOTO.md) — el **protocolo del piloto de campo**: la lista del día −1, la
+  rutina diaria de la oficina, los doce criterios de salida, cuándo abortar antes de las dos semanas y
+  la junta del día 15. *El papel en paralelo no es un respaldo: es el patrón de medida.*
 - [`docs/SEGURIDAD-OPERATIVA.md`](docs/SEGURIDAD-OPERATIVA.md) — qué hacer cuando un teléfono se pierde
   o un vendedor se va, el borrado remoto paso a paso, los tres roles de PostgreSQL, rotación de
   secretos y qué resuelve MDM (y qué no).
@@ -195,7 +200,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 759 pruebas de Python
+make pruebas                        # 830 pruebas de Python
 make movil                          # 475 de Dart + 220 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

@@ -18,6 +18,7 @@ from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
 from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import panel
+from app.api.admin import piloto as panel_piloto
 from app.api.admin import productos as panel_productos
 from app.api.admin.sesion_web import SinSesionWeb
 from app.api.middleware import Observabilidad
@@ -105,6 +106,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_efectividad.router)
     app.include_router(panel_objetivos.router)
     app.include_router(panel_equipos.router)
+    app.include_router(panel_piloto.router)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

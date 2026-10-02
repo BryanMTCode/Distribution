@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block titulo %}Piloto{% endblock %}
+{% block contenido %}
+{#
+  El veredicto va ARRIBA y el cuadre día por día abajo.
+
+  La tabla de cuadre son catorce renglones de cifras, y quien abre esta pantalla
+  todas las mañanas deja de leerla a la tercera. La pregunta que de verdad se
+  contesta aquí —«¿esto se puede desplegar?»— tiene que estar visible sin
+  desplazarse, o la pantalla se convierte en un formulario de captura y el
+  veredicto vuelve a ser una opinión.
+#}
+<h1>Piloto {{ piloto.codigo }}</h1>
+<p class="subtitulo">
+  {{ piloto.vendedor }} ({{ piloto.vendedor_codigo }}) · ruta {{ piloto.ruta }}
+  · del {{ piloto.inicio.strftime('%d/%m') }} al {{ piloto.fin.strftime('%d/%m/%Y') }}
+  {% if ventana.dia_del_piloto %}
+    · <strong>día {{ ventana.dia_del_piloto }} de {{ ventana.dias_plan }}</strong>
+  {% else %}
+    · <strong>empieza el {{ piloto.inicio.strftime('%d/%m') }}</strong>
+  {% endif %}
+</p>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{# ─────────────────────────── el veredicto ─────────────────────────── #}
+<div class="aviso-caja {% if veredicto.estado == 'con_fallas' %}error{% elif veredicto.estado == 'limpio' %}bien{% else %}neutro{% endif %}">
+  {% if veredicto.estado == 'limpio' %}
+    <strong>Las dos semanas terminaron y todo lo bloqueante está en verde.</strong>
+    Falta que alguien firme el veredicto abajo.
+  {% elif veredicto.estado == 'con_fallas' and not ventana.termino %}
+    {# En rojo a media medición es un PENDIENTE, no un veredicto. Decir "no se
+       despliega así" el día tres suena a sentencia sobre algo que todavía se
+       puede arreglar, y la gente deja de abrir la pantalla que solo regaña. #}
+    <strong>{{ veredicto.incumplidos | length }} criterio(s) en rojo, y el
+    piloto va en el día {{ ventana.dia_del_piloto }} de
+    {{ ventana.dias_plan }}.</strong>
+    Todavía se pueden arreglar: lo que siga en rojo este viernes va a seguir en
+    rojo el viernes que entra.
+  {% elif veredicto.estado == 'con_fallas' %}
+    <strong>{{ veredicto.incumplidos | length }} criterio(s) bloqueante(s) sin
+    cumplir al cierre del piloto.</strong> No se despliega así: cada uno de
+    abajo dice qué le falta.
+  {% elif veredicto.estado == 'sin_datos' %}
+    <strong>El piloto terminó y hay criterios bloqueantes sin medir.</strong>
+    Un piloto con huecos en la medición no aprueba por omisión.
+  {% else %}
+    <strong>Piloto en curso.</strong> Nada se aprueba antes del
+    {{ piloto.fin.strftime('%d/%m') }}: un piloto de dos semanas aprobado el día
+    tres no midió dos semanas.
+  {% endif %}
+</div>
+
+<h2>Criterios de salida</h2>
+<p class="sutil" style="margin:-4px 0 10px">
+  Sembrados por la migración 0024 <strong>antes</strong> del primer día, y sin
+  pantalla para cambiarlos. No es una función que falte: un umbral que se puede
+  mover después de ver el dato no mide nada.
+</p>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th style="width:30px"></th>
+      <th>Criterio</th>
+      <th class="numero">Medido</th>
+      <th class="numero">Umbral</th>
+      <th>Cómo salió</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for m in veredicto.mediciones %}
+    <tr>
+      <td style="text-align:center">
+        {% if m.semaforo == 'bien' %}<span title="cumple" style="color:var(--acento)">●</span>
+        {% elif m.semaforo == 'mal' %}<span title="no cumple" style="color:var(--alerta)">●</span>
+        {% elif m.semaforo == 'no_evaluable' %}<span title="este piloto no lo evalúa" style="color:var(--suave)">○</span>
+        {% else %}<span title="sin medir" style="color:var(--aviso)">◐</span>{% endif %}
+      </td>
+      <td>
+        <strong>{{ m.nombre }}</strong>
+        {% if not m.bloqueante %}
+          <span class="etiqueta-motivo">informativo</span>
+        {% endif %}
+        <div class="sutil">{{ m.pregunta }}</div>
+        {% if m.nota and (m.semaforo in ('mal', 'no_evaluable')) %}
+          <div class="sutil" style="margin-top:4px">{{ m.nota }}</div>
+        {% endif %}
+      </td>
+      <td class="numero"><strong>{{ m.valor_texto }}</strong></td>
+      <td class="numero sutil">{{ m.umbral_texto }}</td>
+      <td class="sutil">{{ m.detalle }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if veredicto.no_evaluables %}
+  <div class="aviso-caja neutro" style="margin-top:14px">
+    <strong>Lo que este piloto no prueba.</strong>
+    {% for m in veredicto.no_evaluables %}{{ m.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    Está escrito aquí para que no se convierta en un supuesto el día del
+    despliegue.
+  </div>
+{% endif %}
+
+{# ─────────────────────────── el cuadre ─────────────────────────── #}
+<h2>Cuadre diario: el papel contra el sistema</h2>
+
+<div class="tarjetas" style="margin-bottom:16px">
+  <div class="tarjeta {% if pendientes %}aviso{% endif %}">
+    <div class="numero">{{ pendientes | length }}</div>
+    <div class="etiqueta">jornadas sin capturar</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if pendientes %}
+        {% for f in pendientes[:6] %}{{ f.strftime('%d/%m') }}{% if not loop.last %} · {% endif %}{% endfor %}
+      {% else %}
+        Al día. El cuadre de hoy se captura mañana, con la jornada cerrada.
+      {% endif %}
+    </div>
+  </div>
+  <div class="tarjeta {% if bloqueos %}alerta{% endif %}">
+    <div class="numero">{{ bloqueos }}</div>
+    <div class="etiqueta">bloqueos en la bitácora</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ incidencias_abiertas }} incidencia(s) sin resolver ·
+      <a href="/panel/piloto/incidencias">ver la bitácora</a>
+    </div>
+  </div>
+</div>
+
+{# El formulario solo existe cuando ya hay un día que capturar. Antes del
+   primer cierre de jornada, `min` sería mayor que `max` y el navegador
+   rechazaría cualquier fecha: un formulario que no acepta nada se lee como un
+   error del sistema, no como "todavía no toca". #}
+{% if ventana.hasta_cuadre >= piloto.inicio %}
+<form method="post" action="/panel/piloto/jornada" style="background:var(--papel);
+      border:1px solid var(--linea); border-radius:10px; padding:16px; margin-bottom:18px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Capturar el papel de un día</h2>
+  <p class="sutil" style="margin-top:-4px">
+    Con la hoja del vendedor en la mano. Las cifras del sistema no se teclean:
+    se vuelven a leer al guardar y se congelan, para que la diferencia no mida
+    el tiempo que tardó alguien en capturar.
+  </p>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="dia">Día operativo</label>
+      <input type="date" id="dia" name="dia" value="{{ dia }}"
+             min="{{ piloto.inicio }}" max="{{ ventana.hasta_cuadre }}" required>
+      <div class="ayuda">
+        {% if dia_capturado %}
+          Ya capturado: {{ dia_capturado.documentos_papel }} doc ·
+          ${{ '{:,.2f}'.format(dia_capturado.importe_papel) }}. Guardar lo reemplaza.
+        {% else %}
+          Sin capturar.
+        {% endif %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="documentos">Documentos en el papel</label>
+      <input type="text" id="documentos" name="documentos" inputmode="numeric"
+             value="{{ dia_capturado.documentos_papel if dia_capturado else '' }}" required>
+      <div class="ayuda">El sistema trae {{ sistema.documentos }} de ese día.</div>
+    </div>
+    <div class="campo">
+      <label for="importe">Importe en el papel</label>
+      <input type="text" id="importe" name="importe"
+             value="{{ dia_capturado.importe_papel if dia_capturado else '' }}" required>
+      <div class="ayuda">El sistema trae ${{ '{:,.2f}'.format(sistema.importe) }}.</div>
+    </div>
+    <div class="campo">
+      <label for="cobranza">Cobranza en el papel</label>
+      <input type="text" id="cobranza" name="cobranza"
+             value="{{ dia_capturado.cobranza_papel if dia_capturado else '' }}">
+      <div class="ayuda">El sistema trae ${{ '{:,.2f}'.format(sistema.cobranza) }}.</div>
+    </div>
+    <div class="campo">
+      <label for="visitas">Visitas (si el papel las trae)</label>
+      <input type="text" id="visitas" name="visitas" inputmode="numeric"
+             value="{{ dia_capturado.visitas_papel or '' if dia_capturado else '' }}">
+      <div class="ayuda">En blanco si la hoja no las registra. Cero diría que no visitó a nadie.</div>
+    </div>
+  </div>
+  <div class="campo">
+    <label for="observaciones">Observaciones</label>
+    <input type="text" id="observaciones" name="observaciones" style="width:100%"
+           value="{{ dia_capturado.observaciones or '' if dia_capturado else '' }}"
+           placeholder="«la nota 142 se canceló en el papel», «se le acabó la batería a las 4»">
+  </div>
+  <button type="submit">Guardar el cuadre</button>
+</form>
+{% else %}
+  <div class="aviso-caja neutro">
+    El primer cuadre se captura el
+    {{ primer_cuadre.strftime('%d/%m') }}, con la jornada del
+    {{ piloto.inicio.strftime('%d/%m') }} cerrada y la hoja del vendedor en la
+    mano.
+  </div>
+{% endif %}
+
+{% if por_dia %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Día</th>
+      <th class="numero">Doc papel</th>
+      <th class="numero">Doc sistema</th>
+      <th class="numero">Importe papel</th>
+      <th class="numero">Importe sistema</th>
+      <th class="numero">Dif.</th>
+      <th class="numero">Retraso</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for d in por_dia %}
+    {% set papel = d.papel %}
+    {% set falta = papel and papel.documentos_papel > d.documentos %}
+    <tr {% if falta %}style="background:var(--alerta-suave)"{% endif %}>
+      <td>
+        {{ d.fecha.strftime('%a %d/%m') }}
+        {% if d.incidencias %}
+          <span class="etiqueta-motivo">{{ d.incidencias }} incid.</span>
+        {% endif %}
+      </td>
+      <td class="numero">{% if papel %}{{ papel.documentos_papel }}{% else %}<span class="sutil">—</span>{% endif %}</td>
+      <td class="numero">{{ d.documentos }}{% if d.canceladas %} <span class="sutil">(+{{ d.canceladas }} canc.)</span>{% endif %}</td>
+      <td class="numero">{% if papel %}${{ '{:,.2f}'.format(papel.importe_papel) }}{% else %}<span class="sutil">—</span>{% endif %}</td>
+      <td class="numero">${{ '{:,.2f}'.format(d.importe) }}</td>
+      <td class="numero">
+        {% if papel %}
+          {% set dif = d.documentos - papel.documentos_papel %}
+          {% if dif == 0 %}<span style="color:var(--acento)">cuadra</span>
+          {% elif dif < 0 %}<strong style="color:var(--alerta)">{{ dif }}</strong>
+          {% else %}<strong style="color:var(--aviso)">+{{ dif }}</strong>{% endif %}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="numero">
+        {% if d.documentos %}
+          {% if d.retraso_horas > 0 %}{{ '%.1f'|format(d.retraso_horas) }} h
+          {% else %}<span class="sutil">mismo día</span>{% endif %}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="sutil">
+        {% if not d.documentos and not papel %}sin operación
+        {% else %}
+          {% if d.liquidada %}liquidada{% else %}<span style="color:var(--aviso)">sin liquidar</span>{% endif %}
+          {% if papel %} · papel capturado{% elif d.fecha <= ventana.hasta_cuadre %}
+            · <span style="color:var(--aviso)">falta el papel</span>{% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil" style="margin-top:8px">
+  La diferencia es <strong>sistema − papel</strong>: un número negativo significa
+  que al sistema le faltan ventas, que es la dirección peligrosa. Un día en rojo
+  que mañana cuadra solo era retraso de entrega; uno que sigue rojo al cierre es
+  una venta que no existe.
+</p>
+{% else %}
+  <div class="vacio">
+    El piloto empieza el {{ piloto.inicio.strftime('%d/%m') }}. Todavía no hay
+    jornadas que cuadrar.
+  </div>
+{% endif %}
+
+{# ─────────────────────────── el cierre ─────────────────────────── #}
+<h2>Cerrar el piloto</h2>
+<form method="post" action="/panel/piloto/cerrar"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="sutil" style="margin-top:0">
+    El sistema sugiere{% if veredicto.sugerencia %}
+      <strong>{{ veredictos[veredicto.sugerencia] }}</strong>{% else %}
+      todavía nada{% endif %}, y no decide. Poner esto en siete camiones es una
+    decisión de negocio: la firma alguien y queda escrita con su fecha.
+  </p>
+  <div class="campo">
+    <label for="veredicto">Veredicto</label>
+    <select id="veredicto" name="veredicto" required>
+      <option value="">—</option>
+      {% for codigo, etiqueta in veredictos.items() %}
+        <option value="{{ codigo }}"
+          {% if codigo == veredicto.sugerencia %}selected{% endif %}>{{ etiqueta }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="nota">En qué se basa</label>
+    <textarea id="nota" name="nota" rows="3" style="width:100%" required
+      placeholder="Las cifras cuadraron todas las jornadas; los tres bloqueos fueron de la primera semana y están resueltos."></textarea>
+    <div class="ayuda">
+      Obligatorio. Es lo que se va a leer dentro de tres meses, cuando nadie
+      recuerde por qué se dijo lo que se dijo.
+    </div>
+  </div>
+  <button type="submit" {% if not ventana.termino %}class="secundario"{% endif %}>
+    Cerrar el piloto
+  </button>
+  {% if not ventana.termino %}
+    <span class="sutil" style="margin-left:8px">
+      Se puede cerrar antes —un piloto que va mal no necesita acabar las dos
+      semanas— pero entonces el veredicto se apoya en menos días.
+    </span>
+  {% endif %}
+</form>
+{% endblock %}

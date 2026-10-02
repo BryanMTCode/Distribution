@@ -1850,3 +1850,152 @@ ventas sería cambiar una función de administración por la operación del día
    vacío, que recorre tabla por tabla esperando cero. Se añadió
    `dsd_usuario() IS NOT NULL` como puerta — un usuario cualquiera, no un rol
    concreto, porque cualquier perfil con dispositivo registrado hace pull.
+
+---
+
+## 38. El papel en paralelo es el patrón de medida, no un respaldo
+
+El plan pide el piloto de la Fase 3 *«con el proceso de papel en paralelo»*, y
+esa frase se puede leer de dos maneras. La equivocada: el papel está ahí por si
+la app falla. La correcta: **el papel es el instrumento de medición.**
+
+La diferencia no es filosófica, decide si el piloto sirve. Si el papel es un
+respaldo, nadie lo mira cuando la app no falla, y al final de las dos semanas lo
+único que hay es la impresión de que «se portó bien». Si el papel es el patrón,
+se captura todos los días y se compara — y entonces el piloto produce cifras.
+
+La razón de que haga falta un patrón externo es una sola, y es la frase que
+justifica toda la migración 0024:
+
+> **El sistema no puede medir la venta que no existe en el sistema.**
+
+Ninguna métrica de la Fase 9, ningún log estructurado y ninguna tarjeta del
+tablero ven ese hueco: todos leen lo que sí entró. Una venta que ocurrió en la
+calle y nunca se capturó —porque la app estorbó, porque el vendedor la apuntó
+«para luego», porque se cerró el carrito— es invisible desde adentro y es
+exactamente la falla que el piloto viene a buscar.
+
+De ahí que los dos instrumentos del piloto midan cosas distintas y no se puedan
+sustituir:
+
+| Instrumento | Lo mide | Detecta |
+|---|---|---|
+| El sistema sobre sí mismo | retraso de entrega, cancelaciones, cuarentena, liquidaciones | fallas **técnicas** |
+| El papel capturado a mano | documentos, importe, cobranza, visitas | fallas de **adopción** |
+
+### La diferencia que se cierra sola no es la misma falla
+
+A las 8 de la mañana el papel dice 23 documentos y el sistema 21. A mediodía el
+teléfono sincroniza y el sistema dice 23.
+
+Esa diferencia **no era pérdida de datos**: era retraso de entrega, que es §0.3
+funcionando como se diseñó. Y con una sola cifra guardada se ve idéntica a dos
+ventas que no existen, que es la falla más grave del sistema.
+
+Por eso `piloto_jornadas` guarda **dos cifras del sistema** por cada día: la que
+decía al capturar —congelada, leída otra vez en el servidor al guardar y no
+tomada del formulario— y la que dice hoy, calculada al abrir la pantalla.
+
+    papel 23 · al capturar 21 · hoy 23   →  retraso. No detiene nada.
+    papel 23 · al capturar 21 · hoy 21   →  DOS VENTAS QUE NO EXISTEN.
+
+La cifra congelada se vuelve a leer al guardar y no se recibe del formulario,
+porque si viniera de la pantalla mediría el tiempo que tardó alguien en teclear.
+
+### Los umbrales se escriben antes, o no valen nada
+
+Los doce criterios de salida viven en `piloto_criterios`, **sembrados por la
+migración** con fecha anterior al primer día del piloto, y **no hay pantalla
+para cambiarlos**. Eso no es una función que falte: es la propiedad que los hace
+servir.
+
+Si los criterios se deciden al final, se deciden mirando el resultado, y
+entonces el piloto no decidió nada: justificó lo que ya se quería hacer. Las dos
+semanas **van** a producir incidencias —para eso son— y en ese momento la
+pregunta «¿esto es suficiente para seguir?» ya no se puede contestar con
+honestidad, porque los teléfonos ya se quieren comprar. Si un umbral de verdad
+estaba mal puesto, se cambia con una migración, que deja huella y fecha.
+
+Dos de los umbrales parecen raros y son los más pensados:
+
+- **«Cero bloqueos en la SEGUNDA semana»**, no cero en el piloto. La primera
+  semana va a tener bloqueos: para eso es el piloto. Un umbral de cero sobre las
+  dos semanas haría fracasar al piloto que funcionó. Lo que decide no es si algo
+  se rompió, es si se dejó de romper.
+- **La cobertura de captura es el primer criterio y es bloqueante.** Mide que el
+  papel se haya capturado todos los días, y es el criterio del criterio: un
+  piloto donde se dejó de capturar el día cuatro no midió nada, y es la forma más
+  común de que un piloto no pruebe nada sin que nadie lo note.
+
+### La bitácora se captura en el panel, no en la app
+
+Era tentador poner una pantalla de «reportar problema» en el teléfono, con su
+operación en el outbox. Sería un error: **no se le agregan funciones a la app que
+se está poniendo a prueba.** Esa pantalla sería código nuevo sin piloto dentro
+del piloto, con su propio camino de sincronización que puede fallar — y si falla,
+se pierden justo los reportes de las fallas.
+
+El argumento que cierra la discusión: la incidencia más importante que puede
+ocurrir es *«la app no abrió»*, y en ese escenario ninguna pantalla de la app
+puede reportarla. El canal es el que ya existe y no depende de nosotros — el
+vendedor habla por teléfono y la oficina teclea con la hora.
+
+### Y aquí sí va texto libre, al contrario que en los no-drops
+
+La regla de la Fase 6 es «texto libre = datos inanalizables», y sigue en pie
+para los motivos de no-venta: se capturan veinte veces al día y su valor está en
+poder **contarlos**.
+
+Una incidencia de piloto es lo contrario: pasa una vez y su valor es el
+**detalle**. «Se cerró la app al agregar el tercer renglón del carrito con el
+teclado abierto» no cabe en ningún catálogo y es justo lo que se necesita para
+reproducirla. Así que se cierra el catálogo de lo que ya se sabe —categoría y
+severidad, que son para contar— y se deja texto para lo que no se sabe.
+
+**Un piloto cuyo formulario solo acepta opciones conocidas solo puede descubrir
+lo que ya estaba previsto.**
+
+### El defecto que encontró la construcción: el cero que premiaba no apuntar
+
+Dos de los doce criterios leen la bitácora: los bloqueos de la segunda semana y
+los minutos perdidos por jornada. Con la bitácora **vacía**, los dos salían en
+verde — cero bloqueos, cero minutos.
+
+Es decir que la forma más fácil de aprobar el piloto era **no registrar nada**, y
+de paso la única que no deja rastro. Lo encontró una prueba escrita para otra
+cosa: la que afirma que ningún criterio se pinta de verde sin datos.
+
+Dos semanas de una app nueva con cero incidencias de cualquier tipo no es una app
+perfecta: es un registro que nadie llevó. Siempre hay un «el teclado tapa el
+total». Así que con la bitácora completamente vacía los dos criterios quedan
+**sin medir**, que es la verdad, y basta una incidencia —la molestia más chica—
+para que el conteo vuelva a ser legible. Lo que se comprueba no es que haya
+problemas: es que alguien está preguntando.
+
+La distinción fina, que la prueba obligó a escribir: los criterios que el
+**sistema mide de sí mismo** sí pueden leer cero honestamente —la cuarentena se
+llena sola— y los que dependen de que **una persona escriba algo**, no.
+
+### Lo que el piloto no prueba, declarado como dato
+
+`impresion_bluetooth` está en la tabla de criterios con `evaluable = false` y su
+nota. `Impresora` solo tiene implementación simulada hasta que llegue la
+EC-MP200, así que durante el piloto el comprobante del cliente sigue siendo la
+nota de papel — que va en paralelo de todos modos.
+
+No bloquea el arranque del piloto y sí bloquea el despliegue. Está en la tabla
+para que **no se convierta en un supuesto** el día que se compren los teléfonos:
+la pantalla lo muestra bajo «lo que este piloto no prueba», y hay una prueba que
+exige que todo criterio no evaluable traiga su explicación escrita.
+
+### El veredicto lo firma una persona
+
+El sistema **sugiere** el veredicto a partir de los criterios y no lo guarda
+solo. Poner esto en siete camiones es una decisión de negocio, y un veredicto
+automático le quitaría a alguien la obligación de firmarla. `pilotos.veredicto`
+exige su nota: es lo que se va a leer dentro de tres meses, cuando nadie recuerde
+por qué se dijo lo que se dijo.
+
+Y hay tres veredictos, no dos. **«Repetir»** existe porque es el resultado más
+probable de un primer piloto honesto, y sin esa opción la única salida del «casi»
+es aprobarlo.

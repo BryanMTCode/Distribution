@@ -136,6 +136,9 @@ respaldo:  ## Respalda la base (DSD_RESPALDOS para elegir la carpeta)
 simulacro:  ## Restaura el último respaldo en una base desechable y lo verifica
 	DSD_SIMULACRO_ADMIN_URL="$(ADMIN_URL)" bash scripts/simulacro.sh
 
+piloto-listo:  ## Revisa si un vendedor puede arrancar el piloto: make piloto-listo VENDEDOR=VEND01
+	@DSD_DATABASE_URL="$(RESPALDO_URL)" bash scripts/piloto_listo.sh "$(VENDEDOR)"
+
 worker:  ## Levanta el worker de la cola
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.workers.principal
 

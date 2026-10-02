@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block titulo %}Piloto{% endblock %}
+{% block contenido %}
+<h1>Definir el piloto</h1>
+<p class="subtitulo">
+  Un vendedor, una ruta, dos semanas, con el proceso de papel corriendo en
+  paralelo. Es el único paso del plan que puede invalidar una decisión de diseño,
+  y el único que no se puede acelerar: su valor es el calendario.
+</p>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="aviso-caja neutro">
+  <strong>Antes de capturar nada, lee <code>docs/PILOTO.md</code>.</strong>
+  Ahí está la lista del día −1 —respaldo probado, zona horaria, catálogo
+  publicado, el vendedor entrenado— y la rutina diaria de la oficina. Un piloto
+  que arranca sin eso gasta su primera semana descubriendo problemas de
+  instalación en vez de problemas de la app.
+</div>
+
+<form method="post" action="/panel/piloto/definir"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; max-width:640px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="vendedor_id">Vendedor</label>
+    <select id="vendedor_id" name="vendedor_id" required>
+      <option value="">—</option>
+      {% for v in vendedores %}
+        <option value="{{ v.id }}">
+          {{ v.codigo }} · {{ v.nombre }}{% if v.rutas %} (rutas {{ v.rutas }}){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <div class="ayuda">
+      {% if not vendedores %}
+        No hay vendedores activos. Se crean en <a href="/panel/equipo">Usuarios y
+        rutas</a>.
+      {% else %}
+        Uno, no dos. Con dos vendedores, una incidencia que solo le pasa a uno
+        se discute como diferencia de persona en vez de investigarse.
+      {% endif %}
+    </div>
+  </div>
+  <div class="campo">
+    <label for="ruta_id">Ruta</label>
+    <select id="ruta_id" name="ruta_id" required>
+      <option value="">—</option>
+      {% for r in rutas %}
+        <option value="{{ r.id }}">{{ r.codigo }} · {{ r.nombre }}</option>
+      {% endfor %}
+    </select>
+    <div class="ayuda">
+      La ruta de siempre de ese vendedor. Cambiarle la ruta el mismo día que
+      cambia de herramienta mezcla dos causas en cada cifra.
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="inicio">Primer día</label>
+      <input type="date" id="inicio" name="inicio" value="{{ inicio }}" required>
+      <div class="ayuda">
+        Un lunes. La primera semana trae los bloqueos, y partirla con un fin de
+        semana en medio le da cuatro días de uso con tres de olvido.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="fin">Último día</label>
+      <input type="date" id="fin" name="fin" value="{{ fin }}" required>
+      <div class="ayuda">Dos semanas: lo que pide el plan. El mínimo es una.</div>
+    </div>
+    <div class="campo">
+      <label for="codigo">Clave</label>
+      <input type="text" id="codigo" name="codigo" placeholder="f3-261005"
+             pattern="[a-z0-9][a-z0-9._-]{1,29}">
+      <div class="ayuda">En blanco se arma con la fecha de inicio.</div>
+    </div>
+  </div>
+  <button type="submit">Definir el piloto</button>
+</form>
+
+{% if cerrados %}
+<h2>Pilotos anteriores</h2>
+<p class="sutil" style="margin:-4px 0 10px">
+  Se guardan porque el historial de un piloto que no pasó es justo lo que
+  explica por qué el siguiente se hizo distinto.
+</p>
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Vendedor</th><th>Periodo</th><th>Veredicto</th><th>Cerrado</th></tr>
+  </thead>
+  <tbody>
+  {% for p in cerrados %}
+    <tr>
+      <td class="mono">{{ p.codigo }}</td>
+      <td>{{ p.vendedor }}</td>
+      <td>{{ p.inicio.strftime('%d/%m/%Y') }} – {{ p.fin.strftime('%d/%m/%Y') }}</td>
+      <td>{{ veredictos.get(p.veredicto, p.veredicto or '—') }}</td>
+      <td class="sutil">
+        {% if p.cerrado_en %}{{ p.cerrado_en.strftime('%d/%m/%Y') }}{% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

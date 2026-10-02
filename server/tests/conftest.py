@@ -69,6 +69,17 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # Las tablas del piloto (Fase 3) van explícitas aunque el CASCADE de
+    # `usuarios` las alcanzaría: en la Fase 7 ya se pagó el precio de confiar en
+    # eso, y leer la lista no debería exigir seguir llaves foráneas en la cabeza.
+    #
+    # `piloto_criterios` NO está aquí, y es la distinción que importa: son datos
+    # de REFERENCIA sembrados por la migración 0024, como los motivos de merma.
+    # Vaciarlos entre pruebas dejaría el piloto sin criterios —la pantalla diría
+    # que todo cumple— y además probaría contra un sistema que no existe.
+    "piloto_incidencias",
+    "piloto_jornadas",
+    "pilotos",
     # Los modelos de lectura del tablero (Fase 7) van PRIMERO y explícitamente.
     #
     # `tablero_refrescos` y `tablero_cartera` no tienen llave foránea a nada, así

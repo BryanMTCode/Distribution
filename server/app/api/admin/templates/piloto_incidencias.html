@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block titulo %}Bitácora del piloto{% endblock %}
+{% block contenido %}
+<h1>Bitácora del piloto {{ piloto.codigo }}</h1>
+<p class="subtitulo">
+  Lo que pasó en la calle, con la hora y el detalle. Se captura <strong>aquí y no
+  en la app</strong>: no se le agregan pantallas a la app que se está poniendo a
+  prueba, y la incidencia más importante que puede ocurrir —«no abrió»— ninguna
+  pantalla de la app podría reportar.
+</p>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta {% if bloqueos %}alerta{% endif %}">
+    <div class="numero">{{ bloqueos }}</div>
+    <div class="etiqueta">bloqueos</div>
+    <div class="sutil" style="margin-top:6px">
+      No se pudo operar. Es lo único que puede detener un despliegue — y lo que
+      cuenta para el criterio es cuántos hubo en la <strong>segunda</strong>
+      semana, no en total.
+    </div>
+  </div>
+  <div class="tarjeta {% if abiertas %}aviso{% endif %}">
+    <div class="numero">{{ abiertas }}</div>
+    <div class="etiqueta">sin resolver</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ minutos }}</div>
+    <div class="etiqueta">minutos perdidos</div>
+    <div class="sutil" style="margin-top:6px">
+      Es la cifra que dice si la app le cuesta dinero a la ruta. Una app
+      impecable que agrega media hora al día no se puede desplegar.
+    </div>
+  </div>
+  <div class="tarjeta {% if costaron_venta %}alerta{% endif %}">
+    <div class="numero">{{ costaron_venta }}</div>
+    <div class="etiqueta">costaron una venta</div>
+  </div>
+</div>
+
+<form method="post" action="/panel/piloto/incidencia"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin:18px 0">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Registrar una incidencia</h2>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="dia">Día</label>
+      <input type="date" id="dia" name="dia" value="{{ hoy }}"
+             min="{{ piloto.inicio }}" max="{{ piloto.fin }}" required>
+    </div>
+    <div class="campo">
+      <label for="hora">Hora (si se sabe)</label>
+      <input type="time" id="hora" name="hora">
+      <div class="ayuda">
+        En blanco si no se sabe. Una hora inventada manda a buscar en el log a
+        la hora equivocada, que es peor que no tenerla.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="minutos">Minutos perdidos</label>
+      <input type="text" id="minutos" name="minutos" inputmode="numeric" value="0">
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="categoria">Qué falló</label>
+      <select id="categoria" name="categoria" required>
+        <option value="">—</option>
+        {% for codigo, etiqueta in categorias.items() %}
+          <option value="{{ codigo }}">{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="severidad">Qué tan grave</label>
+      <select id="severidad" name="severidad" required>
+        <option value="">—</option>
+        {% for codigo, etiqueta in severidades.items() %}
+          <option value="{{ codigo }}">{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="campo">
+    <label for="que_hacia">Qué estaba haciendo</label>
+    <input type="text" id="que_hacia" name="que_hacia" style="width:100%" required
+           placeholder="Agregando el tercer renglón del carrito en la tienda de doña Mari">
+  </div>
+  <div class="campo">
+    <label for="que_paso">Qué pasó</label>
+    <textarea id="que_paso" name="que_paso" rows="3" style="width:100%" required
+      placeholder="La app se cerró sola y al volver a abrir el carrito estaba vacío. Lo volvió a capturar completo."></textarea>
+    <div class="ayuda">
+      Con el detalle. Aquí sí va texto libre, al contrario que en los motivos de
+      no-drop: una incidencia pasa una vez y su valor es poder reproducirla, no
+      poder contarla.
+    </div>
+  </div>
+  <div class="campo">
+    <label><input type="checkbox" name="costo_una_venta" value="1"> Costó una venta</label>
+    <label><input type="checkbox" name="hubo_que_usar_papel" value="1"> Hubo que resolverlo en papel</label>
+    <div class="ayuda">
+      Van aparte de la severidad: hay bloqueos que no cuestan una venta y
+      estorbos que sí.
+    </div>
+  </div>
+  <button type="submit">Registrar</button>
+</form>
+
+{% if incidencias %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Cuándo</th>
+      <th>Qué</th>
+      <th>Qué pasó</th>
+      <th class="numero">Min</th>
+      <th>Resolución</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for i in incidencias %}
+    <tr {% if i.severidad == 'bloqueo' and not i.resuelta_en %}style="background:var(--alerta-suave)"{% endif %}>
+      <td>
+        {{ i.fecha_operativa.strftime('%d/%m') }}
+        {% if i.hora %}<div class="sutil">{{ i.hora.strftime('%H:%M') }}</div>{% endif %}
+        {% if i.fecha_operativa >= ventana.inicio_segunda_semana %}
+          <div class="sutil">2.ª sem</div>
+        {% endif %}
+      </td>
+      <td>
+        <strong>{{ i.severidad }}</strong>
+        <div class="sutil">{{ categorias.get(i.categoria, i.categoria) }}</div>
+        {% if i.costo_una_venta %}<span class="etiqueta-motivo">costó una venta</span>{% endif %}
+        {% if i.hubo_que_usar_papel %}<span class="etiqueta-motivo">se usó papel</span>{% endif %}
+      </td>
+      <td>
+        {{ i.que_paso }}
+        <div class="sutil" style="margin-top:3px">Hacía: {{ i.que_hacia }}</div>
+      </td>
+      <td class="numero">{{ i.minutos_perdidos or '' }}</td>
+      <td>
+        {% if i.resuelta_en %}
+          {{ i.resolucion }}
+          <div class="sutil">{{ i.resuelta_en.strftime('%d/%m') }}</div>
+        {% else %}
+          <form method="post" action="/panel/piloto/incidencia/{{ i.id }}/resolver">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="text" name="resolucion" required
+                   placeholder="Cómo se resolvió" style="width:200px">
+            <button type="submit" class="secundario">Resolver</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil" style="margin-top:8px">
+  <a href="/panel/piloto">← el cuadre y los criterios</a>
+</p>
+{% else %}
+  <div class="vacio">
+    Sin incidencias. Si el piloto lleva varios días y esto sigue vacío, lo más
+    probable no es que nada haya pasado: es que nadie está preguntando.
+    <div style="margin-top:8px"><a href="/panel/piloto">← el cuadre y los criterios</a></div>
+  </div>
+{% endif %}
+{% endblock %}

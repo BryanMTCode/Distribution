@@ -865,7 +865,7 @@ su duración estimada (punto medio del rango). Las fases 0–9 suman **27 semana
 | **0** | Fundaciones, contratos Dart↔Python, auth, RBAC | 2.5 sem | ✅ completa | 100 % |
 | **1** | Catálogos y núcleo, panel de operación | 2.5 sem | ✅ completa | 100 % |
 | **2** | Motor de sincronización, pruebas de caos | 3.5 sem | ✅ completa | 100 % |
-| **3** | App vendedor MVP | 3.5 sem | 🟡 **parcial** | ~60 % |
+| **3** | App vendedor MVP + piloto de campo | 3.5 sem | 🟡 **parcial** | ~70 % |
 | **4** | Inventario de camión, liquidación | 2.5 sem | 🟡 casi | ~90 % |
 | **5** | Crédito y cobranza | 2.5 sem | ✅ completa | 100 % |
 | **6** | Alta en calle, mermas, no-drops | 2.0 sem | ✅ completa | 100 % |
@@ -873,7 +873,7 @@ su duración estimada (punto medio del rango). Las fases 0–9 suman **27 semana
 | **8** | Laboratorio analítico (Streamlit) | 3.5 sem | 🟡 **casi** | ~85 % |
 | **9** | Endurecimiento, MDM, RLS | 2.5 sem | ✅ completa | 100 % |
 
-## **Avance general: ≈ 92 %**
+## **Avance general: ≈ 93 %**
 
 El cálculo, semana a semana de plan:
 
@@ -881,29 +881,42 @@ El cálculo, semana a semana de plan:
 Fase 0   2.5 × 1.00 = 2.50      Fase 5   2.5 × 1.00 = 2.50
 Fase 1   2.5 × 1.00 = 2.50      Fase 6   2.0 × 1.00 = 2.00
 Fase 2   3.5 × 1.00 = 3.50      Fase 7   2.0 × 1.00 = 2.00
-Fase 3   3.5 × 0.60 = 2.10      Fase 8   3.5 × 0.85 = 2.98
+Fase 3   3.5 × 0.70 = 2.45      Fase 8   3.5 × 0.85 = 2.98
 Fase 4   2.5 × 0.90 = 2.25      Fase 9   2.5 × 1.00 = 2.50
                                 ─────────────────────────────
-                                24.83 de 27 semanas = 92.0 %
+                                25.18 de 27 semanas = 93.3 %
 ```
 
-**Lo que falta son 2.17 semanas, y 2 de ellas son calendario**: el piloto de la
-Fase 3 con un vendedor real, que no se puede acelerar porque su valor ES el
-calendario. El resto son el socket Bluetooth (media semana, cuando llegue la
-EC-MP200), la consulta online de bodega desde la app, y los modelos de
-pronóstico de la Fase 8 — que conviene hacer DESPUÉS del piloto, con meses de
-datos reales.
+**Lo que falta son 1.82 semanas, y 2 son calendario** — sí, menos semanas de
+trabajo que de calendario, y no es un error de cuentas: el piloto de la Fase 3
+son dos semanas que **nadie puede acelerar**, y su trabajo de oficina (veinte
+minutos al día de captura y la junta del día 15) cabe de sobra en ellas.
+
+El instrumento de ese piloto ya está construido —la pantalla *Piloto*, el cuadre
+diario contra el papel, la bitácora y los doce criterios de salida sembrados
+antes del primer día— y eso es lo único de esas dos semanas que se podía hacer
+por adelantado. **No las acorta ni un día.** Lo que cambia es que al final de las
+dos semanas haya un veredicto con cifras en vez de una impresión.
+
+El resto son el socket Bluetooth (media semana, cuando llegue la EC-MP200), la
+consulta online de bodega desde la app, y los modelos de pronóstico de la Fase 8
+— que conviene hacer DESPUÉS del piloto, con meses de datos reales.
 
 ### Qué le falta a lo que está «parcial»
 
-**Fase 3 (~60 %)** — el código está completo: catálogo offline, carrito, venta, cola de sincronización y
-los bytes del ticket ESC/POS, todo probado. Faltan dos cosas, y ninguna es de código:
+**Fase 3 (~70 %)** — el código está completo: catálogo offline, carrito, venta, cola de sincronización y
+los bytes del ticket ESC/POS, todo probado. Y desde ahora también está el **instrumento del piloto**:
+`docs/PILOTO.md` con el protocolo, la pantalla *Piloto* del panel, el cuadre diario contra el papel, la
+bitácora y los doce criterios de salida. Faltan dos cosas, y ninguna es de código:
 
 - **El transporte Bluetooth.** Los bytes del ticket están generados y verificados byte a byte (59
   pruebas), pero `Impresora` solo tiene implementación simulada: falta el socket, y eso espera a que
-  recuperes la **EC-MP200**. Es media semana de trabajo cuando llegue el hardware.
-- **El piloto con un vendedor real en una ruta, dos semanas, con el papel en paralelo.** Son 2 de las
-  3.5 semanas de la fase, y no se puede acelerar: su valor es el calendario.
+  recuperes la **EC-MP200**. Es media semana de trabajo cuando llegue el hardware. El piloto puede
+  arrancar sin él —el papel va en paralelo, así que el comprobante del cliente sigue siendo la nota de
+  siempre— y el criterio está declarado como **no evaluable** para que no se dé por probado.
+- **Las dos semanas de piloto, que son calendario.** El vendedor en su ruta, con el papel al lado y la
+  oficina capturando el cuadre cada mañana. Eso no se adelanta: empieza el lunes que decidas y termina
+  catorce días después.
 
 **Fase 4 (~90 %)** — carga, existencias offline y liquidación están completas. Falta la **consulta
 online de la bodega principal desde la app** (con su estado explícito «requiere conexión»): no hay
@@ -926,10 +939,10 @@ la que vale para medir.
 
 ### Lo que el porcentaje no dice
 
-El 83 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
+El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 759 pruebas de Python contra PostgreSQL real, 475 de Dart,
+1. **Lo construido está probado de verdad**: 830 pruebas de Python contra PostgreSQL real, 475 de Dart,
    220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -939,9 +952,12 @@ número sugiere:
 
 Y una razón por la que está peor:
 
-3. **Nada de esto ha visto un vendedor real.** El piloto de la Fase 3 es el único paso que puede
-   invalidar decisiones de diseño, y sigue pendiente. Dos semanas de un vendedor con el teléfono en la
-   mano valen más que las dos fases siguientes juntas.
+3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 830 pruebas
+   demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
+   correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
+   cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que
+   las dos fases siguientes juntas.
 
 ---
 
@@ -965,6 +981,11 @@ make recalcular-tablero               # recalcula los modelos de lectura
 # ───── respaldos (Fase 9) ─────
 make respaldo                         # a ~/respaldos-dsd, con checksum
 make simulacro                        # lo restaura y lo verifica — ESTE importa
+
+# ───── piloto de campo (Fase 3) ─────
+make piloto-listo VENDEDOR=VEND01     # ¿puede salir el lunes? lo que falta y cómo
+#                                     # el protocolo:  docs/PILOTO.md
+#                                     # la pantalla:   /panel/piloto
 
 # ───── cuando algo se atora ─────
 pkill -f "uvicorn app.main:app"       # el 8000 ocupado
