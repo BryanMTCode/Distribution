@@ -89,11 +89,12 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Seguridad por renglón (RLS)** con rol restringido — la segunda cerradura | ✅ 25 pruebas contra `dsd_api` |
 | **Borrado remoto** — entrega primero, borra después, y lo confirma | ✅ 25 del servidor + 16 de Dart |
 | **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
+| **Entradas de mercancía** — compra, inventario inicial y ajuste, con documento | ✅ 31 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**830 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
+**862 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
 
 ## Stack
 
@@ -200,7 +201,7 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 830 pruebas de Python
+make pruebas                        # 862 pruebas de Python
 make movil                          # 475 de Dart + 220 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

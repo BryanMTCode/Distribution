@@ -69,6 +69,12 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # Las entradas de mercancía: cuelgan de `almacenes` y de `usuarios`, así que
+    # el CASCADE las alcanzaría, pero van explícitas por la misma razón que las
+    # del piloto — leer esta lista no debería exigir seguir llaves foráneas en la
+    # cabeza.
+    "entrada_detalle",
+    "entradas",
     # Las tablas del piloto (Fase 3) van explícitas aunque el CASCADE de
     # `usuarios` las alcanzaría: en la Fase 7 ya se pagó el precio de confiar en
     # eso, y leer la lista no debería exigir seguir llaves foráneas en la cabeza.

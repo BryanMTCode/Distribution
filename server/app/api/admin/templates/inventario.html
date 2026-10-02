@@ -6,6 +6,8 @@
   Lo que hay en cada almacén <strong>ahora mismo</strong>. El camión es un almacén
   como cualquier otro: lo que ves en él es lo que su vendedor trae, hasta donde ha
   sincronizado.
+  La mercancía entra por <a href="/panel/entradas">Entradas</a> y sube al camión
+  con una <a href="/panel/cargas">carga</a>.
 </p>
 
 {% if not almacenes %}
@@ -137,6 +139,12 @@
     {{ elegido.nombre }} está vacío.
     {% if elegido.tipo == 'camion' %}
       Es lo normal si su carga de hoy no se ha confirmado, o si ya se liquidó.
+    {% else %}
+      <div style="margin-top:8px">
+        Si el negocio ya tiene mercancía en el almacén físico, lo que falta es
+        registrarla: una <a href="/panel/entradas">entrada de inventario
+        inicial</a> con lo que haya hoy.
+      </div>
     {% endif %}
   {% endif %}
 </div>

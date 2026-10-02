@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block titulo %}Entradas{% endblock %}
+{% block contenido %}
+<h1>Entradas de mercancía</h1>
+<p class="subtitulo">
+  La puerta por la que el inventario entra al sistema: compras del proveedor,
+  el inventario inicial y los ajustes por conteo. Siempre a una
+  <strong>bodega</strong> — al camión se sube con una
+  <a href="/panel/cargas">carga</a>, que es lo que el teléfono del vendedor sabe
+  recibir.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{% if puede_editar %}
+<form method="post" action="/panel/entradas/nueva"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin-bottom:22px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Recibir mercancía</h2>
+  <p class="sutil" style="margin-top:-4px">
+    Abre un borrador. <strong>No mueve inventario todavía:</strong> se capturan
+    los renglones y se confirma al final, con la remisión cuadrada.
+  </p>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="motivo">Por qué entra</label>
+      <select id="motivo" name="motivo" required>
+        <option value="">—</option>
+        {% for codigo, datos in motivos.items() %}
+          <option value="{{ codigo }}">{{ datos[1] }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        {% for codigo, datos in motivos.items() %}
+          <strong>{{ datos[1] }}:</strong> {{ datos[2] }}<br>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="almacen_destino_id">A qué bodega</label>
+      <select id="almacen_destino_id" name="almacen_destino_id" required>
+        <option value="">—</option>
+        {% for b in bodegas %}
+          <option value="{{ b.id }}">{{ b.codigo }} · {{ b.nombre }}</option>
+        {% endfor %}
+      </select>
+      <div class="ayuda">
+        {% if not bodegas %}
+          No hay bodegas activas. Se crean en <a href="/panel/inventario">Inventario</a>.
+        {% else %}
+          Solo bodegas: la oficina nunca escribe el inventario de un camión.
+        {% endif %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="fecha">Fecha</label>
+      <input type="date" id="fecha" name="fecha" value="{{ hoy }}" max="{{ hoy }}">
+      <div class="ayuda">Se puede atrasar (la remisión del viernes), no adelantar.</div>
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="proveedor">Proveedor</label>
+      <input type="text" id="proveedor" name="proveedor"
+             placeholder="Abarrotes del Centro S.A.">
+      <div class="ayuda">Texto libre: no hay catálogo de proveedores todavía.</div>
+    </div>
+    <div class="campo">
+      <label for="referencia">Remisión o factura</label>
+      <input type="text" id="referencia" name="referencia" placeholder="F-45821">
+      <div class="ayuda">
+        El papel con el que llegó. Es lo que se busca el día de una auditoría.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="nota">Nota</label>
+      <input type="text" id="nota" name="nota"
+             placeholder="Conteo del 1 de octubre, con Beto y Juan">
+      <div class="ayuda">
+        Obligatoria en el inventario inicial: es lo que explica de dónde salió
+        todo el inventario del arranque.
+      </div>
+    </div>
+  </div>
+  <button type="submit">Abrir borrador</button>
+</form>
+{% else %}
+  <div class="aviso-caja neutro">
+    Puedes ver las entradas y no capturarlas: eso necesita el permiso
+    <span class="mono">inventario.ajustar</span>. Una entrada crea inventario
+    desde el punto de vista del sistema, y es la operación con la que se puede
+    tapar un faltante.
+  </div>
+{% endif %}
+
+{% if borradores %}
+  <div class="aviso-caja aviso">
+    <strong>{{ borradores }} borrador(es) sin confirmar.</strong>
+    Un borrador no mueve inventario: la mercancía está en la bodega física y no
+    en el sistema, y una carga hecha con esa cifra deja la bodega en negativo.
+  </div>
+{% endif %}
+
+{% if entradas %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Folio</th>
+      <th>Fecha</th>
+      <th>Motivo</th>
+      <th>Bodega</th>
+      <th>De quién / con qué papel</th>
+      <th class="numero">Renglones</th>
+      <th class="numero">Piezas</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for e in entradas %}
+    <tr>
+      <td><a href="/panel/entradas/{{ e.id }}" class="mono">{{ e.folio }}</a></td>
+      <td>{{ e.fecha_operativa.strftime('%d/%m/%Y') }}</td>
+      <td>{{ motivos.get(e.motivo, (None, e.motivo))[1] }}</td>
+      <td>{{ e.bodega }}</td>
+      <td>
+        {{ e.proveedor or '—' }}
+        {% if e.referencia %}<div class="sutil mono">{{ e.referencia }}</div>{% endif %}
+      </td>
+      <td class="numero">{{ e.renglones }}</td>
+      <td class="numero">{{ e.piezas | entero }}</td>
+      <td>
+        {% if e.estado == 'confirmada' %}
+          <span style="color:var(--acento)">confirmada</span>
+        {% elif e.estado == 'borrador' %}
+          <span style="color:var(--aviso)">borrador</span>
+        {% else %}
+          <span class="sutil">cancelada</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="vacio">
+    Todavía no hay ninguna entrada, así que las bodegas están en ceros.
+    <div style="margin-top:8px">
+      Si el negocio ya tiene mercancía, empieza por una entrada de
+      <strong>inventario inicial</strong> con lo que haya en el almacén hoy.
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

@@ -316,6 +316,33 @@ Hazlo cada vez que recrees la base. `make doctor` avisa cuando no hay ninguno.
 
 ### Flujos a validar en el panel
 
+**Entradas de mercancía** — <http://127.0.0.1:8000/panel/entradas>
+
+Es por donde el inventario **existe**. En un sistema recién instalado es el primer paso de todos:
+sin una entrada, las bodegas están en ceros y una carga confirmada deja la bodega en negativo sin
+que nada se queje (`existencias` no lleva CHECK de signo a propósito — §0.1).
+
+1. **Abre un borrador** con motivo *Inventario inicial* y la nota de quién contó y cuándo. La nota es
+   obligatoria solo en ese motivo: es el documento que explica de dónde salió todo el inventario del
+   arranque, y se lee una vez en la vida del sistema — el día que algo no cuadra.
+2. **Captura un renglón en cajas.** La pantalla responde con la conversión hecha
+   («10 CAJA = 240 PZA»): es la misma función que usa el teléfono al armar una partida, escrita en un
+   solo lugar del sistema.
+3. **Mira la columna «existencia hoy»**, con su flecha a cómo queda al confirmar. Es donde se ve un
+   cero de más *antes* de que sea un asiento que no se borra.
+4. **Confirma.** Hasta ese momento no se movió nada. Después, el libro mayor y las existencias quedaron
+   escritos en la misma transacción, y el renglón ya no se edita: se compensa con otro documento.
+5. **Intenta confirmar dos veces.** Debe decir que ya está confirmada y **no** meter la mercancía otra
+   vez: un doble clic en una pantalla lenta duplicaría una remisión completa, y el sobrante solo
+   aparecería semanas después en un conteo físico.
+6. **Intenta recibir en un camión.** No se puede, y el mensaje dice el camino correcto. No es una
+   limitación de la pantalla: es §0.2 — el almacén del camión tiene un único dueño, y la oficina nunca
+   le escribe existencias. Mercancía nueva entra a la bodega y de ahí sube con una carga, que es lo que
+   el teléfono sabe recibir.
+
+El flujo completo de la bodega es **Entradas → Inventario → Cargas**, y las tres pantallas están
+enlazadas entre sí en ese orden.
+
 **Cobranza** — <http://127.0.0.1:8000/panel/cobranza>
 
 1. Abre en **el día de hoy**. Arriba, «Qué entregar hoy»: comprueba que la columna **Efectivo a
@@ -930,6 +957,26 @@ rotación, clientes en riesgo y efectividad. Lo que queda del alcance planeado e
 existe, no de infraestructura — y conviene hacerlo **después** del piloto, cuando haya meses de datos
 reales en vez de los de una semana de pruebas.
 
+### Un hueco que el plan no tenía, y el porcentaje no refleja
+
+Durante nueve fases **no hubo cómo meter mercancía al sistema**. El plan pone
+«Compras/recepción» en la Fase 10 («Opcionales»), que queda fuera de las 27 semanas, así que ninguna
+fase lo echaba de menos — y el libro mayor ya contemplaba los asientos de `'compra'` y `'ajuste'` desde
+la migración 0004, con el permiso `inventario.ajustar` definido desde la 0009 sin que ningún rol lo
+tuviera ni ningún código lo pidiera.
+
+La forma del fallo es la que lo hizo durar: **no fallaba.** Confirmar una carga desde una bodega vacía
+funciona —`existencias` no lleva `CHECK` de signo a propósito (§0.1)— así que el sistema dejaba la
+bodega en negativo sin quejarse. La única forma de operar era inyectar inventario con SQL a mano.
+
+Ya está construido: `/panel/entradas`, con documento, folio, ciclo borrador→confirmada y los tres
+motivos (compra, inventario inicial, ajuste por conteo). **El porcentaje general no se mueve**, y es
+correcto que no se mueva: no era alcance planeado de las fases 0–9. Lo que cambia es que el sistema se
+puede operar sin tocar la base de datos a mano.
+
+Lo que **sigue faltando** de esa misma mitad: las **salidas por ajuste**. Un conteo físico que encuentra
+*menos* de lo registrado necesita un documento en sentido contrario, y el de entrada solo suma.
+
 ### Una advertencia sobre la numeración
 
 **Los números de fase que usamos al trabajar no coinciden con los de `ARQUITECTURA.md`.** En las
@@ -942,7 +989,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 830 pruebas de Python contra PostgreSQL real, 475 de Dart,
+1. **Lo construido está probado de verdad**: 862 pruebas de Python contra PostgreSQL real, 475 de Dart,
    220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -953,7 +1000,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 830 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 862 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que

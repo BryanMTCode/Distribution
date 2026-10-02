@@ -1999,3 +1999,121 @@ por qué se dijo lo que se dijo.
 Y hay tres veredictos, no dos. **«Repetir»** existe porque es el resultado más
 probable de un primer piloto honesto, y sin esa opción la única salida del «casi»
 es aprobarlo.
+
+---
+
+## 39. La mercancía entra con un documento, y solo a una bodega
+
+Durante nueve fases el sistema no tuvo **cómo meter mercancía**. El hueco no
+rompía ninguna prueba y por eso duró: el libro mayor contemplaba `'compra'`
+(proveedor → bodega) y `'ajuste'` desde la migración 0004, y el permiso
+`inventario.ajustar` estaba definido desde la 0009 — sin que **ningún rol lo
+tuviera** y sin que **ningún código lo pidiera**. Un permiso que nadie tiene y
+nada consulta: la función se planeó hasta el nombre y nunca se construyó.
+
+El motor estaba y la puerta no. Y la forma del fallo es la peor posible: **no
+fallaba.** Cargar un camión desde una bodega sin existencia funciona, porque
+`existencias` no lleva `CHECK (cantidad >= 0)` a propósito (§0.1: la mercancía ya
+se movió en el mundo físico y rechazar el registro no la devuelve). Así que el
+sistema no se quejaba — dejaba la bodega en negativo, y eso no se notaba hasta
+abrir el filtro de negativos de la pantalla de inventario.
+
+Mientras tanto, la única manera de operar era inyectar inventario con SQL a mano:
+un `UPDATE existencias` del que el libro mayor no tiene nada que decir.
+
+### Un documento, no un «sumar N piezas»
+
+La pantalla rápida habría sido un formulario de un renglón: producto, cantidad,
+guardar. Rompe la propiedad que sostiene todo el inventario de este sistema:
+**cada movimiento del libro mayor apunta a un documento que lo explica**
+(`documento_tipo`, `documento_id`).
+
+El día que esta pantalla importa es el día de una auditoría de inventario, y
+«¿de dónde salieron estas 240 piezas?» tiene que poder contestarse con una
+remisión de proveedor, no con «alguien lo capturó».
+
+Así que la entrada reutiliza el ciclo que la carga ya tenía probado:
+
+    BORRADOR  →  (renglones)  →  CONFIRMADA  →  libro mayor + existencias
+
+En borrador no mueve nada, y eso tampoco es ceremonia: capturar quince renglones
+de una remisión toma veinte minutos, y un sistema que mueve inventario al primer
+renglón obliga a terminar sin interrupciones o deja la bodega a medio recibir.
+Confirmar es **idempotente por estado** con `FOR UPDATE`, por lo mismo que la
+carga: un doble clic en una pantalla lenta duplicaría una remisión completa y el
+sobrante solo aparecería semanas después, en un conteo físico, sin forma de saber
+qué pasó.
+
+### Tres motivos, dos tipos de asiento
+
+| Motivo del documento | Asiento en el libro mayor | Qué es |
+|---|---|---|
+| `compra` | `compra` | llegó del proveedor, con su remisión |
+| `inicial` | `ajuste` | lo que ya estaba el día que arrancó el sistema |
+| `ajuste` | `ajuste` | el conteo físico encontró **más** de lo registrado |
+
+`inicial` y `ajuste` comparten tipo porque ninguno se le compró a nadie —
+escribir `compra` sería mentirle al libro mayor. Se distinguen por el documento,
+y esa es la razón de que el movimiento apunte al documento y no al contrario: el
+libro mayor se queda con sus ocho tipos y el detalle se recupera siempre.
+
+El inventario inicial **exige nota**, con un `CHECK` en la tabla además de la
+validación en la pantalla. Es el documento que explica de dónde salió todo el
+inventario del arranque y se lee una sola vez en la vida del sistema: el día que
+algo no cuadra. Sin nota, ese día no hay nada que leer.
+
+### El destino es siempre una bodega, nunca un camión
+
+No es una limitación de la pantalla: es **§0.2**, el almacén del camión tiene un
+único dueño exclusivo. La oficina nunca escribe existencias de un camión — para
+eso existe `traspasos` desde la migración 0004: la oficina propone y el vendedor
+acepta en la app.
+
+Una entrada directa a un camión le cambiaría el inventario bajo los pies a
+alguien que está vendiendo offline con otra cifra en el teléfono, y el descuadre
+le aparecería en su liquidación como un sobrante del que no sabe nada. Mercancía
+nueva entra a la bodega y de ahí sube con una carga, que es el camino que el
+teléfono ya sabe recibir.
+
+Es una regla entre tablas, así que no puede ser un `CHECK`: la valida el router y
+el formulario **solo ofrece bodegas** — ofrecer el camión sería invitar al error
+que la validación rechaza.
+
+### No hay costo, y es una decisión
+
+Una compra tiene un costo y capturarlo era un campo más. Pero `productos` no
+tiene columna de costo y no hay módulo de compras —es Fase 10 del plan—, así que
+el número no alimentaría nada: ni margen, ni valuación, ni costo de lo vendido.
+
+Un campo que se captura y nadie lee es peor que su ausencia, porque **parece** que
+el sistema sabe el costo. Y elegir aquí entre costo promedio, último costo o PEPS
+sería improvisar una regla contable en una pantalla de bodega. Lo que sí se
+guarda es la referencia del papel: con la remisión a la mano, el costo se
+recupera el día que exista dónde ponerlo.
+
+### Lo que se captura y lo que se guarda son dos cifras
+
+El renglón guarda la cantidad en **unidad base** —como el libro mayor— y además
+**lo que la persona tecleó**: «10 CAJA». No es redundante. «240» no se puede
+revisar contra una remisión que dice «10 cajas», y el renglón se tiene que poder
+leer igual que el papel que se está capturando. Es el mismo razonamiento del
+folio impreso frente al folio del servidor (§4).
+
+Y cuando el mismo producto entra con dos presentaciones distintas, la cantidad
+base se suma y la cifra capturada se deja en **nulo** en vez de inventar una
+suma de cajas con piezas: la pantalla dice «varias presentaciones», que es la
+verdad.
+
+### Lo que esta pantalla NO hace, dicho aquí para que no se dé por hecho
+
+**Las salidas por ajuste.** Un conteo físico que encuentra **menos** de lo
+registrado necesita un documento en sentido contrario, y no está construido: el
+documento de entrada solo suma. Mientras no exista, un faltante de bodega se
+sigue arreglando como siempre — y es la mitad adyacente de este mismo trabajo,
+no un descubrimiento para después.
+
+**El módulo de compras** (proveedores como catálogo, órdenes de compra, costos,
+cuentas por pagar) sigue siendo Fase 10. El proveedor aquí es texto libre a
+propósito: inventar la tabla obligaría a mantener un catálogo que nada más usa, y
+lo que de verdad se necesita el día de la auditoría es poder leer de quién llegó
+y con qué papel.

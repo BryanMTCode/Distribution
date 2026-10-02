@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block titulo %}{{ entrada.folio }}{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/entradas">← Entradas</a></p>
+<h1>{{ entrada.folio }} · {{ motivo_etiqueta }}</h1>
+<p class="subtitulo">
+  A {{ entrada.bodega }} ({{ entrada.bodega_nombre }}) ·
+  {{ entrada.fecha_operativa.strftime('%d/%m/%Y') }}
+  {% if entrada.proveedor %} · de {{ entrada.proveedor }}{% endif %}
+  {% if entrada.referencia %} · <span class="mono">{{ entrada.referencia }}</span>{% endif %}
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{% if entrada.estado == 'borrador' %}
+  <div class="aviso-caja aviso">
+    <strong>Borrador: todavía no mueve inventario.</strong>
+    La mercancía está en la bodega física y no en el sistema. Al confirmar se
+    escriben el libro mayor y las existencias en una sola transacción, y a partir
+    de ahí el renglón ya no se puede editar — se compensa con otro documento.
+  </div>
+{% elif entrada.estado == 'confirmada' %}
+  <div class="aviso-caja bien">
+    <strong>Confirmada</strong>
+    {% if entrada.confirmada_en %}
+      el {{ entrada.confirmada_en.strftime('%d/%m/%Y a las %H:%M') }}
+    {% endif %}
+    {% if entrada.confirmada_por_nombre %} por {{ entrada.confirmada_por_nombre }}{% endif %}.
+    Estas piezas ya están en {{ entrada.bodega }} y se pueden
+    <a href="/panel/cargas">cargar a un camión</a>.
+  </div>
+{% else %}
+  <div class="aviso-caja neutro">
+    <strong>Cancelada.</strong> {{ entrada.cancelacion_motivo }}
+  </div>
+{% endif %}
+
+{% if entrada.nota %}
+  <p class="sutil"><strong>Nota:</strong> {{ entrada.nota }}</p>
+{% endif %}
+
+{% if editable and puede_editar %}
+<form method="post" action="/panel/entradas/{{ entrada.id }}/renglon"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px; margin:18px 0">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">Agregar un renglón</h2>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="producto">Producto</label>
+      <input type="text" id="producto" name="producto" required autofocus
+             placeholder="SKU o código de barras">
+      <div class="ayuda">Acepta el SKU o el código del lector.</div>
+    </div>
+    <div class="campo">
+      <label for="unidad_codigo">Presentación</label>
+      <select id="unidad_codigo" name="unidad_codigo" required>
+        {% for u in presentaciones %}<option value="{{ u }}">{{ u }}</option>{% endfor %}
+      </select>
+      <div class="ayuda">Como viene en la remisión: cajas, no piezas.</div>
+    </div>
+    <div class="campo">
+      <label for="cantidad">Cuántos bultos</label>
+      <input type="text" id="cantidad" name="cantidad" inputmode="numeric" required>
+      <div class="ayuda">Enteros: nadie recibe media caja.</div>
+    </div>
+    <div class="campo">
+      <label for="lote">Lote</label>
+      <input type="text" id="lote" name="lote">
+      <div class="ayuda">Obligatorio si el producto maneja lote.</div>
+    </div>
+    <div class="campo">
+      <label for="caducidad">Caducidad</label>
+      <input type="date" id="caducidad" name="caducidad">
+    </div>
+  </div>
+  <button type="submit">Agregar</button>
+  <span class="sutil" style="margin-left:8px">
+    El mismo producto con el mismo lote se <strong>suma</strong>, para capturar
+    de dos tarimas sin perder la primera.
+  </span>
+</form>
+{% endif %}
+
+{% if renglones %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Producto</th>
+      <th>Lote / caducidad</th>
+      <th class="numero">Capturado</th>
+      <th class="numero">En unidad base</th>
+      <th class="numero">Existencia hoy</th>
+      {% if editable and puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in renglones %}
+    <tr>
+      <td>
+        {{ r.nombre }}
+        <div class="sutil mono">{{ r.sku }}</div>
+      </td>
+      <td>
+        {{ r.lote or '—' }}
+        {% if r.caducidad %}
+          <div class="sutil">vence {{ r.caducidad.strftime('%d/%m/%Y') }}</div>
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if r.unidades_capturadas and r.unidad_codigo %}
+          {{ r.unidades_capturadas | entero }} {{ r.unidad_codigo }}
+        {% else %}
+          <span class="sutil">varias presentaciones</span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        <strong>{{ r.cantidad | entero }}</strong>
+        <span class="sutil">{{ r.unidad_base }}</span>
+      </td>
+      <td class="numero sutil">
+        {{ r.existencia | entero }}
+        {% if entrada.estado == 'borrador' %}
+          {# La proyección viene calculada por PRODUCTO, no por renglón: con dos
+             lotes del mismo producto, sumar solo lo del renglón daría dos
+             flechas y ninguna sería el número final. #}
+          → {{ proyectado[r.producto_id] | entero }}
+        {% endif %}
+      </td>
+      {% if editable and puede_editar %}
+      <td>
+        <form method="post"
+              action="/panel/entradas/{{ entrada.id }}/renglon/{{ r.id }}/quitar">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="secundario">Quitar</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th colspan="3">Total</th>
+      <th class="numero">{{ total_piezas | entero }}</th>
+      <th colspan="{% if editable and puede_editar %}2{% else %}1{% endif %}"></th>
+    </tr>
+  </tfoot>
+</table>
+</div>
+<p class="sutil" style="margin-top:8px">
+  La columna <strong>existencia hoy</strong> es lo que la bodega tiene ahora, y
+  la flecha es cómo queda al confirmar. Es donde se ve un cero de más
+  <em>antes</em> de que sea un asiento que no se borra.
+</p>
+{% else %}
+  <div class="vacio">Sin renglones. Captura lo que dice la remisión.</div>
+{% endif %}
+
+{% if editable and puede_editar %}
+<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:22px">
+  <form method="post" action="/panel/entradas/{{ entrada.id }}/confirmar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" {% if not renglones %}disabled{% endif %}>
+      Confirmar la entrada
+    </button>
+    <div class="sutil" style="margin-top:4px; max-width:420px">
+      Escribe el libro mayor y las existencias. No se puede deshacer editando:
+      un error se corrige con otro documento.
+    </div>
+  </form>
+  <form method="post" action="/panel/entradas/{{ entrada.id }}/cancelar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="motivo" placeholder="Por qué se cancela" required
+           style="width:220px">
+    <button type="submit" class="peligro">Cancelar el borrador</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

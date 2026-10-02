@@ -46,6 +46,11 @@ NAVEGACION = [
     ("/panel/cargas", "Cargas"),
     ("/panel/liquidaciones", "Liquidación"),
     ("/panel/cobranza", "Cobranza"),
+    # "Entradas" va pegada a "Inventario" porque son las dos pantallas de la
+    # bodega y se usan juntas: se recibe y se verifica que quedó la cifra.
+    # Y va ANTES, que es el orden en que ocurren — sin una entrada, la
+    # pantalla de inventario solo puede mostrar ceros.
+    ("/panel/entradas", "Entradas"),
     ("/panel/inventario", "Inventario"),
     ("/panel/ventas", "Ventas"),
     ("/panel/efectividad", "Efectividad"),
