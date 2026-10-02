@@ -146,6 +146,38 @@
     El movimiento del libro mayor <strong>no se puede borrar</strong>. Si algo sale
     mal se corrige con un documento compensatorio, que deja rastro de las dos cosas.
   </p>
+
+  {% if bloqueos %}
+    {# La regla del §2.3. Se muestra aquí, en el formulario que va a rechazar, y
+       no solo como un aviso arriba: quien está a punto de confirmar es quien
+       tiene que leerla. #}
+    <div class="aviso-caja error">
+      <strong>Esto no se puede confirmar todavía:</strong>
+      <ul style="margin:8px 0 0; padding-left:20px">
+        {% for b in bloqueos %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+      <p style="margin:10px 0 0">
+        Si esas operaciones llegan después de confirmar, van a entrar con su fecha
+        vieja y van a mover el arqueo de un día ya cerrado. Lo normal es
+        <strong>sincronizar el teléfono y volver a intentar</strong> — el bloqueo
+        desaparece solo.
+      </p>
+    </div>
+    <div class="campo" style="margin-top:12px">
+      <label>
+        <input type="checkbox" name="confirmo_pendientes" value="1">
+        El camión tiene que salir de todos modos
+      </label>
+      <input type="text" name="motivo_forzado" style="width:100%; margin-top:6px"
+             placeholder="Por qué se fuerza: «el teléfono de Juan no prende y la ruta no puede quedarse»">
+      <div class="ayuda">
+        Queda registrado en la auditoría con la lista de bloqueos que había, no
+        solo con que hubo: dentro de un mes la pregunta no es «¿se forzó?» sino
+        «¿a pesar de qué?».
+      </div>
+    </div>
+  {% endif %}
+
   <button type="submit" {% if not renglones %}disabled{% endif %}>
     Confirmar la carga
   </button>

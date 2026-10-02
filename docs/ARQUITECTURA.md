@@ -303,6 +303,10 @@ auditable, no es trampa.
 completo. Las llaves de idempotencia evitan el duplicado, pero además se impone la regla:
 **no se puede iniciar una carga nueva con operaciones pendientes del día anterior.**
 
+> La impone `_bloqueos_para_cargar` en `app/api/admin/cargas.py`, al **confirmar** la carga y no al
+> crear el borrador — el borrador no publica delta, y mientras se captura el teléfono puede sincronizar
+> en el patio. Se puede forzar con la razón escrita, que queda en `auditoria`. Ver ADR 0002 §42.
+
 ---
 
 ## 3. Plan de desarrollo modular

@@ -690,7 +690,8 @@ async def cerrar(
         text(
             "UPDATE liquidaciones "
             "   SET estado = 'cerrada', cerrada_en = :ahora, cerrada_por = :quien, "
-            "       sync_completa = :respaldada, operaciones_pendientes = 0 "
+            "       sync_completa = :respaldada, "
+            "       operaciones_pendientes = :pendientes "
             " WHERE id = :l"
         ),
         {
@@ -698,6 +699,14 @@ async def cerrar(
             "quien": actor.usuario_id,
             "l": liquidacion_id,
             "respaldada": respaldo["respaldado"],
+            # Las operaciones que el equipo reportaba al cerrar, no un 0 literal.
+            #
+            # Se escribía cero a secas, y eso borraba el único número que
+            # contesta «¿cuántas faltaban?» cuando alguien audita un sobrante
+            # meses después. `sync_completa` ya decía SI estaba al día; esto dice
+            # CUÁNTO le faltaba. Cero sigue siendo cero cuando de verdad lo está,
+            # y entonces es un dato y no un relleno.
+            "pendientes": respaldo["pendientes"],
         },
     )
 
@@ -1010,7 +1019,17 @@ async def _respaldo_de_sincronizacion(sesion, cabecera) -> dict:
     ).mappings().all()
 
     if not equipos:
-        return {"respaldado": False, "motivo": "el vendedor no tiene equipos activos"}
+        return {
+            "respaldado": False,
+            "motivo": "el vendedor no tiene equipos activos",
+            "pendientes": 0,
+        }
+
+    # La suma de lo que reportaron los equipos, calculada UNA vez y devuelta en
+    # todas las salidas. Si cada rama la calculara, la próxima rama se olvidaría
+    # — y el campo que se olvida en una rama es el que acaba guardando un cero
+    # que parece un dato.
+    pendientes = sum(d["cola_pendiente"] or 0 for d in equipos)
 
     desde = cabecera["fecha_operativa"]
     for d in equipos:
@@ -1019,6 +1038,7 @@ async def _respaldo_de_sincronizacion(sesion, cabecera) -> dict:
                 "respaldado": False,
                 "motivo": f"«{d['etiqueta']}» nunca ha reportado su cola "
                 "(probablemente trae una versión vieja de la app)",
+                "pendientes": pendientes,
             }
         if d["cola_reportada_en"].date() < desde:
             return {
@@ -1026,6 +1046,7 @@ async def _respaldo_de_sincronizacion(sesion, cabecera) -> dict:
                 "motivo": f"«{d['etiqueta']}» reportó su cola el "
                 f"{d['cola_reportada_en'].date().isoformat()}, antes del día de la "
                 "carga: ese cero no dice nada sobre hoy",
+                "pendientes": pendientes,
             }
         if d["cola_pendiente"] > 0:
             # Lo normal es que `_bloqueos_para_cerrar` ya haya frenado el cierre por
@@ -1038,9 +1059,10 @@ async def _respaldo_de_sincronizacion(sesion, cabecera) -> dict:
                 "respaldado": False,
                 "motivo": f"«{d['etiqueta']}» reportó {d['cola_pendiente']} "
                 "operación(es) sin subir",
+                "pendientes": pendientes,
             }
 
-    return {"respaldado": True, "motivo": None}
+    return {"respaldado": True, "motivo": None, "pendientes": pendientes}
 
 
 def _leer_cantidad(texto: str) -> Decimal:

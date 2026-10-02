@@ -51,6 +51,7 @@ negativos. La pantalla lo advierte con el número exacto y deja pasar.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -256,6 +257,19 @@ async def crear(
         },
     )
     await sesion.commit()
+
+    # Se avisa, no se bloquea. El borrador no mueve inventario ni publica delta
+    # —el disparador de la 0015 salta los borradores— y mientras alguien captura
+    # quince renglones el teléfono puede sincronizar en el patio y el bloqueo
+    # desaparece solo. El bloqueo de verdad está al CONFIRMAR, que es cuando el
+    # delta sale.
+    bloqueos = await _bloqueos_para_cargar(sesion, vendedor, dia)
+    if bloqueos:
+        return _volver(
+            carga_id,
+            error="Ojo, esto no se va a poder confirmar así: "
+            + " ".join(bloqueos),
+        )
     return RedirectResponse(
         f"/panel/cargas/{carga_id}", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -339,6 +353,15 @@ async def detalle(
             "total_piezas": sum((Decimal(r["cantidad"]) for r in renglones), Decimal(0)),
             "editable": carga["estado"] in EDITABLE,
             "puede_editar": actor.puede(PERMISO),
+            # Los bloqueos del §2.3, visibles mientras se captura: enterarse al
+            # confirmar, después de quince renglones, es perder el trabajo.
+            "bloqueos": (
+                await _bloqueos_para_cargar(
+                    sesion, carga["vendedor_id"], carga["fecha_operativa"]
+                )
+                if carga["estado"] == "borrador"
+                else []
+            ),
             "error": error,
             "guardado": guardado,
         },
@@ -489,6 +512,8 @@ async def confirmar(
     sesion: SesionDep,
     carga_id: uuid.UUID,
     csrf: Annotated[str, Form()] = "",
+    confirmo_pendientes: Annotated[str, Form()] = "",
+    motivo_forzado: Annotated[str, Form()] = "",
 ):
     """Mueve el inventario y publica el delta. Todo o nada.
 
@@ -536,6 +561,44 @@ async def confirmar(
         return _volver(
             carga_id, error="No puedes confirmar una carga sin un solo renglón."
         )
+
+    # ------------------------------------------------------------------
+    # La regla del §2.3, aquí y no antes
+    # ------------------------------------------------------------------
+    # Este es el punto sin retorno: a partir del commit el inventario se movió y
+    # el delta salió al teléfono. Comprobarlo aquí —después del `FOR UPDATE` de
+    # la carga— es lo que hace que el hecho sea el del instante en que se
+    # escribe, y no uno que alguien leyó hace veinte minutos.
+    bloqueos = await _bloqueos_para_cargar(
+        sesion, carga["vendedor_id"], carga["fecha_operativa"]
+    )
+    razon_forzado = texto_o_nulo(motivo_forzado, maximo=300)
+    if bloqueos and not (confirmo_pendientes and razon_forzado):
+        return _volver(
+            carga_id,
+            error="No se puede confirmar: "
+            + " ".join(bloqueos)
+            + " Sincroniza el equipo y vuelve a intentar. Si el camión tiene que "
+            "salir de todos modos, marca la casilla y escribe por qué: queda "
+            "registrado.",
+        )
+
+    # Cuántas operaciones reportaron los equipos en este instante. Se guarda
+    # SIEMPRE, incluso en cero: cero es un dato —«el equipo estaba al día»— y no
+    # una ausencia de dato.
+    pendientes = int(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT COALESCE(sum(COALESCE(cola_pendiente, 0)), 0) "
+                    "  FROM dispositivos "
+                    " WHERE usuario_id = :v AND estado = 'activo'"
+                ),
+                {"v": carga["vendedor_id"]},
+            )
+        ).scalar()
+        or 0
+    )
 
     ahora = datetime.now(UTC)
     for r in renglones:
@@ -602,10 +665,58 @@ async def confirmar(
     await sesion.execute(
         text(
             "UPDATE cargas SET estado = 'confirmada', confirmada_en = :ahora, "
-            "       confirmada_por = :quien WHERE id = :id"
+            "       confirmada_por = :quien, "
+            "       pendientes_al_confirmar = :pendientes, forzada = :forzada "
+            " WHERE id = :id"
         ),
-        {"id": carga_id, "ahora": ahora, "quien": actor.usuario_id},
+        {
+            "id": carga_id,
+            "ahora": ahora,
+            "quien": actor.usuario_id,
+            "pendientes": pendientes,
+            "forzada": bool(bloqueos),
+        },
     )
+
+    # La constancia del forzado va a `auditoria` y no a `cargas`, y la razón es
+    # la misma que la del costo en la 0027: `cargas` lleva disparador de
+    # change_log y publica la fila COMPLETA al teléfono del vendedor. Un texto
+    # donde la oficina escribe «el teléfono de Juan no sincronizó» acabaría en el
+    # SQLite de Juan.
+    #
+    # `auditoria` existe desde la migración 0001 con exactamente esta forma, no
+    # lleva disparador, y hasta hoy nadie la escribía. Esta es su primera
+    # escritura, y en la misma transacción que el movimiento de inventario: si el
+    # commit se cae, no queda constancia de algo que no pasó.
+    if bloqueos:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO auditoria
+                    (entidad, entidad_id, accion, usuario_id, motivo,
+                     datos_despues, ocurrido_en)
+                VALUES ('carga', :id, 'carga_forzada', :quien, :motivo,
+                        CAST(:datos AS jsonb), :ahora)
+                """
+            ),
+            {
+                "id": carga_id,
+                "quien": actor.usuario_id,
+                "motivo": razon_forzado,
+                # Los bloqueos que había, no solo que hubo: dentro de un mes la
+                # pregunta no es «¿se forzó?» sino «¿a pesar de qué?».
+                "datos": json.dumps(
+                    {
+                        "bloqueos": bloqueos,
+                        "pendientes_al_confirmar": pendientes,
+                        "folio": carga["folio"],
+                    },
+                    ensure_ascii=False,
+                ),
+                "ahora": ahora,
+            },
+        )
+
     await sesion.commit()
 
     negativos = (
@@ -673,6 +784,120 @@ async def cancelar(
 # ---------------------------------------------------------------------------
 # Auxiliares
 # ---------------------------------------------------------------------------
+
+
+async def _bloqueos_para_cargar(sesion, vendedor_id, dia) -> list[str]:
+    """La regla del §2.3, convertida en hechos verificables.
+
+    `docs/ARQUITECTURA.md` §2.3: «no se puede iniciar una carga nueva con
+    operaciones pendientes del día anterior». La declaraba y nada la imponía —
+    esto lo impone.
+
+    Qué pasa sin ella: el teléfono se queda con tres ventas del lunes sin subir,
+    el martes se carga el camión, la carga confirmada reescribe las existencias
+    del dispositivo, y cuando esas tres ventas llegan entran con su
+    `fecha_operativa` DEL LUNES. Los modelos de lectura recalculan días sucios,
+    la venta del lunes sube, y el `efectivo_esperado` de una liquidación YA
+    CERRADA se calculó antes de ellas. El arqueo que alguien firmó deja de
+    cuadrar con las ventas que el sistema tiene de ese día.
+
+    Cada bloqueo es un hecho, no una sospecha, y los tres salen de datos que el
+    cierre de liquidación ya usa (`_bloqueos_para_cerrar`): se leen aquí porque
+    el momento de evitar el problema es ANTES de publicar el delta, no después.
+    """
+    bloqueos: list[str] = []
+
+    # 1. Lo que el teléfono dijo de su propia cola. Es la única fuente que lo
+    #    sabe, y cuando dice que le quedan operaciones eso es un hecho.
+    con_cola = (
+        await sesion.execute(
+            text(
+                """
+                SELECT d.etiqueta, d.cola_pendiente, d.cola_reportada_en
+                  FROM dispositivos d
+                 WHERE d.usuario_id = :v AND d.estado = 'activo'
+                   AND COALESCE(d.cola_pendiente, 0) > 0
+                 ORDER BY d.cola_pendiente DESC
+                """
+            ),
+            {"v": vendedor_id},
+        )
+    ).mappings().all()
+    for equipo in con_cola:
+        bloqueos.append(
+            f"«{equipo['etiqueta']}» reportó {equipo['cola_pendiente']} operación(es) "
+            "sin subir. Si se carga ahora, esas ventas van a llegar con su fecha "
+            "vieja y van a mover una liquidación ya cerrada (§2.3)."
+        )
+
+    # 2. La cuarentena: documentos que el servidor no pudo aplicar. Son del día
+    #    anterior por definición —llegaron y no entraron— y cualquiera puede ser
+    #    la venta que falta en el cierre de ayer.
+    cuarentena = (
+        await sesion.execute(
+            text(
+                """
+                SELECT count(*) FROM sync_cuarentena c
+                  JOIN dispositivos dis ON dis.id = c.dispositivo_id
+                 WHERE dis.usuario_id = :v AND c.estado = 'pendiente'
+                """
+            ),
+            {"v": vendedor_id},
+        )
+    ).scalar_one()
+    if cuarentena:
+        bloqueos.append(
+            f"el equipo tiene {cuarentena} operación(es) en cuarentena sin atender. "
+            "Resuélvelas antes de encimarle otro día."
+        )
+
+    # 3. Una carga anterior sin su liquidación cerrada.
+    #
+    #    Esta NO está en el §2.3: es una consecuencia que se sigue de él y se
+    #    escribe como tal. Si el camión debe el conteo de un día previo, cargarlo
+    #    hoy mezcla las dos existencias y el retorno de ayer deja de ser
+    #    calculable: `cant_cargada` sería de ayer y lo contado físicamente
+    #    tendría lo de hoy encima.
+    abiertas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT c.folio, c.fecha_operativa, l.estado
+                  FROM cargas c
+                  LEFT JOIN liquidaciones l ON l.carga_id = c.id
+                 WHERE c.vendedor_id = :v
+                   AND c.fecha_operativa < :dia
+                   -- 'confirmada' es la carga que salió y nadie ha contado;
+                   -- 'en_ruta' es la que YA tiene liquidación en borrador
+                   -- (liquidaciones.py la mueve al abrir el arqueo). Ese es
+                   -- justamente el caso que importa: el conteo empezó y no se
+                   -- cerró. Al cerrarlo la carga pasa a 'liquidada' y deja de
+                   -- aparecer aquí sola.
+                   AND c.estado IN ('confirmada', 'en_ruta')
+                   AND (l.id IS NULL OR l.estado <> 'cerrada')
+                 ORDER BY c.fecha_operativa DESC
+                 LIMIT 5
+                """
+            ),
+            {"v": vendedor_id, "dia": dia},
+        )
+    ).mappings().all()
+    for vieja in abiertas:
+        # El estado que se nombra es el de la LIQUIDACIÓN, no el de la carga: a
+        # quien lee el aviso le sirve saber si el arqueo nunca se abrió o si
+        # quedó a medias.
+        como_esta = (
+            f"su liquidación quedó en «{vieja['estado']}»"
+            if vieja["estado"]
+            else "se quedó sin liquidación"
+        )
+        bloqueos.append(
+            f"la carga {vieja['folio']} del "
+            f"{vieja['fecha_operativa']:%d/%m} {como_esta}: el camión "
+            "todavía debe ese conteo, y cargarlo hoy encima lo vuelve incalculable."
+        )
+
+    return bloqueos
 
 
 def _leer_bultos(texto: str | None) -> Decimal:

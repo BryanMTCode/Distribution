@@ -2398,3 +2398,133 @@ guardarlo mal.
 
 **El CFDI y la integración contable** siguen siendo Fase 10 y no bloquean nada:
 el RFC del proveedor ya se guarda, que es lo que hará falta el día que existan.
+
+---
+
+## 42. La regla del §2.3 estaba escrita y nada la imponía
+
+`docs/ARQUITECTURA.md` §2.3, sobre el riesgo de restaurar un respaldo viejo del
+teléfono, declara:
+
+> **no se puede iniciar una carga nueva con operaciones pendientes del día
+> anterior.**
+
+`cargas.py` solo comprobaba que el vendedor no tuviera **ya** una carga del
+**mismo** día (`uq_carga_vendedor_dia`). Nada revisaba la cola del equipo, ni la
+cuarentena, ni la liquidación anterior. Una salvaguarda diseñada hasta la frase y
+nunca construida: el cuarto caso de esta misma huella, después de
+`inventario.ajustar` sin dueño, `merma_detalle.costo_unitario` sin quien lo
+escriba, y `auditoria` sin una sola escritura.
+
+### Qué pasa sin ella, y por qué nadie lo nota
+
+El escenario no es exótico — es la primera semana de un piloto en una ruta con
+mala señal:
+
+1. El lunes el teléfono se queda con tres ventas sin subir.
+2. El lunes se cierra la liquidación. `sync_completa` queda en `false` porque el
+   equipo reportó cola: **eso el sistema ya lo registraba honestamente.**
+3. El martes a las 6 am se carga el camión. La carga confirmada publica el delta
+   y el teléfono reescribe sus existencias con el nuevo snapshot.
+4. El teléfono sincroniza. Las tres ventas llegan con su `fecha_operativa` **del
+   lunes**.
+5. Los modelos de lectura recalculan días sucios (§0.3 funcionando como debe), la
+   venta del lunes sube — y el `efectivo_esperado` de una liquidación **ya
+   cerrada** se calculó antes de esas tres ventas.
+
+El arqueo que alguien firmó el lunes deja de cuadrar con las ventas que el
+sistema tiene del lunes. No es corrupción: cada dato es correcto por separado. Es
+**un cierre firmado contra una cifra que después se movió**, y no hay nada en el
+sistema que grite.
+
+### Tres hechos, no una sospecha
+
+El guardia reusa los mismos datos que el cierre de liquidación ya consultaba
+(`_bloqueos_para_cerrar`), leídos antes de publicar el delta en vez de después:
+
+| Bloqueo | De dónde sale |
+|---|---|
+| El equipo reporta cola pendiente | `dispositivos.cola_pendiente`, que el teléfono manda en cada push |
+| Hay cuarentena sin atender | documentos que el servidor no pudo aplicar, del día anterior por definición |
+| Una carga previa sin liquidación cerrada | `cargas` ⟕ `liquidaciones` |
+
+El tercero **no está en el §2.3** y se escribe como lo que es: una consecuencia
+que se sigue de él. Si el camión debe el conteo de un día previo, cargarlo hoy
+mezcla las dos existencias y el retorno de ayer deja de ser calculable —
+`cant_cargada` sería de ayer y lo contado físicamente tendría lo de hoy encima.
+
+Ese tercer bloqueo tiene una trampa que esta implementación pisó y corrigió antes
+de entregarse: el filtro se escribió primero como `estado = 'confirmada'`, y abrir
+el arqueo mueve la carga a `'en_ruta'`. Es decir que la carga cuyo conteo **sí
+empezó y nadie cerró** —la peor de las dos, porque ya hay un `efectivo_esperado`
+calculado que las ventas faltantes van a desmentir— era justamente la que se
+escapaba. El filtro correcto es `estado IN ('confirmada', 'en_ruta')`: al cerrar
+el arqueo la carga pasa a `'liquidada'` y deja de aparecer sola, y hay una prueba
+de cada lado —una liquidación abierta de ayer bloquea, una cerrada no— porque un
+filtro de más apagaría la regla desde el segundo día de operación.
+
+### Se bloquea al confirmar, no al crear el borrador
+
+El borrador no mueve inventario ni publica delta: el disparador de la 0015 salta
+explícitamente los borradores. Así que dejarlo existir no cuesta nada, y mientras
+alguien captura quince renglones **el teléfono puede sincronizar en el patio y el
+bloqueo desaparece solo**. Bloquear la creación detendría trabajo que muy seguido
+se vuelve innecesario.
+
+El borrador avisa de lo que va a impedir el confirmar: hay una prueba de que el
+aviso aparece sin frenar la creación, y otra de que un equipo al día no bloquea
+nada.
+
+### Y se puede forzar, con su razón escrita
+
+Mismo patrón que `confirmo_sincronizado` en el cierre: el servidor bloquea por
+omisión y una persona puede pasar por encima dejando constancia.
+
+No es debilidad, es la única forma de que la regla sobreviva al contacto con la
+operación. **A las 6 am el camión tiene que salir**, y una regla que deja la ruta
+en la bodega se desactiva a la semana — o se rodea con SQL, que es peor. Lo que
+no puede pasar es que se fuerce en silencio.
+
+La casilla **y** el motivo son obligatorios: la constancia es el texto, no el
+clic.
+
+### Dónde vive la razón, y por qué no en `cargas`
+
+`cargas` **lleva disparador de change_log** y publica `to_jsonb(NEW)` —la fila
+completa— al teléfono del vendedor cuando la carga se confirma. Una columna de
+texto libre donde la oficina escribe *«el teléfono de Juan no prende»* viajaría
+al SQLite de Juan. Es el mismo camino de fuga que la §41 evitó con el costo, en
+otra tabla.
+
+Quitar la columna del payload exigiría reproducir las 74 líneas del disparador
+con un `CREATE OR REPLACE` en una migración nueva, y dos copias de esa lógica en
+el repositorio es el defecto de «dos reglas iguales escritas dos veces» que ya se
+pagó con `ROLES_DE_OFICINA`.
+
+Así que la razón va a **`auditoria`**, que existe desde la migración 0001 con
+exactamente la forma que hace falta —`entidad`, `entidad_id`, `accion`,
+`usuario_id`, `motivo`, `datos_despues`—, no lleva disparador, y **hasta hoy
+nadie la escribía.** Esta es su primera escritura, y va en la misma transacción
+que el movimiento de inventario: si el commit se cae, no queda constancia de algo
+que no pasó.
+
+En `cargas` quedan dos campos que al teléfono no le estorban: un número
+(`pendientes_al_confirmar`) y una bandera (`forzada`). Lo que no sale de la
+oficina es el texto. Hay una prueba que lee el `payload` publicado y afirma que
+la razón no está ahí.
+
+Y lo que se guarda en la auditoría son **los bloqueos que había**, no solo que
+hubo: dentro de un mes la pregunta no es «¿se forzó?» sino «¿a pesar de qué?».
+
+### De paso: el cero que no era un dato
+
+`liquidaciones.operaciones_pendientes` se escribía como `0` literal al cerrar.
+`sync_completa` ya decía **si** el equipo estaba al día; esa columna debía decir
+**cuánto** le faltaba, y en su lugar borraba el único número que contesta
+«¿cuántas operaciones faltaban?» cuando alguien audita un sobrante meses después.
+
+Ahora se escribe el conteo que reportaron los equipos, que ya se calculaba en
+`_respaldo_de_sincronizacion` y se tiraba. La suma se calcula **una vez** y se
+devuelve en las cinco salidas de esa función: si cada rama la calculara, la
+próxima rama se olvidaría — y el campo que se olvida en una rama es el que acaba
+guardando un cero que parece un dato.
