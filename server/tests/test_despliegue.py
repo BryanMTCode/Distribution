@@ -560,3 +560,28 @@ def test_el_laboratorio_corre_lo_mismo_en_local_que_en_su_contenedor():
             f"{paquete}: el laboratorio usa {en_el_lab.group(1)} en su contenedor "
             f"y {en_el_servidor.group(1)} en el venv del servidor"
         )
+
+
+def test_el_revisor_del_cifrado_esta_cableado():
+    """El guion existe Y el `make` lo llama.
+
+    Es el único guardia de esta familia que no tiene cómo fallar en silencio desde
+    el código —el cifrado del disco se hace a mano en la mini PC—, así que lo que
+    se comprueba aquí es lo mínimo que sí puede romperse sin que nadie lo note: que
+    el objetivo del Makefile siga apuntando al guion, y que el guion siga buscando
+    lo que su documentación dice que busca.
+    """
+    guion = _RAIZ / "scripts" / "revisar_cifrado.sh"
+    assert guion.is_file()
+
+    receta = _sin_comentarios(
+        _MAKEFILE.split("\ncifrado-revisar:", 1)[1].split("\n\n", 1)[0]
+    )
+    assert "scripts/revisar_cifrado.sh" in receta
+
+    texto = guion.read_text(encoding="utf-8")
+    # Las tres cosas que §5.1 dice que revisa. La tercera es la que importa: un
+    # volumen cuya única llave es el TPM queda ilegible si el TPM se resetea.
+    assert 'TYPE="crypt"' in texto, "dejó de detectar el volumen cifrado"
+    assert "swapon" in texto, "dejó de revisar el swap"
+    assert "RECUPERABLES" in texto, "dejó de revisar que quede una frase de recuperación"

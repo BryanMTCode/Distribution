@@ -19,8 +19,9 @@ intuitiva («el robo») no es el caso frecuente.
 | **Alguien copia la base del teléfono** | Baja | La base está cifrada y la llave vive en el Keystore |
 | **Un error en una consulta nueva filtra otra ruta** | **Media** | RLS (migración 0022) |
 | **Alguien se lleva un respaldo** | Baja | Cifrar antes de sacarlo (RESPALDOS.md §3) |
+| **Se llevan la mini PC de la oficina** | Baja | Disco cifrado con LUKS (§5.1). Dentro va TODO: la base, el `.env` y la copia local de los respaldos |
 
-Dos conclusiones incómodas y correctas:
+Tres conclusiones incómodas y correctas:
 
 **El robo no es el caso que manda.** Los tres primeros renglones son el día a
 día, y en los tres el teléfono trae dentro operación sin sincronizar. Un sistema
@@ -31,6 +32,12 @@ vez que alguien renuncia.
 Fase 9 dedica una migración entera a RLS: no protege de quien tiene la
 contraseña de la base, protege de una consulta nueva que se olvida de filtrar
 por ruta.
+
+**El renglón de la mini PC es el único en el que se pierde todo de golpe.** Un
+teléfono robado trae la ruta de un vendedor; el servidor trae la operación
+completa, los secretos y la copia local de los respaldos. Que su probabilidad sea
+baja no cambia que su costo no tenga techo — y es el renglón que este documento
+tuvo sin respuesta hasta la §5.1.
 
 ---
 
@@ -244,6 +251,241 @@ El procedimiento completo está en
 
 ---
 
+## 5.1 El disco de la mini PC
+
+Este documento exigía cifrado en el **teléfono** y en los **respaldos que salen
+del edificio**, y no decía nada del disco del servidor. Ahí viven las tres cosas
+juntas: la base completa, el `.env` con cuatro secretos en texto plano, y la copia
+local de los respaldos (`~/respaldos-dsd`). Quien se lleve el equipo se lleva las
+tres.
+
+### Primero, qué protege y qué no
+
+Esto es lo que más se malentiende, así que va antes de cualquier comando.
+
+**El cifrado de disco protege la máquina APAGADA.** Encendida —que es siempre— el
+disco está abierto: el sistema lo necesita para funcionar. Quien entre a la
+oficina con el servidor prendido y consiga una cuenta con permisos lee todo, y el
+cifrado no interviene. Lo que impide es que alguien se lleve el equipo, o le saque
+el SSD, y lo lea en otra parte.
+
+Que es, precisamente, el caso realista:
+
+| Lo que de verdad pasa | ¿Lo tapa el cifrado? |
+|---|---|
+| Se roban la mini PC de la oficina | **Sí** |
+| Le sacan el SSD y lo leen en una laptop | **Sí** |
+| Se llevan el disco externo con un respaldo | Ya lo tapaba GPG (`RESPALDOS.md` §3) |
+| Alguien con acceso físico mientras está encendida | **No** — eso es la puerta y los permisos |
+| Un bug nuestro que filtra otra ruta | **No** — eso es RLS (migración 0022) |
+
+### La tensión que decide todo: el arranque
+
+Un disco LUKS pide su frase al arrancar. En un servidor sin pantalla ni teclado y
+sin nadie en la oficina, eso significa:
+
+> Hay un apagón largo, el UPS se agota, el equipo se apaga. A las 6 de la mañana
+> el vendedor sale a ruta y **el servidor sigue abajo**, esperando que alguien
+> vaya a teclear una frase.
+
+No es hipotético: es el escenario que el UPS existe para cubrir, y el UPS solo
+cubre los cortes cortos. Así que la elección real es entre cuatro cosas:
+
+| Opción | ¿Protege el equipo apagado? | ¿Arranca solo? |
+|---|---|---|
+| Sin cifrar | No | Sí |
+| LUKS + frase al arrancar | Sí, del todo | **No** |
+| **LUKS + llave sellada en el TPM** | Sí si sacan el disco; no si arrancan el equipo | **Sí** |
+| LUKS + TPM **con PIN** | Sí, del todo | No |
+
+**La recomendación es la tercera**, y la razón es que el ataque que de verdad
+ocurre en una oficina de distribución es «se llevaron la computadora», no «un
+atacante con tiempo quiso la cartera». El TPM tapa eso sin dejar la ruta esperando
+a que alguien conduzca a la oficina.
+
+Y el hueco que deja —arrancar el equipo robado— se cierra en el BIOS, no en el
+disco: **contraseña de BIOS y arranque desde USB deshabilitado**. Sin eso, quien
+tenga el equipo puede arrancar un Ubuntu en vivo firmado y el TPM entregaría la
+llave igual, porque la medición de arranque seguro (PCR 7) no distingue un USB
+firmado del sistema instalado. Con eso, para saltarse la contraseña del BIOS hay
+que resetear el CMOS — **y eso resetea el TPM, que borra la llave**. El disco queda
+cerrado. Las dos medidas juntas son lo que hace que esto sirva; por separado,
+ninguna.
+
+> Si prefieres la protección completa y asumir el costo, usa **frase al arrancar**
+> y acepta que después de cada apagón largo alguien tiene que ir. Es una decisión
+> de operación, no técnica. `dropbear-initramfs` permite teclear la frase por SSH,
+> pero solo desde la red local: el túnel de Cloudflare no existe todavía en ese
+> punto del arranque, así que no sirve para desbloquear desde fuera.
+
+### Cuándo se hace: al instalar, no después
+
+**Antes de desplegar nada.** El instalador de Ubuntu Server cifra el disco de
+entrada; cifrar una instalación que ya está operando se puede hacer
+(`cryptsetup reencrypt`) pero es un procedimiento largo sobre datos reales, y aquí
+no hace falta correr ese riesgo porque el servidor todavía no existe.
+
+Si algún día hay que cifrar una mini PC que ya opera: **reinstalar y restaurar de
+un respaldo sale más barato y más seguro** que recifrar en sitio. El respaldo y el
+simulacro ya existen (`RESPALDOS.md`), que es lo que hace viable esa respuesta.
+
+### El procedimiento
+
+**1. Antes de instalar, en el BIOS:**
+
+- Activa el **TPM** (en los mini PC con Intel suele llamarse *Intel PTT* o
+  *Security Device Support*).
+- Activa **Secure Boot**.
+- Pon **contraseña de administrador** del BIOS.
+- **Deshabilita el arranque desde USB y desde red**, y deja el SSD como único
+  dispositivo de arranque.
+
+Los cuatro, no tres. El tercero y el cuarto son los que cierran el hueco de arriba.
+
+**2. Instala Ubuntu Server LTS** y en el paso de almacenamiento elige:
+
+```
+[X] Use an entire disk
+[X] Set up this disk as an LVM group
+[X] Encrypt the LVM group with LUKS
+```
+
+Te pide una frase. **Esa frase es la llave de recuperación de todo el sistema.**
+Genérala como las demás y apúntala en papel:
+
+```bash
+openssl rand -hex 24
+```
+
+**3. Apúntala donde ya están las otras dos.** En papel, fuera de la mini PC, con:
+
+- la frase del cifrado de respaldos (`RESPALDOS.md`),
+- la contraseña del keystore del APK (`ENTORNO-WINDOWS.md` §4.2).
+
+Son tres secretos que, si se pierden, no se regeneran. Van juntos.
+
+**4. Comprueba que quedó cifrado:**
+
+```bash
+make cifrado-revisar
+```
+
+**5. Sella la llave en el TPM**, para que arranque solo.
+
+> **Esto es lo único de este procedimiento que no pude probar**, y conviene que lo
+> sepas antes de empezar: aquí no hay TPM ni Ubuntu Server. Lo que sigue son los
+> dos caminos conocidos, en orden, con la prueba que dice si funcionó. **El paso 6
+> no es opcional**: es lo que distingue «lo configuré» de «funciona».
+
+Primero, que haya TPM:
+
+```bash
+systemd-analyze has-tpm2      # systemd 254+; si no existe el subcomando:
+ls -l /dev/tpmrm0             # tiene que estar
+```
+
+**Camino A — `systemd-cryptenroll`.** El de systemd, el más directo:
+
+```bash
+# La partición LUKS es la que `make cifrado-revisar` nombra.
+sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/nvme0n1p3
+```
+
+Y hay que agregar la opción a `/etc/crypttab`. **A mano, no con un `sed`**: si ese
+archivo queda mal, el equipo no arranca.
+
+```bash
+sudo cp /etc/crypttab /etc/crypttab.antes      # por si acaso
+sudoedit /etc/crypttab
+```
+
+La línea pasa de esto:
+
+```
+dm_crypt-0 UUID=1a2b3c…  none  luks,discard
+```
+
+a esto —solo se agrega la opción al final, separada por coma:
+
+```
+dm_crypt-0 UUID=1a2b3c…  none  luks,discard,tpm2-device=auto
+```
+
+Y después:
+
+```bash
+sudo update-initramfs -u -k all
+```
+
+**Camino B — `clevis`, si el A no funciona.** El initramfs de Ubuntu LTS usa los
+scripts clásicos de `cryptsetup` y no siempre honra `tpm2-device=auto`, que es una
+opción de `systemd-cryptsetup`. Si después del paso 6 el equipo sigue pidiendo la
+frase, este es el camino que sí está empaquetado para Ubuntu:
+
+```bash
+sudo apt install -y clevis clevis-luks clevis-tpm2 clevis-initramfs
+sudo clevis luks bind -d /dev/nvme0n1p3 tpm2 '{"pcr_ids":"7"}'
+sudo update-initramfs -u -k all
+```
+
+`clevis luks bind` también agrega una ranura y deja la frase donde estaba.
+
+> **Ni `systemd-cryptenroll` ni `clevis` borran la frase**: agregan una segunda
+> ranura de llave, la que abre el TPM. **Nunca uses `--wipe-slot` sobre la ranura
+> de la frase.** Si queda el TPM como única llave, una actualización de BIOS —o
+> cambiar la pila de la tarjeta madre— resetea el TPM y **el disco no se vuelve a
+> abrir nunca**. Es la forma más silenciosa de perder la operación completa, sale
+> de seguir un tutorial hasta el paso que dice «wipe-slot» creyendo que limpia
+> algo, y `make cifrado-revisar` la marca como FALLA justamente por eso.
+
+**6. La prueba que importa, y no la salta nadie:**
+
+```bash
+sudo reboot        # primero un reinicio normal
+```
+
+Si arrancó sin pedir nada, el sellado funcionó. Y luego **la de verdad**:
+
+> **Desenchufa el equipo de la corriente** —con el UPS apagado o fuera— espera un
+> minuto, y vuelve a enchufarlo.
+
+Tiene que levantar solo y `/salud` tiene que responder sin que nadie toque nada.
+Eso es lo único que prueba que la ruta de mañana a las 6 no se va a quedar
+esperando. Si pide la frase, el sellado no sirvió: revisa `/etc/crypttab` y el
+initramfs, o asume la opción de la frase manual **a sabiendas**.
+
+### Lo que lo rompe después, y qué hacer
+
+| Qué pasó | Síntoma | Qué hacer |
+|---|---|---|
+| Actualización de BIOS/firmware | Pide la frase al arrancar | Teclea la frase y **vuelve a sellar** contra las mediciones nuevas: camino A, `systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 <part>`; camino B, `clevis luks unbind -d <part> -s <ranura>` y volver a hacer `bind` |
+| Se reseteó el CMOS o cambió la tarjeta madre | Ídem | Igual que arriba |
+| Alguien borró la ranura de la frase | Nada, hasta que el TPM se resetee — y entonces se perdió todo | Agregar una frase **ahora**: `cryptsetup luksAddKey <part>` |
+
+El `--wipe-slot=tpm2` de la primera fila **sí** es correcto: borra la ranura del
+TPM, no la de la frase, y es la forma de volver a sellar contra las mediciones
+nuevas.
+
+> **Las actualizaciones de firmware se hacen estando en la oficina, nunca en
+> remoto.** Es la consecuencia práctica de la primera fila y es fácil de pisar:
+> `fwupd` aplica firmware **al reiniciar**, así que un `apt upgrade` que lo
+> arrastre, seguido de un reinicio desde casa, deja el servidor pidiendo la frase
+> con nadie enfrente — y la ruta de la mañana esperando. Si el equipo no las
+> necesita, lo más simple es no instalar `fwupd`; si las necesita, se programan
+> para un día que alguien esté ahí y se vuelve a sellar en la misma visita.
+
+### Lo que esto NO reemplaza
+
+- **Los respaldos siguen cifrándose aparte** (`RESPALDOS.md` §3). Un respaldo que
+  sale del edificio ya no está en el disco cifrado.
+- **El `.env` sigue siendo texto plano con la máquina encendida.** Lo único que lo
+  separa de otra cuenta del sistema son sus permisos: `chmod 600 .env`.
+  `make cifrado-revisar` lo revisa.
+- **RLS sigue siendo lo que protege de un bug nuestro**, que es el riesgo más
+  probable de este sistema (§1).
+
+---
+
 ## 6. Qué mirar, y cada cuánto
 
 | Cada | Dónde | Qué busca |
@@ -253,6 +495,7 @@ El procedimiento completo está en
 | Semana | `simulacro.log` | Que el respaldo de verdad se pueda restaurar |
 | Semana | `/metrics` o el log | `dsd_jobs_fallidos`, `dsd_jobs_pendientes` creciendo |
 | Mes | La bitácora de RESPALDOS.md §4 | Que el simulacro se esté haciendo |
+| Mes | `make cifrado-revisar` | Que el disco siga cifrado y que la frase de recuperación siga en su ranura (§5.1) |
 | Al desplegar | `curl /salud` | `ok: true` y `rls: true` |
 
 Y una regla que no es una métrica: **si una pantalla del panel empieza a salir

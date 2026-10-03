@@ -82,10 +82,10 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y lo que fija server/uv.lock
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 972
+make pruebas      # deben pasar 973
 ```
 
-Si ves `972 passed` (o `971 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `973 passed` (o `972 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
@@ -795,10 +795,34 @@ adb install -r mobile/app/build/app/outputs/flutter-apk/app-release.apk
 
 ## 5. Para el servidor de la oficina (Fase 3, al salir el piloto)
 
-- Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) con Ubuntu Server LTS
+- Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) con Ubuntu Server LTS.
+  **Con TPM 2.0** —en los Intel suele venir como *Intel PTT* y hay que activarlo en
+  el BIOS—: es lo que permite que el disco vaya cifrado y el servidor arranque solo
+  después de un apagón. Ver §5.1 de SEGURIDAD-OPERATIVA antes de comprar, si el
+  equipo todavía no está.
 - **UPS / no-break** — no es opcional: un apagón con rutas sincronizando corrompe la base
 - Cuenta gratuita de Cloudflare para el túnel
 - Cuenta de Backblaze B2 o S3 para los respaldos
+
+### Paso 0: cifrar el disco, que es lo único que no se puede hacer después
+
+Antes de instalar nada. En el disco de la mini PC van a quedar juntas la base
+completa, el `.env` con cuatro secretos en texto plano y la copia local de los
+respaldos: quien se lleve el equipo se lleva las tres cosas.
+
+El instalador de Ubuntu lo cifra de entrada —`Encrypt the LVM group with LUKS`—,
+y cifrar una instalación que ya opera es un procedimiento largo sobre datos
+reales. Hacerlo ahora es gratis; hacerlo después, no.
+
+El procedimiento completo, incluida la decisión de **cómo arranca el servidor solo
+tras un apagón sin dejar el disco abierto a quien se lo lleve**, está en
+[SEGURIDAD-OPERATIVA §5.1](SEGURIDAD-OPERATIVA.md#51-el-disco-de-la-mini-pc). Léelo
+antes de meter el USB de instalación: hay cuatro cosas que se tocan en el BIOS y
+una frase que hay que apuntar en papel.
+
+```bash
+make cifrado-revisar     # en la mini PC, después de instalar
+```
 
 ### El despliegue, paso por paso
 
@@ -806,6 +830,7 @@ adb install -r mobile/app/build/app/outputs/flutter-apk/app-release.apk
 git clone https://github.com/BryanMTCode/Distribution.git
 cd Distribution
 cp .env.example .env
+chmod 600 .env           # son cuatro secretos en texto plano
 ```
 
 Rellena el `.env`. Lo que **no** puede quedar vacío —`docker compose` falla de
@@ -926,7 +951,11 @@ docker compose up -d
    es el único camino de entrada cuando no hay ninguno.
 2. **Programar el respaldo y correr el simulacro** — `docs/RESPALDOS.md`. Un
    respaldo que nunca restauraste no es un respaldo.
-3. **La revisión del piloto** — `docs/PILOTO.md`. Dice si falta algo antes de que
+3. **La prueba del apagón** — desenchufa el equipo, espera un minuto y vuelve a
+   enchufarlo. Tiene que levantar solo y `/salud` tiene que responder sin que nadie
+   toque nada. Es lo único que prueba que el disco cifrado no va a dejar la ruta
+   esperando a las 6 de la mañana (SEGURIDAD-OPERATIVA §5.1, paso 6).
+4. **La revisión del piloto** — `docs/PILOTO.md`. Dice si falta algo antes de que
    alguien suba a un camión.
 
    En desarrollo es `make piloto-listo VENDEDOR=VEND01`. Aquí no: el script

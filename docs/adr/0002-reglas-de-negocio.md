@@ -2682,6 +2682,11 @@ RESPALDOS, y **no dice nada del disco de la mini PC**. Quien se lleve el equipo
 base y los respaldos locales. Falta decidir y escribir eso; no lo arregla esta
 sección y no se finge que sí.
 
+> **Cerrado en la §46**: el disco va cifrado con LUKS y la llave sellada en el
+> TPM, con la contraseña del BIOS y el arranque desde USB deshabilitado como la
+> otra mitad. El `.env` sigue siendo texto plano con la máquina encendida —eso no
+> cambia—, pero ya no viaja legible cuando el equipo sale del edificio.
+
 ---
 
 ## 44. El APK de producción se firmaba con la llave de depuración
@@ -2973,3 +2978,129 @@ se ejecutan**, nunca contra el archivo entero. El hermano `_comandos` además un
 las continuaciones de línea, porque un `--extra dev` escrito debajo del `uv sync`
 también se escapaba — y eso lo encontró la verificación por mutación, no la
 lectura.
+
+---
+
+## 46. El disco del servidor: cifrarlo sin dejar la ruta esperando
+
+La §43 cerró el despliegue y dejó un hueco nombrado a propósito:
+
+> `SEGURIDAD-OPERATIVA.md` exige cifrado en el TELÉFONO y en los RESPALDOS, y no
+> dice nada del disco del servidor. Falta decidirlo y escribirlo.
+
+Esto lo decide. En el disco de la mini PC quedan juntas tres cosas: la base
+completa, el `.env` con cuatro secretos en texto plano y la copia local de los
+respaldos (`~/respaldos-dsd`). Es **el único renglón del modelo de amenaza en el
+que se pierde todo de golpe**: un teléfono robado trae la ruta de un vendedor, el
+servidor trae la operación entera.
+
+### Lo primero es qué protege, porque es lo que más se malentiende
+
+**El cifrado de disco protege la máquina APAGADA.** Encendida —que es siempre— el
+disco está abierto, porque el sistema lo necesita. Quien entre a la oficina con el
+servidor prendido y consiga una cuenta con permisos lee todo, y el cifrado no
+interviene.
+
+Lo que impide es que alguien se lleve el equipo, o le saque el SSD, y lo lea en
+otra parte. Que es el caso realista en una oficina de distribución: «se llevaron
+la computadora», no «un atacante con tiempo quiso la cartera».
+
+### La tensión que decide el diseño: el arranque
+
+Un volumen LUKS pide su frase al arrancar. En un servidor sin pantalla ni teclado
+y sin nadie en la oficina:
+
+> Hay un apagón largo, el UPS se agota, el equipo se apaga. A las 6 de la mañana
+> el vendedor sale a ruta y **el servidor sigue abajo**, esperando que alguien vaya
+> a teclear una frase.
+
+No es hipotético: es exactamente el escenario que el UPS existe para cubrir, y el
+UPS solo cubre los cortes cortos. Así que cifrar el disco sin resolver esto cambia
+un riesgo de probabilidad baja por una interrupción de operación de probabilidad
+alta — y eso no es una mejora, es un intercambio malo disfrazado de buena práctica.
+
+### La decisión: LUKS con la llave sellada en el TPM, más el BIOS cerrado
+
+| Opción | ¿Protege el equipo apagado? | ¿Arranca solo? |
+|---|---|---|
+| Sin cifrar | No | Sí |
+| LUKS + frase al arrancar | Sí, del todo | **No** |
+| **LUKS + llave sellada en el TPM** | Sí si sacan el disco; no si arrancan el equipo | **Sí** |
+| LUKS + TPM con PIN | Sí, del todo | No |
+
+Se elige la tercera, y lo que la hace defendible es que **no va sola**. El hueco
+que deja —arrancar el equipo robado— no se cierra en el disco sino en el firmware:
+contraseña de BIOS y arranque desde USB deshabilitado.
+
+La razón es concreta y vale escribirla porque es la parte que los tutoriales se
+saltan: sellar contra **PCR 7** mide el *estado* del arranque seguro, no el binario
+que arranca. Un Ubuntu en vivo firmado por Microsoft produce la misma medición, así
+que el TPM entregaría la llave igual. Sellar también contra PCR 4 —que sí mide el
+cargador y el kernel— lo cerraría, pero entonces **cada actualización de kernel
+rompe el arranque automático**, que en un servidor desatendido es peor que el
+problema.
+
+De ahí que la respuesta sea el BIOS: sin arranque desde USB no hay live USB que
+presentar. Y para saltarse la contraseña del BIOS hay que resetear el CMOS —
+**que resetea el TPM, que borra la llave**. El disco queda cerrado. Las dos
+medidas juntas funcionan; por separado, ninguna.
+
+### La trampa que puede costar la operación completa
+
+`systemd-cryptenroll --tpm2-device` **no reemplaza la frase: agrega una segunda
+ranura de llave.** Un volumen bien armado tiene dos — la frase y el TPM.
+
+Si alguien borra la ranura de la frase después de sellar el TPM, el sistema sigue
+arrancando y nada avisa. Hasta el día en que una actualización de BIOS, un cambio
+de tarjeta madre o una pila agotada resetean el TPM: **y entonces el disco no se
+vuelve a abrir nunca**. No hay otra llave. Es la forma más silenciosa de perder la
+operación completa, y sale de seguir un tutorial hasta el paso que dice
+`--wipe-slot` creyendo que limpia algo.
+
+Por eso `scripts/revisar_cifrado.sh` no cuenta ranuras: cuenta **ranuras menos
+llaves automáticas**, que es el número de frases que una persona puede teclear. Si
+da cero, es FALLA con el comando para arreglarlo.
+
+Y ahí apareció un defecto del propio guion, releyéndolo contra el procedimiento que
+yo mismo acababa de escribir: contaba solo los tokens `systemd-tpm2`, y el camino B
+—`clevis`— deja un token `clevis`. En un equipo armado por el camino B eso habría
+hecho **dos** cosas mal: decir que el disco no abre solo cuando sí abre, y —lo
+grave— **contar la ranura del TPM como si fuera una frase**, reportando «hay camino
+de vuelta» en el único caso en que no lo hay. El guion cuenta los dos tokens, y
+están probadas las cuatro combinaciones: cada camino con frase, el camino B sin
+frase, y la frase sola.
+
+### Lo que no pude probar, y cómo está escrito por eso
+
+Aquí no hay TPM, ni Ubuntu Server, ni `dm_mod` en el kernel. Lo verificado de
+verdad:
+
+- El guion contra un **volumen LUKS2 real** creado con `cryptsetup luksFormat` en
+  un archivo de respaldo: la cuenta de ranuras es correcta y no confunde el
+  `0: crypt` de *Data segments* con una ranura de llave.
+- La detección de la cadena `lvm → crypt → part` contra la salida real de
+  `lsblk -nsPo`, con un `lsblk` falso que reproduce lo que deja el instalador de
+  Ubuntu. Se usa `-P` —pares `NAME="x" TYPE="y"`— y no columnas **porque en
+  columnas lsblk dibuja el árbol y el nombre viene con glifos `└─` pegados
+  delante**; de ahí salen los parseos que fallan solo en la máquina de alguien más.
+- Las cuatro ramas del camino de recuperación, con los dos tipos de token:
+  `systemd-tpm2` + frase, `clevis` + frase, `clevis` sin frase (FALLA), y la frase
+  sola.
+
+Lo que **no** se pudo ejercitar es el sellado en sí. Y como el initramfs de Ubuntu
+LTS usa los scripts clásicos de `cryptsetup` y no siempre honra la opción
+`tpm2-device=auto` —que es de `systemd-cryptsetup`—, el procedimiento da **dos
+caminos**: `systemd-cryptenroll` primero y `clevis` como alternativa empaquetada
+para Ubuntu, con la prueba que decide cuál hizo falta. Decirlo así vale más que
+presentar uno solo como si estuviera comprobado: si no funciona, quien lo siga sabe
+que el problema no es que lo hizo mal.
+
+### Y la prueba que no la sustituye ningún guion
+
+**Desenchufar el equipo.** Esperar un minuto. Volver a enchufarlo. Tiene que
+levantar solo y `/salud` tiene que responder sin que nadie toque nada.
+
+Es lo único que prueba que la ruta de mañana a las 6 no se va a quedar esperando, y
+es la razón por la que el guion termina diciendo en voz alta que eso es justo lo que
+él no puede comprobar. Un guion que revisara la configuración y callara esto daría
+una confianza que no corresponde.
