@@ -347,3 +347,216 @@ def test_el_apk_lleva_un_versioncode_explicito():
         f"pubspec.yaml dice «version: {version.group(1)}», sin «+N»: "
         "el versionCode no sube solo"
     )
+
+
+# ---------------------------------------------------------------------------
+# Los candados de dependencias
+# ---------------------------------------------------------------------------
+# `docs/ARQUITECTURA.md` decía «uv con lockfile versionado» y el Dockerfile
+# decía «instalación determinista a partir del lockfile». No había lockfile:
+# `make instalar`, el CI y el Dockerfile resolvían contra PyPI en cada corrida.
+#
+# El quinto caso de la misma huella, y el más barato de arreglar — un comando—,
+# lo que lo hace peor: estuvo escrito como hecho durante nueve fases.
+
+def _sin_comentarios(texto: str, marca: str = "#") -> str:
+    """Solo las líneas que el shell, Docker o make ejecutan de verdad.
+
+    Las afirmaciones NEGATIVAS —«esto ya no aparece»— tienen que leerse contra
+    esto y no contra el archivo entero: los comentarios de este repositorio citan
+    el comando viejo para explicar por qué se cambió, y una prueba que lea la
+    prosa pasa con el código roto. Ya pasó una vez con la guarda de `https://`
+    en `make apk`.
+    """
+    return "\n".join(
+        linea
+        for linea in texto.splitlines()
+        if not linea.lstrip().startswith(marca)
+    )
+
+
+def _comandos(texto: str, marca: str = "#") -> str:
+    """Como [_sin_comentarios], pero además une las continuaciones de línea.
+
+    Hace falta porque un `RUN` de Docker o una receta de make se parten con `\\`,
+    y una bandera puede caer en la segunda línea. Mirar solo la línea que trae
+    `uv sync` deja pasar un `--extra dev` escrito debajo: pasó al verificar esto
+    por mutación, y es por lo que el helper existe.
+    """
+    return _sin_comentarios(texto.replace("\\\n", " "), marca)
+
+
+_LOCK = _RAIZ / "server" / "uv.lock"
+_REQ_LAB = _RAIZ / "analytics" / "requirements.txt"
+_DOCKER_API = (_RAIZ / "server" / "Dockerfile").read_text(encoding="utf-8")
+_DOCKER_LAB = (_RAIZ / "analytics" / "Dockerfile").read_text(encoding="utf-8")
+_CI = (_RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+
+def test_el_candado_del_servidor_existe_y_esta_versionado():
+    """Lo que tres documentos daban por hecho."""
+    assert _LOCK.is_file(), "server/uv.lock no existe"
+    contenido = _LOCK.read_text(encoding="utf-8")
+    assert "[[package]]" in contenido
+    # Con hashes: sin ellos el candado fija la versión pero no el contenido, y
+    # un paquete re-subido con el mismo número pasaría igual.
+    assert "hash = " in contenido, "el candado no trae hashes"
+
+
+def test_el_candado_no_esta_ignorado_por_git():
+    """Un candado que no se versiona no es un candado: cada máquina tendría el
+    suyo, que es exactamente el estado del que se viene."""
+    for linea in _IGNORADOS.splitlines():
+        limpia = linea.strip()
+        assert limpia not in ("uv.lock", "server/uv.lock", "*.lock"), (
+            f".gitignore excluye el candado: «{limpia}»"
+        )
+
+
+def test_las_tres_vias_de_instalacion_usan_el_candado():
+    """`make instalar`, el CI y el Dockerfile, o no sirve de nada.
+
+    Si una sola de las tres resuelve por su cuenta, es la que va a diferir — y
+    será la de producción o la del CI, nunca la que alguien mira.
+    """
+    receta = _sin_comentarios(_MAKEFILE.split("\ninstalar:", 1)[1].split("\n\n", 1)[0])
+    assert "uv sync --locked" in receta, "make instalar dejó de usar el candado"
+    assert "uv pip install" not in receta
+
+    instalacion_ci = _sin_comentarios(
+        _CI.split("name: Instalar dependencias", 1)[1].split("- name:", 1)[0]
+    )
+    assert "uv sync --locked" in instalacion_ci, "el CI dejó de usar el candado"
+    assert "uv pip install" not in instalacion_ci
+
+    docker = _comandos(_DOCKER_API)
+    assert "uv sync --locked" in docker, "el Dockerfile dejó de usar el candado"
+    assert "uv pip install" not in docker
+
+
+def test_la_imagen_de_la_api_no_lleva_las_dependencias_de_desarrollo():
+    """Sin `--extra`, `uv sync` instala solo lo base.
+
+    Un `--extra dev` aquí metería pytest y ruff en la imagen de producción, y un
+    `--extra analitica` le sumaría streamlit y pandas a un contenedor que no
+    los usa.
+    """
+    sincronizacion = [
+        linea for linea in _comandos(_DOCKER_API).splitlines() if "uv sync" in linea
+    ]
+    assert sincronizacion, "desapareció el `uv sync` del Dockerfile"
+    assert not any("--extra" in linea for linea in sincronizacion), (
+        "la imagen de la API está instalando un extra"
+    )
+
+
+def test_la_imagen_de_la_api_encuentra_sus_binarios():
+    """`uv sync` deja el venv en /srv/.venv, y el CMD llama a `uvicorn` a secas.
+
+    Sin el PATH, `uvicorn` y el `alembic` del servicio de migraciones se
+    buscarían en el Python del sistema, donde ya no están. Falla al arrancar el
+    contenedor, no al construirlo.
+    """
+    assert "/srv/.venv/bin:$PATH" in _DOCKER_API
+
+
+def test_uv_esta_pinneado_en_el_dockerfile():
+    """El instalador también es una dependencia.
+
+    Con `uv:latest`, dos builds del mismo commit pueden usar resolvedores
+    distintos — y el que decide qué se instala es el resolvedor.
+    """
+    docker = _sin_comentarios(_DOCKER_API)
+    assert "astral-sh/uv:latest" not in docker, "uv volvió a `:latest`"
+    assert re.search(r"astral-sh/uv:\d+\.\d+\.\d+", docker), (
+        "uv no está pinneado a una versión exacta"
+    )
+
+
+def test_el_laboratorio_instala_versiones_exactas_con_hash():
+    """El otro contenedor tenía tres rangos `>=`, y es el mismo defecto.
+
+    `requirements.txt` se compila desde `requirements.in` (`make candado`), y el
+    Dockerfile lo instala con `--require-hashes`: una línea sin hash detiene el
+    build en vez de instalarse sin verificar.
+    """
+    assert (_RAIZ / "analytics" / "requirements.in").is_file()
+    compilado = _REQ_LAB.read_text(encoding="utf-8")
+    assert "--hash=sha256:" in compilado
+    # Sin comentarios: la cabecera que genera uv cita el comando, que lleva el
+    # nombre del `.in` pero no rangos — aun así se lee solo lo instalable.
+    assert ">=" not in _sin_comentarios(compilado), (
+        "analytics/requirements.txt trae un rango: ¿se editó a mano en vez de compilarse?"
+    )
+    assert "--require-hashes" in _sin_comentarios(_DOCKER_LAB)
+
+
+def test_lo_declarado_en_el_laboratorio_esta_fijado_en_su_compilado():
+    """La consistencia entre `requirements.in` y `requirements.txt`, SIN RED.
+
+    El fallo real que esto atrapa: agregar una dependencia al `.in` y olvidar
+    `make candado`. El contenedor del laboratorio se construiría sin ella y el
+    síntoma aparecería al desplegar, no aquí.
+
+    Se comprueba por estructura y no recompilando. Recompilar y comparar fue el
+    primer diseño y estaba mal: `uv pip compile` hacia un archivo nuevo no ve los
+    pines viejos, así que resuelve a lo más reciente — la prueba se habría puesto
+    roja el día que streamlit publicara una versión, en un commit que no tocó
+    nada. Que es exactamente el problema que el candado viene a quitar.
+    """
+    declarado = (_RAIZ / "analytics" / "requirements.in").read_text(encoding="utf-8")
+    compilado = _REQ_LAB.read_text(encoding="utf-8")
+
+    # La cabecera que genera uv dice de dónde salió. Si apunta a otra entrada,
+    # este archivo no es el compilado de ESTE `.in`.
+    assert "requirements.in" in compilado.split("\n", 3)[1], (
+        "la cabecera del compilado no nombra requirements.in"
+    )
+
+    for linea in _sin_comentarios(declarado).splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        # `psycopg[binary]>=3.2` → nombre `psycopg`, mínimo `3.2`
+        coincide = re.match(r"^([A-Za-z0-9._-]+)(?:\[[^\]]+\])?>=(\S+)$", linea)
+        assert coincide, f"no supe leer «{linea}» de requirements.in"
+        nombre, minimo = coincide.group(1), coincide.group(2)
+
+        fijado = re.search(rf"^{re.escape(nombre)}==(\S+?) ", compilado, re.M)
+        assert fijado, (
+            f"«{nombre}» está en requirements.in y no está fijado en "
+            "requirements.txt: falta correr `make candado`"
+        )
+        # Y el pin satisface el mínimo declarado. Comparación por tuplas de
+        # enteros, que alcanza para estos tres y no inventa un parser de PEP 440.
+        def partes(v: str) -> tuple[int, ...]:
+            return tuple(int(x) for x in re.findall(r"\d+", v))
+
+        assert partes(fijado.group(1)) >= partes(minimo), (
+            f"{nombre}: requirements.in pide >={minimo} y el compilado fija "
+            f"{fijado.group(1)}"
+        )
+
+
+def test_el_laboratorio_corre_lo_mismo_en_local_que_en_su_contenedor():
+    """Los dos candados comparten cuatro paquetes, y tienen que coincidir.
+
+    En local el laboratorio corre desde el venv del servidor (extra `analitica`);
+    en producción, desde su propia imagen. Si las versiones se separan, aparece
+    el «en mi máquina funciona» más caro de diagnosticar: la misma consulta
+    devolviendo algo distinto según dónde corra, con pandas de por medio.
+    """
+    compilado = _REQ_LAB.read_text(encoding="utf-8")
+    candado = _LOCK.read_text(encoding="utf-8")
+
+    for paquete in ("streamlit", "pandas", "psycopg", "numpy"):
+        en_el_lab = re.search(rf"^{paquete}==(\S+?) ", compilado, re.M)
+        assert en_el_lab, f"{paquete} ya no está en el candado del laboratorio"
+        en_el_servidor = re.search(
+            rf'name = "{paquete}"\nversion = "([^"]+)"', candado
+        )
+        assert en_el_servidor, f"{paquete} ya no está en server/uv.lock"
+        assert en_el_lab.group(1) == en_el_servidor.group(1), (
+            f"{paquete}: el laboratorio usa {en_el_lab.group(1)} en su contenedor "
+            f"y {en_el_servidor.group(1)} en el venv del servidor"
+        )

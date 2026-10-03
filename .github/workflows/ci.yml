@@ -32,20 +32,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # uv pinneado a la misma versión que el Dockerfile. `setup-uv` sin versión
+      # instala la última, y el resolvedor es lo que decide qué se instala: dejarlo
+      # flotar es dejar flotar el candado por la puerta de atrás.
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.17"
 
-      # Un venv en server/.venv, igual que en local (ver Makefile). Con
-      # --system, uv apunta al intérprete del runner, que está "externally
-      # managed" y rechaza la instalación.
+      # Un venv en server/.venv, igual que en local: es el mismo comando del
+      # `make instalar`, para que lo que CI prueba y lo que se instala a mano no
+      # puedan separarse.
+      #
+      # `--locked` es la parte que importa: falla si `uv.lock` no corresponde a
+      # `pyproject.toml`, en vez de resolver por su cuenta. Antes esto era
+      # `uv pip install -e '.[dev,analitica]'`, que RESOLVÍA CONTRA PyPI EN CADA
+      # CORRIDA — así que el verde de ayer no decía nada del árbol de hoy, y una
+      # dependencia que publicara una versión rota ponía rojo un commit que no
+      # había tocado nada.
+      #
+      # `analitica` va incluido a propósito: sin streamlit instalado,
+      # `tests/test_laboratorio.py` se SALTA con importorskip y el CI quedaría
+      # verde con el laboratorio roto. Una prueba que se salta en silencio es
+      # peor que no tenerla, porque da la impresión de cubrir algo.
       - name: Instalar dependencias
         working-directory: server
-        run: |
-          uv venv --python 3.12
-          # `analitica` incluido a propósito: sin streamlit instalado,
-          # `tests/test_laboratorio.py` se SALTA con importorskip y el CI quedaría
-          # verde con el laboratorio roto. Una prueba que se salta en silencio es
-          # peor que no tenerla, porque da la impresión de cubrir algo.
-          uv pip install -e '.[dev,analitica]'
+        run: uv sync --locked --python 3.12 --extra dev --extra analitica
 
       - name: Lint
         working-directory: server

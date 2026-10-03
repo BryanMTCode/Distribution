@@ -2822,3 +2822,154 @@ sitios distintos, la contraseña y el alias en papel con la frase del cifrado de
 respaldos. `SEGURIDAD-OPERATIVA.md` lo suma a la tabla de rotación como el único
 secreto que **nunca** se rota, y `PILOTO.md` lo agrega a la lista del día −1 como
 el único punto que, si se hace mal, se cobra en dinero de la calle y no en tiempo.
+
+---
+
+## 45. El candado de dependencias que tres documentos daban por hecho
+
+`docs/ARQUITECTURA.md` decía, en la tabla del stack:
+
+> | Paquetes | **uv** con lockfile versionado | … el lockfile y Docker lo compensan. |
+
+Y el `Dockerfile` del servidor, encima de la línea que instalaba:
+
+```dockerfile
+# uv: instalación determinista a partir del lockfile.
+RUN uv pip install --system --no-cache .
+```
+
+**No había lockfile.** Los tres caminos de instalación —`make instalar`, el CI y
+el Dockerfile— resolvían contra PyPI en cada corrida, contra los rangos `>=` de
+`pyproject.toml`. El quinto caso de la misma huella de este repositorio, y el más
+barato de arreglar —un comando—, lo que lo hace peor: estuvo escrito como hecho
+durante nueve fases.
+
+### Qué significaba en la práctica
+
+- **El verde de ayer no decía nada del árbol de hoy.** Una dependencia que
+  publicara una versión rota ponía rojo un commit que no había tocado nada, y
+  habría costado una tarde entender que el problema no estaba en el diff.
+- **Dos imágenes del mismo commit podían traer versiones distintas.** La de la
+  mini PC de la oficina y la que se probó no eran necesariamente la misma.
+- Y lo inverso, que es lo que de verdad importa en un sistema que maneja dinero:
+  **no había forma de reproducir el entorno en el que una cifra salió mal.**
+
+### Lo que se hizo
+
+`server/uv.lock` versionado: 76 paquetes con versión exacta y 1 332 hashes. Los
+hashes no son adorno — sin ellos el candado fija el número de versión pero no el
+contenido, y un paquete re-subido con el mismo número pasaría igual.
+
+Y los **tres** caminos lo usan, porque con que uno resuelva por su cuenta el
+candado no sirve de nada: el que difiera será el de producción o el del CI, nunca
+el que alguien está mirando.
+
+| Camino | Antes | Ahora |
+|---|---|---|
+| `make instalar` | `uv pip install -e '.[dev,analitica]'` | `uv sync --locked --extra dev --extra analitica` |
+| CI | lo mismo, resolviendo en cada corrida | el **mismo comando** que `make instalar` |
+| `Dockerfile` | `uv pip install --system .` | `uv sync --locked --no-install-project` |
+
+`--locked` es la parte que importa: **falla** si `uv.lock` no corresponde a
+`pyproject.toml`, en vez de resolver por su cuenta y seguir. Un candado
+desactualizado tiene que detener el build, no arreglarse solo en silencio.
+
+Tres detalles del Dockerfile, cada uno por un fallo concreto:
+
+- **`uv` pinneado a `0.8.17`, no `:latest`.** El instalador también es una
+  dependencia: el resolvedor es lo que decide qué se instala, y con `:latest` dos
+  builds del mismo commit pueden usar resolvedores distintos.
+- **Sin `--extra`**, así que la imagen de la API no lleva pytest, ruff, streamlit
+  ni pandas. Hay una prueba de eso, y hace falta: el `--extra` puede colarse en
+  la línea de continuación del `RUN`.
+- **`ENV PATH=/srv/.venv/bin:$PATH`.** `uv sync` deja el venv en `/srv/.venv`, y
+  el `CMD` llama a `uvicorn` a secas mientras el servicio de migraciones llama a
+  `alembic`. Sin el PATH se buscarían en el Python del sistema, donde ya no
+  están — y eso falla al **arrancar** el contenedor, no al construirlo.
+
+### El otro contenedor tenía la misma enfermedad
+
+`analytics/requirements.txt` eran tres líneas con `>=`. El laboratorio analítico
+corre en su propia imagen, así que arreglar solo el servidor habría dejado la
+afirmación de ARQUITECTURA medio falsa otra vez.
+
+Ahora `requirements.in` es lo que se escribe a mano y `requirements.txt` lo que
+se instala, compilado con versiones exactas y hashes. El Dockerfile lo instala con
+`--require-hashes`, que convierte en error cualquier línea sin hash: una
+dependencia agregada a mano al archivo compilado detiene el build en vez de
+instalarse sin verificar.
+
+Y una prueba que no esperaba tener que escribir: **los cuatro paquetes que los dos
+candados comparten tienen que coincidir** (`streamlit`, `pandas`, `psycopg`,
+`numpy`). En local el laboratorio corre desde el venv del servidor; en producción,
+desde su propia imagen. Si esas versiones se separan aparece el «en mi máquina
+funciona» más caro de diagnosticar: la misma consulta devolviendo algo distinto
+según dónde corra, con pandas de por medio.
+
+### Actualizar un candado es un acto, no un efecto secundario
+
+Son dos comandos y la diferencia importa:
+
+- **`make candado`** aplica a los candados lo que cambió en `pyproject.toml` o en
+  `requirements.in`, **sin mover las versiones ya fijadas**. Es lo que se corre al
+  agregar una dependencia.
+- **`make candado-subir`** sube todo a lo más nuevo que permiten los rangos. Es un
+  acto deliberado, con tiempo para revisar el diff.
+
+Los dos terminan diciendo qué sigue, en orden: mirar el diff, aplicarlo al venv,
+correr las pruebas y el lint. Porque lo que sube de versión ahí es lo que va a
+correr en el servidor de la oficina, y **un candado sin probar es peor que
+ninguno** — da la impresión de que alguien verificó ese árbol.
+
+Esta vez se hizo: el candado se generó, el venv se reconstruyó desde él (seis
+paquetes cambiaron, entre ellos SQLAlchemy 2.1.1 → 2.1.3 y streamlit 1.64 → 1.65),
+y las 972 pruebas y el lint se corrieron **contra lo que el candado pinea**, no
+contra lo que había instalado de antes.
+
+`make candado-revisar` es la otra mitad: falla si alguno de los dos candados no
+corresponde a lo declarado. `uv lock --check` compara el del servidor contra
+`pyproject.toml` sin resolver de nuevo, y el del laboratorio lo revisan las
+pruebas, por estructura: que cada paquete del `.in` esté fijado en el compilado,
+que el pin satisfaga su rango, y que la cabecera nombre ese `.in` como su origen.
+
+### El primer diseño de esa revisión estaba mal, y es instructivo
+
+La primera versión recompilaba `requirements.in` a un archivo temporal y lo
+comparaba con el versionado. Pasó en verde, y habría sido una bomba de relojería:
+**`uv pip compile` hacia un archivo nuevo no ve los pines viejos**, así que
+resuelve a lo más reciente que permitan los rangos. El día que streamlit publicara
+una versión, ese paso se habría puesto rojo en un commit que no tocó nada — que es
+exactamente el problema que el candado viene a quitar. Lo habría puesto en CI, y
+el síntoma habría llegado semanas después, sin relación visible con este cambio.
+
+Se descubrió preguntándole al comando en vez de suponer: bajando un pin a mano y
+recompilando, primero a otra ruta —resolvió a lo más nuevo— y luego sobre su
+propio archivo, donde **sí** conservó el pin bajado. Esa asimetría es la que hace
+que `make candado` sea estable y que comparar contra un temporal no lo sea.
+
+Y de ahí salió también el `setup-uv` pinneado en CI: `setup-uv` sin versión
+instala el uv más reciente, y el resolvedor es lo que decide qué se instala.
+Dejarlo flotar es dejar flotar el candado por la puerta de atrás.
+
+### De paso, una cuarta afirmación que tampoco era cierta
+
+La misma tabla del stack listaba `testcontainers` entre las herramientas de
+prueba. Nunca se usó: la base la levanta `make db` en local y el servicio de
+PostgreSQL del workflow en CI. Se consideró en la Fase 0 y se descartó —agregaba
+una capa para arrancar lo que esas dos vías ya arrancan—, pero el nombre se quedó
+en la tabla. Ahora la tabla dice lo que hay.
+
+### Y una de mis propias pruebas que no probaba nada, otra vez
+
+`assert "uv pip install" not in _DOCKER_API` pasaba con el Dockerfile roto,
+porque el comentario que explica el cambio **cita el comando viejo**. Es
+exactamente el mismo fallo que la guarda de `https://` en §44: una prueba que lee
+la prosa en vez del código.
+
+Dos veces el mismo error en dos commits seguidos deja de ser un descuido y pasa a
+ser un patrón, así que ahora hay un helper —`_sin_comentarios`— y la regla queda
+escrita en su docstring: **toda afirmación negativa se lee contra las líneas que
+se ejecutan**, nunca contra el archivo entero. El hermano `_comandos` además une
+las continuaciones de línea, porque un `--extra dev` escrito debajo del `uv sync`
+también se escapaba — y eso lo encontró la verificación por mutación, no la
+lectura.

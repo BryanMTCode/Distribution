@@ -17,8 +17,15 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
 
+# `requirements.txt` está COMPILADO con versiones exactas y hashes desde
+# `requirements.in` (`make candado`). Antes traía tres rangos `>=`, así que dos
+# imágenes del mismo commit podían llevar streamlit distinto.
+#
+# `--require-hashes` convierte en error cualquier línea sin hash: si alguien
+# agrega una dependencia a mano en el archivo compilado, el build se detiene en
+# vez de instalarla sin verificar.
 COPY analytics/requirements.txt /srv/analytics/
-RUN pip install --no-cache-dir -r /srv/analytics/requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r /srv/analytics/requirements.txt
 
 # La estructura del repositorio se replica TAL CUAL bajo /srv, y eso no es
 # cosmético: `app.py` encuentra el dominio con

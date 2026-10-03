@@ -1,5 +1,9 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk apk-demo api worker limpiar
+# bash y no sh: las recetas de `apk` usan `case`/`test` con mensajes de varias
+# líneas, y bash se comporta igual en todas las máquinas donde esto se corre.
+SHELL := /bin/bash
+
+.PHONY: ayuda doctor instalar candado candado-subir candado-revisar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -23,8 +27,49 @@ ANALITICA_URL ?= postgresql://postgres:dsd@127.0.0.1:5432/dsd
 ayuda:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-instalar:  ## Crea el venv e instala dependencias
-	cd server && uv venv --python 3.12 && uv pip install -e '.[dev,analitica]'
+instalar:  ## Crea el venv e instala EXACTAMENTE lo que dice server/uv.lock
+	cd server && uv sync --locked --python 3.12 --extra dev --extra analitica
+
+candado:  ## Aplica a los candados lo que cambió en pyproject/requirements.in
+	cd server && uv lock
+	uv pip compile analytics/requirements.in -o analytics/requirements.txt \
+	    --generate-hashes --python-version 3.12
+	@echo
+	@echo "Candados actualizados con lo DECLARADO. Las versiones ya fijadas no"
+	@echo "se movieron: para eso es 'make candado-subir'."
+	@echo
+	@echo "Ahora, en este orden:"
+	@echo "  1. git diff server/uv.lock analytics/requirements.txt   <- MÍRALO"
+	@echo "  2. make instalar                                        <- aplícalo al venv"
+	@echo "  3. make pruebas && make lint                            <- un candado sin probar no sirve"
+
+candado-subir:  ## Sube TODAS las dependencias a su última versión compatible
+	cd server && uv lock --upgrade
+	uv pip compile analytics/requirements.in -o analytics/requirements.txt \
+	    --generate-hashes --python-version 3.12 --upgrade
+	@echo
+	@echo "TODO subido a lo más nuevo que permiten los rangos."
+	@echo
+	@echo "Esto se hace A PROPÓSITO y con tiempo para revisarlo, nunca de paso:"
+	@echo "lo que acabe en el candado es lo que va a correr en la oficina."
+	@echo
+	@echo "  1. git diff server/uv.lock analytics/requirements.txt   <- MÍRALO ENTERO"
+	@echo "  2. make instalar"
+	@echo "  3. make pruebas && make lint && make movil"
+
+candado-revisar:  ## Falla si los candados no corresponden a lo declarado (sin red)
+	@# `uv lock --check` compara el candado contra pyproject SIN resolver de nuevo.
+	@# Lo del laboratorio lo revisan las pruebas de `test_despliegue.py`, y también
+	@# sin red: comprueban que cada paquete del `.in` esté fijado en el compilado y
+	@# que el pin satisfaga su rango.
+	@#
+	@# Lo que NO se hace aquí es recompilar y comparar. Fue el primer diseño y
+	@# estaba mal: `uv pip compile` a un archivo nuevo no ve los pines viejos, así
+	@# que resuelve a lo más reciente — y este paso se habría puesto rojo el día que
+	@# streamlit publicara una versión, en un commit que no tocó nada. Es justo el
+	@# problema que el candado viene a quitar.
+	cd server && uv lock --check
+	cd server && .venv/bin/pytest tests/test_despliegue.py -q
 
 migrar:  ## Aplica las migraciones (DB=... para apuntar a otra base)
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/alembic upgrade head
@@ -170,21 +215,21 @@ apk:  ## APK de PRODUCCIÓN firmado: make apk DSD_BASE_URL=https://api.tudominio
 	  echo "La dirección del servidor se fija AL COMPILAR, no en una pantalla de"; \
 	  echo "ajustes: un campo editable es el camino para que un equipo robado mande"; \
 	  echo "la cartera a donde quiera quien lo tenga. Sin ella, el APK apuntaría a"; \
-	  echo "api.localhost y el vendedor reportaria 'no hay internet'."; \
+	  echo "api.localhost y el vendedor reportaría «no hay internet»."; \
 	  exit 1; }
 	@case "$(DSD_BASE_URL)" in https://*) ;; *) \
 	  echo "DSD_BASE_URL tiene que empezar con https://  (es $(DSD_BASE_URL))"; \
 	  echo; \
-	  echo "Android prohibe el trafico sin TLS en release, y el permiso para"; \
-	  echo "saltarselo vive SOLO en el manifiesto de debug. Un APK de produccion"; \
+	  echo "Android prohíbe el tráfico sin TLS en release, y el permiso para"; \
+	  echo "saltárselo vive SOLO en el manifiesto de debug. Un APK de producción"; \
 	  echo "con http:// compila bien y no puede conectarse a nada."; \
 	  exit 1;; esac
 	@test -f mobile/app/android/key.properties || { \
 	  echo "Falta mobile/app/android/key.properties (copia key.properties.example)."; \
 	  echo; \
-	  echo "Sin el keystore de produccion, Gradle detiene el build a proposito."; \
-	  echo "Firmar con la llave de depuracion funciona hoy y rompe la"; \
-	  echo "actualizacion manana. Ver docs/ENTORNO-WINDOWS.md 4.2."; \
+	  echo "Sin el keystore de producción, Gradle detiene el build a propósito."; \
+	  echo "Firmar con la llave de depuración funciona hoy y rompe la"; \
+	  echo "actualización mañana. Ver docs/ENTORNO-WINDOWS.md §4.2."; \
 	  exit 1; }
 	cd mobile/app && flutter build apk --release \
 	    --dart-define=DSD_BASE_URL="$(DSD_BASE_URL)"
