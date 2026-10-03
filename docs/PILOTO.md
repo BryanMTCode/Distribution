@@ -18,7 +18,7 @@ está construido: la pantalla **Piloto** del panel, las tablas de la migración
 
 ## 0. Por qué este paso vale más que las dos fases siguientes
 
-Hay 956 pruebas de Python, 475 de Dart y 220 de widget. Todas prueban que el
+Hay 963 pruebas de Python, 475 de Dart y 225 de widget. Todas prueban que el
 sistema hace lo que decidimos que hiciera.
 
 **Ninguna prueba que lo que decidimos sea lo correcto.** Eso solo lo puede
@@ -58,6 +58,7 @@ app, y esa semana no se recupera.
 | 10 | La carga del primer día, capturada | panel → *Cargas* |
 | 11 | El vendedor entrenado: una jornada completa de práctica | ver §2 |
 | 12 | El piloto definido en el panel | panel → *Piloto* |
+| 13 | El APK del teléfono firmado con la llave de PRODUCCIÓN | ver abajo |
 
 Hay un atajo para los nueve primeros:
 
@@ -66,7 +67,31 @@ make piloto-listo VENDEDOR=VEND01
 ```
 
 Revisa lo que una consulta puede revisar y **dice qué falta y cómo se arregla**.
-Lo que no puede revisar —el punto 11— es justamente el más importante.
+Lo que no puede revisar —los puntos 11 y 13— es justamente lo que más cuesta
+cuando falta.
+
+### El punto 13, que solo se puede comprobar antes de empezar
+
+El teléfono del piloto tiene que traer un APK firmado con la llave de producción,
+no con la de depuración. No es una formalidad: Android solo acepta actualizar una
+app instalada si el APK nuevo trae **la misma firma**, y la llave de depuración es
+distinta en cada máquina. Si el piloto arranca con un APK firmado así, la primera
+corrección que haya que mandar a media semana no se va a poder instalar encima —
+habrá que desinstalar, y eso **borra la base local** con las ventas que el
+vendedor no hubiera subido.
+
+Dicho de otro modo: es el único punto de esta lista que, si se hace mal, se cobra
+en dinero de la calle y no en tiempo.
+
+```bash
+make apk DSD_BASE_URL=https://api.tudominio.com
+```
+
+Ese comando no deja construir el APK sin keystore ni sin servidor, y al terminar
+imprime la huella SHA-256 del certificado. **Apúntala el día −1**: es la que
+tienen que traer todos los APK que la empresa reparta después. El procedimiento
+completo —crear el keystore y respaldarlo antes de firmar nada— está en
+[ENTORNO-WINDOWS §4.2](ENTORNO-WINDOWS.md#42-el-apk-de-producción-y-la-llave-que-no-se-puede-perder).
 
 ### El entrenamiento, que no es una demostración
 

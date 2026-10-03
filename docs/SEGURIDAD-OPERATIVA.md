@@ -212,9 +212,35 @@ psql -d dsd -v clave_api="$(openssl rand -hex 24)" -f server/db/ops/rol_api.sql
 | Clave de `dsd_analitica` | Idem | El laboratorio |
 | `DSD_METRICAS_TOKEN` | Idem | El scrape del monitor |
 | Frase del cifrado de respaldos | **Nunca a la ligera** | Los respaldos viejos quedan ilegibles. Si se rota, hay que conservar la frase anterior mientras existan respaldos cifrados con ella |
+| Keystore del APK (`dsd-release.jks`) | **NUNCA** | Los teléfonos ya instalados dejan de poder actualizarse. Ver abajo |
 
 > La frase de los respaldos **en papel**, fuera de la mini PC. Si el disco
 > muere, la frase muere con él y los respaldos remotos no se abren.
+
+### El keystore del APK no se rota: se conserva
+
+Es el único secreto de esta lista que **no se puede cambiar nunca**, y la razón no
+es política sino de cómo funciona Android: solo acepta actualizar una app
+instalada si el APK nuevo viene firmado con la **misma** llave. Rotarla —o
+perderla— significa que los teléfonos que ya están en la calle no se pueden
+actualizar más. El único camino sería desinstalar, y desinstalar **borra la base
+local del vendedor**, con las ventas, los cobros y las mermas que todavía no
+hubiera subido: dinero que ocurrió y que ya no está en ninguna cifra.
+
+Así que se trata como lo que es, un activo de la empresa y no un archivo de
+trabajo:
+
+- Vive **fuera del repositorio** (`.gitignore` cubre `key.properties`, `*.jks` y
+  `*.keystore`) y fuera de la mini PC de la oficina.
+- **Dos respaldos en sitios distintos**, uno de ellos fuera del local.
+- La contraseña y el `alias` **en papel**, con la frase del cifrado de respaldos.
+  El archivo sin la contraseña no sirve de nada.
+- La **huella SHA-256** del certificado, apuntada desde el primer APK. Es con lo
+  que se comprueba que un APK nuevo va a poder actualizar a los instalados;
+  `make apk` la imprime en cada build.
+
+El procedimiento completo está en
+[ENTORNO-WINDOWS §4.2](ENTORNO-WINDOWS.md#42-el-apk-de-producción-y-la-llave-que-no-se-puede-perder).
 
 ---
 

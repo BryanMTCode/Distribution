@@ -2681,3 +2681,144 @@ RESPALDOS, y **no dice nada del disco de la mini PC**. Quien se lleve el equipo
 —no es un escenario exótico en una oficina de distribución— se lleva el `.env`, la
 base y los respaldos locales. Falta decidir y escribir eso; no lo arregla esta
 sección y no se finge que sí.
+
+---
+
+## 44. El APK de producción se firmaba con la llave de depuración
+
+`mobile/app/android/app/build.gradle.kts` traía, tal cual lo deja la plantilla de
+Flutter:
+
+```kotlin
+release {
+    // TODO: Add your own signing config for the release build.
+    // Signing with the debug keys for now, so `flutter run --release` works.
+    signingConfig = signingConfigs.getByName("debug")
+}
+```
+
+Y eso **no falla**. Produce un APK de release instalable, que abre y funciona.
+Por eso es la peor clase de defecto que tiene este repositorio: el daño no está
+en el APK de hoy, está en el de dentro de tres meses.
+
+### Lo que cuesta, y por qué se cobra en dinero
+
+Android solo acepta actualizar una app instalada si el APK nuevo viene firmado
+con **la misma llave**. La de depuración la genera Flutter sola en
+`~/.android/debug.keystore`: es distinta en cada máquina y se regenera sin avisar.
+Así que el día que se compile desde otra PC —o que se borre esa carpeta— el APK
+nuevo no podrá actualizar al instalado. «App not installed», y el único camino es
+desinstalar.
+
+Desinstalar, en esta app, no es volver a empezar: **borra la base local del
+vendedor**. Con ella se van las ventas, los cobros y las mermas que todavía no
+hubiera subido — dinero que ocurrió en la calle y que ya no está en ninguna cifra
+del sistema. Es el mismo bien que protegen §0.1 y el borrado remoto de la Fase 9,
+perdido por la vía más tonta.
+
+Y el momento en que se descubre es el peor posible: a media semana del piloto,
+cuando haya que mandar una corrección.
+
+### La decisión: que el build se detenga
+
+Lo fácil era documentar el paso. Lo correcto es que no haya cómo saltárselo: la
+firma de release sale de `android/key.properties` —que no se versiona— y **si no
+está, el build de release se detiene con una excepción que explica por qué**.
+
+Tres detalles de cómo quedó, cada uno por un fallo que habría tenido:
+
+- **La comprobación va en `gradle.taskGraph.whenReady`, no al configurar.** Si
+  saltara al configurar, `flutter run` y las pruebas dejarían de funcionar en
+  cualquier máquina sin keystore — que es la mayoría, y está bien que lo sea. Se
+  pregunta cuando ya se sabe QUÉ se va a construir.
+- **Un valor vacío cuenta como ausente.** `key.properties.example` trae las dos
+  contraseñas en blanco; una copia sin rellenar tiene que fallar aquí, nombrando
+  los campos que faltan, y no doscientas líneas después con un error de keystore
+  que no dice nada.
+- **`rootProject.file` y no `file`.** El segundo resuelve lo relativo contra
+  `android/app/`, que no es donde nadie esperaría apuntar un keystore.
+
+Las cuatro ramas —debug sin keystore pasa; release sin keystore se detiene;
+release con `key.properties` sin rellenar nombra los campos; release con keystore
+de verdad pasa— se ejercitaron contra Gradle 8.14.3 de verdad, en un proyecto de
+prueba armado con esta misma lógica, porque este contenedor no tiene el SDK de
+Android y `flutter build apk` no puede correr aquí.
+
+### El segundo agujero del mismo camino: un APK sin servidor
+
+`DSD_BASE_URL` se fija al compilar y no en una pantalla de ajustes —un campo
+editable es el camino para que un equipo robado mande la cartera a donde quiera
+quien lo tenga—. Sin el define, el valor por omisión es `api.localhost`, que no
+resuelve a ninguna parte.
+
+Un `flutter build apk --release` a secas compila eso **sin una queja**. El APK se
+instala bien, abre bien, y el login falla con un error de red. Y ahí está el
+problema: «no hay internet» es lo que el vendedor va a reportar, porque es lo que
+la pantalla de login le diría. Alguien pasaría la mañana revisando el túnel de
+Cloudflare, el router y la señal del teléfono, buscando una falla que no está en
+ninguno de los tres.
+
+Dos capas:
+
+- **`make apk` exige la dirección** y además que empiece con `https://`. Android
+  prohíbe el tráfico sin TLS en release y el permiso para saltárselo vive **solo**
+  en el manifiesto de debug, así que un APK de producción con `http://` compila
+  bien y no puede conectarse a nada.
+- **Y si alguien se salta el `make`**, la app no muestra el login: muestra una
+  pantalla que dice que se compiló sin servidor, que no es falla de la señal, y el
+  comando que lo arregla. Sin botones, porque desde el teléfono no hay nada que
+  hacer y un botón que no sirve haría concluir que la app está rota.
+
+Las dos partes de la guarda son `const` (`kReleaseMode && baseUrl == marcador`),
+así que en depuración el compilador de Dart elimina la rama del árbol: `flutter
+run` sin define sigue apuntando al marcador —que es lo correcto para el modo
+demo— y las pruebas de widget no se enteran. Es el mismo doble cerrojo del modo
+demo —los dos cerrojos que documenta `mobile/app/lib/src/demo.dart`—, usado aquí
+para lo contrario: allá apaga un atajo en release, aquí enciende un aviso.
+
+El marcador tiene **nombre propio** (`marcadorSinServidor`) y la guarda lo compara
+contra esa constante, no contra una cadena escrita dos veces. Hay una prueba de
+que `baseUrlPorOmision` sigue siendo igual al marcador cuando nadie pasa el
+define: si alguien cambiara uno de los dos, la guarda dejaría de disparar y el
+APK malo volvería a pasar en silencio.
+
+### Una afirmación mía que estaba mal, corregida antes de entregarse
+
+Escribí primero, en tres archivos, que Android «exige que el `versionCode` suba en
+cada APK, y con el mismo número la instalación se rechaza». Lo segundo es falso:
+con el **mismo** `versionCode`, `adb install -r` reinstala sin problema. Lo que
+Android rechaza es un `versionCode` **menor** que el instalado.
+
+La razón para subirlo sigue siendo buena, pero es otra, y conviene que esté dicha
+bien porque es la que se usa para decidir: dos APK distintos con el mismo número
+son **indistinguibles con el teléfono en la mano**, y «¿qué versión trae este
+equipo?» deja de tener respuesta. En una flota de ocho teléfonos en la calle, eso
+es lo que convierte un reporte de un vendedor en una adivinanza.
+
+### Lo que `make apk` imprime, y por qué eso es parte del arreglo
+
+`scripts/revisar_apk.sh` lee el APK terminado y dice tres cosas que no se ven
+mirando el archivo: con qué llave está firmado —y **sale con error si es la de
+depuración**, por si alguien construyó por otro camino—, qué `versionCode` trae, y
+a qué servidor apunta.
+
+Imprime además la **huella SHA-256 del certificado**, que es lo único con lo que se
+puede comprobar que un APK nuevo va a poder actualizar a los que ya están en la
+calle. Se apunta la primera vez y tiene que ser la misma para siempre.
+
+Las cuatro ramas del script se probaron con un `apksigner` falso en el PATH y un
+APK de relleno, porque tampoco hay build-tools de Android aquí.
+
+### Lo que no puedo hacer yo, y por qué está bien así
+
+**El keystore lo genera y lo guarda Bryan.** No es una limitación del entorno: es
+que esa llave no debe existir en un contenedor efímero al que yo tengo acceso, ni
+pasar por este repositorio. `.gitignore` cubre `key.properties`, `*.jks` y
+`*.keystore`.
+
+El procedimiento está escrito en `ENTORNO-WINDOWS.md` §4.2 con el paso que la
+gente pospone puesto antes de firmar el primer APK: **respaldarlo**. Dos copias en
+sitios distintos, la contraseña y el alias en papel con la frase del cifrado de
+respaldos. `SEGURIDAD-OPERATIVA.md` lo suma a la tabla de rotación como el único
+secreto que **nunca** se rota, y `PILOTO.md` lo agrega a la lista del día −1 como
+el único punto que, si se hace mal, se cobra en dinero de la calle y no en tiempo.

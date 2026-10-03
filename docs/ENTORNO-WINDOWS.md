@@ -82,10 +82,10 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y las dependencias
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 956
+make pruebas      # deben pasar 963
 ```
 
-Si ves `956 passed` (o `955 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `963 passed` (o `962 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
@@ -510,6 +510,12 @@ También necesitarás, físicamente:
 
 El emulador no sirve: no tiene Bluetooth ni GPS de verdad.
 
+Dos cosas más, en su propia sección porque son dos caminos distintos:
+
+- **§4.1** — evaluar la app en el teléfono sin levantar el servidor (modo demo).
+- **§4.2** — el APK de producción, el keystore, y por qué esa llave es lo único de
+  este proyecto que no se puede regenerar.
+
 ---
 
 ## 4.1 Evaluar la app en el teléfono sin levantar el servidor
@@ -624,6 +630,140 @@ compartidos de `contracts/argon2_vectors.json`.
 
 ```bash
 make movil-demo   # las pruebas de widget del camino demo
+```
+
+---
+
+## 4.2 El APK de producción, y la llave que no se puede perder
+
+Hasta aquí todo lo del teléfono fue de depuración. Esto es lo otro: el APK que se instala en el
+teléfono de un vendedor de verdad.
+
+```bash
+make apk DSD_BASE_URL=https://api.tudominio.com
+```
+
+Un comando, y se niega a construir nada si falta algo que el APK necesita. Pero antes de poder
+correrlo hay que crear **el keystore**, una vez en la vida del producto.
+
+### Primero: entender qué es lo que estás por crear
+
+El keystore es la llave con la que se firma el APK. **Es lo único de este proyecto que no se puede
+regenerar.** Todo lo demás —la base, los secretos, los roles, el repositorio— se vuelve a crear con
+un comando. Esto no.
+
+La razón es cómo funciona Android: solo acepta actualizar una app instalada si el APK nuevo viene
+firmado con **la misma llave**. Si no coincide, la instalación se rechaza con un «App not installed»
+y el único camino es desinstalar.
+
+Y desinstalar, en esta app, no es volver a empezar. Es **borrar la base local del vendedor**, con las
+ventas, los cobros y las mermas que todavía no hubiera subido. Dinero que ocurrió en la calle y que
+ya no está en ninguna cifra del sistema. Por eso esta sección es larga para lo que hace.
+
+> **Antes era peor y no se veía.** La plantilla de Flutter deja el build de release firmado con la
+> llave de *depuración*, que Flutter genera sola en `~/.android/debug.keystore`. Eso **funciona**:
+> produce un APK instalable. Lo que pasa es que esa llave es distinta en cada máquina y se regenera
+> sin avisar, así que el problema aparece meses después, el día que haya que actualizar desde otra
+> PC. Ahora Gradle **detiene** el build de release si no hay keystore de producción, y
+> `make apk` revisa el APK terminado y grita si salió firmado con la de depuración.
+
+### Crear el keystore
+
+```bash
+mkdir -p ~/llaves
+keytool -genkeypair -v \
+  -keystore ~/llaves/dsd-release.jks \
+  -storetype PKCS12 \
+  -keyalg RSA -keysize 4096 -validity 10000 \
+  -alias dsd
+```
+
+Te pide una contraseña y los datos del certificado (nombre, organización, ciudad). Son los que
+aparecerán como el firmante del APK; pon los de la distribuidora.
+
+`-validity 10000` son unos 27 años. No es exageración: un certificado vencido deja de poder firmar
+actualizaciones, y entonces el problema es exactamente el mismo que haberlo perdido.
+
+### Respaldarlo AHORA, antes de firmar el primer APK
+
+Este es el paso que la gente pospone y es el que importa.
+
+1. Copia `~/llaves/dsd-release.jks` a **dos lugares que no sean esta máquina**. Una memoria USB
+   guardada fuera de la oficina y un almacenamiento cifrado en la nube, por ejemplo.
+2. La **contraseña va aparte, en papel**, con la frase del cifrado de los respaldos
+   (`docs/RESPALDOS.md`). El archivo sin la contraseña no sirve.
+3. Anota también el `alias` (`dsd`). Sin él no se puede usar la llave aunque tengas el archivo.
+
+El keystore está en `.gitignore` junto con `*.jks` y `*.keystore`: **no se versiona**. Un repositorio
+es exactamente el lugar donde no debe estar, porque se clona.
+
+### Luego: el `key.properties`
+
+Gradle no te va a preguntar la contraseña en cada build. La lee de un archivo que tampoco se
+versiona:
+
+```bash
+cp mobile/app/android/key.properties.example mobile/app/android/key.properties
+```
+
+Y rellénalo con la ruta del `.jks`, las dos contraseñas y el alias. Si lo copias y no lo rellenas,
+el build se detiene diciendo **cuáles de los cuatro campos faltan**.
+
+### Ahora sí, el APK
+
+```bash
+make apk DSD_BASE_URL=https://api.tudominio.com
+```
+
+Se niega, y dice por qué, en tres casos:
+
+| Si falta | Por qué no deja pasar |
+|---|---|
+| `DSD_BASE_URL` | El APK apuntaría a `api.localhost`. Se instalaría y abriría bien, y el login fallaría con un error de red — el vendedor reportaría «no hay internet» y la mañana se iría en revisar el túnel y el router |
+| que empiece con `https://` | Android prohíbe el tráfico sin TLS en release, y el permiso para saltárselo vive **solo** en el manifiesto de debug. Un APK de producción con `http://` compila bien y no puede conectarse a nada |
+| `key.properties` | Lo de arriba: firmar con la llave de depuración funciona hoy y rompe la actualización mañana |
+
+La dirección se fija **al compilar y no en una pantalla de ajustes**, y eso es deliberado: un campo
+editable para apuntar el teléfono a otro servidor es el camino para que un equipo robado mande la
+cartera a donde quiera quien lo tenga. Además nadie lo cambia nunca en operación normal.
+
+Y si alguien se salta el `make` y corre `flutter build apk --release` a secas, el APK sale apuntando
+al marcador — pero entonces **la app no muestra el login**: muestra una pantalla que dice que se
+compiló sin servidor, que no es falla de la señal, y el comando que lo arregla. Es la única forma de
+que ese error no se disfrace de «no hay internet».
+
+### Lo que imprime al terminar, y por qué mirarlo
+
+```
+  OK    versión 0.1.0+1  (versionCode 1)
+  OK    servidor https://api.tudominio.com
+  OK    firmado con una llave de producción
+        CN=Distribuidora, OU=DSD, …
+        SHA-256 del certificado: 4f1c9a77e3b8…
+```
+
+**Apunta esa huella SHA-256 la primera vez.** Tiene que ser la misma en todos los APK que reparta la
+empresa, para siempre. Si un día sale distinta, es que se firmó con otra llave y ese APK no va a
+poder actualizar los teléfonos que ya están en la calle.
+
+### Subir el versionCode en cada reparto
+
+El número después del `+` en `mobile/app/pubspec.yaml` (`version: 0.1.0+1`) es el `versionCode`.
+Súbelo antes de repartir un APK nuevo, por dos razones distintas:
+
+- Android **rechaza** instalar encima un `versionCode` menor que el instalado.
+- Con el **mismo** número sí reinstala, y ahí está el otro problema: dos APK distintos con el mismo
+  número son indistinguibles con el teléfono en la mano, y «¿qué versión trae este equipo?» deja de
+  tener respuesta.
+
+### Y lo único que de verdad comprueba que se puede actualizar
+
+Instalar el APK nuevo **encima de uno que ya esté instalado**, en un teléfono de prueba. La firma y
+el `versionCode` solo se ejercitan ahí. Un APK que se instala limpio en un teléfono vacío no prueba
+nada sobre la actualización, que es donde está el riesgo.
+
+```bash
+adb install -r mobile/app/build/app/outputs/flutter-apk/app-release.apk
 ```
 
 ---

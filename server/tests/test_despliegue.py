@@ -221,3 +221,129 @@ def test_las_tres_de_postgresql_siguen_yendo_en_una_url():
             f"{clave} ya no aparece dentro de una URL en docker-compose.yml: "
             "revisa si sigue teniendo sentido exigirle hexadecimal"
         )
+
+
+# ---------------------------------------------------------------------------
+# El otro despliegue: el APK que se instala en el teléfono del vendedor
+# ---------------------------------------------------------------------------
+# `mobile/app/android/app/build.gradle.kts` traía la plantilla de Flutter, que
+# firma el build de release con la LLAVE DE DEPURACIÓN. Eso no falla: produce un
+# APK instalable. El daño aparece meses después, porque Android solo acepta
+# actualizar una app instalada si la firma coincide, y la llave de depuración es
+# distinta en cada máquina. Cuando no coincida habrá que desinstalar — y
+# desinstalar borra la base local del vendedor con lo que no haya subido.
+#
+# Se lee como texto, igual que el compose: aquí no hay SDK de Android, y un
+# `flutter build apk` no se puede correr en CI por el peso del SDK. Lo que estas
+# pruebas pueden afirmar es la FORMA del camino de build, y eso es justo lo que
+# se rompería sin darse cuenta.
+
+_MOVIL = _RAIZ / "mobile" / "app"
+_GRADLE = (_MOVIL / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+_MAKEFILE = (_RAIZ / "Makefile").read_text(encoding="utf-8")
+_IGNORADOS = (_RAIZ / ".gitignore").read_text(encoding="utf-8")
+
+
+def test_el_release_no_se_firma_con_la_llave_de_depuracion():
+    """La línea que traía la plantilla, y que no debe volver.
+
+    `signingConfig = signingConfigs.getByName("debug")` dentro de `release` es
+    exactamente el defecto: compila, instala, y rompe la actualización el día que
+    la llave no coincida.
+    """
+    sentencias = "\n".join(
+        linea for linea in _GRADLE.splitlines() if not linea.lstrip().startswith("//")
+    )
+    assert 'getByName("debug")' not in sentencias, (
+        "el build de release volvió a firmarse con la llave de depuración"
+    )
+    assert 'create("release")' in sentencias, "desapareció la firma de producción"
+
+
+def test_el_build_de_release_se_detiene_sin_keystore():
+    """Y se detiene, no avisa: un APK de producción mal firmado no debe existir.
+
+    La comprobación va en `taskGraph.whenReady` a propósito — al configurar
+    rompería `flutter run` en cualquier máquina sin keystore, que es la mayoría.
+    """
+    assert "gradle.taskGraph.whenReady" in _GRADLE
+    assert "GradleException" in _GRADLE
+    assert 'it.name.contains("Release")' in _GRADLE
+
+
+def test_la_llave_no_se_puede_versionar():
+    """Lo único de este repositorio que no se puede regenerar no vive en él."""
+    for patron in ("mobile/app/android/key.properties", "*.jks", "*.keystore"):
+        assert patron in _IGNORADOS, f".gitignore ya no cubre {patron}"
+
+    # Y el ejemplo sí se versiona: es el que se copia.
+    assert (_MOVIL / "android" / "key.properties.example").is_file()
+
+
+def test_el_ejemplo_trae_los_cuatro_campos_que_gradle_lee():
+    """Si Gradle pide un campo que el ejemplo no menciona, quien lo copie falla
+    sin saber qué le falta — y al revés, un campo de más es ruido que alguien va
+    a rellenar creyendo que sirve."""
+    ejemplo = (_MOVIL / "android" / "key.properties.example").read_text(
+        encoding="utf-8"
+    )
+    en_el_ejemplo = {
+        linea.split("=", 1)[0].strip()
+        for linea in ejemplo.splitlines()
+        if "=" in linea and not linea.strip().startswith("#")
+    }
+    pedidos = set(re.findall(r'clave\("(\w+)"\)', _GRADLE)) | set(
+        re.findall(r'"(storeFile|storePassword|keyAlias|keyPassword)"', _GRADLE)
+    )
+    assert pedidos == en_el_ejemplo, (
+        f"Gradle lee {sorted(pedidos)} y el ejemplo trae {sorted(en_el_ejemplo)}"
+    )
+
+
+def test_make_apk_exige_el_servidor_y_construye_en_release():
+    """`DSD_BASE_URL` se fija al compilar, no en una pantalla de ajustes.
+
+    Sin ella el APK apunta a un marcador que no resuelve: se instala, abre, y el
+    login falla con un error de red — «no hay internet», y nadie mira el binario.
+    """
+    receta = _MAKEFILE.split("\napk:", 1)[1].split("\n\n", 1)[0]
+    assert "--release" in receta
+    assert "--dart-define=DSD_BASE_URL" in receta
+    assert "$(DSD_BASE_URL)" in receta
+    # Las tres negativas, cada una por LA COMPROBACIÓN y no por el texto que la
+    # explica. La primera versión de esto buscaba `"https://"` a secas y pasaba
+    # con el guardia roto, porque la cadena también está en el mensaje de error:
+    # una prueba que lee la prosa en vez del código no prueba nada.
+    assert 'test -n "$(DSD_BASE_URL)"' in receta, "dejó de exigir la dirección"
+    assert "in https://*)" in receta, "dejó de exigir TLS"
+    assert "test -f mobile/app/android/key.properties" in receta, (
+        "dejó de exigir el keystore"
+    )
+
+
+def test_el_apk_terminado_se_revisa():
+    """El build no puede comprobar con qué llave quedó firmado: eso se lee del
+    APK ya hecho, y es la última oportunidad de verlo antes de repartirlo."""
+    receta = _MAKEFILE.split("\napk:", 1)[1].split("\n\n", 1)[0]
+    assert "scripts/revisar_apk.sh" in receta
+    revisor = (_RAIZ / "scripts" / "revisar_apk.sh").read_text(encoding="utf-8")
+    assert "CN=Android Debug" in revisor, (
+        "el revisor dejó de detectar la llave de depuración"
+    )
+    assert "apksigner" in revisor
+
+
+def test_el_apk_lleva_un_versioncode_explicito():
+    """Sin el `+N`, el número no sube solo.
+
+    Android rechaza instalar encima un versionCode MENOR que el instalado; con el
+    mismo sí reinstala, y entonces dos APK distintos son indistinguibles con el
+    teléfono en la mano.
+    """
+    pubspec = (_MOVIL / "pubspec.yaml").read_text(encoding="utf-8")
+    version = re.search(r"^version:\s*(\S+)", pubspec, re.M)
+    assert version, "pubspec.yaml sin `version:`"
+    assert "+" in version.group(1), (
+        f"pubspec.yaml dice «version: {version.group(1)}», sin «+N»: "
+        "el versionCode no sube solo"
+    )

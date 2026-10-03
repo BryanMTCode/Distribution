@@ -1,7 +1,11 @@
 name: dsd_app
 description: App del vendedor DSD — opera 100% offline en ruta.
 publish_to: none
-version: 0.1.0
+# El número DESPUÉS del `+` es el versionCode de Android. Súbelo antes de
+# repartir un APK nuevo, por dos razones distintas: Android rechaza instalar
+# encima un versionCode MENOR que el instalado, y dos APK con el MISMO número
+# son indistinguibles con el teléfono en la mano. `make apk` lo imprime.
+version: 0.1.0+1
 
 environment:
   sdk: ^3.9.0

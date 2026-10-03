@@ -14,6 +14,7 @@ import 'estado/sincronizacion.dart';
 import 'pantallas/gerencia/panel.dart';
 import 'pantallas/equipo_dado_de_baja.dart';
 import 'pantallas/login.dart';
+import 'pantallas/sin_servidor.dart';
 import 'pantallas/vendedor/clientes.dart';
 
 class AppDsd extends StatelessWidget {
@@ -38,6 +39,11 @@ class PortalPorRol extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Antes que todo lo demás, incluido el borrado remoto: si el binario no
+    // sabe a qué servidor hablar, ninguna de las pantallas siguientes puede
+    // hacer su trabajo, y la de login mentiría llamándolo falta de señal.
+    if (apkSinServidor) return const PantallaSinServidor();
+
     final sesion = ref.watch(sesionProvider);
 
     // El borrado remoto (Fase 9) gana a cualquier otra pantalla, incluida la de

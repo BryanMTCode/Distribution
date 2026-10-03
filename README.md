@@ -95,10 +95,11 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **§2.3: no se carga con operaciones pendientes** — forzable, con constancia | ✅ 11 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
 | **Despliegue de un comando** — `docker compose up -d` crea los roles de RLS en orden | ✅ 11 pruebas |
+| **APK de producción firmado** — el build se detiene sin keystore, y revisa el APK | ✅ 7 + 5 de widget |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**956 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
+**963 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **225 de widget**, todas en verde.
 
 ## Stack
 
@@ -187,7 +188,7 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial,
                      gerencia/ (tablero, mapa del día)
-    test/            220 pruebas de widget, sin emulador
+    test/            225 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -205,8 +206,8 @@ paso con WSL2 y cómo seguir el avance del proyecto.
 make instalar                       # venv + dependencias (uv, Python 3.12)
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 956 pruebas de Python
-make movil                          # 475 de Dart + 220 de widget
+make pruebas                        # 963 pruebas de Python
+make movil                          # 475 de Dart + 225 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

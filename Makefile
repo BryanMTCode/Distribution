@@ -1,5 +1,5 @@
 # Atajos de desarrollo. Producción va por docker-compose.
-.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -160,6 +160,36 @@ apk-demo:  ## Genera el APK de depuración con modo demo para instalar a mano
 	@echo
 	@echo "APK en mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
 	@echo "Instalar:  adb install -r mobile/app/build/app/outputs/flutter-apk/app-debug.apk"
+
+apk:  ## APK de PRODUCCIÓN firmado: make apk DSD_BASE_URL=https://api.tudominio.com
+	@test -n "$(DSD_BASE_URL)" || { \
+	  echo "Falta DSD_BASE_URL."; \
+	  echo; \
+	  echo "  make apk DSD_BASE_URL=https://api.tudominio.com"; \
+	  echo; \
+	  echo "La dirección del servidor se fija AL COMPILAR, no en una pantalla de"; \
+	  echo "ajustes: un campo editable es el camino para que un equipo robado mande"; \
+	  echo "la cartera a donde quiera quien lo tenga. Sin ella, el APK apuntaría a"; \
+	  echo "api.localhost y el vendedor reportaria 'no hay internet'."; \
+	  exit 1; }
+	@case "$(DSD_BASE_URL)" in https://*) ;; *) \
+	  echo "DSD_BASE_URL tiene que empezar con https://  (es $(DSD_BASE_URL))"; \
+	  echo; \
+	  echo "Android prohibe el trafico sin TLS en release, y el permiso para"; \
+	  echo "saltarselo vive SOLO en el manifiesto de debug. Un APK de produccion"; \
+	  echo "con http:// compila bien y no puede conectarse a nada."; \
+	  exit 1;; esac
+	@test -f mobile/app/android/key.properties || { \
+	  echo "Falta mobile/app/android/key.properties (copia key.properties.example)."; \
+	  echo; \
+	  echo "Sin el keystore de produccion, Gradle detiene el build a proposito."; \
+	  echo "Firmar con la llave de depuracion funciona hoy y rompe la"; \
+	  echo "actualizacion manana. Ver docs/ENTORNO-WINDOWS.md 4.2."; \
+	  exit 1; }
+	cd mobile/app && flutter build apk --release \
+	    --dart-define=DSD_BASE_URL="$(DSD_BASE_URL)"
+	@echo
+	@bash scripts/revisar_apk.sh "$(DSD_BASE_URL)"
 
 movil-ticket:  ## Regenera la vista previa del ticket — REVÍSALA, se ve el papel
 	cd mobile/packages/dsd_core && dart run tool/generar_ticket_ejemplo.dart
