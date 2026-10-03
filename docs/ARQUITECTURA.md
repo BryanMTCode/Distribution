@@ -68,8 +68,8 @@ cada mitad realmente hace.
 | Colas | **Cola en PostgreSQL** con `FOR UPDATE SKIP LOCKED` | Ver §1.5. Sin Redis en la v1. |
 | Auth | `pyjwt` + `argon2-cffi` (Argon2id) | El mismo hash se replica al dispositivo para el login offline. Ver §1.6. |
 | Tiempo real | `sse-starlette` + `LISTEN/NOTIFY` | Unidireccional servidor→app es todo lo que Gerencia necesita; más simple y robusto que WebSockets tras un túnel. |
-| Pruebas | `pytest` + `pytest-asyncio` + `testcontainers` + **Hypothesis** | Hypothesis es la razón técnica más fuerte de este stack: ver §1.7. |
-| Paquetes | **uv** con lockfile versionado | Python en producción es más frágil que Node; el lockfile y Docker lo compensan. |
+| Pruebas | `pytest` + `pytest-asyncio` + **Hypothesis**, contra PostgreSQL real | Hypothesis es la razón técnica más fuerte de este stack: ver §1.7. La base la levanta `make db` en local y el servicio de PostgreSQL del workflow en CI — `testcontainers` se consideró en la Fase 0 y nunca se usó: agregaba una capa para arrancar lo que las dos vías ya arrancan. |
+| Paquetes | **uv** con `server/uv.lock` versionado | Python en producción es más frágil que Node; el candado y Docker lo compensan. `uv sync --locked` en el `make instalar`, en CI y en el Dockerfile: los tres instalan lo mismo o fallan. Ver ADR §45. |
 
 **Lo que FastAPI no te da y tienes que imponer tú:** estructura. NestJS obliga a modularizar; FastAPI te
 deja hacer lo que quieras, y un proyecto de dos años mantenido por una sola persona se degrada sin
@@ -303,6 +303,10 @@ auditable, no es trampa.
 completo. Las llaves de idempotencia evitan el duplicado, pero además se impone la regla:
 **no se puede iniciar una carga nueva con operaciones pendientes del día anterior.**
 
+> La impone `_bloqueos_para_cargar` en `app/api/admin/cargas.py`, al **confirmar** la carga y no al
+> crear el borrador — el borrador no publica delta, y mientras se captura el teléfono puede sincronizar
+> en el patio. Se puede forzar con la razón escrita, que queda en `auditoria`. Ver ADR 0002 §42.
+
 ---
 
 ## 3. Plan de desarrollo modular
@@ -337,7 +341,8 @@ permitió cambiar de stack sin costo.
 
 ```
 server/
-  pyproject.toml            uv, lockfile versionado
+  pyproject.toml            lo declarado (rangos)
+  uv.lock                   lo instalado (versiones exactas + hashes) — versionado
   app/
     main.py                 ensamblado de la app, nada de lógica
     core/                   config, seguridad, sesión de BD, dependencias

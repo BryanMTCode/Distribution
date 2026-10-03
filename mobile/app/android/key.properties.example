@@ -1,0 +1,26 @@
+# Copia a `key.properties` (ese nombre SÍ está en .gitignore) y rellena.
+#
+# Esto NO es el keystore: son las cuatro cosas que Gradle necesita para usarlo.
+# El archivo .jks vive fuera del repositorio, y la ruta de abajo lo apunta.
+#
+# Se genera así, UNA sola vez en la vida del producto:
+#
+#   keytool -genkeypair -v \
+#     -keystore ~/llaves/dsd-release.jks \
+#     -storetype PKCS12 \
+#     -keyalg RSA -keysize 4096 -validity 10000 \
+#     -alias dsd
+#
+# `-validity 10000` son ~27 años. No es exageración: un certificado vencido deja
+# de poder firmar actualizaciones, y entonces el problema es el mismo que
+# perderlo.
+#
+# RESPÁLDALO ANTES DE FIRMAR EL PRIMER APK. Android solo acepta actualizar una
+# app instalada si el APK nuevo trae la MISMA llave. Sin el keystore no hay
+# actualización posible: hay que desinstalar, y desinstalar borra la base local
+# del vendedor con lo que no hubiera subido.
+
+storeFile=/home/TU_USUARIO/llaves/dsd-release.jks
+storePassword=
+keyAlias=dsd
+keyPassword=

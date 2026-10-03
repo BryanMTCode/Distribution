@@ -1,0 +1,13 @@
+# Lo que el laboratorio analítico NECESITA, escrito a mano.
+#
+# De aquí sale `requirements.txt`, que es el que se instala y trae las versiones
+# exactas con sus hashes:
+#
+#     make candado
+#
+# No edites `requirements.txt`: se regenera. El laboratorio no comparte entorno
+# con el servidor a propósito —corre en su propio contenedor, sin FastAPI ni
+# SQLAlchemy—, así que tiene su propio candado.
+streamlit>=1.64
+psycopg[binary]>=3.2
+pandas>=2.2

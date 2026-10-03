@@ -26,7 +26,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import PASSWORD_VENDEDOR
+from tests.conftest import PASSWORD_VENDEDOR, solo_texto
 
 pytestmark = pytest.mark.asyncio
 
@@ -659,3 +659,391 @@ async def test_confirmar_exige_el_token_csrf(cliente, semilla, catalogo):
         f"/panel/cargas/{carga_id}/confirmar", data={"csrf": "inventado"}
     )
     assert r.status_code == 403
+
+# ---------------------------------------------------------------------------
+# La regla del §2.3: no se carga con operaciones pendientes
+# ---------------------------------------------------------------------------
+# `docs/ARQUITECTURA.md` §2.3 la declaraba y nada la imponía. Lo que previene es
+# el escenario más ordinario de una ruta con mala señal:
+#
+#   el teléfono se queda con ventas del lunes sin subir → el martes se carga el
+#   camión → la carga publica el delta → las ventas del lunes llegan con su
+#   fecha vieja → los modelos recalculan el lunes → el arqueo que alguien firmó
+#   el lunes deja de cuadrar con las ventas del lunes.
+
+
+async def _equipo(sesion, semilla, *, cola: int | None, reportada: bool = True):
+    """Un teléfono del vendedor que reporta (o no) su cola pendiente."""
+    identificador = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, "
+            "                          registrado_en, cola_pendiente, "
+            "                          cola_reportada_en) "
+            "VALUES (:d, :u, 'POCO M5s de Juan', 'activo', now(), :cola, "
+            "        CASE WHEN :reportada THEN now() ELSE NULL END)"
+        ),
+        {"d": identificador, "u": semilla["vendedor"], "cola": cola,
+         "reportada": reportada},
+    )
+    await sesion.commit()
+    return identificador
+
+
+async def test_un_equipo_con_cola_pendiente_bloquea_la_confirmacion(
+    cliente, sesion, semilla, catalogo
+):
+    """El hecho lo reporta el teléfono, así que no es una sospecha."""
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=3)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+
+    r = await _confirmar(cliente, carga)
+    texto = solo_texto(r)
+    assert "No se puede confirmar" in texto
+    assert "3 operación(es) sin subir" in texto
+    assert "§2.3" in texto
+
+    # Y nada se movió: ni libro mayor, ni existencias, ni estado.
+    assert (
+        await sesion.execute(text("SELECT count(*) FROM movimientos_inventario"))
+    ).scalar() == 0
+    assert (
+        await sesion.execute(text("SELECT estado FROM cargas"))
+    ).scalar() == "borrador"
+    assert (
+        await sesion.execute(
+            text("SELECT cantidad FROM existencias WHERE almacen_id = :a"),
+            {"a": semilla["bodega"]},
+        )
+    ).scalar() == Decimal("480.000")
+
+
+async def test_un_equipo_al_dia_no_bloquea_nada(cliente, sesion, semilla, catalogo):
+    """Cero reportado es un dato, y deja pasar. Sin esto la regla sería un muro."""
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=0)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    await _confirmar(cliente, carga)
+
+    assert (
+        await sesion.execute(text("SELECT estado FROM cargas"))
+    ).scalar() == "confirmada"
+    # Y queda escrito que estaba al día: cero es un dato, no una ausencia.
+    fila = (
+        await sesion.execute(
+            text("SELECT pendientes_al_confirmar, forzada FROM cargas")
+        )
+    ).mappings().one()
+    assert fila["pendientes_al_confirmar"] == 0
+    assert fila["forzada"] is False
+
+
+async def test_la_cuarentena_pendiente_tambien_bloquea(
+    cliente, sesion, semilla, catalogo
+):
+    """Son documentos que el servidor no pudo aplicar: del día anterior por
+    definición, y cualquiera puede ser la venta que falta en el cierre de ayer."""
+    await _entrar(cliente)
+    equipo = await _equipo(sesion, semilla, cola=0)
+    await sesion.execute(
+        text(
+            "INSERT INTO sync_cuarentena (operacion_id, dispositivo_id, usuario_id, "
+            "        tipo, payload, hash_payload, error_codigo, error_mensaje, estado) "
+            "VALUES (:o, :d, :u, 'venta', '{}'::jsonb, 'x', 'PAYLOAD_INVALIDO', "
+            "        'renglón mal formado', 'pendiente')"
+        ),
+        {"o": uuid.uuid4(), "d": equipo, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    texto = solo_texto(await _confirmar(cliente, carga))
+    assert "cuarentena sin atender" in texto
+    assert (
+        await sesion.execute(text("SELECT estado FROM cargas"))
+    ).scalar() == "borrador"
+
+
+async def test_una_carga_anterior_sin_liquidar_bloquea(
+    cliente, sesion, semilla, catalogo
+):
+    """No está en el §2.3 y se sigue de él: si el camión debe el conteo de un día
+    previo, cargarlo hoy encima vuelve ese retorno incalculable."""
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=0)
+
+    # Una carga confirmada de anteayer, sin liquidación.
+    vieja = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id, "
+            "        vendedor_id, fecha_operativa, estado, confirmada_en) "
+            "VALUES (:id, 'CG-000999', :bod, :cam, :v, "
+            "        CURRENT_DATE - 2, 'confirmada', now())"
+        ),
+        {"id": vieja, "bod": semilla["bodega"], "cam": semilla["camion"],
+         "v": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    texto = solo_texto(await _confirmar(cliente, carga))
+    assert "CG-000999" in texto
+    assert "sin liquidación" in texto
+    assert (
+        await sesion.execute(
+            text("SELECT estado FROM cargas WHERE id <> :vieja"), {"vieja": vieja}
+        )
+    ).scalar() == "borrador"
+
+
+async def test_una_liquidacion_abierta_de_ayer_tambien_bloquea(
+    cliente, sesion, semilla, catalogo
+):
+    """El caso que se escapa si el filtro solo mira 'confirmada'.
+
+    Abrir el arqueo mueve la carga a 'en_ruta' (`liquidaciones.py`), así que la
+    carga cuyo conteo SÍ empezó y nadie cerró es precisamente la que deja de
+    estar en 'confirmada'. Y es la peor de las dos: ya hay un
+    `efectivo_esperado` calculado que las ventas que falten por subir van a
+    desmentir.
+    """
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=0)
+
+    vieja = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id, "
+            "        vendedor_id, fecha_operativa, estado, confirmada_en) "
+            "VALUES (:id, 'CG-000998', :bod, :cam, :v, "
+            "        CURRENT_DATE - 1, 'en_ruta', now())"
+        ),
+        {"id": vieja, "bod": semilla["bodega"], "cam": semilla["camion"],
+         "v": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO liquidaciones (folio, carga_id, vendedor_id, "
+            "        fecha_operativa, estado) "
+            "VALUES ('LQ-000998', :c, :v, CURRENT_DATE - 1, 'abierta')"
+        ),
+        {"c": vieja, "v": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    texto = solo_texto(await _confirmar(cliente, carga))
+    assert "CG-000998" in texto
+    assert "abierta" in texto
+    assert (
+        await sesion.execute(
+            text("SELECT estado FROM cargas WHERE id <> :vieja"), {"vieja": vieja}
+        )
+    ).scalar() == "borrador"
+
+
+async def test_una_carga_ya_liquidada_no_bloquea(cliente, sesion, semilla, catalogo):
+    """El otro lado de la misma moneda: cerrar el arqueo deja pasar.
+
+    Sin esta prueba, un filtro de más —mirar también 'liquidada'— bloquearía
+    todos los días a partir del segundo, y la regla acabaría apagada a mano.
+    """
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=0)
+
+    vieja = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id, "
+            "        vendedor_id, fecha_operativa, estado, confirmada_en) "
+            "VALUES (:id, 'CG-000997', :bod, :cam, :v, "
+            "        CURRENT_DATE - 1, 'liquidada', now())"
+        ),
+        {"id": vieja, "bod": semilla["bodega"], "cam": semilla["camion"],
+         "v": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO liquidaciones (folio, carga_id, vendedor_id, "
+            "        fecha_operativa, estado, cerrada_en) "
+            "VALUES ('LQ-000997', :c, :v, CURRENT_DATE - 1, 'cerrada', now())"
+        ),
+        {"c": vieja, "v": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    await _confirmar(cliente, carga)
+    assert (
+        await sesion.execute(
+            text("SELECT estado, forzada FROM cargas WHERE id = :c"), {"c": carga}
+        )
+    ).first() == ("confirmada", False)
+
+
+async def test_forzar_exige_casilla_Y_motivo(cliente, sesion, semilla, catalogo):
+    """Marcar la casilla sin escribir por qué no alcanza: la constancia es el
+    texto, no el clic."""
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=2)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    detalle = await cliente.get(f"/panel/cargas/{carga}")
+
+    for datos in (
+        {"confirmo_pendientes": "1", "motivo_forzado": "   "},
+        {"confirmo_pendientes": "", "motivo_forzado": "el camión tiene que salir"},
+    ):
+        r = await cliente.post(
+            f"/panel/cargas/{carga}/confirmar",
+            data={"csrf": _csrf(cliente, detalle), **datos},
+            follow_redirects=True,
+        )
+        assert "No se puede confirmar" in solo_texto(r)
+    assert (
+        await sesion.execute(text("SELECT estado FROM cargas"))
+    ).scalar() == "borrador"
+
+
+async def test_forzar_con_motivo_pasa_y_queda_en_la_auditoria(
+    cliente, sesion, semilla, catalogo
+):
+    """A las 6 am el camión tiene que salir, y una regla que deja la ruta en la
+    bodega se desactiva a la semana. Lo que no puede pasar es forzar en silencio.
+    """
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=2)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    detalle = await cliente.get(f"/panel/cargas/{carga}")
+
+    r = await cliente.post(
+        f"/panel/cargas/{carga}/confirmar",
+        data={
+            "csrf": _csrf(cliente, detalle),
+            "confirmo_pendientes": "1",
+            "motivo_forzado": "el teléfono de Juan no prende y la ruta no puede quedarse",
+        },
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    fila = (
+        await sesion.execute(
+            text("SELECT estado, pendientes_al_confirmar, forzada FROM cargas")
+        )
+    ).mappings().one()
+    assert fila["estado"] == "confirmada"
+    assert fila["pendientes_al_confirmar"] == 2
+    assert fila["forzada"] is True
+
+    # La constancia: en `auditoria`, con los bloqueos que había y no solo con que
+    # hubo. Dentro de un mes la pregunta no es «¿se forzó?» sino «¿a pesar de qué?».
+    auditado = (
+        await sesion.execute(
+            text(
+                "SELECT entidad, accion, usuario_id, motivo, datos_despues "
+                "  FROM auditoria WHERE entidad = 'carga'"
+            )
+        )
+    ).mappings().one()
+    assert auditado["accion"] == "carga_forzada"
+    assert auditado["usuario_id"] == semilla["admin"]
+    assert "no prende" in auditado["motivo"]
+    assert auditado["datos_despues"]["pendientes_al_confirmar"] == 2
+    assert len(auditado["datos_despues"]["bloqueos"]) == 1
+    assert "sin subir" in auditado["datos_despues"]["bloqueos"][0]
+
+
+async def test_la_razon_del_forzado_no_viaja_al_telefono(
+    cliente, sesion, semilla, catalogo
+):
+    """`cargas` lleva disparador de change_log y publica la FILA COMPLETA.
+
+    Por eso la razón vive en `auditoria`: un texto donde la oficina escribe «el
+    teléfono de Juan no prende» acabaría en el SQLite de Juan. Es el mismo camino
+    de fuga que la 0027 evitó con el costo.
+    """
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=2)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga)
+    detalle = await cliente.get(f"/panel/cargas/{carga}")
+    await cliente.post(
+        f"/panel/cargas/{carga}/confirmar",
+        data={
+            "csrf": _csrf(cliente, detalle),
+            "confirmo_pendientes": "1",
+            "motivo_forzado": "el teléfono de Juan no prende",
+        },
+        follow_redirects=True,
+    )
+
+    publicado = (
+        await sesion.execute(
+            text(
+                # El cursor del pull es `cursor` (un BIGSERIAL), no `id`: ver
+                # la migración 0007.
+                "SELECT payload FROM change_log "
+                " WHERE entidad = 'carga' ORDER BY cursor DESC LIMIT 1"
+            )
+        )
+    ).scalar()
+    assert publicado is not None, "la carga confirmada sí se publica"
+    crudo = str(publicado)
+    assert "no prende" not in crudo
+    assert "forzada_motivo" not in crudo
+    # Y `auditoria` NO se publica: es la otra mitad de la misma defensa.
+    assert (
+        await sesion.execute(
+            text(
+                "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                " WHERE NOT t.tgisinternal AND c.relname = 'auditoria'"
+            )
+        )
+    ).scalar() == 0
+
+
+async def test_el_borrador_avisa_sin_bloquear(cliente, sesion, semilla, catalogo):
+    """El borrador no mueve nada y el teléfono puede sincronizar en el patio
+    mientras alguien captura: bloquear la creación detendría trabajo que muy
+    seguido se vuelve innecesario."""
+    await _entrar(cliente)
+    await _equipo(sesion, semilla, cola=4)
+
+    lista = await cliente.get("/panel/cargas")
+    r = await cliente.post(
+        "/panel/cargas/nueva",
+        data={
+            "csrf": _csrf_de(lista),
+            "vendedor_id": str(semilla["vendedor"]),
+            "almacen_origen_id": str(semilla["bodega"]),
+            "fecha_operativa": date.today().isoformat(),
+        },
+        follow_redirects=False,
+    )
+    # El borrador SÍ se creó...
+    assert r.status_code == 303
+    assert (await sesion.execute(text("SELECT count(*) FROM cargas"))).scalar() == 1
+    # ...y avisa de lo que va a impedir el confirmar.
+    texto = solo_texto(await cliente.get(r.headers["location"]))
+    assert "no se va a poder confirmar" in texto
+
+    # Y si el teléfono sincroniza mientras se captura, el bloqueo desaparece solo.
+    carga = r.headers["location"].split("/panel/cargas/")[1].split("?")[0]
+    await _agregar(cliente, carga)
+    await sesion.execute(
+        text("UPDATE dispositivos SET cola_pendiente = 0, cola_reportada_en = now()")
+    )
+    await sesion.commit()
+    await _confirmar(cliente, carga)
+    assert (
+        await sesion.execute(text("SELECT estado FROM cargas"))
+    ).scalar() == "confirmada"

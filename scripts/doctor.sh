@@ -228,6 +228,27 @@ titulo "Entorno de Python"
 # ---------------------------------------------------------------------------
 if [ -x "$RAIZ/server/.venv/bin/python" ]; then
     bien "venv del servidor listo ($("$RAIZ/server/.venv/bin/python" --version 2>&1))"
+
+    # Que EXISTA no es que esté al día. Un venv de hace dos meses con el candado
+    # movido desde entonces hace que las pruebas corran contra otras versiones que
+    # las del servidor — y eso no se nota: pasan igual, y lo que se verificó no es
+    # lo que se va a desplegar.
+    #
+    # `--dry-run` no toca nada y no necesita red: compara el venv contra uv.lock.
+    if command -v uv >/dev/null 2>&1; then
+        CAMBIOS="$(cd "$RAIZ/server" && uv sync --locked --extra dev --extra analitica \
+                      --dry-run 2>&1)"
+        if printf '%s' "$CAMBIOS" | grep -q "Would make no changes"; then
+            bien "el venv corresponde a server/uv.lock"
+        elif printf '%s' "$CAMBIOS" | grep -qiE "lockfile|not up-to-date|--locked"; then
+            falla "server/uv.lock no corresponde a pyproject.toml" "make candado"
+        else
+            falla "el venv NO corresponde al candado: las pruebas correrían contra otras versiones" \
+                  "make instalar"
+        fi
+    else
+        avisa "no hay uv en el PATH: no pude comparar el venv contra el candado"
+    fi
 else
     falla "falta el entorno virtual del servidor" "make instalar"
 fi

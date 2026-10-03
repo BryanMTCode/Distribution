@@ -79,13 +79,13 @@ git clone https://github.com/BryanMTCode/Distribution.git
 cd Distribution
 git checkout claude/exciting-hamilton-asnv8o
 
-make instalar     # uv baja Python 3.12 y las dependencias
+make instalar     # uv baja Python 3.12 y lo que fija server/uv.lock
 make db           # PostgreSQL + PostGIS en Docker
-make migrar       # aplica las 27 migraciones
-make pruebas      # deben pasar 935
+make migrar       # aplica las 28 migraciones
+make pruebas      # deben pasar 973
 ```
 
-Si ves `935 passed` (o `934 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `973 passed` (o `972 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
@@ -447,6 +447,31 @@ make db-borrar    # base limpia de verdad (pide confirmación)
 make doctor       # revisa el entorno y dice qué arreglar
 ```
 
+### Cuando agregues o subas una dependencia
+
+Las versiones no se resuelven en cada instalación: están fijadas en
+`server/uv.lock` y en `analytics/requirements.txt`, con hashes. Los tres caminos
+—`make instalar`, el CI y los Dockerfile— instalan exactamente eso, o fallan.
+
+```bash
+# Agregaste algo a server/pyproject.toml o a analytics/requirements.in:
+make candado          # lo incorpora SIN mover las versiones ya fijadas
+
+# Quieres subir todo a lo más nuevo que permiten los rangos:
+make candado-subir    # acto deliberado, no de paso
+
+# ¿Está todo al día?
+make candado-revisar  # sin red: compara candados contra lo declarado
+```
+
+Después de cualquiera de los dos primeros, **en este orden**: mira el diff,
+`make instalar` para aplicarlo al venv, y `make pruebas && make lint`. Un candado
+que nadie probó es peor que ninguno, porque da la impresión de que alguien
+verificó ese árbol.
+
+`make doctor` avisa si el venv se quedó atrás del candado — pasa al cambiar de
+rama— y si el candado se quedó atrás de `pyproject.toml`.
+
 ---
 
 ## 3. Cómo monitorear el avance
@@ -509,6 +534,12 @@ También necesitarás, físicamente:
 - Una **impresora térmica Bluetooth de 58 mm**, la que vayas a comprar en volumen.
 
 El emulador no sirve: no tiene Bluetooth ni GPS de verdad.
+
+Dos cosas más, en su propia sección porque son dos caminos distintos:
+
+- **§4.1** — evaluar la app en el teléfono sin levantar el servidor (modo demo).
+- **§4.2** — el APK de producción, el keystore, y por qué esa llave es lo único de
+  este proyecto que no se puede regenerar.
 
 ---
 
@@ -628,11 +659,318 @@ make movil-demo   # las pruebas de widget del camino demo
 
 ---
 
+## 4.2 El APK de producción, y la llave que no se puede perder
+
+Hasta aquí todo lo del teléfono fue de depuración. Esto es lo otro: el APK que se instala en el
+teléfono de un vendedor de verdad.
+
+```bash
+make apk DSD_BASE_URL=https://api.tudominio.com
+```
+
+Un comando, y se niega a construir nada si falta algo que el APK necesita. Pero antes de poder
+correrlo hay que crear **el keystore**, una vez en la vida del producto.
+
+### Primero: entender qué es lo que estás por crear
+
+El keystore es la llave con la que se firma el APK. **Es lo único de este proyecto que no se puede
+regenerar.** Todo lo demás —la base, los secretos, los roles, el repositorio— se vuelve a crear con
+un comando. Esto no.
+
+La razón es cómo funciona Android: solo acepta actualizar una app instalada si el APK nuevo viene
+firmado con **la misma llave**. Si no coincide, la instalación se rechaza con un «App not installed»
+y el único camino es desinstalar.
+
+Y desinstalar, en esta app, no es volver a empezar. Es **borrar la base local del vendedor**, con las
+ventas, los cobros y las mermas que todavía no hubiera subido. Dinero que ocurrió en la calle y que
+ya no está en ninguna cifra del sistema. Por eso esta sección es larga para lo que hace.
+
+> **Antes era peor y no se veía.** La plantilla de Flutter deja el build de release firmado con la
+> llave de *depuración*, que Flutter genera sola en `~/.android/debug.keystore`. Eso **funciona**:
+> produce un APK instalable. Lo que pasa es que esa llave es distinta en cada máquina y se regenera
+> sin avisar, así que el problema aparece meses después, el día que haya que actualizar desde otra
+> PC. Ahora Gradle **detiene** el build de release si no hay keystore de producción, y
+> `make apk` revisa el APK terminado y grita si salió firmado con la de depuración.
+
+### Crear el keystore
+
+```bash
+mkdir -p ~/llaves
+keytool -genkeypair -v \
+  -keystore ~/llaves/dsd-release.jks \
+  -storetype PKCS12 \
+  -keyalg RSA -keysize 4096 -validity 10000 \
+  -alias dsd
+```
+
+Te pide una contraseña y los datos del certificado (nombre, organización, ciudad). Son los que
+aparecerán como el firmante del APK; pon los de la distribuidora.
+
+`-validity 10000` son unos 27 años. No es exageración: un certificado vencido deja de poder firmar
+actualizaciones, y entonces el problema es exactamente el mismo que haberlo perdido.
+
+### Respaldarlo AHORA, antes de firmar el primer APK
+
+Este es el paso que la gente pospone y es el que importa.
+
+1. Copia `~/llaves/dsd-release.jks` a **dos lugares que no sean esta máquina**. Una memoria USB
+   guardada fuera de la oficina y un almacenamiento cifrado en la nube, por ejemplo.
+2. La **contraseña va aparte, en papel**, con la frase del cifrado de los respaldos
+   (`docs/RESPALDOS.md`). El archivo sin la contraseña no sirve.
+3. Anota también el `alias` (`dsd`). Sin él no se puede usar la llave aunque tengas el archivo.
+
+El keystore está en `.gitignore` junto con `*.jks` y `*.keystore`: **no se versiona**. Un repositorio
+es exactamente el lugar donde no debe estar, porque se clona.
+
+### Luego: el `key.properties`
+
+Gradle no te va a preguntar la contraseña en cada build. La lee de un archivo que tampoco se
+versiona:
+
+```bash
+cp mobile/app/android/key.properties.example mobile/app/android/key.properties
+```
+
+Y rellénalo con la ruta del `.jks`, las dos contraseñas y el alias. Si lo copias y no lo rellenas,
+el build se detiene diciendo **cuáles de los cuatro campos faltan**.
+
+### Ahora sí, el APK
+
+```bash
+make apk DSD_BASE_URL=https://api.tudominio.com
+```
+
+Se niega, y dice por qué, en tres casos:
+
+| Si falta | Por qué no deja pasar |
+|---|---|
+| `DSD_BASE_URL` | El APK apuntaría a `api.localhost`. Se instalaría y abriría bien, y el login fallaría con un error de red — el vendedor reportaría «no hay internet» y la mañana se iría en revisar el túnel y el router |
+| que empiece con `https://` | Android prohíbe el tráfico sin TLS en release, y el permiso para saltárselo vive **solo** en el manifiesto de debug. Un APK de producción con `http://` compila bien y no puede conectarse a nada |
+| `key.properties` | Lo de arriba: firmar con la llave de depuración funciona hoy y rompe la actualización mañana |
+
+La dirección se fija **al compilar y no en una pantalla de ajustes**, y eso es deliberado: un campo
+editable para apuntar el teléfono a otro servidor es el camino para que un equipo robado mande la
+cartera a donde quiera quien lo tenga. Además nadie lo cambia nunca en operación normal.
+
+Y si alguien se salta el `make` y corre `flutter build apk --release` a secas, el APK sale apuntando
+al marcador — pero entonces **la app no muestra el login**: muestra una pantalla que dice que se
+compiló sin servidor, que no es falla de la señal, y el comando que lo arregla. Es la única forma de
+que ese error no se disfrace de «no hay internet».
+
+### Lo que imprime al terminar, y por qué mirarlo
+
+```
+  OK    versión 0.1.0+1  (versionCode 1)
+  OK    servidor https://api.tudominio.com
+  OK    firmado con una llave de producción
+        CN=Distribuidora, OU=DSD, …
+        SHA-256 del certificado: 4f1c9a77e3b8…
+```
+
+**Apunta esa huella SHA-256 la primera vez.** Tiene que ser la misma en todos los APK que reparta la
+empresa, para siempre. Si un día sale distinta, es que se firmó con otra llave y ese APK no va a
+poder actualizar los teléfonos que ya están en la calle.
+
+### Subir el versionCode en cada reparto
+
+El número después del `+` en `mobile/app/pubspec.yaml` (`version: 0.1.0+1`) es el `versionCode`.
+Súbelo antes de repartir un APK nuevo, por dos razones distintas:
+
+- Android **rechaza** instalar encima un `versionCode` menor que el instalado.
+- Con el **mismo** número sí reinstala, y ahí está el otro problema: dos APK distintos con el mismo
+  número son indistinguibles con el teléfono en la mano, y «¿qué versión trae este equipo?» deja de
+  tener respuesta.
+
+### Y lo único que de verdad comprueba que se puede actualizar
+
+Instalar el APK nuevo **encima de uno que ya esté instalado**, en un teléfono de prueba. La firma y
+el `versionCode` solo se ejercitan ahí. Un APK que se instala limpio en un teléfono vacío no prueba
+nada sobre la actualización, que es donde está el riesgo.
+
+```bash
+adb install -r mobile/app/build/app/outputs/flutter-apk/app-release.apk
+```
+
+---
+
 ## 5. Para el servidor de la oficina (Fase 3, al salir el piloto)
 
-- Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) con Ubuntu Server LTS
+- Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) con Ubuntu Server LTS.
+  **Con TPM 2.0** —en los Intel suele venir como *Intel PTT* y hay que activarlo en
+  el BIOS—: es lo que permite que el disco vaya cifrado y el servidor arranque solo
+  después de un apagón. Ver §5.1 de SEGURIDAD-OPERATIVA antes de comprar, si el
+  equipo todavía no está.
 - **UPS / no-break** — no es opcional: un apagón con rutas sincronizando corrompe la base
 - Cuenta gratuita de Cloudflare para el túnel
 - Cuenta de Backblaze B2 o S3 para los respaldos
 
-Ahí el despliegue es `cp .env.example .env`, rellenar, y `docker compose up -d`.
+### Paso 0: cifrar el disco, que es lo único que no se puede hacer después
+
+Antes de instalar nada. En el disco de la mini PC van a quedar juntas la base
+completa, el `.env` con cuatro secretos en texto plano y la copia local de los
+respaldos: quien se lleve el equipo se lleva las tres cosas.
+
+El instalador de Ubuntu lo cifra de entrada —`Encrypt the LVM group with LUKS`—,
+y cifrar una instalación que ya opera es un procedimiento largo sobre datos
+reales. Hacerlo ahora es gratis; hacerlo después, no.
+
+El procedimiento completo, incluida la decisión de **cómo arranca el servidor solo
+tras un apagón sin dejar el disco abierto a quien se lo lleve**, está en
+[SEGURIDAD-OPERATIVA §5.1](SEGURIDAD-OPERATIVA.md#51-el-disco-de-la-mini-pc). Léelo
+antes de meter el USB de instalación: hay cuatro cosas que se tocan en el BIOS y
+una frase que hay que apuntar en papel.
+
+```bash
+make cifrado-revisar     # en la mini PC, después de instalar
+```
+
+### El despliegue, paso por paso
+
+```bash
+git clone https://github.com/BryanMTCode/Distribution.git
+cd Distribution
+cp .env.example .env
+chmod 600 .env           # son cuatro secretos en texto plano
+```
+
+Rellena el `.env`. Lo que **no** puede quedar vacío —`docker compose` falla de
+inmediato nombrando la variable, no arranca a medias—:
+
+```bash
+# Las cuatro claves. Cada una distinta: son cuatro cosas distintas.
+openssl rand -hex 32    # DSD_DB_PASSWORD
+openssl rand -hex 32    # DSD_JWT_SECRETO
+openssl rand -hex 32    # DSD_CLAVE_API         ← el rol que hace que RLS sirva
+openssl rand -hex 32    # DSD_CLAVE_ANALITICA   ← el rol de solo lectura
+```
+
+**Hexadecimal y no `-base64`, para las tres de PostgreSQL.** Las tres se
+incrustan en una URL de conexión dentro de `docker-compose.yml`, y `-base64`
+produce `/` y `+` cerca de la mitad de las veces. libpq —el que usa el
+laboratorio analítico— parte mal una URI cuya contraseña trae `/`: intenta
+resolver el **nombre del rol** como si fuera el servidor y falla con
+«`failed to resolve host 'dsd_analitica'`», que no apunta ni de lejos a la causa.
+Y SQLAlchemy sí la tolera, así que la API arrancaría bien y solo el laboratorio
+quedaría roto — lo peor de los dos mundos para diagnosticar.
+
+Y `DSD_TUNNEL_TOKEN`, que te lo da Cloudflare al crear el túnel.
+
+**`DSD_ZONA` se deja en la hora de la operación** (`America/Mexico_City` por
+omisión). En UTC, a partir de las 18:00 locales «hoy» ya es mañana para
+`CURRENT_DATE`: el tablero del día sale vacío por la tarde y el arqueo no cuadra
+con el efectivo que la gente tiene en la mano. Desconcierta porque a las 11 de la
+mañana todo funciona.
+
+Luego:
+
+```bash
+docker compose up -d
+docker compose logs -f api
+```
+
+Eso levanta, en este orden, y cada paso espera al anterior:
+
+| | Servicio | Qué hace |
+|---|---|---|
+| 1 | `postgres` | La base, sin puertos publicados: solo la red interna |
+| 2 | `migraciones` | `alembic upgrade head` — las 28 migraciones |
+| 3 | **`roles`** | Aplica `db/ops/rol_api.sql` y `db/ops/rol_analitico.sql` |
+| 4 | `api`, `worker`, `analitica` | La operación |
+| 5 | `caddy`, `tunel` | La puerta de entrada |
+
+El paso 3 es el que faltaba y por el que esto se documenta: `api` se conecta como
+`dsd_api` y `analitica` como `dsd_analitica`, y **ninguno de los dos roles existe
+hasta que esos scripts corren**. Sin ese servicio los dos se quedan
+reiniciándose con «role "dsd_api" does not exist» — un fallo que aparece en la
+oficina el día del despliegue y en ningún otro momento. Corre después de las
+migraciones porque sus `GRANT` son sobre tablas que las migraciones crean, y se
+repite en cada `up`: los dos scripts son idempotentes, así que ejecutarlos
+siempre es lo que mantiene los permisos al día cuando una migración agrega
+tablas.
+
+### Comprobar que quedó bien
+
+Primero, que todo esté arriba y sano:
+
+```bash
+docker compose ps
+```
+
+`migraciones` y `roles` deben aparecer como `exited (0)` —son de un disparo— y el
+resto `running`, con `api` en `healthy`.
+
+Y la respuesta de `/salud`. **No se consulta con `curl` desde el servidor**: `api`
+no publica puertos a propósito, solo existe en la red interna de compose. Se
+pregunta desde dentro, igual que lo hace su propio `healthcheck`:
+
+```bash
+docker compose exec api python -c \
+  "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/salud').read().decode())"
+```
+
+Una vez que el túnel responde, también desde fuera: `curl -s https://api.tudominio.com/salud`.
+
+Lo que importa de esa respuesta:
+
+```json
+{ "ok": true, "base_de_datos": true, "postgis": true, "rls": true }
+```
+
+**`"rls": false` significa que la API se está conectando con el rol dueño y las
+políticas por renglón están escritas y sin efecto** — un teléfono podría ver la
+cartera completa. En `produccion` la API no debería ni arrancar así; si ves ese
+`false`, revisa `DSD_CLAVE_API` en el `.env` y los registros de `roles`:
+
+```bash
+docker compose logs roles
+docker compose exec postgres psql -U dsd -d dsd \
+  -c "SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname LIKE 'dsd_%'"
+```
+
+Deben salir `dsd_api` y `dsd_analitica`, los dos con `rolbypassrls = f`.
+
+### Rotar una de esas dos claves
+
+Cambia el valor en `.env` y vuelve a levantar: el servicio `roles` reaplica el
+script con la clave nueva antes de que la API arranque.
+
+```bash
+docker compose up -d
+```
+
+### Después del despliegue, y antes del primer vendedor
+
+1. **Crear el primer usuario** — lo mismo que `make usuario` en desarrollo, con
+   el CLI dentro del contenedor, que ya trae la conexión en su entorno:
+
+   ```bash
+   docker compose exec api python -m app.cli crear-usuario
+   ```
+
+   Pregunta los datos y la contraseña se teclea. No hay usuario sembrado, y esto
+   es el único camino de entrada cuando no hay ninguno.
+2. **Programar el respaldo y correr el simulacro** — `docs/RESPALDOS.md`. Un
+   respaldo que nunca restauraste no es un respaldo.
+3. **La prueba del apagón** — desenchufa el equipo, espera un minuto y vuelve a
+   enchufarlo. Tiene que levantar solo y `/salud` tiene que responder sin que nadie
+   toque nada. Es lo único que prueba que el disco cifrado no va a dejar la ruta
+   esperando a las 6 de la mañana (SEGURIDAD-OPERATIVA §5.1, paso 6).
+4. **La revisión del piloto** — `docs/PILOTO.md`. Dice si falta algo antes de que
+   alguien suba a un camión.
+
+   En desarrollo es `make piloto-listo VENDEDOR=VEND01`. Aquí no: el script
+   necesita `psql` y la base, y la base **no publica puerto** por diseño. Así que
+   se corre desde dentro de la red de compose, con la imagen que ya trae el
+   cliente:
+
+   ```bash
+   docker compose run --rm --no-deps --entrypoint bash \
+     -v .:/repo \
+     -e DSD_DATABASE_URL="postgresql://dsd:$DSD_DB_PASSWORD@postgres:5432/dsd" \
+     postgres /repo/scripts/piloto_listo.sh VEND01
+   ```
+
+   Se monta **el repositorio completo** y no solo `scripts/`: el script compara la
+   migración aplicada contra la última que hay en
+   `server/db/alembic/versions/`, y sin ese directorio a la vista reportaría un
+   desfase que no existe.

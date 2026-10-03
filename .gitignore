@@ -33,3 +33,16 @@ mobile/app/build/
 mobile/app/android/.gradle/
 mobile/app/android/local.properties
 mobile/app/android/app/build/
+
+# La firma del APK de producción. NUNCA se versiona, ni el almacén ni sus claves.
+#
+# El keystore es lo único de este repositorio que NO SE PUEDE REGENERAR: Android
+# solo acepta actualizar una app instalada si el APK nuevo viene firmado con la
+# MISMA llave. Perderlo significa que los teléfonos ya instalados no se pueden
+# actualizar nunca más — hay que desinstalar, y desinstalar BORRA la base local
+# del vendedor, con las ventas que todavía no hubiera subido.
+#
+# Vive fuera del repositorio y se respalda aparte. Ver docs/ENTORNO-WINDOWS.md §4.2.
+mobile/app/android/key.properties
+*.jks
+*.keystore

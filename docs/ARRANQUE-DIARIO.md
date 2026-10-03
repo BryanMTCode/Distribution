@@ -340,6 +340,29 @@ que nada se queje (`existencias` no lleva CHECK de signo a propósito — §0.1)
    le escribe existencias. Mercancía nueva entra a la bodega y de ahí sube con una carga, que es lo que
    el teléfono sabe recibir.
 
+**Cargas: la regla del §2.3** — <http://127.0.0.1:8000/panel/cargas>
+
+Es el guardia que evita que el arqueo de un día cerrado se mueva solo. Para probarlo:
+
+1. **Simula un teléfono con cola**: en *Teléfonos* mira la columna de rezago, o directo en la base
+   `UPDATE dispositivos SET cola_pendiente = 3, cola_reportada_en = now()`.
+2. **Abre un borrador de carga.** Se crea, y avisa que no se va a poder confirmar. El borrador no mueve
+   inventario ni publica delta, así que dejarlo existir no cuesta nada.
+3. **Intenta confirmar.** Se rechaza, nombrando el equipo y cuántas operaciones reportó.
+4. **Pon la cola en cero** y vuelve a confirmar: pasa. El bloqueo desaparece solo cuando el teléfono
+   sincroniza, que es lo que de verdad ocurre en el patio mientras alguien captura.
+5. **Fuerza una**: con cola pendiente, marca la casilla y escribe por qué. Confirma — y revisa
+   `SELECT accion, motivo, datos_despues FROM auditoria WHERE entidad = 'carga'`. Ahí está la razón con
+   la lista de bloqueos que había.
+6. **Comprueba que la razón no viajó**: `SELECT payload FROM change_log WHERE entidad = 'carga' ORDER BY
+   cursor DESC LIMIT 1`. El texto no está. `cargas` se publica completa al teléfono, así que la razón
+   vive en `auditoria`, que no lleva disparador.
+
+Lo que esto previene, dicho una vez: el teléfono se queda con ventas del lunes sin subir, el martes se
+carga el camión, las ventas del lunes llegan con su fecha vieja, los modelos recalculan el lunes, y el
+`efectivo_esperado` de una liquidación **ya cerrada** se calculó antes de ellas. El arqueo firmado deja
+de cuadrar y nada grita.
+
 **Compras** — <http://127.0.0.1:8000/panel/compras>
 
 Contesta tres preguntas que el sistema no podía: a quién le compramos, cuánto dinero hay en el
@@ -612,7 +635,7 @@ verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
 ```bash
 make lint          # ruff sobre app y tests
 make pruebas       # 622 pruebas de Python — necesita la base arriba
-make movil         # 475 de Dart + 220 de widget
+make movil         # 475 de Dart + 225 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -1054,8 +1077,8 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 935 pruebas de Python contra PostgreSQL real, 475 de Dart,
-   220 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
+1. **Lo construido está probado de verdad**: 973 pruebas de Python contra PostgreSQL real, 475 de Dart,
+   225 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
 2. **Lo que falta es lo menos riesgoso.** La Fase 2 —el motor de sincronización, la que puede hundir un
@@ -1065,7 +1088,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 935 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 973 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que

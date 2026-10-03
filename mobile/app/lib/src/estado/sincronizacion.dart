@@ -2,6 +2,7 @@
 library;
 
 import 'package:dsd_core/dsd_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datos/transporte_http.dart';
@@ -22,10 +23,42 @@ import 'sesion.dart';
 /// Con `http://` hace falta además el `usesCleartextTraffic` del manifiesto de
 /// **debug** (está puesto ahí y solo ahí: en release Android lo prohíbe, y está
 /// bien que lo prohíba).
+/// Lo que queda cuando NADIE pasó `--dart-define=DSD_BASE_URL`.
+///
+/// Es un marcador, no un servidor: `api.localhost` no resuelve a ninguna parte.
+/// Tiene nombre propio para que [apkSinServidor] lo compare contra ESTA
+/// constante y no contra una cadena escrita dos veces — dos copias del mismo
+/// valor literal se separan en cuanto alguien cambia una.
+const marcadorSinServidor = 'https://api.localhost';
+
 const baseUrlPorOmision = String.fromEnvironment(
   'DSD_BASE_URL',
-  defaultValue: 'https://api.localhost',
+  defaultValue: marcadorSinServidor,
 );
+
+/// `true` cuando este APK **de producción** se compiló sin decirle a qué
+/// servidor hablar.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// POR QUÉ HACE FALTA UNA PANTALLA Y NO BASTA CON `make apk`
+/// ─────────────────────────────────────────────────────────────────────────
+/// `make apk` exige `DSD_BASE_URL` y se niega sin ella, así que el camino
+/// normal no puede producir este APK. Pero `flutter build apk --release` a
+/// secas sí, y compila sin una queja: el binario queda apuntando a
+/// `api.localhost`, se instala bien, abre bien, y el login falla con un error
+/// de red.
+///
+/// Ese es el problema. «No hay internet» es lo que el vendedor concluye —y lo
+/// que va a reportar— porque es lo que la pantalla de login diría. Alguien
+/// pasaría la mañana revisando el túnel de Cloudflare, el router y la señal del
+/// teléfono, buscando una falla que no está ahí. El binario es el que está mal
+/// construido, y solo el binario puede decirlo.
+///
+/// Las dos partes son `const`, así que en depuración el compilador de Dart
+/// elimina esta rama del árbol: `flutter run` sin define sigue funcionando
+/// —apunta a `api.localhost`, que es lo correcto para el modo demo— y las
+/// pruebas de widget no se enteran.
+const apkSinServidor = kReleaseMode && baseUrlPorOmision == marcadorSinServidor;
 
 final baseUrlProvider = Provider<String>((_) => baseUrlPorOmision);
 

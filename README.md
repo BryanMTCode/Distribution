@@ -92,11 +92,16 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Entradas de mercancía** — compra, inventario inicial y ajuste, con documento | ✅ 32 pruebas |
 | **Salidas de bodega** — conteo físico y merma, y nunca dejan negativo | ✅ 37 pruebas |
 | **Compras** — proveedores, **costo promedio ponderado** y cuentas por pagar | ✅ 35 pruebas |
+| **§2.3: no se carga con operaciones pendientes** — forzable, con constancia | ✅ 11 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
+| **Despliegue de un comando** — `docker compose up -d` crea los roles de RLS en orden | ✅ 11 pruebas |
+| **APK de producción firmado** — el build se detiene sin keystore, y revisa el APK | ✅ 7 + 5 de widget |
+| **Dependencias con candado** — `uv.lock` versionado, los tres caminos lo usan | ✅ 9 pruebas |
+| **Cifrado del disco del servidor** — procedimiento y `make cifrado-revisar` | ⏳ se hace al instalar la mini PC |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**935 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **220 de widget**, todas en verde.
+**973 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **225 de widget**, todas en verde.
 
 ## Stack
 
@@ -185,7 +190,7 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial,
                      gerencia/ (tablero, mapa del día)
-    test/            220 pruebas de widget, sin emulador
+    test/            225 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -200,11 +205,12 @@ docs/                arquitectura, modelo de datos, ADRs, respaldos y seguridad 
 paso con WSL2 y cómo seguir el avance del proyecto.
 
 ```bash
-make instalar                       # venv + dependencias (uv, Python 3.12)
+make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
+make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 935 pruebas de Python
-make movil                          # 475 de Dart + 220 de widget
+make pruebas                        # 973 pruebas de Python
+make movil                          # 475 de Dart + 225 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

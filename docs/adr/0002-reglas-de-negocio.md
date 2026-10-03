@@ -2398,3 +2398,709 @@ guardarlo mal.
 
 **El CFDI y la integración contable** siguen siendo Fase 10 y no bloquean nada:
 el RFC del proveedor ya se guarda, que es lo que hará falta el día que existan.
+
+---
+
+## 42. La regla del §2.3 estaba escrita y nada la imponía
+
+`docs/ARQUITECTURA.md` §2.3, sobre el riesgo de restaurar un respaldo viejo del
+teléfono, declara:
+
+> **no se puede iniciar una carga nueva con operaciones pendientes del día
+> anterior.**
+
+`cargas.py` solo comprobaba que el vendedor no tuviera **ya** una carga del
+**mismo** día (`uq_carga_vendedor_dia`). Nada revisaba la cola del equipo, ni la
+cuarentena, ni la liquidación anterior. Una salvaguarda diseñada hasta la frase y
+nunca construida: el cuarto caso de esta misma huella, después de
+`inventario.ajustar` sin dueño, `merma_detalle.costo_unitario` sin quien lo
+escriba, y `auditoria` sin una sola escritura.
+
+### Qué pasa sin ella, y por qué nadie lo nota
+
+El escenario no es exótico — es la primera semana de un piloto en una ruta con
+mala señal:
+
+1. El lunes el teléfono se queda con tres ventas sin subir.
+2. El lunes se cierra la liquidación. `sync_completa` queda en `false` porque el
+   equipo reportó cola: **eso el sistema ya lo registraba honestamente.**
+3. El martes a las 6 am se carga el camión. La carga confirmada publica el delta
+   y el teléfono reescribe sus existencias con el nuevo snapshot.
+4. El teléfono sincroniza. Las tres ventas llegan con su `fecha_operativa` **del
+   lunes**.
+5. Los modelos de lectura recalculan días sucios (§0.3 funcionando como debe), la
+   venta del lunes sube — y el `efectivo_esperado` de una liquidación **ya
+   cerrada** se calculó antes de esas tres ventas.
+
+El arqueo que alguien firmó el lunes deja de cuadrar con las ventas que el
+sistema tiene del lunes. No es corrupción: cada dato es correcto por separado. Es
+**un cierre firmado contra una cifra que después se movió**, y no hay nada en el
+sistema que grite.
+
+### Tres hechos, no una sospecha
+
+El guardia reusa los mismos datos que el cierre de liquidación ya consultaba
+(`_bloqueos_para_cerrar`), leídos antes de publicar el delta en vez de después:
+
+| Bloqueo | De dónde sale |
+|---|---|
+| El equipo reporta cola pendiente | `dispositivos.cola_pendiente`, que el teléfono manda en cada push |
+| Hay cuarentena sin atender | documentos que el servidor no pudo aplicar, del día anterior por definición |
+| Una carga previa sin liquidación cerrada | `cargas` ⟕ `liquidaciones` |
+
+El tercero **no está en el §2.3** y se escribe como lo que es: una consecuencia
+que se sigue de él. Si el camión debe el conteo de un día previo, cargarlo hoy
+mezcla las dos existencias y el retorno de ayer deja de ser calculable —
+`cant_cargada` sería de ayer y lo contado físicamente tendría lo de hoy encima.
+
+Ese tercer bloqueo tiene una trampa que esta implementación pisó y corrigió antes
+de entregarse: el filtro se escribió primero como `estado = 'confirmada'`, y abrir
+el arqueo mueve la carga a `'en_ruta'`. Es decir que la carga cuyo conteo **sí
+empezó y nadie cerró** —la peor de las dos, porque ya hay un `efectivo_esperado`
+calculado que las ventas faltantes van a desmentir— era justamente la que se
+escapaba. El filtro correcto es `estado IN ('confirmada', 'en_ruta')`: al cerrar
+el arqueo la carga pasa a `'liquidada'` y deja de aparecer sola, y hay una prueba
+de cada lado —una liquidación abierta de ayer bloquea, una cerrada no— porque un
+filtro de más apagaría la regla desde el segundo día de operación.
+
+### Se bloquea al confirmar, no al crear el borrador
+
+El borrador no mueve inventario ni publica delta: el disparador de la 0015 salta
+explícitamente los borradores. Así que dejarlo existir no cuesta nada, y mientras
+alguien captura quince renglones **el teléfono puede sincronizar en el patio y el
+bloqueo desaparece solo**. Bloquear la creación detendría trabajo que muy seguido
+se vuelve innecesario.
+
+El borrador avisa de lo que va a impedir el confirmar: hay una prueba de que el
+aviso aparece sin frenar la creación, y otra de que un equipo al día no bloquea
+nada.
+
+### Y se puede forzar, con su razón escrita
+
+Mismo patrón que `confirmo_sincronizado` en el cierre: el servidor bloquea por
+omisión y una persona puede pasar por encima dejando constancia.
+
+No es debilidad, es la única forma de que la regla sobreviva al contacto con la
+operación. **A las 6 am el camión tiene que salir**, y una regla que deja la ruta
+en la bodega se desactiva a la semana — o se rodea con SQL, que es peor. Lo que
+no puede pasar es que se fuerce en silencio.
+
+La casilla **y** el motivo son obligatorios: la constancia es el texto, no el
+clic.
+
+### Dónde vive la razón, y por qué no en `cargas`
+
+`cargas` **lleva disparador de change_log** y publica `to_jsonb(NEW)` —la fila
+completa— al teléfono del vendedor cuando la carga se confirma. Una columna de
+texto libre donde la oficina escribe *«el teléfono de Juan no prende»* viajaría
+al SQLite de Juan. Es el mismo camino de fuga que la §41 evitó con el costo, en
+otra tabla.
+
+Quitar la columna del payload exigiría reproducir las 74 líneas del disparador
+con un `CREATE OR REPLACE` en una migración nueva, y dos copias de esa lógica en
+el repositorio es el defecto de «dos reglas iguales escritas dos veces» que ya se
+pagó con `ROLES_DE_OFICINA`.
+
+Así que la razón va a **`auditoria`**, que existe desde la migración 0001 con
+exactamente la forma que hace falta —`entidad`, `entidad_id`, `accion`,
+`usuario_id`, `motivo`, `datos_despues`—, no lleva disparador, y **hasta hoy
+nadie la escribía.** Esta es su primera escritura, y va en la misma transacción
+que el movimiento de inventario: si el commit se cae, no queda constancia de algo
+que no pasó.
+
+En `cargas` quedan dos campos que al teléfono no le estorban: un número
+(`pendientes_al_confirmar`) y una bandera (`forzada`). Lo que no sale de la
+oficina es el texto. Hay una prueba que lee el `payload` publicado y afirma que
+la razón no está ahí.
+
+Y lo que se guarda en la auditoría son **los bloqueos que había**, no solo que
+hubo: dentro de un mes la pregunta no es «¿se forzó?» sino «¿a pesar de qué?».
+
+### De paso: el cero que no era un dato
+
+`liquidaciones.operaciones_pendientes` se escribía como `0` literal al cerrar.
+`sync_completa` ya decía **si** el equipo estaba al día; esa columna debía decir
+**cuánto** le faltaba, y en su lugar borraba el único número que contesta
+«¿cuántas operaciones faltaban?» cuando alguien audita un sobrante meses después.
+
+Ahora se escribe el conteo que reportaron los equipos, que ya se calculaba en
+`_respaldo_de_sincronizacion` y se tiraba. La suma se calcula **una vez** y se
+devuelve en las cinco salidas de esa función: si cada rama la calculara, la
+próxima rama se olvidaría — y el campo que se olvida en una rama es el que acaba
+guardando un cero que parece un dato.
+
+---
+
+## 43. El procedimiento de despliegue no levantaba, y nadie lo habría sabido hasta la oficina
+
+`docs/ENTORNO-WINDOWS.md` §5 decía, en una línea:
+
+> Ahí el despliegue es `cp .env.example .env`, rellenar, y `docker compose up -d`.
+
+Seguido al pie de la letra, eso **no levanta** en una máquina limpia. Tres
+defectos —el tercero apareció al revisar el arreglo de los dos primeros—, todos
+invisibles en desarrollo porque en desarrollo nadie usa compose:
+
+**1. `.env.example` no mencionaba `DSD_CLAVE_API`.** `docker-compose.yml` la exige
+con `:?`, así que el primer comando del procedimiento falla nombrando una
+variable que el archivo que te dicen copiar no tiene. Es el fallo benigno de los
+dos: ruidoso e inmediato.
+
+**2. Nada creaba los roles `dsd_api` ni `dsd_analitica`.** Este es el serio. `api`
+se conecta con el primero y `analitica` con el segundo, y los dos roles existen
+solo después de aplicar `db/ops/rol_api.sql` y `db/ops/rol_analitico.sql` — que el
+despliegue nunca aplicaba. Los dos servicios se quedan reiniciándose con
+«role "dsd_api" does not exist», con PostgreSQL arriba y las migraciones
+aplicadas: el síntoma no apunta a lo que falta.
+
+La misma huella de siempre, otra vez. El rol estaba diseñado, escrito, probado
+(las pruebas de RLS aplican ese archivo tal cual) y documentado en tres lugares
+—`SEGURIDAD-OPERATIVA.md`, `RESPALDOS.md`, el encabezado del propio SQL—, y el
+camino que de verdad se iba a usar no lo ejecutaba.
+
+### La decisión: un servicio, no un párrafo más
+
+Se podía documentar el orden —«levanta postgres, corre las migraciones, aplica
+los dos scripts, levanta el resto»— y habría sido correcto y frágil. Un
+procedimiento manual de cuatro pasos se hace bien la primera vez, cuando se está
+leyendo el documento, y mal la segunda.
+
+Así que el orden lo impone compose: un servicio `roles` que depende de
+`migraciones` y del que dependen `api` y `analitica`. `docker compose up -d`
+vuelve a ser un comando.
+
+Tres cosas de cómo quedó:
+
+- **Corre en cada `up`, no una sola vez.** Los dos scripts son idempotentes a
+  propósito, y repetirlos es lo que mantiene los permisos al día cuando una
+  migración agrega tablas. De paso, **rotar una de las dos claves es cambiarla en
+  `.env` y volver a levantar**, sin recordar ningún `psql`.
+- **Monta `server/db/ops` de solo lectura y aplica esos archivos tal cual.** Las
+  pruebas de RLS aplican los mismos (§35). Una copia dentro del compose
+  permitiría que lo que se prueba y lo que se despliega se separaran sin que nada
+  avisara.
+- **Usa la imagen de PostgreSQL**, que ya trae `psql`, en vez de meter el cliente
+  en la imagen de la aplicación por un servicio que corre tres segundos.
+
+### El defecto que apareció al escribirlo
+
+El `command` se escribió primero como cadena con `>`:
+
+```yaml
+command: >
+  set -e;
+  psql ... -f /ops/rol_api.sql;
+  psql ... -f /ops/rol_analitico.sql
+```
+
+**Compose parte una cadena por espacios.** Con `entrypoint: ["/bin/bash", "-c"]`
+eso llega al contenedor como `bash -c set -e`, que **sale con cero sin ejecutar un
+solo `psql`**. El servicio puesto para evitar que `api` arranque contra un rol
+inexistente habría reportado éxito y dejado pasar exactamente eso.
+
+Lo delató `docker compose config`, que imprime el `command` ya interpretado —
+`["set", "-e"]`—. La forma correcta es una lista de un elemento (`- |`), que
+mantiene el script como un argumento. Hay una prueba de esa forma, porque el
+fallo es silencioso y no se vuelve a ver a ojo.
+
+### El tercer defecto: `openssl rand -base64`
+
+`.env.example` decía `openssl rand -base64 24` para las tres claves de
+PostgreSQL. Las tres se incrustan en una URL de conexión dentro de
+`docker-compose.yml`, y base64 produce `/` y `+` **cerca de la mitad de las
+veces**.
+
+Lo que pasa entonces no se parece a lo que es:
+
+```
+OperationalError: failed to resolve host 'dsd_analitica':
+    Servname not supported for ai_socktype
+```
+
+libpq parte mal una URI cuya contraseña trae `/` y acaba tomando el **nombre del
+rol** por el nombre del servidor. Y lo que lo vuelve traicionero es la asimetría:
+**SQLAlchemy sí la tolera**, así que la API arranca perfecta, `/salud` dice
+`rls: true`, y solo el laboratorio analítico queda roto con un error que habla de
+DNS. Quien despliegue tendría una posibilidad entre dos de toparse con eso y
+ninguna pista de dónde mirar.
+
+En hexadecimal el problema no existe, y es lo que `SEGURIDAD-OPERATIVA.md` ya
+usaba para `clave_api` sin que la razón estuviera escrita en ninguna parte. Ahora
+lo está, y hay dos pruebas: una exige `-hex` para esas tres claves, y la otra
+comprueba que las tres sigan yendo dentro de una URL — para que si eso cambia,
+alguien relea la exigencia en vez de arrastrarla.
+
+Se encontró releyendo el propio diff, no operando: la sospecha era que `/`
+rompería la URL de la API, y resultó estar equivocada ahí y acertada en el
+laboratorio. Se comprobó conectando de verdad con una contraseña
+`ab/cd+ef=gh` contra PostgreSQL, por las dos rutas.
+
+### Y once pruebas, porque un documento se desactualiza solo
+
+`tests/test_despliegue.py` lee `docker-compose.yml` y `.env.example` como texto y
+afirma lo que el procedimiento necesita: que toda variable marcada `:?` esté en el
+ejemplo; que el ejemplo no pida variables que nadie lee (con las excepciones
+nombradas y justificadas); que **cualquier** servicio que se conecte con un rol
+restringido dependa de `roles`; que `roles` vaya después de las migraciones, use
+los archivos de `db/ops` y aborte al primer error; y la forma del `command`.
+
+No comprueban por nombre de servicio sino por el hecho, así que un servicio nuevo
+que use uno de esos roles rompe la prueba en vez de romper el despliegue.
+
+Se lee el YAML como texto y no con `pyyaml` a propósito: `pyyaml` no es una
+dependencia declarada de este proyecto —entra de rebote con `uvicorn[standard]`—
+y una prueba del despliegue que dependa de un paquete que nadie pidió es otra
+cosa que se puede romper sola.
+
+### Dos cosas más que el procedimiento afirmaba y no eran ciertas
+
+Salieron de releer lo que se acababa de escribir, no de operar:
+
+- **`curl -s http://127.0.0.1:8000/salud` desde el servidor no funciona.** `api`
+  **no publica puertos** a propósito: solo existe en la red interna de compose.
+  Se pregunta desde dentro del contenedor, igual que hace su propio
+  `healthcheck`, o desde fuera por el túnel. Un comando de verificación que falla
+  por una razón ajena a lo que verifica es peor que no tenerlo: manda a buscar un
+  problema inexistente.
+- **`make piloto-listo` no se puede correr en el servidor como en desarrollo.**
+  Necesita `psql` y la base, y la base tampoco publica puerto. Se corre desde
+  dentro de la red con la imagen de PostgreSQL, que ya trae el cliente — y
+  montando **el repositorio completo**, no solo `scripts/`: el script compara la
+  migración aplicada contra la última de `server/db/alembic/versions/`, y con solo
+  `scripts/` montado esa comparación daría vacío y reportaría un desfase
+  inventado.
+
+### Lo que esto no arregla
+
+El `.env` del servidor sigue siendo un archivo con cuatro secretos en texto plano
+en la mini PC. Un gestor de secretos es infraestructura que este negocio no tiene
+y no va a tener pronto, así que lo que protege ese archivo es el disco y la puerta
+de la oficina — y ahí hay un hueco que conviene nombrar en vez de dar por
+cubierto: `SEGURIDAD-OPERATIVA.md` exige cifrado en el TELÉFONO y en los
+RESPALDOS, y **no dice nada del disco de la mini PC**. Quien se lleve el equipo
+—no es un escenario exótico en una oficina de distribución— se lleva el `.env`, la
+base y los respaldos locales. Falta decidir y escribir eso; no lo arregla esta
+sección y no se finge que sí.
+
+> **Cerrado en la §46**: el disco va cifrado con LUKS y la llave sellada en el
+> TPM, con la contraseña del BIOS y el arranque desde USB deshabilitado como la
+> otra mitad. El `.env` sigue siendo texto plano con la máquina encendida —eso no
+> cambia—, pero ya no viaja legible cuando el equipo sale del edificio.
+
+---
+
+## 44. El APK de producción se firmaba con la llave de depuración
+
+`mobile/app/android/app/build.gradle.kts` traía, tal cual lo deja la plantilla de
+Flutter:
+
+```kotlin
+release {
+    // TODO: Add your own signing config for the release build.
+    // Signing with the debug keys for now, so `flutter run --release` works.
+    signingConfig = signingConfigs.getByName("debug")
+}
+```
+
+Y eso **no falla**. Produce un APK de release instalable, que abre y funciona.
+Por eso es la peor clase de defecto que tiene este repositorio: el daño no está
+en el APK de hoy, está en el de dentro de tres meses.
+
+### Lo que cuesta, y por qué se cobra en dinero
+
+Android solo acepta actualizar una app instalada si el APK nuevo viene firmado
+con **la misma llave**. La de depuración la genera Flutter sola en
+`~/.android/debug.keystore`: es distinta en cada máquina y se regenera sin avisar.
+Así que el día que se compile desde otra PC —o que se borre esa carpeta— el APK
+nuevo no podrá actualizar al instalado. «App not installed», y el único camino es
+desinstalar.
+
+Desinstalar, en esta app, no es volver a empezar: **borra la base local del
+vendedor**. Con ella se van las ventas, los cobros y las mermas que todavía no
+hubiera subido — dinero que ocurrió en la calle y que ya no está en ninguna cifra
+del sistema. Es el mismo bien que protegen §0.1 y el borrado remoto de la Fase 9,
+perdido por la vía más tonta.
+
+Y el momento en que se descubre es el peor posible: a media semana del piloto,
+cuando haya que mandar una corrección.
+
+### La decisión: que el build se detenga
+
+Lo fácil era documentar el paso. Lo correcto es que no haya cómo saltárselo: la
+firma de release sale de `android/key.properties` —que no se versiona— y **si no
+está, el build de release se detiene con una excepción que explica por qué**.
+
+Tres detalles de cómo quedó, cada uno por un fallo que habría tenido:
+
+- **La comprobación va en `gradle.taskGraph.whenReady`, no al configurar.** Si
+  saltara al configurar, `flutter run` y las pruebas dejarían de funcionar en
+  cualquier máquina sin keystore — que es la mayoría, y está bien que lo sea. Se
+  pregunta cuando ya se sabe QUÉ se va a construir.
+- **Un valor vacío cuenta como ausente.** `key.properties.example` trae las dos
+  contraseñas en blanco; una copia sin rellenar tiene que fallar aquí, nombrando
+  los campos que faltan, y no doscientas líneas después con un error de keystore
+  que no dice nada.
+- **`rootProject.file` y no `file`.** El segundo resuelve lo relativo contra
+  `android/app/`, que no es donde nadie esperaría apuntar un keystore.
+
+Las cuatro ramas —debug sin keystore pasa; release sin keystore se detiene;
+release con `key.properties` sin rellenar nombra los campos; release con keystore
+de verdad pasa— se ejercitaron contra Gradle 8.14.3 de verdad, en un proyecto de
+prueba armado con esta misma lógica, porque este contenedor no tiene el SDK de
+Android y `flutter build apk` no puede correr aquí.
+
+### El segundo agujero del mismo camino: un APK sin servidor
+
+`DSD_BASE_URL` se fija al compilar y no en una pantalla de ajustes —un campo
+editable es el camino para que un equipo robado mande la cartera a donde quiera
+quien lo tenga—. Sin el define, el valor por omisión es `api.localhost`, que no
+resuelve a ninguna parte.
+
+Un `flutter build apk --release` a secas compila eso **sin una queja**. El APK se
+instala bien, abre bien, y el login falla con un error de red. Y ahí está el
+problema: «no hay internet» es lo que el vendedor va a reportar, porque es lo que
+la pantalla de login le diría. Alguien pasaría la mañana revisando el túnel de
+Cloudflare, el router y la señal del teléfono, buscando una falla que no está en
+ninguno de los tres.
+
+Dos capas:
+
+- **`make apk` exige la dirección** y además que empiece con `https://`. Android
+  prohíbe el tráfico sin TLS en release y el permiso para saltárselo vive **solo**
+  en el manifiesto de debug, así que un APK de producción con `http://` compila
+  bien y no puede conectarse a nada.
+- **Y si alguien se salta el `make`**, la app no muestra el login: muestra una
+  pantalla que dice que se compiló sin servidor, que no es falla de la señal, y el
+  comando que lo arregla. Sin botones, porque desde el teléfono no hay nada que
+  hacer y un botón que no sirve haría concluir que la app está rota.
+
+Las dos partes de la guarda son `const` (`kReleaseMode && baseUrl == marcador`),
+así que en depuración el compilador de Dart elimina la rama del árbol: `flutter
+run` sin define sigue apuntando al marcador —que es lo correcto para el modo
+demo— y las pruebas de widget no se enteran. Es el mismo doble cerrojo del modo
+demo —los dos cerrojos que documenta `mobile/app/lib/src/demo.dart`—, usado aquí
+para lo contrario: allá apaga un atajo en release, aquí enciende un aviso.
+
+El marcador tiene **nombre propio** (`marcadorSinServidor`) y la guarda lo compara
+contra esa constante, no contra una cadena escrita dos veces. Hay una prueba de
+que `baseUrlPorOmision` sigue siendo igual al marcador cuando nadie pasa el
+define: si alguien cambiara uno de los dos, la guarda dejaría de disparar y el
+APK malo volvería a pasar en silencio.
+
+### Una afirmación mía que estaba mal, corregida antes de entregarse
+
+Escribí primero, en tres archivos, que Android «exige que el `versionCode` suba en
+cada APK, y con el mismo número la instalación se rechaza». Lo segundo es falso:
+con el **mismo** `versionCode`, `adb install -r` reinstala sin problema. Lo que
+Android rechaza es un `versionCode` **menor** que el instalado.
+
+La razón para subirlo sigue siendo buena, pero es otra, y conviene que esté dicha
+bien porque es la que se usa para decidir: dos APK distintos con el mismo número
+son **indistinguibles con el teléfono en la mano**, y «¿qué versión trae este
+equipo?» deja de tener respuesta. En una flota de ocho teléfonos en la calle, eso
+es lo que convierte un reporte de un vendedor en una adivinanza.
+
+### Lo que `make apk` imprime, y por qué eso es parte del arreglo
+
+`scripts/revisar_apk.sh` lee el APK terminado y dice tres cosas que no se ven
+mirando el archivo: con qué llave está firmado —y **sale con error si es la de
+depuración**, por si alguien construyó por otro camino—, qué `versionCode` trae, y
+a qué servidor apunta.
+
+Imprime además la **huella SHA-256 del certificado**, que es lo único con lo que se
+puede comprobar que un APK nuevo va a poder actualizar a los que ya están en la
+calle. Se apunta la primera vez y tiene que ser la misma para siempre.
+
+Las cuatro ramas del script se probaron con un `apksigner` falso en el PATH y un
+APK de relleno, porque tampoco hay build-tools de Android aquí.
+
+### Lo que no puedo hacer yo, y por qué está bien así
+
+**El keystore lo genera y lo guarda Bryan.** No es una limitación del entorno: es
+que esa llave no debe existir en un contenedor efímero al que yo tengo acceso, ni
+pasar por este repositorio. `.gitignore` cubre `key.properties`, `*.jks` y
+`*.keystore`.
+
+El procedimiento está escrito en `ENTORNO-WINDOWS.md` §4.2 con el paso que la
+gente pospone puesto antes de firmar el primer APK: **respaldarlo**. Dos copias en
+sitios distintos, la contraseña y el alias en papel con la frase del cifrado de
+respaldos. `SEGURIDAD-OPERATIVA.md` lo suma a la tabla de rotación como el único
+secreto que **nunca** se rota, y `PILOTO.md` lo agrega a la lista del día −1 como
+el único punto que, si se hace mal, se cobra en dinero de la calle y no en tiempo.
+
+---
+
+## 45. El candado de dependencias que tres documentos daban por hecho
+
+`docs/ARQUITECTURA.md` decía, en la tabla del stack:
+
+> | Paquetes | **uv** con lockfile versionado | … el lockfile y Docker lo compensan. |
+
+Y el `Dockerfile` del servidor, encima de la línea que instalaba:
+
+```dockerfile
+# uv: instalación determinista a partir del lockfile.
+RUN uv pip install --system --no-cache .
+```
+
+**No había lockfile.** Los tres caminos de instalación —`make instalar`, el CI y
+el Dockerfile— resolvían contra PyPI en cada corrida, contra los rangos `>=` de
+`pyproject.toml`. El quinto caso de la misma huella de este repositorio, y el más
+barato de arreglar —un comando—, lo que lo hace peor: estuvo escrito como hecho
+durante nueve fases.
+
+### Qué significaba en la práctica
+
+- **El verde de ayer no decía nada del árbol de hoy.** Una dependencia que
+  publicara una versión rota ponía rojo un commit que no había tocado nada, y
+  habría costado una tarde entender que el problema no estaba en el diff.
+- **Dos imágenes del mismo commit podían traer versiones distintas.** La de la
+  mini PC de la oficina y la que se probó no eran necesariamente la misma.
+- Y lo inverso, que es lo que de verdad importa en un sistema que maneja dinero:
+  **no había forma de reproducir el entorno en el que una cifra salió mal.**
+
+### Lo que se hizo
+
+`server/uv.lock` versionado: 76 paquetes con versión exacta y 1 332 hashes. Los
+hashes no son adorno — sin ellos el candado fija el número de versión pero no el
+contenido, y un paquete re-subido con el mismo número pasaría igual.
+
+Y los **tres** caminos lo usan, porque con que uno resuelva por su cuenta el
+candado no sirve de nada: el que difiera será el de producción o el del CI, nunca
+el que alguien está mirando.
+
+| Camino | Antes | Ahora |
+|---|---|---|
+| `make instalar` | `uv pip install -e '.[dev,analitica]'` | `uv sync --locked --extra dev --extra analitica` |
+| CI | lo mismo, resolviendo en cada corrida | el **mismo comando** que `make instalar` |
+| `Dockerfile` | `uv pip install --system .` | `uv sync --locked --no-install-project` |
+
+`--locked` es la parte que importa: **falla** si `uv.lock` no corresponde a
+`pyproject.toml`, en vez de resolver por su cuenta y seguir. Un candado
+desactualizado tiene que detener el build, no arreglarse solo en silencio.
+
+Tres detalles del Dockerfile, cada uno por un fallo concreto:
+
+- **`uv` pinneado a `0.8.17`, no `:latest`.** El instalador también es una
+  dependencia: el resolvedor es lo que decide qué se instala, y con `:latest` dos
+  builds del mismo commit pueden usar resolvedores distintos.
+- **Sin `--extra`**, así que la imagen de la API no lleva pytest, ruff, streamlit
+  ni pandas. Hay una prueba de eso, y hace falta: el `--extra` puede colarse en
+  la línea de continuación del `RUN`.
+- **`ENV PATH=/srv/.venv/bin:$PATH`.** `uv sync` deja el venv en `/srv/.venv`, y
+  el `CMD` llama a `uvicorn` a secas mientras el servicio de migraciones llama a
+  `alembic`. Sin el PATH se buscarían en el Python del sistema, donde ya no
+  están — y eso falla al **arrancar** el contenedor, no al construirlo.
+
+### El otro contenedor tenía la misma enfermedad
+
+`analytics/requirements.txt` eran tres líneas con `>=`. El laboratorio analítico
+corre en su propia imagen, así que arreglar solo el servidor habría dejado la
+afirmación de ARQUITECTURA medio falsa otra vez.
+
+Ahora `requirements.in` es lo que se escribe a mano y `requirements.txt` lo que
+se instala, compilado con versiones exactas y hashes. El Dockerfile lo instala con
+`--require-hashes`, que convierte en error cualquier línea sin hash: una
+dependencia agregada a mano al archivo compilado detiene el build en vez de
+instalarse sin verificar.
+
+Y una prueba que no esperaba tener que escribir: **los cuatro paquetes que los dos
+candados comparten tienen que coincidir** (`streamlit`, `pandas`, `psycopg`,
+`numpy`). En local el laboratorio corre desde el venv del servidor; en producción,
+desde su propia imagen. Si esas versiones se separan aparece el «en mi máquina
+funciona» más caro de diagnosticar: la misma consulta devolviendo algo distinto
+según dónde corra, con pandas de por medio.
+
+### Actualizar un candado es un acto, no un efecto secundario
+
+Son dos comandos y la diferencia importa:
+
+- **`make candado`** aplica a los candados lo que cambió en `pyproject.toml` o en
+  `requirements.in`, **sin mover las versiones ya fijadas**. Es lo que se corre al
+  agregar una dependencia.
+- **`make candado-subir`** sube todo a lo más nuevo que permiten los rangos. Es un
+  acto deliberado, con tiempo para revisar el diff.
+
+Los dos terminan diciendo qué sigue, en orden: mirar el diff, aplicarlo al venv,
+correr las pruebas y el lint. Porque lo que sube de versión ahí es lo que va a
+correr en el servidor de la oficina, y **un candado sin probar es peor que
+ninguno** — da la impresión de que alguien verificó ese árbol.
+
+Esta vez se hizo: el candado se generó, el venv se reconstruyó desde él (seis
+paquetes cambiaron, entre ellos SQLAlchemy 2.1.1 → 2.1.3 y streamlit 1.64 → 1.65),
+y las 972 pruebas y el lint se corrieron **contra lo que el candado pinea**, no
+contra lo que había instalado de antes.
+
+`make candado-revisar` es la otra mitad: falla si alguno de los dos candados no
+corresponde a lo declarado. `uv lock --check` compara el del servidor contra
+`pyproject.toml` sin resolver de nuevo, y el del laboratorio lo revisan las
+pruebas, por estructura: que cada paquete del `.in` esté fijado en el compilado,
+que el pin satisfaga su rango, y que la cabecera nombre ese `.in` como su origen.
+
+### El primer diseño de esa revisión estaba mal, y es instructivo
+
+La primera versión recompilaba `requirements.in` a un archivo temporal y lo
+comparaba con el versionado. Pasó en verde, y habría sido una bomba de relojería:
+**`uv pip compile` hacia un archivo nuevo no ve los pines viejos**, así que
+resuelve a lo más reciente que permitan los rangos. El día que streamlit publicara
+una versión, ese paso se habría puesto rojo en un commit que no tocó nada — que es
+exactamente el problema que el candado viene a quitar. Lo habría puesto en CI, y
+el síntoma habría llegado semanas después, sin relación visible con este cambio.
+
+Se descubrió preguntándole al comando en vez de suponer: bajando un pin a mano y
+recompilando, primero a otra ruta —resolvió a lo más nuevo— y luego sobre su
+propio archivo, donde **sí** conservó el pin bajado. Esa asimetría es la que hace
+que `make candado` sea estable y que comparar contra un temporal no lo sea.
+
+Y de ahí salió también el `setup-uv` pinneado en CI: `setup-uv` sin versión
+instala el uv más reciente, y el resolvedor es lo que decide qué se instala.
+Dejarlo flotar es dejar flotar el candado por la puerta de atrás.
+
+### De paso, una cuarta afirmación que tampoco era cierta
+
+La misma tabla del stack listaba `testcontainers` entre las herramientas de
+prueba. Nunca se usó: la base la levanta `make db` en local y el servicio de
+PostgreSQL del workflow en CI. Se consideró en la Fase 0 y se descartó —agregaba
+una capa para arrancar lo que esas dos vías ya arrancan—, pero el nombre se quedó
+en la tabla. Ahora la tabla dice lo que hay.
+
+### Y una de mis propias pruebas que no probaba nada, otra vez
+
+`assert "uv pip install" not in _DOCKER_API` pasaba con el Dockerfile roto,
+porque el comentario que explica el cambio **cita el comando viejo**. Es
+exactamente el mismo fallo que la guarda de `https://` en §44: una prueba que lee
+la prosa en vez del código.
+
+Dos veces el mismo error en dos commits seguidos deja de ser un descuido y pasa a
+ser un patrón, así que ahora hay un helper —`_sin_comentarios`— y la regla queda
+escrita en su docstring: **toda afirmación negativa se lee contra las líneas que
+se ejecutan**, nunca contra el archivo entero. El hermano `_comandos` además une
+las continuaciones de línea, porque un `--extra dev` escrito debajo del `uv sync`
+también se escapaba — y eso lo encontró la verificación por mutación, no la
+lectura.
+
+---
+
+## 46. El disco del servidor: cifrarlo sin dejar la ruta esperando
+
+La §43 cerró el despliegue y dejó un hueco nombrado a propósito:
+
+> `SEGURIDAD-OPERATIVA.md` exige cifrado en el TELÉFONO y en los RESPALDOS, y no
+> dice nada del disco del servidor. Falta decidirlo y escribirlo.
+
+Esto lo decide. En el disco de la mini PC quedan juntas tres cosas: la base
+completa, el `.env` con cuatro secretos en texto plano y la copia local de los
+respaldos (`~/respaldos-dsd`). Es **el único renglón del modelo de amenaza en el
+que se pierde todo de golpe**: un teléfono robado trae la ruta de un vendedor, el
+servidor trae la operación entera.
+
+### Lo primero es qué protege, porque es lo que más se malentiende
+
+**El cifrado de disco protege la máquina APAGADA.** Encendida —que es siempre— el
+disco está abierto, porque el sistema lo necesita. Quien entre a la oficina con el
+servidor prendido y consiga una cuenta con permisos lee todo, y el cifrado no
+interviene.
+
+Lo que impide es que alguien se lleve el equipo, o le saque el SSD, y lo lea en
+otra parte. Que es el caso realista en una oficina de distribución: «se llevaron
+la computadora», no «un atacante con tiempo quiso la cartera».
+
+### La tensión que decide el diseño: el arranque
+
+Un volumen LUKS pide su frase al arrancar. En un servidor sin pantalla ni teclado
+y sin nadie en la oficina:
+
+> Hay un apagón largo, el UPS se agota, el equipo se apaga. A las 6 de la mañana
+> el vendedor sale a ruta y **el servidor sigue abajo**, esperando que alguien vaya
+> a teclear una frase.
+
+No es hipotético: es exactamente el escenario que el UPS existe para cubrir, y el
+UPS solo cubre los cortes cortos. Así que cifrar el disco sin resolver esto cambia
+un riesgo de probabilidad baja por una interrupción de operación de probabilidad
+alta — y eso no es una mejora, es un intercambio malo disfrazado de buena práctica.
+
+### La decisión: LUKS con la llave sellada en el TPM, más el BIOS cerrado
+
+| Opción | ¿Protege el equipo apagado? | ¿Arranca solo? |
+|---|---|---|
+| Sin cifrar | No | Sí |
+| LUKS + frase al arrancar | Sí, del todo | **No** |
+| **LUKS + llave sellada en el TPM** | Sí si sacan el disco; no si arrancan el equipo | **Sí** |
+| LUKS + TPM con PIN | Sí, del todo | No |
+
+Se elige la tercera, y lo que la hace defendible es que **no va sola**. El hueco
+que deja —arrancar el equipo robado— no se cierra en el disco sino en el firmware:
+contraseña de BIOS y arranque desde USB deshabilitado.
+
+La razón es concreta y vale escribirla porque es la parte que los tutoriales se
+saltan: sellar contra **PCR 7** mide el *estado* del arranque seguro, no el binario
+que arranca. Un Ubuntu en vivo firmado por Microsoft produce la misma medición, así
+que el TPM entregaría la llave igual. Sellar también contra PCR 4 —que sí mide el
+cargador y el kernel— lo cerraría, pero entonces **cada actualización de kernel
+rompe el arranque automático**, que en un servidor desatendido es peor que el
+problema.
+
+De ahí que la respuesta sea el BIOS: sin arranque desde USB no hay live USB que
+presentar. Y para saltarse la contraseña del BIOS hay que resetear el CMOS —
+**que resetea el TPM, que borra la llave**. El disco queda cerrado. Las dos
+medidas juntas funcionan; por separado, ninguna.
+
+### La trampa que puede costar la operación completa
+
+`systemd-cryptenroll --tpm2-device` **no reemplaza la frase: agrega una segunda
+ranura de llave.** Un volumen bien armado tiene dos — la frase y el TPM.
+
+Si alguien borra la ranura de la frase después de sellar el TPM, el sistema sigue
+arrancando y nada avisa. Hasta el día en que una actualización de BIOS, un cambio
+de tarjeta madre o una pila agotada resetean el TPM: **y entonces el disco no se
+vuelve a abrir nunca**. No hay otra llave. Es la forma más silenciosa de perder la
+operación completa, y sale de seguir un tutorial hasta el paso que dice
+`--wipe-slot` creyendo que limpia algo.
+
+Por eso `scripts/revisar_cifrado.sh` no cuenta ranuras: cuenta **ranuras menos
+llaves automáticas**, que es el número de frases que una persona puede teclear. Si
+da cero, es FALLA con el comando para arreglarlo.
+
+Y ahí apareció un defecto del propio guion, releyéndolo contra el procedimiento que
+yo mismo acababa de escribir: contaba solo los tokens `systemd-tpm2`, y el camino B
+—`clevis`— deja un token `clevis`. En un equipo armado por el camino B eso habría
+hecho **dos** cosas mal: decir que el disco no abre solo cuando sí abre, y —lo
+grave— **contar la ranura del TPM como si fuera una frase**, reportando «hay camino
+de vuelta» en el único caso en que no lo hay. El guion cuenta los dos tokens, y
+están probadas las cuatro combinaciones: cada camino con frase, el camino B sin
+frase, y la frase sola.
+
+### Lo que no pude probar, y cómo está escrito por eso
+
+Aquí no hay TPM, ni Ubuntu Server, ni `dm_mod` en el kernel. Lo verificado de
+verdad:
+
+- El guion contra un **volumen LUKS2 real** creado con `cryptsetup luksFormat` en
+  un archivo de respaldo: la cuenta de ranuras es correcta y no confunde el
+  `0: crypt` de *Data segments* con una ranura de llave.
+- La detección de la cadena `lvm → crypt → part` contra la salida real de
+  `lsblk -nsPo`, con un `lsblk` falso que reproduce lo que deja el instalador de
+  Ubuntu. Se usa `-P` —pares `NAME="x" TYPE="y"`— y no columnas **porque en
+  columnas lsblk dibuja el árbol y el nombre viene con glifos `└─` pegados
+  delante**; de ahí salen los parseos que fallan solo en la máquina de alguien más.
+- Las cuatro ramas del camino de recuperación, con los dos tipos de token:
+  `systemd-tpm2` + frase, `clevis` + frase, `clevis` sin frase (FALLA), y la frase
+  sola.
+
+Lo que **no** se pudo ejercitar es el sellado en sí. Y como el initramfs de Ubuntu
+LTS usa los scripts clásicos de `cryptsetup` y no siempre honra la opción
+`tpm2-device=auto` —que es de `systemd-cryptsetup`—, el procedimiento da **dos
+caminos**: `systemd-cryptenroll` primero y `clevis` como alternativa empaquetada
+para Ubuntu, con la prueba que decide cuál hizo falta. Decirlo así vale más que
+presentar uno solo como si estuviera comprobado: si no funciona, quien lo siga sabe
+que el problema no es que lo hizo mal.
+
+### Y la prueba que no la sustituye ningún guion
+
+**Desenchufar el equipo.** Esperar un minuto. Volver a enchufarlo. Tiene que
+levantar solo y `/salud` tiene que responder sin que nadie toque nada.
+
+Es lo único que prueba que la ruta de mañana a las 6 no se va a quedar esperando, y
+es la razón por la que el guion termina diciendo en voz alta que eso es justo lo que
+él no puede comprobar. Un guion que revisara la configuración y callara esto daría
+una confianza que no corresponde.
