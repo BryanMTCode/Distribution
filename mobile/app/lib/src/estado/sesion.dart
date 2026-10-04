@@ -95,6 +95,108 @@ class ControladorSesion extends Notifier<Sesion> {
     return resultado;
   }
 
+  /// Vincula ESTE teléfono a su vendedor, la primera vez.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// EL PASO QUE FALTABA, Y POR QUÉ NO SE NOTABA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// `entrarOffline` necesita una credencial ya guardada, y lo único que la
+  /// guardaba era el sembrador del modo demo — que los dos cerrojos de
+  /// compilación eliminan del binario de release. Así que en producción un
+  /// vendedor no tenía NINGÚN camino para entrar: ni online (esa pantalla es de
+  /// Gerencia y exige `puedeVerTablero`) ni sin señal (no hay credencial).
+  ///
+  /// Las piezas estaban las cinco escritas y ninguna conectada: el servidor
+  /// devuelve `credencial_local` cuando el login trae `dispositivo_id`, el
+  /// cliente Dart acepta el parámetro, `RepoCredencial.guardar` y
+  /// `RepoFolios.guardar` existen, y `/dispositivos/{id}/folios` asigna rangos.
+  /// Esto las une.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// EL ORDEN IMPORTA: PRIMERO LO QUE NO SE PUEDE REHACER SIN SEÑAL
+  /// ───────────────────────────────────────────────────────────────────────
+  /// La credencial y el `dispositivo_id` se guardan ANTES de pedir los folios. Si
+  /// la red se corta en medio, el vendedor queda vinculado y puede entrar con su
+  /// PIN —le faltarán folios y la pantalla de cobro lo dirá— en vez de quedar
+  /// fuera de la app con la credencial a medio camino. Pedir folios se reintenta
+  /// con señal; recuperar una credencial perdida, no.
+  Future<String?> vincularEquipo({
+    required String codigo,
+    required String password,
+    required String dispositivoId,
+  }) async {
+    final id = dispositivoId.trim();
+    if (id.isEmpty) {
+      return 'Falta el identificador del equipo. Lo da la oficina al vincularlo '
+          'en el panel, en Teléfonos.';
+    }
+
+    final transporte = ref.read(transporteSinSesionProvider);
+    final SesionEnLinea sesion;
+    try {
+      sesion = await ClienteAuth(transporte).entrar(
+        codigo: codigo.trim(),
+        password: password,
+        dispositivoId: id,
+      );
+    } on CredencialesInvalidas {
+      return 'Código o contraseña incorrectos.';
+    } on LoginRechazado catch (e) {
+      // Se devuelve el texto del SERVIDOR: dice «dispositivo no registrado» o
+      // «el dispositivo pertenece a otro usuario», y traducirlo a un genérico
+      // dejaría a quien lo lea intentando lo mismo otra vez.
+      return e.detalle;
+    } on ErrorDeRed catch (e) {
+      return 'No se pudo conectar: ${e.mensaje}. Vincular el equipo necesita '
+          'señal una sola vez; después entra con su PIN sin red.';
+    } on ServidorConProblemas catch (e) {
+      return 'El servidor contestó con un error (HTTP ${e.codigo}).';
+    }
+
+    final credencial = sesion.credencialCruda;
+    if (credencial == null) {
+      // El servidor solo manda credencial cuando el login trae un dispositivo
+      // registrado. Sin ella no hay login offline, así que vincular no sirvió.
+      return 'El servidor no devolvió credencial para este equipo. Revisa que '
+          'esté vinculado a este vendedor en el panel, en Teléfonos.';
+    }
+
+    await ref.read(repoCredencialProvider).guardar(credencial);
+    ref.read(baseLocalProvider).db.execute(
+      "INSERT INTO sync_estado (clave, valor) VALUES ('dispositivo_id', ?) "
+      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      [id],
+    );
+    ref.read(tokenProvider.notifier).state = sesion.accessToken;
+    await ref
+        .read(almacenSeguroProvider)
+        .escribir(claveRefreshToken, sesion.refreshToken);
+
+    // Los folios, que son lo que permite CERRAR una venta. Si fallan, el equipo
+    // ya quedó vinculado: se avisa y se puede reintentar sincronizando.
+    // Se usa `transporteProvider` y no un `TransporteHttp` armado a mano: ya
+    // lleva el token que acabamos de poner, y así hay un solo lugar donde se
+    // decide cómo se habla con el servidor.
+    final conSesion = ref.read(transporteProvider);
+    if (conSesion == null) {
+      return 'El equipo quedó vinculado, pero no se pudieron traer los folios. '
+          'Entra con tu PIN y sincroniza con señal antes de vender.';
+    }
+    try {
+      final rangos = await ClienteDispositivo(conSesion).pedirFolios(id);
+      final repo = RepoFolios(ref.read(baseLocalProvider).db);
+      final ahora = ref.read(relojProvider)().toUtc().toIso8601String();
+      for (final rango in rangos) {
+        repo.guardar(rango, asignadoEn: ahora);
+      }
+    } on Object {
+      return 'El equipo quedó vinculado, pero no se pudieron traer los folios. '
+          'Entra con tu PIN y sincroniza con señal antes de vender.';
+    }
+
+    return null;
+  }
+
   /// Abre la sesión de Gerencia contra el servidor.
   ///
   /// No guarda credencial para login offline: ver `SesionDeGerencia`. Lo que

@@ -42,6 +42,52 @@
   </div>
 </div>
 
+{% if puede_editar %}
+  {# ---------------------------------------------------------------------
+     Vincular un teléfono. Sin este paso ningún vendedor puede entrar a la app:
+     su login exige el id de un equipo registrado a su nombre, y el teléfono no
+     tiene por dónde crearlo solo. Ver el docstring de equipos.py.
+     --------------------------------------------------------------------- #}
+  <h2>Vincular un teléfono</h2>
+  {% if sin_equipo %}
+    <p class="subtitulo">
+      El teléfono de un vendedor <strong>no puede entrar a la app hasta que se
+      vincule aquí</strong>. Al guardar aparece un identificador que se teclea en
+      el teléfono <strong>una sola vez</strong>; de ahí en adelante entra con su
+      PIN, sin señal.
+    </p>
+    <form method="post" action="/panel/equipos/registrar" class="tarjeta"
+          style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo" style="margin:0">
+        <label for="vendedor_id">Vendedor</label>
+        <select name="vendedor_id" id="vendedor_id" required>
+          <option value="">— elige —</option>
+          {% for v in sin_equipo %}
+            <option value="{{ v.id }}">{{ v.codigo }} · {{ v.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo" style="margin:0; flex:1; min-width:220px">
+        <label for="etiqueta">Etiqueta del equipo</label>
+        <input type="text" name="etiqueta" id="etiqueta" required maxlength="120"
+               placeholder="Moto G54 — Bryan">
+        <div class="ayuda">
+          Es lo que se lee en la lista de arriba cuando hay ocho teléfonos. El
+          modelo y de quién es.
+        </div>
+      </div>
+      <button type="submit">Vincular</button>
+    </form>
+  {% else %}
+    <p class="subtitulo">
+      Todos los vendedores activos ya tienen un equipo. Un vendedor opera
+      <strong>uno a la vez</strong>: para cambiarle el teléfono, suspende o revoca
+      el actual en la tabla de abajo y vuelve aquí.
+    </p>
+  {% endif %}
+{% endif %}
+
 <h2>Por equipo</h2>
 <div class="tabla-marco">
 <table>

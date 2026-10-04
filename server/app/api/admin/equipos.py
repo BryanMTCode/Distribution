@@ -57,6 +57,7 @@ from starlette import status
 from app.api.admin.comun import SesionDep, render, texto_o_nulo
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.core.config import obtener_config
+from app.domain.identificadores import nuevo_id
 
 router = APIRouter(prefix="/panel/equipos", tags=["panel"], include_in_schema=False)
 
@@ -154,11 +155,31 @@ async def listar(
             )
         )
 
+    # Los vendedores que todavía no tienen un equipo activo: son los únicos a
+    # quienes tiene sentido vincular uno, y presentarlos ya filtrados evita el
+    # único error que esta pantalla puede dar — «ya tiene uno activo».
+    sin_equipo = (
+        await sesion.execute(
+            text(
+                """
+                SELECT u.id, u.codigo, u.nombre
+                  FROM usuarios u
+                 WHERE u.rol_codigo = 'vendedor' AND u.activo
+                   AND NOT EXISTS (
+                         SELECT 1 FROM dispositivos d
+                          WHERE d.usuario_id = u.id AND d.estado = 'activo')
+                 ORDER BY u.codigo
+                """
+            )
+        )
+    ).mappings().all()
+
     return render(
         peticion,
         "equipos.html",
         {
             "equipos": equipos,
+            "sin_equipo": sin_equipo,
             "dias_max_omision": cfg.dias_max_offline,
             "confirmacion": CONFIRMACION_BORRADO,
             "etiqueta_estado": ETIQUETA_ESTADO,
@@ -184,6 +205,119 @@ def _volver(aviso: str = "", error: str = "") -> RedirectResponse:
     consulta = f"?aviso={aviso}" if aviso else f"?error={error}" if error else ""
     return RedirectResponse(
         f"/panel/equipos{consulta}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/registrar")
+async def registrar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    vendedor_id: Annotated[str, Form()] = "",
+    etiqueta: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    """Vincula un teléfono a un vendedor, desde la oficina.
+
+    ─────────────────────────────────────────────────────────────────────────
+    ESTE PASO NO EXISTÍA Y SIN ÉL NINGÚN VENDEDOR PUEDE ENTRAR A LA APP
+    ─────────────────────────────────────────────────────────────────────────
+    El login de un vendedor exige `dispositivo_id` de un equipo registrado y
+    suyo (`api/v1/auth.py`), y `/dispositivos/registrar` crea el equipo a nombre
+    de QUIEN LLAMA — que necesita un token, que necesita el login. La cadena se
+    cierra sobre sí misma: un teléfono nuevo no tenía por dónde empezar.
+
+    El único código que lo tapaba era el sembrador del modo demo, que escribe la
+    credencial directo en el SQLite del teléfono. Los dos cerrojos de compilación
+    lo eliminan del binario de release, así que en producción el camino
+    simplemente no existía.
+
+    Se rompe aquí, desde la oficina, y no relajando la regla del servidor: los
+    equipos son de la empresa, y quién usa cuál es una decisión de la oficina.
+    Dejar que un teléfono se vincule solo con las credenciales del vendedor haría
+    que cualquiera que las consiga pueda enrolar su propio aparato.
+
+    ─────────────────────────────────────────────────────────────────────────
+    EL ID LO GENERA EL SERVIDOR AQUÍ, Y SE TECLEA EN EL TELÉFONO
+    ─────────────────────────────────────────────────────────────────────────
+    En la API lo genera el dispositivo —igual que los documentos de campo— y
+    tiene sentido ahí. Aquí no hay dispositivo todavía: el teléfono no existe en
+    el sistema hasta que alguien lo vincula. Así que lo genera el servidor y la
+    pantalla lo muestra para teclearlo una vez en la app.
+    """
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+
+    nombre = texto_o_nulo(etiqueta, maximo=120)
+    if nombre is None:
+        return _volver(
+            error="Ponle una etiqueta al equipo: «Moto G54 — Bryan». "
+            "Es lo que se lee en la lista cuando hay ocho."
+        )
+
+    try:
+        vendedor = uuid.UUID(vendedor_id)
+    except ValueError:
+        return _volver(error="Elige a qué vendedor se le vincula el equipo.")
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT nombre, rol_codigo, activo FROM usuarios WHERE id = :u"
+            ),
+            {"u": vendedor},
+        )
+    ).mappings().first()
+    if fila is None:
+        return _volver(error="Ese usuario no existe.")
+    if fila["rol_codigo"] != "vendedor":
+        return _volver(
+            error="Solo un vendedor opera un teléfono en la calle. "
+            "Gerencia entra al tablero con su usuario, sin vincular equipo."
+        )
+    if not fila["activo"]:
+        return _volver(error=f"{fila['nombre']} está dado de baja.")
+
+    # Un usuario opera UN equipo activo a la vez, y hay un índice único parcial
+    # que lo impone (migración 0001). Se comprueba antes para dar un mensaje en
+    # vez de un error de restricción, que en una pantalla es un 500.
+    otro = (
+        await sesion.execute(
+            text(
+                "SELECT etiqueta FROM dispositivos "
+                " WHERE usuario_id = :u AND estado = 'activo'"
+            ),
+            {"u": vendedor},
+        )
+    ).scalar()
+    if otro is not None:
+        return _volver(
+            error=f"{fila['nombre']} ya tiene «{otro}» activo. Suspende o revoca "
+            "ese equipo antes de vincular otro: un vendedor opera uno a la vez."
+        )
+
+    # `registrado_en` lo pone la base con `now()`; no se pasa para no tener dos
+    # relojes diciendo cuándo ocurrió esto.
+    dispositivo = nuevo_id()
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO dispositivos (id, usuario_id, etiqueta, estado)
+            VALUES (:id, :u, :etiqueta, 'activo')
+            """
+        ),
+        {"id": dispositivo, "u": vendedor, "etiqueta": nombre},
+    )
+    await sesion.commit()
+
+    # Los rangos de folio NO se asignan aquí a propósito: los pide la app con
+    # `/v1/dispositivos/{id}/folios` al vincularse, porque tienen que acabar en el
+    # SQLite del teléfono y asignarlos en el servidor no los pone ahí. Ese
+    # endpoint es idempotente —devuelve el rango activo si ya hay uno— así que la
+    # app puede pedirlos otra vez cuando le falten.
+    return _volver(
+        aviso=f"Equipo «{nombre}» vinculado a {fila['nombre']}. "
+        f"Tecléalo en el teléfono una sola vez: {dispositivo}"
     )
 
 

@@ -37,6 +37,7 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
   final _pin = TextEditingController();
   final _codigo = TextEditingController();
   final _password = TextEditingController();
+  final _equipo = TextEditingController();
   bool _verificando = false;
   bool _mostrarGerencia = false;
   ResultadoLogin? _error;
@@ -46,6 +47,8 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
   /// dispositivo registrado"— y traducirlo a un genérico dejaría a quien lo lea
   /// intentando lo mismo otra vez.
   String? _errorEnLinea;
+  String? _errorVinculo;
+  bool _mostrarVinculo = false;
 
   @override
   void initState() {
@@ -67,6 +70,7 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
     _pin.dispose();
     _codigo.dispose();
     _password.dispose();
+    _equipo.dispose();
     super.dispose();
   }
 
@@ -84,6 +88,32 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
     setState(() {
       _verificando = false;
       _errorEnLinea = problema;
+    });
+  }
+
+  /// Vincula el teléfono la primera vez. Pide señal una sola vez en su vida.
+  Future<void> _vincular() async {
+    setState(() {
+      _verificando = true;
+      _errorVinculo = null;
+      _error = null;
+    });
+    final problema = await ref.read(sesionProvider.notifier).vincularEquipo(
+          codigo: _codigo.text,
+          password: _password.text,
+          dispositivoId: _equipo.text,
+        );
+    if (!mounted) return;
+    setState(() {
+      _verificando = false;
+      _errorVinculo = problema;
+      // Vinculado: se limpia la contraseña y se deja el PIN a la vista, que es
+      // el camino de todos los días a partir de ahora.
+      if (problema == null) {
+        _password.clear();
+        _equipo.clear();
+        _mostrarVinculo = false;
+      }
     });
   }
 
@@ -261,6 +291,101 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                         ),
                         child: Text(
                           _errorEnLinea!,
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                  // ──────────────────────────────────────────────────
+                  // Vincular el equipo: el paso que faltaba
+                  // ──────────────────────────────────────────────────
+                  // Sin esto, un teléfono recién instalado no tenía NINGÚN
+                  // camino: el login sin señal necesita una credencial que solo
+                  // el modo demo escribía, y la demo no existe en release.
+                  //
+                  // Va al final y plegado porque se usa UNA VEZ en la vida del
+                  // equipo. Lo de todos los días es el PIN de arriba.
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  if (!_mostrarVinculo)
+                    OutlinedButton.icon(
+                      key: const Key('boton_abrir_vinculo'),
+                      onPressed: _verificando
+                          ? null
+                          : () => setState(() => _mostrarVinculo = true),
+                      icon: const Icon(Icons.phonelink_setup_outlined),
+                      label: const Text('Vincular este equipo'),
+                    )
+                  else ...[
+                    Text(
+                      'Solo la primera vez, y con señal. La oficina vincula el '
+                      'equipo en el panel y te da el identificador.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('campo_codigo_vinculo'),
+                      controller: _codigo,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Tu código de vendedor',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('campo_password_vinculo'),
+                      controller: _password,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tu contraseña',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.password_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('campo_equipo_vinculo'),
+                      controller: _equipo,
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (_) => _verificando ? null : _vincular(),
+                      decoration: const InputDecoration(
+                        labelText: 'Identificador del equipo',
+                        helperText: 'Lo da la oficina: panel → Teléfonos',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.qr_code_2_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        key: const Key('boton_vincular'),
+                        onPressed: _verificando ? null : _vincular,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('Vincular y entrar'),
+                        ),
+                      ),
+                    ),
+                    if (_errorVinculo != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        key: const Key('aviso_vinculo'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _errorVinculo!,
                           style: TextStyle(
                             color:
                                 Theme.of(context).colorScheme.onErrorContainer,

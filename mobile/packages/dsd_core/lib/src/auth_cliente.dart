@@ -71,6 +71,7 @@ class SesionEnLinea {
     required this.expiraEnSeg,
     required this.perfil,
     this.credencialLocal,
+    this.credencialCruda,
   });
 
   factory SesionEnLinea.deJson(Map<String, Object?> json) => SesionEnLinea(
@@ -85,6 +86,7 @@ class SesionEnLinea {
             : CredencialLocal.deJson(
                 json['credencial_local']! as Map<String, Object?>,
               ),
+        credencialCruda: json['credencial_local'] as Map<String, Object?>?,
       );
 
   final String accessToken;
@@ -98,6 +100,14 @@ class SesionEnLinea {
   /// Solo viene cuando el login trae un dispositivo registrado: es lo que
   /// permite el login offline posterior. Un gerente no la recibe.
   final CredencialLocal? credencialLocal;
+
+  /// El mismo objeto, **sin interpretar**, para guardarlo tal como llegó.
+  ///
+  /// `RepoCredencial.guardar` recibe lo que devolvió el servidor, y
+  /// `CredencialLocal` solo sabe deserializar. Conservar el mapa evita escribir
+  /// un `aJson` que sería una segunda copia de la forma del contrato — y dos
+  /// copias se separan en la primera corrección.
+  final Map<String, Object?>? credencialCruda;
 }
 
 /// El servidor dijo que el código o la contraseña no sirven (401).

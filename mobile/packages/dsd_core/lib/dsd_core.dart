@@ -16,6 +16,7 @@ export 'src/credito.dart';
 export 'src/dinero.dart';
 export 'src/escpos.dart';
 export 'src/esquema_local.dart';
+export 'src/dispositivo_cliente.dart';
 export 'src/folios.dart';
 export 'src/merma.dart';
 export 'src/no_drop.dart';

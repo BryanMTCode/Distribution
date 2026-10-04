@@ -625,3 +625,151 @@ async def test_la_pantalla_no_deja_editar_sin_el_permiso(cliente, sesion, semill
     # El CSRF se revisa primero, así que puede ser 403 por cualquiera de los
     # dos motivos; lo que importa es que NO pasa.
     assert prohibido.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Vincular un teléfono desde la oficina
+# ---------------------------------------------------------------------------
+# El paso que no existía, y sin el cual NINGÚN vendedor puede entrar a la app: su
+# login exige el id de un equipo registrado a su nombre, y `/dispositivos/registrar`
+# crea el equipo a nombre de quien llama —que necesita un token, que necesita el
+# login—. La cadena se cerraba sobre sí misma.
+#
+# Lo tapaba solo el sembrador del modo demo, que escribe la credencial directo en
+# el SQLite del teléfono y que los cerrojos de compilación eliminan del release.
+
+
+async def test_la_pantalla_ofrece_vincular_a_un_vendedor_sin_equipo(cliente, semilla):
+    await _entrar(cliente)
+    texto = solo_texto(await cliente.get("/panel/equipos"))
+    assert "Vincular un teléfono" in texto
+    # El vendedor de la semilla no tiene equipo: tiene que estar ofrecido.
+    assert "VEND01" in texto
+
+
+async def test_vincular_crea_el_equipo_y_muestra_el_id(cliente, sesion, semilla):
+    await _entrar(cliente)
+    r = await cliente.post(
+        "/panel/equipos/registrar",
+        data={
+            "vendedor_id": str(semilla["vendedor"]),
+            "etiqueta": "Moto G54 — Juan",
+            "csrf": await _csrf(cliente),
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT id, etiqueta, estado FROM dispositivos "
+                " WHERE usuario_id = :v"
+            ),
+            {"v": semilla["vendedor"]},
+        )
+    ).mappings().one()
+    assert fila["etiqueta"] == "Moto G54 — Juan"
+    assert fila["estado"] == "activo"
+
+    # El id tiene que llegar a la pantalla: es lo que se teclea en el teléfono, y
+    # si no se muestra el paso queda a medias y nadie sabe qué poner.
+    assert str(fila["id"]) in r.headers["location"]
+
+
+async def test_el_id_del_equipo_es_uuid7(cliente, sesion, semilla):
+    """Ordenable por tiempo, como el resto de los ids del sistema."""
+    await _entrar(cliente)
+    await cliente.post(
+        "/panel/equipos/registrar",
+        data={
+            "vendedor_id": str(semilla["vendedor"]),
+            "etiqueta": "Moto G54",
+            "csrf": await _csrf(cliente),
+        },
+        follow_redirects=False,
+    )
+    creado = (
+        await sesion.execute(
+            text("SELECT id FROM dispositivos WHERE usuario_id = :v"),
+            {"v": semilla["vendedor"]},
+        )
+    ).scalar_one()
+    assert creado.version == 7
+
+
+async def test_un_vendedor_opera_un_equipo_a_la_vez(cliente, sesion, semilla, equipo):
+    """Y el mensaje dice qué hacer, no que la base se quejó.
+
+    Hay un índice único parcial que lo impone (migración 0001). Sin esta
+    comprobación el segundo intento daría un error de restricción, que en una
+    pantalla es un 500.
+    """
+    await _entrar(cliente)
+    r = await cliente.post(
+        "/panel/equipos/registrar",
+        data={
+            "vendedor_id": str(semilla["vendedor"]),
+            "etiqueta": "El segundo",
+            "csrf": await _csrf(cliente),
+        },
+        follow_redirects=True,
+    )
+    texto = solo_texto(r)
+    assert "ya tiene" in texto
+    assert "uno a la vez" in texto
+    assert (
+        await sesion.execute(
+            text("SELECT count(*) FROM dispositivos WHERE usuario_id = :v"),
+            {"v": semilla["vendedor"]},
+        )
+    ).scalar_one() == 1
+
+
+async def test_a_gerencia_no_se_le_vincula_un_telefono(cliente, sesion, semilla):
+    """Gerencia entra al tablero con su usuario, sin equipo.
+
+    Y no es una limitación de la pantalla: el login solo exige `dispositivo_id`
+    para el rol vendedor, porque es el único que opera sin señal.
+    """
+    await _entrar(cliente)
+    gerente = (
+        await sesion.execute(
+            text("SELECT id FROM usuarios WHERE rol_codigo <> 'vendedor' LIMIT 1")
+        )
+    ).scalar_one()
+    r = await cliente.post(
+        "/panel/equipos/registrar",
+        data={
+            "vendedor_id": str(gerente),
+            "etiqueta": "Una laptop",
+            "csrf": await _csrf(cliente),
+        },
+        follow_redirects=True,
+    )
+    assert "Solo un vendedor" in solo_texto(r)
+
+
+async def test_vincular_exige_etiqueta(cliente, semilla):
+    """Con ocho teléfonos, uno sin etiqueta no se distingue de otro."""
+    await _entrar(cliente)
+    r = await cliente.post(
+        "/panel/equipos/registrar",
+        data={
+            "vendedor_id": str(semilla["vendedor"]),
+            "etiqueta": "   ",
+            "csrf": await _csrf(cliente),
+        },
+        follow_redirects=True,
+    )
+    assert "etiqueta" in solo_texto(r)
+
+
+async def test_vincular_exige_csrf(cliente, semilla):
+    await _entrar(cliente)
+    r = await cliente.post(
+        "/panel/equipos/registrar",
+        data={"vendedor_id": str(semilla["vendedor"]), "etiqueta": "X", "csrf": "malo"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 403

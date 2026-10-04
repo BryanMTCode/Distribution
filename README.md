@@ -97,11 +97,13 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Despliegue de un comando** — `docker compose up -d` crea los roles de RLS en orden | ✅ 11 pruebas |
 | **APK de producción firmado** — el build se detiene sin keystore, y revisa el APK | ✅ 7 + 5 de widget |
 | **Dependencias con candado** — `uv.lock` versionado, los tres caminos lo usan | ✅ 9 pruebas |
+| **Vincular el teléfono de un vendedor** — desde el panel, y entra sin señal después | ✅ 7 + 6 de widget |
+| **Simulacro maestro end-to-end** — un día completo con cifras verificables | ✅ `docs/SIMULACRO.md` |
 | **Despliegue en VPS** — cortafuegos, SSH, puertos y hora, con `make servidor-revisar` | ⏳ se hace al crear el servidor |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**975 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **225 de widget**, todas en verde.
+**982 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **231 de widget**, todas en verde.
 
 ## Stack
 
@@ -190,7 +192,7 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial,
                      gerencia/ (tablero, mapa del día)
-    test/            225 pruebas de widget, sin emulador
+    test/            231 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -209,8 +211,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 975 pruebas de Python
-make movil                          # 475 de Dart + 225 de widget
+make pruebas                        # 982 pruebas de Python
+make movil                          # 475 de Dart + 231 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

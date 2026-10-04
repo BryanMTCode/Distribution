@@ -3272,3 +3272,96 @@ contra documentación y la lógica del guion está verificada con dobles, pero
 **`docker compose up -d` en un VPS real sigue siendo la primera ejecución de
 verdad** — igual que antes, con una diferencia a favor: el defecto del token del
 túnel habría detenido ese primer intento en seco, y ya no está.
+
+---
+
+## 48. Un vendedor no podía entrar a la app, y el modo demo lo tapaba
+
+Al escribir el guion del simulacro end-to-end apareció el hueco más grande de este
+repositorio: **ningún vendedor podía iniciar sesión en un binario de producción.**
+
+La cadena se cerraba sobre sí misma:
+
+| Para | Hace falta | Dónde |
+|---|---|---|
+| Iniciar sesión como vendedor | `dispositivo_id` de un equipo registrado y suyo | `api/v1/auth.py` — rechaza con 400 si falta |
+| Registrar el equipo | Un token válido, y lo crea a nombre de **quien llama** | `api/v1/dispositivos.py` |
+| El token | El login de arriba | ↑ |
+
+Y no había salida por los lados: ni el CLI ni el panel registraban un equipo a
+nombre de un vendedor, y en la app un `grep dispositivoId` sobre todo
+`mobile/app/lib` no devolvía **nada**.
+
+### Cinco piezas escritas, ninguna conectada
+
+Es la misma huella de las §42 a §47, en su versión más completa:
+
+| Pieza | Servidor | Cliente Dart | App |
+|---|---|---|---|
+| Registrar el equipo | ✅ | ❌ nadie llamaba | ❌ |
+| Login con `dispositivo_id` → `credencial_local` | ✅ | ✅ aceptaba el parámetro | ❌ no lo pasaba |
+| Guardar la credencial local | — | ✅ `RepoCredencial.guardar` | ❌ solo el demo |
+| Pedir rangos de folio | ✅ idempotente | ❌ nadie llamaba | ❌ |
+| Guardar los rangos | — | ✅ `RepoFolios.guardar` | ❌ nadie llamaba |
+
+**Lo que lo tapó durante nueve fases fue el modo demo.** Su sembrador escribe la
+credencial, el `dispositivo_id` y un rango de folios directo en el SQLite del
+teléfono — las cinco piezas de golpe. Y como los dos cerrojos de compilación lo
+eliminan del binario de release, en producción el camino simplemente no existía.
+Todo el desarrollo de la app se hizo entrando por ahí.
+
+El propio docstring de `panel/equipos.py` lo decía sin cerrarlo: «Registrar y
+revocar un equipo solo se podía hacer por la API, con `curl`». La pantalla añadió
+suspender, revocar y borrar. Registrar, no.
+
+### La decisión: lo vincula la oficina, no el teléfono
+
+Se consideró dejar que el teléfono se registrara solo en su primer login, que es
+más simple. Se descartó: exigiría relajar la regla del servidor que rechaza a un
+vendedor sin dispositivo, y entonces **cualquiera con las credenciales de un
+vendedor podría enrolar su propio aparato**. Los equipos son de la empresa y quién
+usa cuál es una decisión de la oficina — es el mismo principio del modelo de
+amenaza, donde el caso frecuente no es el robo sino el vendedor que se va.
+
+Así que `POST /panel/equipos/registrar`: la oficina elige vendedor y etiqueta, el
+servidor genera el id y la pantalla lo muestra para teclearlo **una vez** en el
+teléfono. El id lo genera el servidor y no el dispositivo —al contrario que en la
+API— porque aquí todavía no hay dispositivo: el teléfono no existe en el sistema
+hasta que alguien lo vincula.
+
+### El orden del guardado, que es la única decisión delicada
+
+`vincularEquipo` guarda la credencial y el `dispositivo_id` **antes** de pedir los
+folios. Si la red se corta en medio, el vendedor queda vinculado y puede entrar con
+su PIN —le faltarán folios y la pantalla de cobro lo dirá— en vez de quedar fuera
+de la app con la credencial a medio camino.
+
+La asimetría es la razón: **pedir folios se reintenta con señal; recuperar una
+credencial perdida, no.** Hay una prueba de que un fallo al traer folios deja el
+equipo vinculado, y otra de que un login sin credencial no deja nada escrito.
+
+Los folios se piden y no se asignan desde el panel porque tienen que acabar en el
+SQLite del teléfono, y asignarlos en el servidor no los pone ahí. El endpoint es
+idempotente —devuelve el rango activo si ya hay uno— así que se puede pedir al
+vincularse y otra vez cuando falten, sin quemar rangos.
+
+### Y el simulacro, que es lo que lo encontró
+
+`docs/SIMULACRO.md` es un ciclo completo de un día con **cifras prescritas**: tres
+productos, una carga en cajas, dos ventas de contado, una a crédito, un cobro, una
+merma, una devolución, y los siete puntos de control con el número exacto que tiene
+que salir.
+
+Las cifras no se inventaron: se calcularon con las fórmulas del propio sistema
+—`esperado_en_camion = cargado − vendido − merma + devuelto` y
+`efectivo_esperado = contado + cobros en efectivo`— y se verificaron contra el
+código que las implementa. De paso salieron dos correcciones a mi propio borrador:
+
+- Afirmé que el cierre solo pone el camión en cero. **Sí devuelve el retorno a la
+  bodega** (`tipo = 'retorno'`, origen camión, destino bodega) y después ajusta el
+  residuo. Lo comprobé leyendo el handler, no suponiéndolo.
+- La cifra final de la bodega para un producto estaba mal: sumé la existencia
+  inicial en vez de la que quedó después de la carga. 48 + 39 = 87, no 135.
+
+Un guion de pruebas con un número equivocado es peor que ninguno: manda a buscar un
+defecto que no existe.
