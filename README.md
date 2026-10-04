@@ -127,6 +127,9 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 - [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) — el **por qué** de ese despliegue: qué cambia respecto de
   un servidor en la oficina, el tamaño del VPS con los números, el swap, la trampa de Docker con `ufw` y
   el cortafuegos de nube que sí la resuelve.
+- [`docs/PUESTA-EN-MARCHA.md`](docs/PUESTA-EN-MARCHA.md) — **del servidor desplegado al vendedor
+  trabajando**: respaldos, el keystore que no se puede perder, el APK de producción, vincular el
+  teléfono y el día −1 del piloto. 18 pasos con su lista para tachar.
 - [`docs/SIMULACRO.md`](docs/SIMULACRO.md) — el **simulacro maestro**: un día completo de operación con
   las cifras exactas que deben salir en siete puntos de control. *Si no cuadra aquí, no sale a la calle.*
 - [`docs/ARRANQUE-DIARIO.md`](docs/ARRANQUE-DIARIO.md) — **manual operativo**: levantar todo desde cero

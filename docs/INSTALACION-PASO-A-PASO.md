@@ -762,6 +762,10 @@ Nómbralo `dsd-desplegado-limpio`.
 
 ## Ya está en internet. Lo que falta antes del primer vendedor
 
+**Sigue con [PUESTA-EN-MARCHA.md](PUESTA-EN-MARCHA.md)**, que es la continuación de
+esta receta en la misma forma: 18 pasos lineales desde aquí hasta el teléfono del
+vendedor trabajando.
+
 El sistema está corriendo, pero **no es todavía apto para una venta real**. Tres
 cosas en este orden, y las tres son bloqueantes:
 
