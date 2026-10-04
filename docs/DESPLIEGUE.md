@@ -404,14 +404,16 @@ verifique que la base se puede restaurar. Para eso está `make simulacro`.
    la base, que no publica puerto, así que se corre desde dentro de la red:
 
    ```bash
-   docker compose run --rm --no-deps --entrypoint bash \
-     -v .:/repo \
-     -e DSD_DATABASE_URL="postgresql://dsd:$DSD_DB_PASSWORD@postgres:5432/dsd" \
-     postgres /repo/scripts/piloto_listo.sh VEND01
+   bash scripts/en_el_servidor.sh piloto_listo.sh VEND01
    ```
 
-   Se monta el repositorio completo y no solo `scripts/`: el script compara la
-   migración aplicada contra la última de `server/db/alembic/versions/`.
+   Ese envoltorio es el que hace correr en el servidor los scripts escritos para
+   la máquina de desarrollo: levanta un contenedor de un solo uso en la red de
+   compose, con el `pg_dump` de la versión correcta y las URLs armadas desde el
+   `.env`. Monta el repositorio completo y no solo `scripts/`, porque el script
+   compara la migración aplicada contra la última de
+   `server/db/alembic/versions/`. Mismo envoltorio para el respaldo y el
+   simulacro: ver `RESPALDOS.md` §5.1.
 
 ## 9. Si algún día lo mueves a la oficina
 

@@ -659,3 +659,29 @@ def test_el_laboratorio_tiene_techo_de_memoria():
         "el laboratorio analítico se quedó sin techo de memoria: en un VPS de "
         "2 GB eso pone a PostgreSQL a tiro del OOM killer"
     )
+
+
+def test_el_envoltorio_del_servidor_no_apunta_a_localhost():
+    """En el servidor la base NO escucha en 127.0.0.1, y ese es el punto.
+
+    `respaldar.sh`, `simulacro.sh` y `piloto_listo.sh` traen por omisión una URL
+    a `127.0.0.1:5432`, que es la de desarrollo. En el VPS PostgreSQL vive en un
+    contenedor sin puerto publicado, así que esa URL falla con «connection
+    refused» —que suena a base caída y no lo es—. El envoltorio tiene que armar
+    las URLs contra el NOMBRE DEL SERVICIO de compose.
+    """
+    guion = (_RAIZ / "scripts" / "en_el_servidor.sh").read_text(encoding="utf-8")
+    comandos = _sin_comentarios(guion)
+
+    assert "@postgres:5432" in comandos, (
+        "el envoltorio dejó de apuntar al servicio `postgres` de compose"
+    )
+    assert "127.0.0.1" not in comandos and "localhost" not in comandos, (
+        "el envoltorio apunta a localhost: en el servidor ahí no hay nada "
+        "escuchando, porque el compose no publica el puerto de PostgreSQL"
+    )
+    # El respaldo tiene que salir del contenedor al host, o desaparece con él.
+    assert ":/respaldos" in comandos, (
+        "el envoltorio ya no monta la carpeta de respaldos del host: un respaldo "
+        "escrito dentro del contenedor se va con el contenedor"
+    )

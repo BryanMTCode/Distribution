@@ -49,6 +49,12 @@ Los riesgos reales, en orden de probabilidad:
 
 ## 1. El comando del día
 
+> **En el servidor esto NO funciona, y el error engaña.** `make respaldo` habla
+> con `127.0.0.1:5432`, y en el VPS la base vive en un contenedor que **no
+> publica puerto**: el comando falla con «connection refused», que suena a base
+> caída y no lo es. Además el host no tiene `pg_dump` ni `make`. El equivalente
+> para el servidor está en **§5.1**, y es el que hay que poner en el cron.
+
 ```bash
 make respaldo
 ```
@@ -216,6 +222,82 @@ crontab -e
 > están en `/metrics`; el respaldo no. Lo más simple que funciona es mirar
 > `simulacro.log` el lunes por la mañana, y es justo lo que la bitácora de §4
 > obliga a hacer.
+
+---
+
+## 5.1 En el servidor: el mismo respaldo, por dentro de Docker
+
+En el VPS nada de lo de arriba se cumple tal cual, por cuatro razones que no se
+ven: PostgreSQL no publica puerto (el compose solo saca 80 y 443, a propósito), el
+host no tiene `pg_dump`, tampoco tiene `make`, y el usuario y la contraseña salen
+del `.env` y no son los de desarrollo.
+
+`scripts/en_el_servidor.sh` resuelve las cuatro: levanta un contenedor de un solo
+uso con la imagen de PostgreSQL —que ya trae el `pg_dump` de la versión correcta—,
+lo mete en la red de compose para que el nombre `postgres` resuelva, y arma las
+URLs leyendo el `.env`.
+
+```bash
+cd ~/Distribution
+
+# El respaldo del día
+bash scripts/en_el_servidor.sh respaldar.sh
+
+# El simulacro: restaura el último respaldo en una base desechable y lo verifica
+bash scripts/en_el_servidor.sh simulacro.sh
+
+# Y la revisión del día −1 del piloto
+bash scripts/en_el_servidor.sh piloto_listo.sh VEND01
+```
+
+Los archivos quedan en `~/respaldos-dsd` **del host**, no dentro del contenedor:
+un respaldo que vive en el contenedor desaparece con él. Y quedan a nombre de tu
+usuario, no de root, para poder copiarlos y borrarlos sin `sudo`.
+
+### Comprobar que el respaldo sirve
+
+```bash
+ls -lh ~/respaldos-dsd/
+cd ~/respaldos-dsd && sha256sum -c *.sha256
+```
+
+Debes ver el `.dump` con un tamaño razonable, su `.sha256` al lado, y la
+verificación diciendo `OK`.
+
+### El cron, en el servidor
+
+```bash
+crontab -e
+```
+
+```cron
+# Respaldo diario a las 3 de la mañana, hora local del servidor (que pusiste en
+# America/Mexico_City al instalarlo). A esa hora nadie sincroniza.
+0 3 * * * cd /home/dsd/Distribution && bash scripts/en_el_servidor.sh respaldar.sh >> /home/dsd/respaldos-dsd/cron.log 2>&1
+
+# Simulacro semanal, domingos a las 4.
+0 4 * * 0 cd /home/dsd/Distribution && bash scripts/en_el_servidor.sh simulacro.sh >> /home/dsd/respaldos-dsd/simulacro.log 2>&1
+```
+
+> **Rutas absolutas y nada de `~` en el cron.** El cron corre con un entorno
+> mínimo: `~` puede no expandir a lo que esperas y `PATH` no es el de tu sesión.
+> Si el usuario del servidor no es `dsd`, cambia las dos rutas.
+
+**Comprueba al día siguiente que corrió de verdad.** Un cron que falla en silencio
+es peor que no tener cron, porque crees que estás respaldado:
+
+```bash
+cat ~/respaldos-dsd/cron.log
+ls -lt ~/respaldos-dsd/ | head
+```
+
+### Y lo que el cron NO hace
+
+Sacar el respaldo **fuera del proveedor**, que es §3. En un VPS esto cambia de
+sentido respecto de la oficina: el riesgo nuevo no es que se queme el edificio, es
+que **pierdas la cuenta del proveedor** —un cargo rechazado, una cuenta
+comprometida— y con ella el servidor y los respaldos al mismo tiempo. Un respaldo
+en el object storage del mismo proveedor **no cuenta como fuera**.
 
 ---
 
