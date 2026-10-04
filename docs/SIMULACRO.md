@@ -35,8 +35,88 @@ pasar la noche depurando algo que no está roto.
 
 ### El teléfono en tu red local
 
-El teléfono y la PC en el **mismo WiFi**. Averigua la IP de la PC (`ip -4 addr` en
-WSL, `hostname -I`) y compila **en depuración**:
+El teléfono y la PC en el **mismo WiFi**. Pero antes de buscar ninguna IP, hay un
+obstáculo propio de WSL2 que tienes que resolver, porque si no, nada de esto
+funciona y la causa no es evidente.
+
+#### Primero: WSL2 está detrás de un NAT
+
+En su modo normal, WSL vive en una red virtual `172.x.x.x` **propia**, separada de
+tu WiFi. Dos consecuencias que cuestan una tarde si no se saben:
+
+- `ip -4 addr` y `hostname -I` **dentro de WSL** te devuelven esa `172.x`, que no es
+  la IP de tu PC en la red local. Tecleada en el teléfono no llega a ningún lado.
+- Un `uvicorn --host 0.0.0.0` dentro de WSL **no es alcanzable desde el teléfono**,
+  aunque apagues el firewall de Windows por completo: el teléfono no tiene ruta
+  hacia la red interna de WSL. Si te pones a pelear con el firewall, estás
+  arreglando el problema equivocado.
+
+Para saber en qué modo estás, dentro de WSL:
+
+```bash
+ip -4 addr show eth0 | grep inet
+```
+
+- Si dice `172.x.x.x` → estás en NAT. Sigue con el arreglo de abajo.
+- Si dice `192.168.x.x` (o la IP real de tu WiFi) → ya estás en modo espejo y
+  puedes brincarte al apartado siguiente.
+
+#### El arreglo: modo espejo
+
+Pide Windows 11 22H2 o más nuevo y WSL 2.0 o más nuevo (`wsl --version` en
+PowerShell). Crea el archivo `C:\Users\<tu-usuario>\.wslconfig` con esto:
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+Y reinicia WSL desde PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+Al volver a abrir Ubuntu, `ip -4 addr show eth0` debe mostrar ya la IP de tu WiFi.
+WSL comparte las interfaces de Windows y el teléfono sí puede llegar.
+
+Falta permitir el puerto en el firewall de Windows — **ahora sí** es el firewall.
+Desde PowerShell **como administrador**, una sola vez:
+
+```powershell
+New-NetFirewallRule -DisplayName "DSD API 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+```
+
+> **Si no puedes usar el modo espejo** (Windows 10, o WSL viejo), la alternativa es
+> reenviar el puerto desde Windows hacia WSL. Desde PowerShell como administrador,
+> sustituyendo `<IP-WSL>` por la `172.x` que te dio `ip -4 addr show eth0`:
+>
+> ```powershell
+> netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<IP-WSL>
+> ```
+>
+> Más la regla de firewall de arriba. Ojo: **la IP de WSL cambia en cada reinicio**,
+> así que esta regla hay que rehacerla. Por eso el modo espejo es el camino bueno.
+
+#### Ahora sí: la IP de tu PC
+
+En modo espejo la IP de `eth0` ya es la buena. Si quieres confirmarla desde
+Windows, también sirve esto dentro de WSL:
+
+```bash
+ipconfig.exe | grep -A6 -i "Wi-Fi" | grep -i "IPv4"
+```
+
+#### La API escuchando en la red
+
+```bash
+cd server && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+El `--host 0.0.0.0` no es opcional: por omisión uvicorn solo escucha en localhost y
+el teléfono no entra.
+
+#### Compila **en depuración**
 
 ```bash
 cd mobile/app
@@ -47,15 +127,18 @@ Con `http://` **tiene que ser un build de depuración**: el permiso de tráfico 
 TLS vive solo en el manifiesto de debug, y en release Android lo prohíbe — el APK
 compilaría bien y no se conectaría a nada.
 
-Y la API tiene que escuchar en la red, no solo en localhost:
+#### La prueba que decide
 
-```bash
-cd server && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
+Abre el navegador **del teléfono** en `http://<la-IP>:8000/salud`. Tiene que
+contestar. Si no contesta, **no sigas con el simulacro**: no es el sistema, es la
+red, y el orden para revisarlo es exactamente este:
 
-Comprueba desde el navegador del **teléfono**: `http://192.168.1.50:8000/salud`.
-Si eso no responde, nada de lo que sigue va a funcionar y el problema es el
-firewall de Windows, no el sistema.
+1. ¿`ip -4 addr show eth0` da la IP del WiFi, o todavía una `172.x`? → modo espejo.
+2. ¿`curl http://localhost:8000/salud` funciona **dentro de WSL**? → si no, la API
+   no está arriba o no está en `0.0.0.0`.
+3. ¿El teléfono y la PC están en el mismo WiFi, y la red no es de «invitados»?
+   Muchos routers aíslan los dispositivos de la red de invitados entre sí.
+4. Hasta aquí, el firewall de Windows.
 
 ---
 

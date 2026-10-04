@@ -867,17 +867,24 @@ Para probarlo necesitas dos cosas:
 2. **Que la app apunte a tu PC.** La dirección del servidor es de **tiempo de
    compilación** —no hay pantalla de ajustes a propósito: un campo editable es un
    camino para que un equipo robado mande la cartera a donde quiera quien lo
-   tenga—. Averigua la IP de tu WSL/PC en la red local y compila con ella:
+   tenga—. Averigua la IP de tu PC en la red local y compila con ella:
 
    ```bash
-   ip addr show eth0 | grep 'inet '        # o la interfaz que uses
+   ip -4 addr show eth0 | grep inet
    cd mobile/app
    flutter run --dart-define=DSD_BASE_URL=http://192.168.1.50:8000
    ```
 
+   **Si ese comando te da una `172.x.x.x`, no es la IP de tu red local**: es la red
+   NAT interna de WSL2, y el teléfono no tiene ruta hacia ella. Ningún ajuste de
+   firewall lo arregla. El camino es poner WSL en **modo espejo** —
+   `networkingMode=mirrored` en `C:\Users\<usuario>\.wslconfig` y `wsl --shutdown` —
+   y el procedimiento completo, con la alternativa por `portproxy` para Windows 10,
+   está en [SIMULACRO.md](SIMULACRO.md), apartado «El teléfono en tu red local».
+
    Y la API tiene que escuchar en la red, no solo en localhost: `make api` ya
-   levanta uvicorn en `0.0.0.0`. Si el teléfono no conecta, lo primero que hay
-   que descartar es el **firewall de Windows** sobre el puerto 8000.
+   levanta uvicorn en `0.0.0.0`. El **firewall de Windows** sobre el puerto 8000 es
+   lo último que hay que descartar, no lo primero: antes va el modo de red de WSL.
 
 > `http://` sin TLS solo funciona en los builds de **debug**: el
 > `usesCleartextTraffic` vive en `android/app/src/debug/AndroidManifest.xml` y
