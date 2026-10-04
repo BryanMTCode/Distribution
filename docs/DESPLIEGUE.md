@@ -46,8 +46,8 @@ lo que hay que configurar abajo.
 
 Lo que hace falta:
 
-- **4 GB de RAM** bastan para PostgreSQL + API + worker + Streamlit con 8–10
-  teléfonos. Con 8 GB vas sobrado y no lo vuelves a pensar.
+- **4 GB de RAM.** Es la recomendación, no el mínimo teórico. Abajo está el
+  porqué, con los números.
 - **2 vCPU**, **40 GB de disco** (la base de un año de operación de una ruta no
   llega a 1 GB; el espacio es para imágenes de Docker y respaldos locales).
 - **Ubuntu Server LTS**, que es lo que el `Dockerfile` y los procedimientos
@@ -58,6 +58,101 @@ Lo que hace falta:
 Un detalle de ubicación: la latencia a los teléfonos es irrelevante (los sobres de
 sincronización son pequeños), pero el panel lo usa la oficina todo el día. Un
 datacenter en México o en el sur de EE. UU. se siente mejor que uno en Europa.
+
+### 2 GB o 4 GB: por qué 4
+
+Con el laboratorio analítico encendido, el stack son cinco procesos y uno pesa
+tanto como los otros cuatro juntos. Órdenes de magnitud en reposo, medidos sobre
+las versiones que fija `uv.lock`:
+
+| Proceso | RAM en reposo |
+|---|---|
+| `postgres` (PostGIS 17) | 150–350 MB |
+| `api` (uvicorn + SQLAlchemy) | 150–250 MB |
+| `worker` | 100–200 MB |
+| `caddy` | 30–60 MB |
+| `analitica` (Streamlit + pandas + pyarrow + numpy + altair) | **350–600 MB** |
+
+Suma en reposo: **800 MB a 1.5 GB**, antes de atender una sola petición y sin
+contar el caché de páginas que PostgreSQL necesita para no ir al disco en cada
+consulta.
+
+En 2 GB eso **cabe**, y ahí está la trampa: cabe en reposo y se rompe en el peor
+momento. Tres cosas lo empujan al límite:
+
+1. **Construir las imágenes.** Son dos, y la de analítica instala pyarrow, pandas
+   y numpy. El pico de la construcción es mayor que el de la operación.
+2. **Un informe grande en el laboratorio.** pandas materializa el resultado en
+   memoria. Una consulta de un mes de una ruta es chica; una mal acotada, no.
+3. **El plan de 2 GB de DigitalOcean trae 1 vCPU.** No es solo memoria: con un
+   núcleo, una consulta del laboratorio compite por CPU con la API que está
+   atendiendo la sincronización de un teléfono.
+
+Y el modo de falla es malo. **Los droplets de DigitalOcean vienen sin swap.** Sin
+swap, cuando la memoria se agota el kernel no degrada: mata. Y el OOM killer
+escoge por tamaño, así que el candidato natural es PostgreSQL — la base se cae a
+media venta por una consulta exploratoria. PostgreSQL se recupera de eso sin
+corromper nada, pero la operación se detiene y la causa no se parece a la razón.
+
+La diferencia de precio entre los dos planes es del orden de **12 USD al mes**
+(confirma las tarifas vigentes). Es menos que una hora de la madrugada depurando
+por qué la base se murió sola.
+
+**Si de todas formas arrancas en 2 GB**, se puede, con dos mitigaciones:
+
+- El techo de memoria del laboratorio ya está puesto en `docker-compose.yml`
+  (`mem_limit: 768m`): con él, lo que muere bajo presión es el laboratorio y no la
+  base. Se cae la pestaña de quien veía un informe; la operación sigue.
+- **Crea swap**, abajo. Deja de ser opcional en 2 GB.
+
+DigitalOcean permite **redimensionar la RAM de un droplet sin perder el disco**, y
+es reversible: se apaga, se cambia de plan, se enciende. Así que empezar en 2 GB no
+es una puerta cerrada. Pero hazlo sabiendo que el momento en que te vas a enterar
+de que era poco es el que peor te queda.
+
+### Swap: obligatorio en 2 GB, recomendable en 4
+
+Los droplets no traen. Una sola vez, en el servidor:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+# Que solo se use bajo presión real, no por costumbre:
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swap.conf
+sudo sysctl --system
+free -h      # debe aparecer la línea Swap con 2.0Gi
+```
+
+Esto va **antes** del primer `docker compose up -d`, porque el pico de construir
+las imágenes es justo donde hace falta. El swap no hace rápido lo que no cabe:
+convierte «un proceso murió» en «esto va lento», que es una falla con la que se
+puede trabajar.
+
+### Al crear el droplet, en el panel de DigitalOcean
+
+Cosas que es barato decidir ahora y caro cambiar después:
+
+- **Autenticación: llave SSH, no contraseña.** Pégala al crear el droplet. El §3 de
+  abajo deshabilita el acceso por contraseña; si arrancas con contraseña, hay un
+  rato en que el servidor está en internet aceptándola, y los escáneres tardan
+  minutos en encontrarlo.
+- **Región: NYC o SFO.** DigitalOcean no tiene datacenter en México. Da igual para
+  los teléfonos, importa para el panel que la oficina usa todo el día.
+- **Reserved IP** (Networking → Reserved IPs), y apunta el DNS **a ella**, no a la
+  IP del droplet. Es gratis mientras esté asignada y te deja reconstruir o
+  reemplazar la máquina sin tocar el DNS ni recompilar el APK — y la dirección del
+  servidor en la app es de tiempo de compilación, así que eso último importa.
+- **Backups activados** (≈20 % del costo). No sustituyen a `RESPALDOS.md`: un
+  snapshot te devuelve la máquina, no un `pg_dump` verificado. Ver §7.
+- **Monitoring activado.** Es gratis y es lo que te va a avisar de la memoria antes
+  de que el OOM killer te avise a su manera. Pon una alerta de memoria al 85 %.
+- **Hostname reconocible**, no `ubuntu-s-1vcpu-2gb-nyc3-01`. Aparece en el prompt y
+  en los correos de alerta.
+- **Toma un snapshot cuando el despliegue quede verde**, antes de capturar datos
+  reales. Es tu punto de retorno si el simulacro te obliga a empezar de cero.
 
 ## 2. Antes de tocar el servidor: el DNS
 
@@ -129,6 +224,40 @@ depurar», esa base queda expuesta a internet hasta que lo quites.
 `make servidor-revisar` lo comprueba leyendo el compose, y hay una prueba en la
 suite que se pone roja si alguien publica un puerto que no sea 80 o 443.
 
+### El cortafuegos de nube: la defensa que Docker NO puede saltar
+
+Esto es específico de DigitalOcean y vale más que el `ufw` de arriba.
+
+La trampa que acabas de leer existe porque ufw y Docker escriben en la **misma**
+tabla de iptables, dentro de la misma máquina, y Docker escribe primero. Un
+**Cloud Firewall** de DigitalOcean no vive dentro del droplet: filtra en la red del
+proveedor, antes de llegar. Docker no tiene manera de pasarlo por encima, porque no
+puede escribir ahí.
+
+O sea: el cortafuegos de nube es el que de verdad te protege del `ports:` que
+alguien agregue «un ratito para depurar». Configúralo en el panel de
+DigitalOcean —**Networking → Firewalls**— y aplícalo al droplet:
+
+| Dirección | Regla |
+|---|---|
+| Entrante | TCP **22** — SSH. Si tienes IP fija en la oficina, limítalo a ella |
+| Entrante | TCP **80** — el desafío de Let's Encrypt |
+| Entrante | TCP **443** — la API y el panel |
+| Saliente | Todo (el servidor necesita salir: apt, Docker Hub, Let's Encrypt) |
+
+Nada más. Ni 5432, ni 8000, ni 8501.
+
+**Conserva ufw de todas formas.** Son dos capas y fallan distinto: el de nube te
+cubre de los errores dentro de la máquina, y ufw te cubre si algún día mueves el
+servidor a un proveedor sin cortafuegos de nube, o si alguien borra la regla del
+panel. `make servidor-revisar` solo puede ver ufw, así que seguirlo teniendo bien
+configurado es lo que mantiene útil esa revisión.
+
+> Si limitas el 22 a la IP de tu oficina y esa IP cambia, te quedas fuera del
+> servidor. DigitalOcean tiene **consola web** (Access → Launch Droplet Console),
+> que entra sin pasar por SSH ni por el cortafuegos. Compruébala **antes** de
+> cerrar el 22, no después.
+
 ## 5. Instalar Docker y desplegar
 
 ```bash
@@ -161,10 +290,18 @@ túnel va detrás de un perfil que `docker compose up -d` no levanta.
 
 Y arriba:
 
+> **Antes de esto, el swap de §1 tiene que estar puesto** (`free -h` debe mostrar
+> la línea Swap). El pico de memoria de construir las dos imágenes —la de analítica
+> instala pyarrow, pandas y numpy— es mayor que el de operar, y es el momento más
+> probable de un OOM en una máquina chica.
+
 ```bash
 docker compose up -d
 docker compose logs -f caddy      # para ver emitirse los certificados
 ```
+
+En 1 vCPU, construir las dos imágenes puede tardar de 10 a 25 minutos. No es que
+esté colgado.
 
 Levanta en este orden, y cada paso espera al anterior:
 

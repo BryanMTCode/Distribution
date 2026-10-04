@@ -644,3 +644,18 @@ def test_el_tunel_de_cloudflare_es_opcional():
     assert "DSD_TUNNEL_TOKEN:?" not in _COMPOSE, (
         "el token del túnel volvió a ser obligatorio: eso rompe el despliegue en un VPS"
     )
+
+
+def test_el_laboratorio_tiene_techo_de_memoria():
+    """En un VPS chico, sin techo el OOM killer se lleva a PostgreSQL.
+
+    Streamlit con pandas, pyarrow, numpy y altair residentes es el proceso más
+    grande del stack. Cuando la memoria se agota, el kernel mata al más grande
+    por RSS —que puede ser PostgreSQL— así que una consulta del laboratorio
+    tiraría la base a media venta. Con el techo, lo que muere es el laboratorio.
+    """
+    analitica = _servicios()["analitica"]
+    assert re.search(r"^\s+mem_limit:\s*\S+", analitica, re.M), (
+        "el laboratorio analítico se quedó sin techo de memoria: en un VPS de "
+        "2 GB eso pone a PostgreSQL a tiro del OOM killer"
+    )

@@ -141,6 +141,18 @@ services:
         condition: service_completed_successfully
 
   analitica:
+    # TECHO DE MEMORIA, y es lo que hace viable un VPS de 2 GB.
+    #
+    # Streamlit arrastra pandas, pyarrow, numpy, altair y pydeck residentes: es el
+    # proceso más gordo del stack con diferencia. Sin techo, cuando la memoria se
+    # agota el OOM killer del kernel mata AL PROCESO MÁS GRANDE, que según la hora
+    # puede ser PostgreSQL — y entonces una consulta exploratoria del laboratorio
+    # tira la base a media venta. Con el techo, lo que muere es el laboratorio:
+    # se cae la pestaña de quien estaba viendo un informe, la operación sigue.
+    #
+    # Si el laboratorio se reinicia solo al abrir un informe grande, es este
+    # límite. Súbelo (1g) o, mejor, levanta la máquina a 4 GB.
+    mem_limit: 768m
     # Contexto en la raíz: la imagen necesita `analytics/` y además el módulo de
     # definiciones `server/app/domain/analitica.py`. Ver su Dockerfile.
     build:
