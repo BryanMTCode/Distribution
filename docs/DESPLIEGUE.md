@@ -1,5 +1,13 @@
 # Despliegue en un VPS
 
+> **¿Vas a desplegar ahora mismo y quieres una receta en lugar de una explicación?**
+> Usa [INSTALACION-PASO-A-PASO.md](INSTALACION-PASO-A-PASO.md): la misma
+> instalación en secuencia lineal, diciendo en cada paso dónde estás trabajando,
+> qué pegar y qué tienes que ver en la pantalla antes de continuar.
+>
+> Este documento es el **por qué** de cada decisión. Vale leerlo después del
+> despliegue, o cuando algo no cuadre y haya que entender el fondo.
+
 El servidor de producción vive en un **VPS en la nube**, no en una mini PC en la
 oficina. Esto es el procedimiento completo, de cero a operando.
 

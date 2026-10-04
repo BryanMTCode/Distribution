@@ -121,6 +121,14 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 
 ## Documentación
 
+- [`docs/INSTALACION-PASO-A-PASO.md`](docs/INSTALACION-PASO-A-PASO.md) — **la receta para desplegar**:
+  del dominio al primer usuario en 27 pasos lineales, diciendo en cada uno dónde estás trabajando, qué
+  pegar y qué tienes que ver en pantalla antes de continuar. Empieza por aquí el día del despliegue.
+- [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) — el **por qué** de ese despliegue: qué cambia respecto de
+  un servidor en la oficina, el tamaño del VPS con los números, el swap, la trampa de Docker con `ufw` y
+  el cortafuegos de nube que sí la resuelve.
+- [`docs/SIMULACRO.md`](docs/SIMULACRO.md) — el **simulacro maestro**: un día completo de operación con
+  las cifras exactas que deben salir en siete puntos de control. *Si no cuadra aquí, no sale a la calle.*
 - [`docs/ARRANQUE-DIARIO.md`](docs/ARRANQUE-DIARIO.md) — **manual operativo**: levantar todo desde cero
   tras reiniciar la PC, puertos ocupados, procesos fantasma, el puente USB al teléfono, los flujos a
   validar y el avance del proyecto. El atajo es `make db && make doctor`.
