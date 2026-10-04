@@ -19,7 +19,6 @@ library;
 import 'dart:convert';
 
 import 'package:dsd_app/src/datos/almacen_seguro.dart';
-import 'package:dsd_app/src/estado/sesion.dart';
 import 'package:dsd_app/src/estado/sincronizacion.dart';
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
