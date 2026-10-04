@@ -171,14 +171,31 @@ services:
       - api
       - analitica
 
-  # Cloudflare Tunnel: sin IP fija, sin abrir puertos en el router, TLS y
-  # protección DDoS incluidos. Crea el túnel y pega su token en .env.
+  # ---------------------------------------------------------------------------
+  # Cloudflare Tunnel: OPCIONAL, detrás de un perfil
+  # ---------------------------------------------------------------------------
+  # Existe para el caso de un servidor EN LA OFICINA: sin IP fija, sin abrir
+  # puertos en el router, con TLS y protección DDoS incluidos.
+  #
+  # En un VPS no hace falta —tiene IP pública y Caddy resuelve TLS solo contra
+  # Let's Encrypt—, así que va en un perfil: `docker compose up -d` NO lo
+  # levanta. Antes era un servicio normal con `TUNNEL_TOKEN` marcado `:?`, y eso
+  # impedía desplegar sin túnel: compose fallaba al INTERPOLAR, nombrando una
+  # variable que en un VPS no tiene sentido pedir.
+  #
+  # Para usarlo:  docker compose --profile tunel up -d
+  #
+  # El token no lleva `:?` a propósito: con perfiles, compose interpola el
+  # entorno de TODOS los servicios aunque no se vayan a levantar, así que
+  # exigirlo volvería a romper el arranque sin túnel. Si se activa el perfil sin
+  # token, cloudflared falla al instante y lo dice.
   tunel:
+    profiles: ["tunel"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${DSD_TUNNEL_TOKEN:?falta el token del túnel}
+      TUNNEL_TOKEN: ${DSD_TUNNEL_TOKEN:-}
     depends_on:
       - caddy
 

@@ -123,19 +123,38 @@ sobre vistas materializadas.
 
 ### 1.4 Infraestructura
 
-Mini PC (Intel N100 o similar, 16 GB RAM, SSD NVMe) · Ubuntu Server LTS · **Docker Compose**:
-`postgres`, `api` (uvicorn, 2–4 workers), `worker`, `analytics` (Streamlit), `caddy` (TLS automático),
-`backup`.
+**VPS en la nube** (4–8 GB RAM, 2 vCPU) · Ubuntu Server LTS · **Docker Compose**: `postgres`,
+`api` (uvicorn, 2–4 workers), `worker`, `analitica` (Streamlit), `caddy` (TLS automático), `roles`.
+Procedimiento completo en [DESPLIEGUE.md](DESPLIEGUE.md).
 
-**Conectividad — decisión crítica.** Un servidor en la oficina debe ser alcanzable desde la calle.
-**Cloudflare Tunnel** (gratis): sin IP fija, sin abrir puertos, TLS y protección DDoS incluidos.
+> **Esto decía «mini PC en la oficina» y el servidor se movió a un VPS.** El código no cambió una
+> línea —la app apunta a un hostname fijado al compilar y Caddy resuelve TLS solo—, pero sí cambiaron
+> cuatro cosas de infraestructura. Las razones están en [ADR 0002 §47](adr/0002-reglas-de-negocio.md).
 
-**Asume que tú eres el SRE:**
+**Conectividad.** Con IP pública, Caddy emite el certificado contra Let's Encrypt directamente. El
+**Cloudflare Tunnel** sigue en el `docker-compose.yml` detrás de un perfil (`--profile tunel`) porque
+es lo que hace falta si algún día el servidor vuelve a la oficina: sin IP fija y sin abrir puertos.
 
-- **UPS / no-break obligatorio.** Un apagón con 8 rutas sincronizando corrompe la BD.
-- **Respaldo desde el día 1:** `pg_dump` diario + WAL archiving, empujado con `restic` a Backblaze B2 o S3.
-- **Simulacro de restauración.** Un respaldo que nunca restauraste no es un respaldo.
-- **Failover 4G** en el router de la oficina.
+**Lo que el VPS se lleva, y lo que trae:**
+
+| Se va | Llega |
+|---|---|
+| El UPS obligatorio | **IP pública**: escaneo y fuerza bruta desde el minuto uno |
+| «El disco de la mini PC muere» como riesgo #1 | **Perder la cuenta del proveedor** = perder servidor y respaldos a la vez |
+| El cifrado del disco con LUKS + TPM | La hora en UTC por omisión, que descuadra el arqueo |
+
+**Y una cosa empeora:** la oficina deja de poder operar sin internet. Con el servidor en la oficina,
+un enlace caído no impedía capturar la carga de las 6 am en la red local; con un VPS sí. Se mitiga con
+el **failover 4G** del router y capturando la carga la noche anterior. Está dicho en `DESPLIEGUE.md` §0
+porque es el tipo de cosa que no debe descubrirse el primer martes que se caiga el enlace.
+
+**Sigues siendo el SRE:**
+
+- **Respaldo desde el día 1:** `pg_dump` diario, cifrado y empujado **fuera del proveedor** — una copia
+  en el object storage del mismo proveedor se va con la cuenta.
+- **Simulacro de restauración.** Un respaldo que nunca restauraste no es un respaldo. Y un snapshot del
+  proveedor no es ninguna de las dos cosas.
+- **Cortafuegos, SSH sin contraseñas, y la trampa de Docker con `ufw`:** `make servidor-revisar`.
 
 ### 1.5 Cola de trabajos: PostgreSQL, no Celery ni Redis
 

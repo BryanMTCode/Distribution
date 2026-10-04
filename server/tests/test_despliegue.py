@@ -562,26 +562,85 @@ def test_el_laboratorio_corre_lo_mismo_en_local_que_en_su_contenedor():
         )
 
 
-def test_el_revisor_del_cifrado_esta_cableado():
-    """El guion existe Y el `make` lo llama.
+def test_el_revisor_del_servidor_esta_cableado():
+    """El guion existe, el `make` lo llama, y revisa lo que el documento promete.
 
-    Es el único guardia de esta familia que no tiene cómo fallar en silencio desde
-    el código —el cifrado del disco se hace a mano en la mini PC—, así que lo que
-    se comprueba aquí es lo mínimo que sí puede romperse sin que nadie lo note: que
-    el objetivo del Makefile siga apuntando al guion, y que el guion siga buscando
-    lo que su documentación dice que busca.
+    Lo que el servidor tiene configurado no se puede comprobar desde el código
+    —vive en la máquina—, así que esto cubre lo que sí puede romperse sin que
+    nadie lo note: que el objetivo del Makefile siga apuntando al guion, y que el
+    guion siga buscando cada cosa que `DESPLIEGUE.md` dice que busca.
     """
-    guion = _RAIZ / "scripts" / "revisar_cifrado.sh"
+    guion = _RAIZ / "scripts" / "revisar_servidor.sh"
     assert guion.is_file()
 
     receta = _sin_comentarios(
-        _MAKEFILE.split("\ncifrado-revisar:", 1)[1].split("\n\n", 1)[0]
+        _MAKEFILE.split("\nservidor-revisar:", 1)[1].split("\n\n", 1)[0]
     )
-    assert "scripts/revisar_cifrado.sh" in receta
+    assert "scripts/revisar_servidor.sh" in receta
 
-    texto = guion.read_text(encoding="utf-8")
-    # Las tres cosas que §5.1 dice que revisa. La tercera es la que importa: un
-    # volumen cuya única llave es el TPM queda ilegible si el TPM se resetea.
-    assert 'TYPE="crypt"' in texto, "dejó de detectar el volumen cifrado"
-    assert "swapon" in texto, "dejó de revisar el swap"
-    assert "RECUPERABLES" in texto, "dejó de revisar que quede una frase de recuperación"
+    # Contra las líneas que SE EJECUTAN, no contra el archivo: los comentarios y
+    # los mensajes de ayuda del guion nombran `ufw`, `sshd_config` y lo demás,
+    # así que leer el archivo entero deja pasar un guardia desconectado. Pasó al
+    # verificar esto por mutación: cambiar `command -v ufw` por otra cosa no
+    # ponía roja ninguna prueba.
+    ejecutable = _sin_comentarios(guion.read_text(encoding="utf-8"))
+    comprobaciones = {
+        'TYPE="crypt"': "el volumen cifrado",
+        "swapon --noheadings": "el swap",
+        # La RESTA, no el nombre de la variable: `RECUPERABLES=1` dejaría la
+        # cuenta siempre en verde y el nombre seguiría ahí. Es el número de
+        # frases que una persona puede teclear, y cero significa que el disco se
+        # vuelve ilegible el día que se resetee el TPM.
+        "RANURAS - AUTO": "que quede una frase de recuperación del disco",
+        "command -v ufw": "el cortafuegos",
+        "command -v timedatectl": "la zona horaria, que decide qué día es «hoy»",
+        "valor_ssh PasswordAuthentication": "que SSH no acepte contraseñas",
+        "valor_ssh PermitRootLogin": "que root no entre por SSH",
+        "stat -c": "los permisos del .env",
+    }
+    for aguja, que_es in comprobaciones.items():
+        assert aguja in ejecutable, f"el revisor dejó de revisar {que_es}"
+
+
+def test_el_revisor_vigila_los_puertos_publicados():
+    """La trampa de Docker + ufw, que es la que deja bases de datos públicas.
+
+    Docker escribe sus propias reglas de iptables por delante de las de ufw, así
+    que un `ports:` en compose queda abierto a internet aunque `ufw status` diga
+    que ese puerto está cerrado. El guion lee el compose —la fuente de la
+    verdad— y no solo lo que está corriendo, para dar la misma respuesta con el
+    stack arriba o abajo.
+    """
+    ejecutable = _sin_comentarios(
+        (_RAIZ / "scripts" / "revisar_servidor.sh").read_text(encoding="utf-8")
+    )
+    assert "docker-compose.yml" in ejecutable, (
+        "el revisor dejó de leer qué publica el compose"
+    )
+    assert "80|443" in ejecutable, (
+        "desapareció la lista de los únicos puertos permitidos"
+    )
+
+    # Y que el compose siga publicando solo esos dos: si alguien agrega un
+    # `ports:` para depurar y lo deja, esto se rompe aquí y no en producción.
+    publicados = re.findall(r'^\s+-\s+"(\d+):\d+"', _COMPOSE, re.M)
+    assert set(publicados) <= {"80", "443"}, (
+        f"docker-compose.yml publica {sorted(set(publicados))}: solo 80 y 443 "
+        "deben salir a internet, el resto entra por Caddy"
+    )
+
+
+def test_el_tunel_de_cloudflare_es_opcional():
+    """En un VPS no hace falta, y antes impedía desplegar sin él.
+
+    `TUNNEL_TOKEN` estaba marcado `:?`, así que compose fallaba al INTERPOLAR
+    —antes de arrancar nada— pidiendo una variable que en un VPS no tiene
+    sentido. Ahora el servicio va detrás de un perfil y el token es opcional.
+    """
+    tunel = _servicios()["tunel"]
+    assert 'profiles: ["tunel"]' in tunel, (
+        "el túnel volvió a ser un servicio que se levanta solo"
+    )
+    assert "DSD_TUNNEL_TOKEN:?" not in _COMPOSE, (
+        "el token del túnel volvió a ser obligatorio: eso rompe el despliegue en un VPS"
+    )

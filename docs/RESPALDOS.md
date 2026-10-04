@@ -27,12 +27,23 @@ clientes, usuarios.
 
 Los riesgos reales, en orden de probabilidad:
 
-1. **El disco de la mini PC muere.** Es lo que pasa. Un respaldo en el mismo
-   disco no protege de esto.
-2. **Un `DELETE` o un `UPDATE` sin `WHERE`** hecho a mano en `psql` a las once
-   de la noche. Protege un respaldo de ayer, no la replicación.
-3. **Ransomware o robo del equipo.** Protege un respaldo *fuera del edificio*.
-4. **Un apagón a media escritura.** Protege el UPS; el respaldo es el plan B.
+1. **Un `DELETE` o un `UPDATE` sin `WHERE`** hecho a mano en `psql` a las once de
+   la noche. Es el que de verdad pasa, y no lo cubre ni el proveedor ni la
+   replicación: lo cubre un respaldo de ayer.
+
+   > Antes el #1 era «el disco de la mini PC muere». Con el servidor en un VPS eso
+   > lo cubre el proveedor con almacenamiento redundante — pero **un snapshot del
+   > proveedor no es un respaldo**: este borrado se replica al snapshot de esa
+   > misma noche, y nada ahí verifica que la base se pueda restaurar. Para eso
+   > está `make simulacro`.
+2. **Pierdes la cuenta del proveedor** — una suspensión por un cargo rechazado,
+   una cuenta comprometida, un proveedor que cierra. Es el riesgo que trajo el VPS,
+   y el que decide dónde van los respaldos: **fuera del PROVEEDOR**, no solo fuera
+   del servidor. Una copia en el object storage del mismo proveedor se va con la
+   cuenta.
+3. **Ransomware.** Protege una copia que el servidor no pueda sobrescribir.
+4. **Un apagón a media escritura.** En un VPS lo cubre el proveedor; el respaldo
+   sigue siendo el plan B.
 
 ---
 
@@ -130,7 +141,7 @@ Para esta operación eso se traduce en:
 
 | Copia | Dónde | Cómo |
 |---|---|---|
-| 1 | La base viva en la mini PC | — |
+| 1 | La base viva en el servidor | — |
 | 2 | `~/respaldos-dsd` en la misma máquina | `make respaldo` por cron |
 | 3 | **Fuera** | ver abajo |
 
@@ -158,7 +169,7 @@ gpg --symmetric --cipher-algo AES256 \
 rclone copy ~/respaldos-dsd/dsd-20261001-030000.dump.gpg remoto:dsd/
 ```
 
-> La frase de cifrado **no puede vivir solo en la mini PC**. Si el disco muere,
+> La frase de cifrado **no puede vivir solo en el servidor**. Si lo pierdes,
 > la frase muere con él y los respaldos remotos quedan ilegibles. Escríbela en
 > papel y guárdala donde guardas los documentos del negocio.
 

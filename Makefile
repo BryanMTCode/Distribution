@@ -3,7 +3,7 @@
 # líneas, y bash se comporta igual en todas las máquinas donde esto se corre.
 SHELL := /bin/bash
 
-.PHONY: ayuda doctor instalar candado candado-subir candado-revisar cifrado-revisar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk apk-demo api worker limpiar
+.PHONY: ayuda doctor instalar candado candado-subir candado-revisar servidor-revisar db db-parar db-borrar migrar analitica refrescar-analitica recalcular-tablero usuario respaldo simulacro pruebas lint contratos movil movil-demo movil-contratos movil-esquema movil-ticket app app-demo panel apk apk-demo api worker limpiar
 
 DB ?= postgresql+psycopg://postgres:dsd@127.0.0.1:5432/dsd
 
@@ -71,8 +71,8 @@ candado-revisar:  ## Falla si los candados no corresponden a lo declarado (sin r
 	cd server && uv lock --check
 	cd server && .venv/bin/pytest tests/test_despliegue.py -q
 
-cifrado-revisar:  ## EN LA MINI PC: revisa que el disco esté cifrado y recuperable
-	@bash scripts/revisar_cifrado.sh
+servidor-revisar:  ## EN EL SERVIDOR: cortafuegos, SSH, puertos, hora y cifrado
+	@bash scripts/revisar_servidor.sh
 
 migrar:  ## Aplica las migraciones (DB=... para apuntar a otra base)
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/alembic upgrade head

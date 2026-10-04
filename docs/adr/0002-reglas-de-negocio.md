@@ -2983,6 +2983,13 @@ lectura.
 
 ## 46. El disco del servidor: cifrarlo sin dejar la ruta esperando
 
+> **Esta sección describe un servidor en la oficina, y el servidor se movió a un
+> VPS un día después: ver §47.** El procedimiento de LUKS + TPM que sigue **ya no
+> se aplica** —la §47 explica por qué un VPS no se cifra— y el guion que menciona
+> se llama hoy `scripts/revisar_servidor.sh`. Se conserva tal cual porque el
+> razonamiento vuelve a valer el día que haya un servidor propio, y porque las dos
+> secciones juntas son el registro de cómo se decidió.
+
 La §43 cerró el despliegue y dejó un hueco nombrado a propósito:
 
 > `SEGURIDAD-OPERATIVA.md` exige cifrado en el TELÉFONO y en los RESPALDOS, y no
@@ -3104,3 +3111,164 @@ Es lo único que prueba que la ruta de mañana a las 6 no se va a quedar esperan
 es la razón por la que el guion termina diciendo en voz alta que eso es justo lo que
 él no puede comprobar. Un guion que revisara la configuración y callara esto daría
 una confianza que no corresponde.
+
+---
+
+## 47. El servidor se mueve a un VPS
+
+La §46 escribió el procedimiento de cifrado para una **mini PC en la oficina**, con
+LUKS, TPM y contraseña de BIOS. Un día después el servidor cambió de lugar: va en
+un VPS en la nube. Esto registra qué cambia y qué no, porque la mitad de la §46
+deja de aplicar y conviene que se sepa por qué y no por omisión.
+
+### Lo primero: el código no cambia
+
+Vale decirlo porque no era obvio y porque determina el tamaño del cambio.
+
+- La app apunta a un hostname fijado **al compilar** (`DSD_BASE_URL`), no a una IP
+  de red local. Eso se decidió por seguridad —un campo editable es el camino para
+  que un equipo robado mande la cartera a otra parte— y resulta que también hace al
+  sistema indiferente a dónde viva el servidor.
+- `deploy/Caddyfile` ya resolvía TLS solo contra Let's Encrypt. Con IP pública
+  funciona tal cual; detrás del túnel también.
+- Toda la sincronización es HTTPS. Nada asumía red local.
+
+Cero líneas de dominio tocadas. Lo que cambió es infraestructura, documentación y
+un defecto del compose.
+
+### El defecto: el despliegue no arrancaba sin túnel
+
+`docker-compose.yml` tenía el servicio del túnel como uno normal, con
+`TUNNEL_TOKEN: ${DSD_TUNNEL_TOKEN:?falta el token del túnel}`.
+
+Eso no era «el túnel no se levanta»: compose **falla al interpolar**, antes de
+arrancar nada, pidiendo una variable que en un VPS no tiene sentido pedir. El
+despliegue entero quedaba bloqueado por un servicio opcional.
+
+Ahora va detrás de un perfil (`profiles: ["tunel"]`) y el token es opcional. El
+token **no** puede llevar `:?` ni con el perfil puesto: compose interpola el
+entorno de todos los servicios aunque no se vayan a levantar, así que exigirlo
+volvería a romper el arranque sin túnel. Si alguien activa el perfil sin token,
+cloudflared falla al instante y lo dice.
+
+Se queda en el repositorio, no se borra: es lo que hace falta si el servidor vuelve
+a la oficina, y ahí sí no hay IP fija ni puertos abiertos.
+
+### Lo que el VPS se lleva
+
+| | Por qué |
+|---|---|
+| **El UPS obligatorio** | Era la mitad del «asume que tú eres el SRE» de §1.4 |
+| **«El disco de la mini PC muere» como riesgo #1** | Almacenamiento redundante del proveedor |
+| **El cifrado del disco con LUKS + TPM** | Abajo, con su razonamiento |
+
+### Por qué el disco NO va cifrado
+
+Es una decisión y no un olvido, y se escribe porque es la pregunta que cualquiera
+haría después de leer la §46.
+
+El cifrado de disco protege la máquina **apagada**. En la oficina eso tenía un
+sentido claro: alguien se lleva el equipo o le saca el SSD. En un VPS nadie se
+lleva tu disco.
+
+¿Y el proveedor? Puede leerlo, y **el cifrado tampoco lo evita**: la frase tiene
+que entrar al arrancar, así que vive en la memoria de una máquina virtual que el
+hipervisor controla. Cifrar el disco de un VPS protege de que alguien compre ese
+disco usado dentro de diez años, no del operador.
+
+Y el costo es real: la mayoría de los VPS no exponen TPM, así que LUKS significa
+teclear la frase por la consola web del proveedor **en cada reinicio**, incluidos
+los que el proveedor hace por mantenimiento del host, de noche y sin avisar. Eso
+convierte un reinicio rutinario en una ruta que no sale a las 6 de la mañana.
+
+**Un riesgo que el cifrado no cubre, a cambio de una interrupción que sí ocurre, no
+es un buen cambio.** Lo que protege los datos fuera del servidor son los respaldos
+cifrados, que ya existen y cubren el caso que importa: una copia que sale de la
+máquina.
+
+El procedimiento de LUKS + TPM no se borró de la historia: vive en el commit que lo
+escribió, y recupera su sentido el día que haya un servidor propio.
+
+### Lo que el VPS trae, y es la parte que sí es trabajo
+
+**Una IP pública.** En la oficina, detrás del túnel, el servidor no tenía ni un
+puerto abierto: nadie podía intentar nada contra él. Un VPS lo escanean todo el
+día desde que existe. No es un ataque dirigido; es ruido de fondo de internet, y
+basta una contraseña débil para que el ruido entre. En el modelo de amenaza ese
+renglón pasó de no existir a **probabilidad alta**.
+
+De ahí: SSH solo con llave, root sin acceso, ufw con 22/80/443 y nada más.
+
+**Y la trampa que de verdad deja bases de datos públicas:** Docker escribe sus
+**propias** reglas de iptables, por delante de las de ufw. Un `ports:` en compose
+queda abierto a internet aunque ufw diga que ese puerto está cerrado, y
+`ufw status` no lo menciona. El compose de este proyecto publica solo 80 y 443 a
+propósito; el guion lo comprueba leyendo el compose —la fuente de la verdad, con el
+stack arriba o abajo— y hay una prueba que se pone roja si alguien publica otro
+puerto.
+
+**Perder la cuenta del proveedor** es un modo de fallo que la oficina no tenía:
+una suspensión por un cargo rechazado se lleva el servidor y los respaldos a la
+vez. Por eso «fuera del edificio» pasa a ser **fuera del proveedor**: una copia en
+el object storage del mismo proveedor no cuenta. Y los snapshots del proveedor no
+son respaldos — un `DELETE` sin `WHERE` se replica al snapshot de esa noche.
+
+**La hora en UTC por omisión.** Las imágenes de VPS vienen así, y en UTC−6 a partir
+de las 18:00 locales `CURRENT_DATE` ya dice mañana: el tablero del día sale vacío
+por la tarde y el arqueo compara el papel de un día contra las ventas de otro. Es
+el defecto que encontró la Fase 7, y en un VPS **empieza activado**. El guion
+compara la zona del servidor contra `DSD_ZONA`.
+
+### Y una cosa empeora
+
+**La oficina deja de poder operar sin internet.** Con el servidor en la oficina, un
+enlace caído no impedía nada: los vendedores sincronizaban en la red local y la
+oficina seguía capturando cargas y liquidando. Con un VPS, sin internet la oficina
+no puede hacer nada.
+
+El momento donde duele es específico: a las 6 de la mañana, cuando hay que capturar
+y confirmar la carga para que el camión salga. Es el mismo escenario que el UPS
+venía a cubrir, llegando por otra puerta.
+
+Se mitiga con el **failover 4G** que §1.4 ya pedía y capturando la carga la noche
+anterior —que además es mejor práctica—. Queda escrito en `DESPLIEGUE.md` §0 porque
+es el tipo de cosa que no debe descubrirse el primer martes que se caiga el enlace.
+
+### El guion cambió de nombre porque cambió de trabajo
+
+`revisar_cifrado.sh` → `revisar_servidor.sh`, y `make cifrado-revisar` →
+`make servidor-revisar`. El disco pasó de **FALLA** a nota informativa —es una
+decisión tomada, no un defecto— y entraron las cuatro comprobaciones que un
+servidor en internet necesita: cortafuegos, puertos publicados, SSH y hora.
+
+Las ramas se probaron con binarios falsos en el PATH (`ufw`, `timedatectl`) y con
+archivos de `sshd_config` de verdad, y la detección de puertos se comprobó
+exponiendo `postgres` en el compose y viendo el guion ponerse rojo.
+
+### Dos defectos que aparecieron al escribirlo
+
+**El orden de `sshd_config` estaba invertido.** La primera versión leía el último
+valor de la configuración de SSH. En OpenSSH **gana el primero obtenido**
+(`sshd_config(5)`: «the first obtained value will be used»), y Ubuntu pone el
+`Include /etc/ssh/sshd_config.d/*.conf` **arriba** del archivo — así que los
+archivos de `.d/` ganan. El guion reportaba **lo contrario de la verdad** con un
+drop-in que endurecía sobre un `sshd_config` permisivo, que es justo la forma en
+que se endurece un Ubuntu. Lo delató probarlo con los dos archivos en desacuerdo,
+no leerlo.
+
+**Y la prueba del cortafuegos no probaba nada.** `assert "ufw" in texto` pasaba con
+`command -v ufw` cambiado por otra cosa, porque los comentarios y los mensajes de
+ayuda del guion también dicen `ufw`. Es la tercera vez en esta serie que una
+afirmación negativa o de presencia lee la prosa en vez del código — y van tres
+veces porque las tres salieron de la verificación por mutación y ninguna de la
+lectura. Ahora las agujas son invocaciones (`command -v ufw`,
+`valor_ssh PasswordAuthentication`, la resta `RANURAS - AUTO`) y se buscan contra
+las líneas que se ejecutan.
+
+### Lo que sigue sin probarse aquí
+
+Ni VPS, ni `ufw`, ni `sshd`, ni demonio de Docker. El procedimiento está escrito
+contra documentación y la lógica del guion está verificada con dobles, pero
+**`docker compose up -d` en un VPS real sigue siendo la primera ejecución de
+verdad** — igual que antes, con una diferencia a favor: el defecto del token del
+túnel habría detenido ese primer intento en seco, y ya no está.

@@ -23,7 +23,7 @@ dice el comando exacto, qué debe responder, y qué hacer cuando no responde eso
 
 | | `make db` | `docker compose up` |
 |---|---|---|
-| Para qué | **tu máquina, trabajo diario** | la mini PC de la oficina, producción |
+| Para qué | **tu máquina, trabajo diario** | el VPS, producción (`docs/DESPLIEGUE.md`) |
 | Qué levanta | solo PostgreSQL+PostGIS | postgres + api + worker + analítica + Caddy + túnel |
 | Archivos secretos | **ninguno** | `.env` con 4 valores obligatorios |
 | La API | la corres tú con `make api`, con recarga en caliente | dentro de un contenedor, sin recarga |
@@ -1077,7 +1077,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 973 pruebas de Python contra PostgreSQL real, 475 de Dart,
+1. **Lo construido está probado de verdad**: 975 pruebas de Python contra PostgreSQL real, 475 de Dart,
    225 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -1088,7 +1088,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 973 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 975 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que

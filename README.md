@@ -97,11 +97,11 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Despliegue de un comando** — `docker compose up -d` crea los roles de RLS en orden | ✅ 11 pruebas |
 | **APK de producción firmado** — el build se detiene sin keystore, y revisa el APK | ✅ 7 + 5 de widget |
 | **Dependencias con candado** — `uv.lock` versionado, los tres caminos lo usan | ✅ 9 pruebas |
-| **Cifrado del disco del servidor** — procedimiento y `make cifrado-revisar` | ⏳ se hace al instalar la mini PC |
+| **Despliegue en VPS** — cortafuegos, SSH, puertos y hora, con `make servidor-revisar` | ⏳ se hace al crear el servidor |
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**973 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **225 de widget**, todas en verde.
+**975 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **475 de Dart** y **225 de widget**, todas en verde.
 
 ## Stack
 
@@ -209,7 +209,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 973 pruebas de Python
+make pruebas                        # 975 pruebas de Python
 make movil                          # 475 de Dart + 225 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
