@@ -239,6 +239,7 @@ MOTIVO_LEJOS_DEL_CLIENTE = "fuera_de_geocerca"
 MOTIVO_SIN_GEOSELLO = "sin_ubicacion"
 MOTIVO_RELOJ_DESFASADO = "reloj_desfasado"
 
+
 # Más allá de esta distancia, la venta se marca. No se rechaza: el cliente pudo
 # haber recibido la mercancía en la banqueta de enfrente, o el domicilio
 # registrado puede estar mal. Es una pregunta para la oficina, no un veredicto.
@@ -521,7 +522,7 @@ async def crear_venta(
     #
     # Es seguro hacerlo aquí: la ingesta descarta por `operacion_id` antes de
     # llamar al manejador, así que un reenvío no vuelve a descontar.
-    await _sacar_del_camion(sesion, ctx, entidad_id, fecha_dispositivo, salidas)
+    await _sacar_del_camion(sesion, ctx, entidad_id, fecha_dispositivo, salidas, motivos)
 
     # ------------------------------------------------------------------
     # LA CUENTA POR COBRAR: una venta a crédito es una deuda, o no es nada.
@@ -586,6 +587,7 @@ async def _sacar_del_camion(
     venta_id: uuid.UUID,
     fecha_dispositivo: datetime,
     salidas: list[tuple[uuid.UUID, Decimal]],
+    motivos: list[str],
 ) -> None:
     """Un movimiento `venta` por producto, y el descuento en `existencias`.
 
@@ -594,11 +596,16 @@ async def _sacar_del_camion(
     mejor con una salida por producto que con una por renglón. El total es el
     mismo y `existencias` tampoco cambia.
     """
-    if ctx.almacen_id is None:
-        # Sin camión asignado no hay de dónde descontar. No se rechaza la venta
-        # —ya ocurrió— pero queda dicho en la revisión de la venta, que es donde
-        # la oficina lo va a ver.
-        return
+    # Si se llegó aquí, hay camión: `ventas.almacen_id` es NOT NULL, así que una
+    # venta de un vendedor sin almacén asignado revienta en el INSERT de arriba y
+    # el sobre entero va a la cuarentena del servidor con su error de integridad.
+    #
+    # Lo escribo porque mi primera versión de esta función hacía `return` en
+    # silencio cuando `ctx.almacen_id` era None, "por si acaso". Era código
+    # inalcanzable que además inventaba un tercer estado —venta registrada sin
+    # inventario y sin avisar— para un caso que la base ya impide. Un `return`
+    # defensivo sobre algo imposible solo añade un camino que nadie prueba.
+    assert ctx.almacen_id is not None
 
     por_producto: dict[uuid.UUID, Decimal] = {}
     for producto_id, cantidad in salidas:

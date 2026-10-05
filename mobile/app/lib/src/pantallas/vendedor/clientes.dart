@@ -16,6 +16,7 @@ import '../../estado/sincronizacion.dart';
 import 'abono.dart';
 import 'alta_cliente.dart';
 import 'catalogo.dart';
+import 'mi_dia.dart';
 import 'merma.dart';
 
 class PantallaClientes extends ConsumerWidget {
@@ -92,6 +93,17 @@ class PantallaClientes extends ConsumerWidget {
           // La merma del camión no pertenece a ninguna visita: la caja se
           // revienta entre tienda y tienda. Por eso vive aquí y no dentro del
           // catálogo de un cliente.
+          // «Mi día» va PRIMERO entre las acciones, antes de merma y de salir:
+          // es lo que el vendedor abre varias veces al día, y las otras dos son
+          // excepcionales. El orden de los iconos es el orden de uso.
+          IconButton(
+            key: const Key('boton_mi_dia'),
+            tooltip: 'Mi día',
+            icon: const Icon(Icons.payments_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PantallaMiDia()),
+            ),
+          ),
           IconButton(
             key: const Key('boton_merma'),
             tooltip: 'Registrar merma',

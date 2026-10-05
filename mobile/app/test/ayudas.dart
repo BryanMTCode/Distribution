@@ -434,9 +434,7 @@ Future<BaseLocal> montarApp(
       overrides: [
         almacenSeguroProvider.overrideWithValue(almacen),
         baseLocalProvider.overrideWithValue(base),
-        relojProvider.overrideWithValue(
-          () => ahora ?? DateTime.utc(2026, 9, 24, 7),
-        ),
+        relojProvider.overrideWithValue(() => ahora ?? relojDePrueba()),
         ...extras,
       ],
       child: const AppDsd(),
@@ -546,3 +544,51 @@ Finder textoQueContiene(String fragmento) => find.byWidgetPredicate(
 /// búsqueda devuelve cero sin que quede claro por qué.
 String textoDe(WidgetTester tester, Key clave) =>
     (tester.widget(find.byKey(clave)) as Text).data ?? '';
+
+/// Una venta del día de hoy en la base local, como la dejaría el carrito.
+///
+/// La fecha se deriva igual que en la app —los diez primeros caracteres del
+/// instante UTC— para que la pantalla y el dato coincidan.
+/// El reloj de las pruebas, en un solo lugar.
+///
+/// Lo usan el override del provider Y los sembradores de ventas y cobros: si cada
+/// uno tuviera su propia constante, un sembrador podría estampar una fecha
+/// operativa distinta de la que la pantalla consulta y la prueba fallaría por una
+/// razón que no tiene nada que ver con lo que prueba.
+DateTime relojDePrueba() => DateTime.utc(2026, 9, 24, 7);
+
+void sembrarVentaDelDia(
+  BaseLocal base, {
+  required String folio,
+  required double total,
+  String tipo = 'contado',
+  String cliente = 'c1',
+  int sincronizada = 0,
+}) {
+  final momento = relojDePrueba().toUtc().toIso8601String();
+  base.db.execute(
+    'INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, '
+    'estado, total, fecha_dispositivo, fecha_operativa, sincronizada, creado_en) '
+    "VALUES (?, ?, ?, ?, ?, 'confirmada', ?, ?, ?, ?, ?)",
+    [folio, folio.hashCode.abs(), folio, cliente, tipo, total, momento,
+     momento.substring(0, 10), sincronizada, momento],
+  );
+}
+
+/// Un cobro del día de hoy.
+void sembrarCobroDelDia(
+  BaseLocal base, {
+  required String folio,
+  required double importe,
+  String forma = 'efectivo',
+  String cliente = 'c1',
+}) {
+  final momento = relojDePrueba().toUtc().toIso8601String();
+  base.db.execute(
+    'INSERT INTO cobros (id, folio_consecutivo, folio_local, cliente_id, importe, '
+    "forma_pago, estado, fecha_dispositivo, fecha_operativa, creado_en) "
+    "VALUES (?, ?, ?, ?, ?, ?, 'confirmado', ?, ?, ?)",
+    [folio, folio.hashCode.abs(), folio, cliente, importe, forma, momento,
+     momento.substring(0, 10), momento],
+  );
+}

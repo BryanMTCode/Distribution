@@ -635,7 +635,7 @@ verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
 ```bash
 make lint          # ruff sobre app y tests
 make pruebas       # 622 pruebas de Python — necesita la base arriba
-make movil         # 483 de Dart + 236 de widget
+make movil         # 491 de Dart + 240 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -1084,8 +1084,8 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 994 pruebas de Python contra PostgreSQL real, 483 de Dart,
-   236 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
+1. **Lo construido está probado de verdad**: 994 pruebas de Python contra PostgreSQL real, 491 de Dart,
+   240 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
 2. **Lo que falta es lo menos riesgoso.** La Fase 2 —el motor de sincronización, la que puede hundir un

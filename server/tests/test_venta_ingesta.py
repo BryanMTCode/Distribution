@@ -113,11 +113,13 @@ async def escenario(sesion: AsyncSession, semilla: dict) -> dict:
 
 def contexto(escenario: dict, **extra) -> Contexto:
     extra.setdefault("recibido_en", RELOJ_SERVIDOR)
+    # `setdefault` y no un argumento fijo: una prueba necesita el caso del
+    # vendedor SIN camión asignado, y con el valor fijo aquí ni se podía expresar.
+    extra.setdefault("almacen_id", escenario["camion"])
     return Contexto(
         dispositivo_id=escenario["dispositivo"],
         usuario_id=escenario["vendedor"],
         rutas=(escenario["ruta"],),
-        almacen_id=escenario["camion"],
         **extra,
     )
 
@@ -681,3 +683,23 @@ async def _existencia(sesion: AsyncSession, almacen, producto) -> Decimal:
         )
     ).scalar_one_or_none()
     return Decimal(valor or 0)
+
+
+async def test_una_venta_sin_camion_asignado_no_se_registra_a_medias(
+    sesion: AsyncSession, escenario: dict
+):
+    """`ventas.almacen_id` es NOT NULL, y esa restricción es la que protege.
+
+    Un vendedor sin almacén asignado no puede producir una venta registrada cuyo
+    inventario no se movió: la base lo impide antes, el sobre entero va a la
+    cuarentena del servidor con su error, y la oficina lo ve en una pantalla.
+
+    Esta prueba existe porque yo escribí lo contrario: una rama que marcaba la
+    venta y seguía sin descontar. Era inalcanzable, e inventaba un estado —venta
+    buena, inventario sin registrar— que el esquema ya había decidido no permitir.
+    """
+    with pytest.raises(Exception) as e:
+        await aplicar(sesion, escenario, payload(escenario), almacen_id=None)
+    assert "almacen_id" in str(e.value)
+    await sesion.rollback()
+
