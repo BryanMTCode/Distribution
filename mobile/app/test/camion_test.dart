@@ -110,4 +110,52 @@ void main() {
     expect(textoQueContiene('Frijol bayo'), findsOneWidget);
     expect(textoQueContiene('Sopa de fideo'), findsNothing);
   });
+
+  testWidgets('AVISA CUANDO LA OFICINA AJUSTÓ EL CAMIÓN, con su nota', (tester) async {
+    // Gerencia puede corregir el inventario del camión desde el panel. Si solo
+    // cambiara el número, el vendedor vería 12 donde ayer había 30 y no sabría si
+    // se lo ajustaron o si la app perdió una carga.
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarEnElCamion(
+          base,
+          sku: 'SOPA-70G',
+          nombre: 'Sopa de fideo',
+          cargada: 240,
+          actual: 12,
+        );
+        base.db.execute(
+          "INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) "
+          "VALUES ('aj-1', 'AC-000001', 'Juan reportó que trae 12, no 30', "
+          "        '2026-10-05T18:00:00Z')",
+        );
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirCamion(tester);
+
+    expect(find.byKey(const Key('aviso_ajustes_oficina')), findsOneWidget);
+    expect(textoQueContiene('La oficina ajustó tu camión'), findsOneWidget);
+    expect(textoQueContiene('Juan reportó que trae 12, no 30'), findsOneWidget);
+  });
+
+  testWidgets('sin ajustes no estorba con el aviso', (tester) async {
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) => sembrarEnElCamion(
+        base,
+        sku: 'SOPA-70G',
+        nombre: 'Sopa de fideo',
+        cargada: 240,
+        actual: 192,
+      ),
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirCamion(tester);
+
+    expect(find.byKey(const Key('aviso_ajustes_oficina')), findsNothing);
+  });
 }

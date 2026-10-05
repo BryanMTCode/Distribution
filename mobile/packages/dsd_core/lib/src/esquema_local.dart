@@ -175,6 +175,23 @@ CREATE TABLE IF NOT EXISTS existencias_camion (
 -- `ajuste_aplicado_en` es lo mismo para el cierre: el delta de la carga liquidada
 -- trae el ajuste del conteo físico, y sumarlo dos veces cobraría el faltante dos
 -- veces.
+-- Los ajustes de la oficina al camión que este teléfono ya sumó.
+--
+-- Misma razón que `cargas_aplicadas`: el ajuste viaja como una DIFERENCIA firmada
+-- —no como el saldo resultante, que al llegar tarde borraría las ventas hechas
+-- mientras tanto—, y una diferencia sumada dos veces está mal. Un `pull` repetido
+-- tras un corte de red trae el mismo delta otra vez.
+--
+-- Se guarda el folio y la nota para poder decirle al vendedor QUÉ le cambiaron y
+-- por qué: un número que baja sin explicación es la forma más rápida de que deje
+-- de confiar en el sistema.
+CREATE TABLE IF NOT EXISTS ajustes_camion_aplicados (
+    ajuste_id   TEXT PRIMARY KEY,
+    folio       TEXT,
+    nota        TEXT,
+    aplicado_en TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS cargas_aplicadas (
     carga_id            TEXT PRIMARY KEY,
     aplicada_en         TEXT NOT NULL,

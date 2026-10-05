@@ -31,14 +31,17 @@ esta pantalla permite verlo sin esperar a la noche.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
-from app.api.admin.comun import SesionDep, render
-from app.api.admin.sesion_web import ActorWeb
+from app.api.admin.comun import CapturaInvalida, SesionDep, render
+from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 
 router = APIRouter(prefix="/panel/inventario", tags=["panel"], include_in_schema=False)
 
@@ -197,6 +200,8 @@ async def movimientos(
     sesion: SesionDep,
     almacen_id: uuid.UUID,
     producto_id: uuid.UUID,
+    error: str = "",
+    guardado: str = "",
 ) -> HTMLResponse:
     """El libro mayor de un producto en un almacén, con su saldo corriente.
 
@@ -214,9 +219,11 @@ async def movimientos(
             text(
                 "SELECT p.sku, p.nombre, p.unidad_base, a.nombre AS almacen, "
                 "       a.codigo AS almacen_codigo, a.id AS almacen_id, "
+                "       a.tipo AS almacen_tipo, r.nombre AS responsable, "
                 "       COALESCE(e.cantidad, 0) AS cantidad "
                 "  FROM productos p "
                 "  CROSS JOIN almacenes a "
+                "  LEFT JOIN usuarios r ON r.id = a.responsable_id "
                 "  LEFT JOIN existencias e ON e.producto_id = p.id AND e.almacen_id = a.id "
                 " WHERE p.id = :p AND a.id = :a"
             ),
@@ -259,15 +266,286 @@ async def movimientos(
     # Lo más reciente arriba para leer, pero el saldo se calculó en orden.
     renglones.reverse()
 
+    # Los ajustes que la oficina ya hizo sobre este camión y este producto: se
+    # muestran con su nota porque son el renglón que alguien va a cuestionar.
+    ajustes = (
+        await sesion.execute(
+            text(
+                "SELECT c.folio, c.tipo, c.delta, c.contado, c.nota, c.creado_en, "
+                "       u.nombre AS quien, m.nombre AS motivo "
+                "  FROM ajustes_camion c "
+                "  JOIN usuarios u ON u.id = c.usuario_id "
+                "  LEFT JOIN motivos_merma m ON m.codigo = c.motivo_codigo "
+                " WHERE c.almacen_id = :a AND c.producto_id = :p "
+                " ORDER BY c.creado_en DESC LIMIT 20"
+            ),
+            {"a": almacen_id, "p": producto_id},
+        )
+    ).mappings().all()
+
     return render(
         peticion,
         "inventario_movimientos.html",
         {
             "cabecera": cabecera,
+            "producto_id": producto_id,
             "renglones": renglones,
             "segun_libro": saldo,
             "cuadra": saldo == Decimal(cabecera["cantidad"]),
+            "ajustes": ajustes,
+            "motivos": (
+                await sesion.execute(
+                    text(
+                        "SELECT codigo, nombre FROM motivos_merma "
+                        " WHERE activo ORDER BY nombre"
+                    )
+                )
+            ).mappings().all(),
+            # El formulario solo aparece en un camión y con el permiso. Para una
+            # bodega existen las entradas y salidas, que llevan más control.
+            "puede_ajustar": (
+                cabecera["almacen_tipo"] == "camion"
+                and actor.puede("inventario.ajustar")
+            ),
+            "error": error,
+            "guardado": guardado,
         },
         actor=actor,
         seccion="Inventario",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Ajustar el inventario de un camión
+# ---------------------------------------------------------------------------
+# Excepción documentada a §0.2. El razonamiento completo está en el encabezado de
+# la migración 0032; lo que importa aquí es lo que la pantalla impide:
+#
+#   · solo almacenes de tipo `camion` — para una bodega existen las entradas y
+#     salidas, que llevan folio, tipo y más control;
+#   · el ajuste no puede EMPUJAR el camión a negativo. Que un camión esté negativo
+#     es legítimo (§0.1: una venta offline entró con el conteo en cero), pero eso
+#     es un hecho que llegó tarde. Esto es alguien capturando ahora, y a lo que se
+#     captura se le revisa (doctrina de la 0026);
+#   · la nota es obligatoria: esto cambia el inventario del camión de una persona
+#     que va a tener que explicarlo en su liquidación.
+
+
+@router.post("/{almacen_id}/{producto_id}/ajustar")
+async def ajustar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    almacen_id: uuid.UUID,
+    producto_id: uuid.UUID,
+    tipo: Annotated[str, Form()] = "conteo",
+    contado: Annotated[str, Form()] = "",
+    cantidad: Annotated[str, Form()] = "",
+    motivo_codigo: Annotated[str, Form()] = "",
+    nota: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Corrige el inventario de un camión, con documento y con delta al teléfono."""
+    actor.exigir("inventario.ajustar")
+    exigir_csrf(peticion, csrf)
+
+    volver = f"/panel/inventario/{almacen_id}/{producto_id}"
+
+    if tipo not in ("conteo", "merma", "entrada"):
+        return _a(volver, error="Elige qué clase de ajuste es.")
+
+    limpia = (nota or "").strip()
+    if len(limpia) < 10:
+        return _a(
+            volver,
+            error="Escribe la nota del ajuste, con al menos 10 caracteres: estás "
+            "cambiando el inventario del camión de alguien que va a tener que "
+            "explicarlo en su liquidación.",
+        )
+
+    cabecera = (
+        await sesion.execute(
+            text(
+                "SELECT a.tipo, a.nombre, u.nombre AS responsable "
+                "  FROM almacenes a "
+                "  LEFT JOIN usuarios u ON u.id = a.responsable_id "
+                " WHERE a.id = :a AND a.activo"
+            ),
+            {"a": almacen_id},
+        )
+    ).mappings().first()
+    if cabecera is None:
+        return RedirectResponse("/panel/inventario", status_code=303)
+    if cabecera["tipo"] != "camion":
+        return _a(
+            volver,
+            error="Esta pantalla ajusta camiones. El inventario de una bodega se "
+            "corrige con una entrada o una salida, que llevan folio y motivo.",
+        )
+
+    # La existencia se lee DENTRO de la transacción y con candado: entre leerla para
+    # pintar la pantalla y guardar el ajuste pudo entrar una venta del teléfono, y
+    # el conteo se calcularía contra un número que ya no existe.
+    actual = Decimal(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT COALESCE(("
+                    "  SELECT cantidad FROM existencias "
+                    "   WHERE almacen_id = :a AND producto_id = :p FOR UPDATE"
+                    "), 0)"
+                ),
+                {"a": almacen_id, "p": producto_id},
+            )
+        ).scalar_one()
+    )
+
+    try:
+        if tipo == "conteo":
+            cuenta = _leer_cantidad(contado, que_es="lo que contaste")
+            delta = cuenta - actual
+            if delta == 0:
+                return _a(
+                    volver,
+                    error=f"El sistema ya dice {actual}: no hay nada que ajustar.",
+                )
+        else:
+            cuanto = _leer_cantidad(cantidad, que_es="la cantidad")
+            if cuanto == 0:
+                return _a(volver, error="La cantidad no puede ser cero.")
+            cuenta = None
+            delta = -cuanto if tipo == "merma" else cuanto
+    except CapturaInvalida as e:
+        return _a(volver, error=str(e))
+
+    if tipo == "merma" and not motivo_codigo:
+        return _a(volver, error="Una merma necesita su motivo.")
+
+    if delta < 0 and actual + delta < 0:
+        return _a(
+            volver,
+            error=f"El camión tiene {actual} y eso lo dejaría en {actual + delta}. "
+            "Un camión sí puede quedar negativo —una venta que entra tarde con el "
+            "conteo en cero—, pero eso es un hecho que llegó solo; un ajuste "
+            "capturado a mano que lo empuja a negativo es un dedazo.",
+        )
+
+    ahora = datetime.now(UTC)
+    ajuste_id = uuid.uuid4()
+    consecutivo = (
+        await sesion.execute(text("SELECT nextval('seq_folio_ajuste_camion')"))
+    ).scalar_one()
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ajustes_camion
+              (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
+               contado, delta, motivo_codigo, nota, usuario_id, creado_en)
+            VALUES (:id, :folio, :a, :p, :tipo, :actual, :contado, :delta,
+                    :motivo, :nota, :quien, :ahora)
+            """
+        ),
+        {
+            "id": ajuste_id,
+            "folio": f"AC-{consecutivo:06d}",
+            "a": almacen_id,
+            "p": producto_id,
+            "tipo": tipo,
+            "actual": actual,
+            "contado": cuenta,
+            "delta": delta,
+            "motivo": motivo_codigo or None,
+            "nota": limpia[:600],
+            "quien": actor.usuario_id,
+            "ahora": ahora,
+        },
+    )
+
+    # El asiento en el libro mayor y la caché, juntos y siempre: si divergieran, la
+    # propia pantalla de inventario marcaría un descuadre que no corresponde a nada
+    # físico.
+    #
+    # El tipo del asiento es `ajuste` para los tres casos. Por qué se ajustó vive en
+    # el documento, que es donde se puede leer con su nota; un `merma` en el libro
+    # mayor del camión no entraría de todos modos en la columna de merma de la
+    # liquidación, que se calcula desde los documentos de merma del vendedor.
+    sube = delta > 0
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO movimientos_inventario
+              (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
+               documento_tipo, documento_id, usuario_id, fecha_servidor)
+            VALUES ('ajuste', :origen, :destino, :p, :cant, 'ajuste_camion', :doc,
+                    :quien, :ahora)
+            """
+        ),
+        {
+            "origen": None if sube else almacen_id,
+            "destino": almacen_id if sube else None,
+            "p": producto_id,
+            "cant": abs(delta),
+            "doc": ajuste_id,
+            "quien": actor.usuario_id,
+            "ahora": ahora,
+        },
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO existencias (almacen_id, producto_id, cantidad, actualizado_en)
+            VALUES (:a, :p, :cant, :ahora)
+            ON CONFLICT (almacen_id, producto_id) DO UPDATE
+               SET cantidad = existencias.cantidad + :cant, actualizado_en = :ahora
+            """
+        ),
+        {"a": almacen_id, "p": producto_id, "cant": delta, "ahora": ahora},
+    )
+    await sesion.commit()
+
+    signo = "+" if sube else "−"
+    return _a(
+        volver,
+        guardado=(
+            f"Ajuste AC-{consecutivo:06d}: {signo}{abs(delta)} en "
+            f"{cabecera['nombre']}. Ahora dice {actual + delta}. "
+            "El teléfono lo recibe en la siguiente sincronización."
+        ),
+    )
+
+
+def _leer_cantidad(texto: str | None, *, que_es: str) -> Decimal:
+    """Una cantidad en unidad base. Admite fracción por si entra una báscula.
+
+    Es la cuarta copia de este lector en el panel —`cargas.py`, `entradas.py` y
+    `salidas.py` tienen la suya, con sus mensajes—. Consolidarlas en `comun.py` es
+    un refactor que toca cuatro pantallas probadas y no se hace a media función
+    nueva; queda anotado aquí como en las otras.
+    """
+    crudo = (texto or "").strip().replace(",", "")
+    if not crudo:
+        raise CapturaInvalida(f"Falta {que_es}.")
+    try:
+        valor = Decimal(crudo)
+    except ArithmeticError as e:
+        raise CapturaInvalida(f"«{texto}» no es una cantidad.") from e
+    if not valor.is_finite():
+        raise CapturaInvalida(f"«{texto}» no es una cantidad.")
+    if valor < 0:
+        raise CapturaInvalida(f"{que_es.capitalize()} no puede ser negativo.")
+    if valor > Decimal("100000"):
+        raise CapturaInvalida(f"«{texto}» no cabe en un camión. Revisa el número.")
+    return valor.quantize(Decimal("0.001"))
+
+
+def _a(destino: str, *, error: str = "", guardado: str = "") -> RedirectResponse:
+    cola = []
+    if error:
+        cola.append(f"error={quote(error)}")
+    if guardado:
+        cola.append(f"guardado={quote(guardado)}")
+    return RedirectResponse(
+        destino + (f"?{'&'.join(cola)}" if cola else ""),
+        status_code=status.HTTP_303_SEE_OTHER,
     )

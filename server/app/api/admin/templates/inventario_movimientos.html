@@ -31,6 +31,128 @@
 </div>
 {% endif %}
 
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{% if ajustes %}
+{# --------------------------------------------------------------------- #}
+{# Lo que la oficina ya corrigió aquí.                                   #}
+{# --------------------------------------------------------------------- #}
+{# Va ARRIBA del libro mayor y con su nota porque es el renglón que el    #}
+{# vendedor va a cuestionar: «¿quién me quitó 18 cajas?». La respuesta    #}
+{# tiene que estar antes que la pregunta.                                 #}
+<h2>Ajustes de la oficina</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Qué</th>
+        <th class="numero">Ajuste</th>
+        <th>Por qué</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in ajustes %}
+      <tr>
+        <td>
+          <span class="mono">{{ a.folio }}</span>
+          <div class="sutil">{{ a.creado_en.strftime('%d/%m/%Y %H:%M') }}</div>
+        </td>
+        <td>
+          {{ a.tipo }}
+          {% if a.contado is not none %}
+            <div class="sutil">contó {{ a.contado|entero }}</div>
+          {% endif %}
+          {% if a.motivo %}<div class="sutil">{{ a.motivo }}</div>{% endif %}
+        </td>
+        <td class="numero"
+            {% if a.delta < 0 %}style="color:var(--alerta)"{% endif %}>
+          {% if a.delta > 0 %}+{% endif %}{{ a.delta|entero }}
+        </td>
+        <td>
+          «{{ a.nota }}»
+          <div class="sutil">{{ a.quien }}</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if puede_ajustar %}
+{# --------------------------------------------------------------------- #}
+{# Ajustar el camión.                                                    #}
+{# --------------------------------------------------------------------- #}
+<h2>Ajustar este camión</h2>
+<form method="post"
+      action="/panel/inventario/{{ cabecera.almacen_id }}/{{ producto_id }}/ajustar"
+      id="forma_ajuste"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p style="margin-top:0" class="sutil">
+    El camión de <strong>{{ cabecera.responsable or 'sin responsable' }}</strong> dice
+    <strong>{{ cabecera.cantidad|entero }} {{ cabecera.unidad_base }}</strong>. Lo que
+    escribas aquí le cambia el inventario a alguien que está vendiendo con esa cifra
+    en el teléfono: <strong>el ajuste le llega en su siguiente sincronización</strong>,
+    no antes.
+  </p>
+
+  <label>
+    Qué clase de ajuste
+    <select name="tipo" id="tipo_ajuste">
+      <option value="conteo">Conteo — lo contamos y hay otra cantidad</option>
+      <option value="merma">Merma — se perdió o se dañó</option>
+      <option value="entrada">Entrada — hay que sumarle mercancía</option>
+    </select>
+  </label>
+
+  <label>
+    Si es conteo: cuánto hay realmente
+    <input type="text" name="contado" inputmode="decimal" style="max-width:160px"
+           placeholder="{{ cabecera.cantidad|entero }}">
+    <span class="sutil">
+      Se captura lo que se CONTÓ, no la diferencia: la resta a mano es de donde
+      salen los errores que este ajuste viene a corregir.
+    </span>
+  </label>
+
+  <label>
+    Si es merma o entrada: cuánta mercancía
+    <input type="text" name="cantidad" inputmode="decimal" style="max-width:160px">
+    <span class="sutil">En {{ cabecera.unidad_base }}. Siempre en positivo: la clase de
+      ajuste decide el signo.</span>
+  </label>
+
+  <label>
+    Motivo <span class="sutil">(obligatorio si es merma)</span>
+    <select name="motivo_codigo">
+      <option value="">—</option>
+      {% for m in motivos %}
+        <option value="{{ m.codigo }}">{{ m.nombre }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Nota <span class="sutil">(obligatoria, mínimo 10 caracteres)</span>
+    <textarea name="nota" rows="2" maxlength="600" required
+              placeholder="Ej.: Juan reportó por teléfono que trae 12 cajas, no 30; se contó con él en la línea"></textarea>
+  </label>
+
+  <button type="submit" id="boton_ajustar">Guardar el ajuste</button>
+</form>
+<p class="sutil" style="max-width:720px">
+  Un ajuste no se cancela: el libro mayor es append-only, así que lo que corrige a
+  un ajuste es otro ajuste con su nota. Y este movimiento <strong>no se le cobra al
+  vendedor</strong> en la liquidación — el saldo inicial del cierre lo absorbe, que
+  es lo correcto: al vendedor se le cobra la diferencia entre su conteo y lo que el
+  sistema tiene, no las correcciones que hizo la oficina.
+</p>
+{% endif %}
+
 {% if renglones %}
 <div class="tabla-marco">
   <table>

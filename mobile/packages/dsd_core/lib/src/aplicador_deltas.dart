@@ -69,6 +69,7 @@ class AplicadorDeltas {
         'lista_precios' => _listaPrecios(delta),
         'carga' => _carga(delta, recibidoEn),
         'venta' => _venta(delta, recibidoEn),
+        'ajuste_camion' => _ajusteCamion(delta, recibidoEn),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
         // Las promociones todavía no se aplican: se aceptan para no llenar
@@ -523,6 +524,65 @@ class AplicadorDeltas {
         final num n => n.toStringAsFixed(3),
         _ => '0.000',
       };
+
+  // -------------------------------------------------------------------------
+  // El ajuste que la oficina hizo al camión
+  // -------------------------------------------------------------------------
+
+  /// Una corrección de la oficina al inventario del camión.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LLEGA UN DELTA FIRMADO, Y POR ESO HAY QUE RECORDAR CUÁLES SE APLICARON
+  /// ───────────────────────────────────────────────────────────────────────
+  /// El servidor podría mandar el saldo resultante —«el camión tiene 12»— y
+  /// aplicarlo dos veces sería inofensivo. No lo hace: el vendedor puede estar
+  /// vendiendo mientras la oficina corrige, y un saldo de hace cinco minutos
+  /// aplicado ahora borraría las ventas de esos cinco minutos.
+  ///
+  /// El precio de mandar el delta es que sumarlo dos veces está mal, y un `pull`
+  /// se repite cuando la red se corta a media tanda. De eso se encarga
+  /// `ajustes_camion_aplicados`: un ajuste se suma UNA vez.
+  ///
+  /// Es el mismo trato que con la carga y con el ajuste del cierre. La regla
+  /// general del sistema: **lo que viaja como diferencia se marca; lo que viaja
+  /// como estado se compara.**
+  bool _ajusteCamion(Delta delta, String recibidoEn) {
+    final a = delta.payload;
+    if (a == null) return true;
+
+    final ya = _db.select(
+      'SELECT 1 FROM ajustes_camion_aplicados WHERE ajuste_id = ?',
+      [delta.entidadId],
+    );
+    if (ya.isNotEmpty) return true;
+
+    final producto = a['producto_id'] as String?;
+    if (producto == null) return true;
+    final cantidad = Cantidad.deTexto(_aTextoCantidad(a['delta']));
+
+    // Sin `INSERT`: un ajuste sobre un producto que el camión no trae no crea el
+    // renglón. Si no lo trae, la carga no lo subió, y un renglón nuevo le
+    // mostraría al vendedor mercancía que no tiene.
+    _db.execute(
+      'UPDATE existencias_camion SET cant_actual = cant_actual + ? '
+      ' WHERE producto_id = ?',
+      [cantidad.milesimos / 1000, producto],
+    );
+
+    // La marca se escribe aunque el renglón no existiera: lo que importa es no
+    // volver a aplicar este ajuste si el delta llega otra vez.
+    _db.execute(
+      'INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) '
+      'VALUES (?, ?, ?, ?)',
+      [
+        delta.entidadId,
+        a['folio'] as String?,
+        a['nota'] as String?,
+        recibidoEn,
+      ],
+    );
+    return true;
+  }
 
   // -------------------------------------------------------------------------
   // La venta que la oficina cambió

@@ -32,6 +32,7 @@ class PantallaCamion extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productos = ref.watch(inventarioCamionProvider);
     final busqueda = ref.watch(busquedaCamionProvider);
+    final ajustes = ref.watch(ajustesDeOficinaProvider);
     final colores = Theme.of(context).colorScheme;
 
     final conExistencia = productos.where((p) => p.existenciaBase.milesimos > 0).length;
@@ -55,6 +56,50 @@ class PantallaCamion extends ConsumerWidget {
               ),
             ),
           ),
+
+          // El aviso de los ajustes de la oficina va ARRIBA del resumen, porque la
+          // pregunta que trae al vendedor a esta pantalla es «¿por qué dice 12?».
+          if (ajustes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Container(
+                key: const Key('aviso_ajustes_oficina'),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colores.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.inventory_2_outlined,
+                            size: 18, color: colores.outline),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            ajustes.length == 1
+                                ? 'La oficina ajustó tu camión'
+                                : 'La oficina hizo ${ajustes.length} ajustes a tu camión',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    for (final a in ajustes)
+                      if (a.nota != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            '${a.folio ?? ''} «${a.nota}»',
+                            style: TextStyle(fontSize: 12, color: colores.outline),
+                          ),
+                        ),
+                  ],
+                ),
+              ),
+            ),
 
           // El resumen va arriba porque es lo que se mira de reojo: cuántos
           // productos distintos traigo y si algo está en negativo.
