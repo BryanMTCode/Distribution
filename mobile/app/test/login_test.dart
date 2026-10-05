@@ -76,8 +76,7 @@ void main() {
     await entrarCon(tester, pinCorrecto);
     expect(find.text('Mi ruta'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('boton_salir')));
-    await tester.pumpAndSettle();
+    await tocarEnElMenu(tester, const Key('boton_salir'));
     expect(find.byKey(const Key('campo_pin')), findsOneWidget);
   });
 }

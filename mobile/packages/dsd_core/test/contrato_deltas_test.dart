@@ -219,7 +219,7 @@ void main() {
       outbox: Outbox(db),
       folios: RepoFolios(db),
       nuevoUuid: () => 'id-1',
-      ahora: () => '2026-09-28T10:00:00.000Z',
+      ahora: () => DateTime.parse('2026-09-28T10:00:00.000Z'),
     );
     expect(
       registro.motivos().map((m) => m.codigo),
@@ -279,7 +279,7 @@ void main() {
       outbox: Outbox(db),
       folios: RepoFolios(db),
       nuevoUuid: () => 'id-1',
-      ahora: () => '2026-09-28T10:00:00.000Z',
+      ahora: () => DateTime.parse('2026-09-28T10:00:00.000Z'),
     );
     expect(registro.motivos().map((m) => m.codigo), isNot(contains('ROTO')));
   });

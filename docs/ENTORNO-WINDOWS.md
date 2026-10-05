@@ -82,10 +82,10 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y lo que fija server/uv.lock
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 994
+make pruebas      # deben pasar 995
 ```
 
-Si ves `994 passed` (o `993 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `995 passed` (o `993 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|

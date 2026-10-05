@@ -55,7 +55,7 @@ final registroDeMermaProvider = Provider<RegistroDeMerma?>((ref) {
     outbox: ref.watch(outboxProvider),
     folios: ref.watch(repoFoliosProvider),
     nuevoUuid: ref.watch(nuevoUuidProvider),
-    ahora: () => reloj().toUtc().toIso8601String(),
+    ahora: reloj,
     almacenId: ref.watch(almacenDelVendedorProvider),
   );
 });
@@ -75,7 +75,7 @@ final registroDeNoDropProvider = Provider<RegistroDeNoDrop?>((ref) {
     outbox: ref.watch(outboxProvider),
     folios: ref.watch(repoFoliosProvider),
     nuevoUuid: ref.watch(nuevoUuidProvider),
-    ahora: () => reloj().toUtc().toIso8601String(),
+    ahora: reloj,
     // Sin ruta a propósito: el servidor la toma del CLIENTE, que es la única
     // fuente que no puede estar desfasada. La credencial no la trae, y
     // adivinarla aquí solo abriría la puerta a que una visita quedara contada

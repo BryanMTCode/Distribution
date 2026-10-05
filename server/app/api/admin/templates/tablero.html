@@ -72,13 +72,17 @@
     </div>
   </div>
 
-  <a class="tarjeta" href="/panel/cobranza"
+  {# Lleva a LIQUIDACIÓN, no a cobranza. El número es ventas de contado más
+     cobros en efectivo, y cobranza solo muestra la segunda mitad: con un día de
+     puras ventas, el recuadro prometía dinero y el destino aparecía vacío. La
+     liquidación es donde ese importe se cobra de verdad. #}
+  <a class="tarjeta" href="/panel/liquidaciones"
      style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.efectivo_hoy }}</div>
     <div class="etiqueta">efectivo a entregar hoy</div>
     <div class="sutil" style="margin-top:6px">
-      Solo efectivo: una transferencia entra al sistema pero no a la bolsa del
-      vendedor.
+      Ventas de contado más cobros en efectivo. El crédito no suma —no se cobró
+      nada— y una transferencia entra al sistema pero no a la bolsa del vendedor.
     </div>
   </a>
 

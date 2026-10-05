@@ -33,7 +33,7 @@ void main() {
         outbox: outbox,
         folios: folios,
         nuevoUuid: uuid,
-        ahora: () => '2026-09-29T17:42:03.250Z',
+        ahora: () => DateTime.parse('2026-09-29T17:42:03.250Z'),
       );
 
   RegistroDeNoDrop registroDeNoDrop() => RegistroDeNoDrop(
@@ -44,7 +44,7 @@ void main() {
         outbox: outbox,
         folios: folios,
         nuevoUuid: uuid,
-        ahora: () => '2026-09-29T17:42:03.250Z',
+        ahora: () => DateTime.parse('2026-09-29T17:42:03.250Z'),
       );
 
   Ubicacion donde({OrigenUbicacion origen = OrigenUbicacion.gps}) => Ubicacion(

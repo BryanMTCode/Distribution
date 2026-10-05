@@ -186,8 +186,7 @@ void main() {
         servidor.llamadas.where((l) => l == '/v1/auth/login').length;
 
     // Salir borra el token y el refresh, pero NO la credencial.
-    await tester.tap(find.byKey(const Key('boton_salir')));
-    await tester.pumpAndSettle();
+    await tocarEnElMenu(tester, const Key('boton_salir'));
 
     // Y entrar como cada mañana: solo la contraseña.
     await tester.enterText(find.byKey(const Key('campo_pin')), pinCorrecto);
@@ -213,8 +212,7 @@ void main() {
         reason: 'sin vincular no hay nombre que mostrar, y no se inventa');
 
     await _vincular(tester);
-    await tester.tap(find.byKey(const Key('boton_salir')));
-    await tester.pumpAndSettle();
+    await tocarEnElMenu(tester, const Key('boton_salir'));
 
     expect(find.byKey(const Key('etiqueta_vendedor')), findsOneWidget);
     expect(find.text('Juan Pérez'), findsOneWidget);

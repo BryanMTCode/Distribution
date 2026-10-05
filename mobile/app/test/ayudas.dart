@@ -592,3 +592,15 @@ void sembrarCobroDelDia(
      momento.substring(0, 10), momento],
   );
 }
+
+/// Toca una opción del menú del vendedor (merma, salir).
+///
+/// Esas dos salieron de la barra a un menú cuando «Mi día» se sumó a las
+/// acciones: con tres iconos y la marca DEMO la fila desbordaba. Este ayudante
+/// existe para que ese detalle de interfaz viva en UN lugar y no en cada prueba.
+Future<void> tocarEnElMenu(WidgetTester tester, Key opcion) async {
+  await tester.tap(find.byKey(const Key('menu_vendedor')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(opcion));
+  await tester.pumpAndSettle();
+}

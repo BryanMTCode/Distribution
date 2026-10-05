@@ -52,7 +52,7 @@ final registroDeCobroProvider = Provider<RegistroDeCobro?>((ref) {
     outbox: ref.watch(outboxProvider),
     folios: ref.watch(repoFoliosProvider),
     nuevoUuid: ref.watch(nuevoUuidProvider),
-    ahora: () => reloj().toUtc().toIso8601String(),
+    ahora: reloj,
     identidad: identidad,
   );
 });

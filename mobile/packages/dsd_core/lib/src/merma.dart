@@ -42,6 +42,7 @@ library;
 
 import 'package:sqlite3/sqlite3.dart';
 
+import 'dia_operativo.dart';
 import 'folios.dart';
 import 'outbox.dart';
 import 'precio.dart';
@@ -175,7 +176,7 @@ class RegistroDeMerma {
     required Outbox outbox,
     required RepoFolios folios,
     required String Function() nuevoUuid,
-    required String Function() ahora,
+    required DateTime Function() ahora,
     this.almacenId,
   })  : _db = db,
         _vendedorId = vendedorId,
@@ -196,7 +197,7 @@ class RegistroDeMerma {
   final Outbox _outbox;
   final RepoFolios _folios;
   final String Function() _nuevoUuid;
-  final String Function() _ahora;
+  final DateTime Function() _ahora;
 
   /// Los motivos que el servidor sincronizó. Catálogo cerrado.
   ///
@@ -261,10 +262,16 @@ class RegistroDeMerma {
       );
     }
 
-    final momento = _ahora();
+    // Una sola lectura del reloj: dos llamadas podrían caer en segundos
+    // distintos y estampar un documento con hora de un día y fecha de otro.
+    final instante = _ahora();
+    final momento = instante.toUtc().toIso8601String();
     final mermaId = _nuevoUuid();
     final visita = visitaId ?? _nuevoUuid();
-    final fechaOperativa = momento.substring(0, 10);
+    // El día LOCAL, no el de `momento` —que está en UTC—: en UTC−6 ese
+    // atajo mandaba las ventas de la tarde al día siguiente. Ver
+    // `diaOperativoDe`.
+    final fechaOperativa = diaOperativoDe(instante);
     final consecutivo = rango.tomar();
     final nota = (observaciones ?? '').trim();
 

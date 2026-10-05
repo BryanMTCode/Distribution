@@ -13,6 +13,7 @@ export 'src/cobro.dart';
 export 'src/carrito.dart';
 export 'src/credencial.dart';
 export 'src/credito.dart';
+export 'src/dia_operativo.dart';
 export 'src/dinero.dart';
 export 'src/escpos.dart';
 export 'src/esquema_local.dart';

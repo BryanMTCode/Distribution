@@ -52,7 +52,7 @@ Future<BaseLocal> irALaMerma(
     },
   );
   await entrarCon(tester, pinCorrecto);
-  await tocar(tester, const Key('boton_merma'));
+  await tocarEnElMenu(tester, const Key('boton_merma'));
   return base;
 }
 

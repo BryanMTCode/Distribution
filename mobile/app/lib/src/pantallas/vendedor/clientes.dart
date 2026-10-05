@@ -104,19 +104,46 @@ class PantallaClientes extends ConsumerWidget {
               MaterialPageRoute<void>(builder: (_) => const PantallaMiDia()),
             ),
           ),
-          IconButton(
-            key: const Key('boton_merma'),
-            tooltip: 'Registrar merma',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const PantallaMerma()),
-            ),
-          ),
-          IconButton(
-            key: const Key('boton_salir'),
-            tooltip: 'Salir',
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(sesionProvider.notifier).salir(),
+          // Merma y salir van a un menú, no a la barra: con tres iconos más la
+          // marca DEMO la fila DESBORDABA 46 píxeles —lo encontró la suite en modo
+          // demo, y en un teléfono angosto habría pasado igual sin modo demo—.
+          //
+          // El criterio para elegir qué se queda a la vista es la frecuencia: «Mi
+          // día» se abre varias veces en una ruta; una merma es excepcional y salir
+          // es una vez al día. Un icono visible que desborda es peor que uno a dos
+          // toques.
+          PopupMenuButton<String>(
+            key: const Key('menu_vendedor'),
+            tooltip: 'Más',
+            onSelected: (opcion) {
+              if (opcion == 'merma') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const PantallaMerma()),
+                );
+              } else if (opcion == 'salir') {
+                ref.read(sesionProvider.notifier).salir();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'merma',
+                key: Key('boton_merma'),
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Registrar merma'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'salir',
+                key: Key('boton_salir'),
+                child: ListTile(
+                  leading: Icon(Icons.logout),
+                  title: Text('Salir'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
         bottom: cola.todoSincronizado ? null : _BarraPendientes(cola: cola),
