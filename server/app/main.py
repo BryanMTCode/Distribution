@@ -6,6 +6,8 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 
 from app.api.admin import cargas as panel_cargas
@@ -113,6 +115,38 @@ def crear_app() -> FastAPI:
     app.include_router(panel_objetivos.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validacion(peticion: Request, exc: RequestValidationError):
+        """Un 422 de esquema era INVISIBLE en los dos lados, y eso costó una tarde.
+
+        Cuando el sobre que manda el teléfono no encaja en el esquema, FastAPI
+        contesta 422 antes de que corra una sola línea del dominio. Consecuencias
+        que no se ven:
+
+        · el servidor **no registra nada**: la petición aparece en la bitácora de
+          acceso con un 422 y sin motivo;
+        · `sync_cuarentena` queda VACÍA, porque nada llegó a procesarse;
+        · y el teléfono manda el lote completo a su cuarentena LOCAL, así que el
+          vendedor ve «1 con error» y la oficina no encuentra ese error en
+          ninguna parte.
+
+        O sea: el único síntoma es una venta que no aparece en el tablero, y el
+        motivo existe solo dentro de una respuesta HTTP que nadie guardó. Por eso
+        se registra aquí.
+
+        Se anotan las UBICACIONES y los tipos de error, no los valores: el payload
+        de una venta trae precios y datos del cliente, y la bitácora del servidor
+        no es el lugar de la cartera.
+        """
+        fallos = [
+            {"donde": ".".join(str(p) for p in e.get("loc", ())), "que": e.get("type")}
+            for e in exc.errors()
+        ]
+        logging.getLogger("dsd.validacion").warning(
+            "422 en %s %s: %s", peticion.method, peticion.url.path, fallos
+        )
+        return await request_validation_exception_handler(peticion, exc)
 
     @app.exception_handler(SinSesionWeb)
     async def _sin_sesion(peticion: Request, _: SinSesionWeb):

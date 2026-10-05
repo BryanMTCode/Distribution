@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -162,6 +163,17 @@ async def push(
     except LoteInvalido as e:
         # El contenedor está mal formado: no se procesa nada, porque no se
         # puede confiar en nada de lo que venga dentro.
+        #
+        # Y se REGISTRA, porque este camino no deja rastro en ningún otro lado:
+        # `sync_cuarentena` solo recibe sobres que llegaron a procesarse, así que
+        # un lote inválido desaparece del servidor y el único síntoma es un «1 con
+        # error» en el teléfono del vendedor.
+        logging.getLogger("dsd.sync").warning(
+            "lote %s rechazado del dispositivo %s: %s",
+            entrada.lote_id,
+            contexto.dispositivo_id,
+            e,
+        )
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
 
     return LoteSalida(
