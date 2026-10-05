@@ -31,6 +31,19 @@ import 'esquema_local.dart';
 const _columnasQueLlegaronDespues = <(String, String, String)>[
   // La nota de la oficina cuando cancela o corrige una venta (octubre 2026).
   ('ventas', 'nota_oficina', 'ALTER TABLE ventas ADD COLUMN nota_oficina TEXT'),
+  // La baja de un cliente, que antes se intentaba con un DELETE y mataba la
+  // sincronización (auditoría de octubre 2026, hallazgo 1).
+  (
+    'clientes',
+    'activo',
+    'ALTER TABLE clientes ADD COLUMN activo INTEGER NOT NULL DEFAULT 1',
+  ),
+  // Por qué un delta no se pudo aplicar (hallazgo 2).
+  (
+    'deltas_desconocidos',
+    'error',
+    'ALTER TABLE deltas_desconocidos ADD COLUMN error TEXT',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

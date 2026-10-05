@@ -90,7 +90,8 @@ class RepoClientes {
                   AND k.sincronizado = 0
              ), 0) AS abonos_pendientes
         FROM clientes c
-       WHERE (?1 = 0 OR c.nombre_comercial LIKE ?2 OR c.codigo LIKE ?2
+       WHERE c.activo = 1
+         AND (?1 = 0 OR c.nombre_comercial LIKE ?2 OR c.codigo LIKE ?2
               OR c.telefono LIKE ?2)
        ORDER BY c.secuencia IS NULL, c.secuencia, c.nombre_comercial
        LIMIT ?3

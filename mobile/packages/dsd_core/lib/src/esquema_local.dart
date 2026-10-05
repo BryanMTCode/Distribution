@@ -124,7 +124,16 @@ CREATE TABLE IF NOT EXISTS clientes (
     -- 1 cuando el cliente nació en este teléfono y aún no lo confirma el
     -- servidor. Es zona PROPIA hasta que llega su confirmación.
     es_local                INTEGER NOT NULL DEFAULT 0,
-    sincronizado            INTEGER NOT NULL DEFAULT 1
+    sincronizado            INTEGER NOT NULL DEFAULT 1,
+    -- 0 cuando la oficina lo dio de baja o lo pasó a otra ruta.
+    --
+    -- El teléfono NO borra clientes, y eso no es una preferencia: `ventas`,
+    -- `cobros`, `no_drops` y el borrador apuntan a esta tabla con llave foránea,
+    -- así que un DELETE con una venta todavía sin sincronizar aborta la tanda de
+    -- deltas completa — y como la tanda es todo-o-nada y el cursor solo avanza al
+    -- aplicarla, el teléfono repetiría esa misma tanda para siempre: deja de
+    -- sincronizar y nadie se entera.
+    activo                  INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS ix_clientes_secuencia ON clientes(secuencia);
 CREATE INDEX IF NOT EXISTS ix_clientes_nombre    ON clientes(nombre_comercial);
@@ -455,6 +464,11 @@ CREATE TABLE IF NOT EXISTS deltas_desconocidos (
     entidad_id      TEXT NOT NULL,
     operacion       TEXT NOT NULL,
     payload         TEXT,
+    -- Por qué no se pudo aplicar. NULL = entidad desconocida (una app vieja
+    -- contra un servidor nuevo); con texto = el delta SÍ se reconoció y reventó
+    -- al aplicarse. La distinción importa: lo primero se arregla actualizando la
+    -- app, lo segundo es un defecto que hay que ir a ver.
+    error           TEXT,
     recibido_en     TEXT NOT NULL
 );
 

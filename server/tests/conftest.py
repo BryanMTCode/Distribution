@@ -69,6 +69,12 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # El piso de retención del change_log (migración 0034). Es estado de la
+    # INSTALACIÓN, no dato de referencia: una prueba que lo sube —la del job de
+    # poda— dejaría a todas las que corran después recibiendo «resincroniza» en
+    # cada pull. Pasó, y el síntoma fue una prueba de ruta fallando por un motivo
+    # que no tenía nada que ver con rutas.
+    "sync_retencion",
     # Las entradas de mercancía: cuelgan de `almacenes` y de `usuarios`, así que
     # el CASCADE las alcanzaría, pero van explícitas por la misma razón que las
     # del piloto — leer esta lista no debería exigir seguir llaves foráneas en la

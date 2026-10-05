@@ -225,6 +225,14 @@ class DeltaSalida(BaseModel):
     cursor: int = Field(description="Cursor a mandar en la siguiente llamada")
     hay_mas: bool = Field(description="True si faltan cambios por traer")
     cambios: list[Cambio]
+    resincronizar: bool = Field(
+        default=False,
+        description=(
+            "True cuando el cursor del dispositivo quedó por debajo de lo que el "
+            "change_log todavía conserva. El dispositivo tiene que volver a "
+            "empezar desde el cursor 0: lo que falta ya no se puede entregar."
+        ),
+    )
 
 
 @router.get("/pull", response_model=DeltaSalida)
@@ -257,6 +265,23 @@ async def pull(
             status.HTTP_403_FORBIDDEN,
             "sincronizar exige un token emitido para un dispositivo registrado",
         )
+
+    # ------------------------------------------------------------------
+    # ¿Le alcanza el cursor al dispositivo?
+    # ------------------------------------------------------------------
+    # Si el `change_log` ya se podó por debajo del cursor que trae, los deltas de
+    # en medio no existen y NO hay forma de entregárselos. Seguir adelante sería
+    # lo peor de los dos mundos: recibiría los siguientes y nunca sabría que le
+    # faltan los de antes — un catálogo incompleto, en silencio, para siempre.
+    #
+    # Así que se le dice que vuelva a empezar. Es caro —una resincronización
+    # completa— y es lo único correcto; y mientras nadie pode, el piso vale 0 y
+    # esto no se dispara nunca. Ver la migración 0034.
+    piso = (
+        await sesion.execute(text("SELECT piso_cursor FROM sync_retencion"))
+    ).scalar_one_or_none() or 0
+    if cursor and cursor < piso:
+        return DeltaSalida(cursor=0, hay_mas=True, cambios=[], resincronizar=True)
 
     rutas = list(actor.rutas)
     filas = (

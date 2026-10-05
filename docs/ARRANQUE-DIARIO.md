@@ -638,8 +638,8 @@ verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
 
 ```bash
 make lint          # ruff sobre app y tests
-make pruebas       # 1055 pruebas de Python — necesita la base arriba
-make movil         # 538 de Dart + 252 de widget
+make pruebas       # 1064 pruebas de Python — necesita la base arriba
+make movil         # 549 de Dart + 252 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -1088,7 +1088,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 1055 pruebas de Python contra PostgreSQL real, 538 de Dart,
+1. **Lo construido está probado de verdad**: 1064 pruebas de Python contra PostgreSQL real, 549 de Dart,
    252 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.

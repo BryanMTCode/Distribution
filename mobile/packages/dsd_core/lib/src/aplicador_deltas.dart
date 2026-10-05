@@ -18,6 +18,7 @@ class ResultadoAplicacion {
   const ResultadoAplicacion({
     required this.aplicados,
     required this.desconocidos,
+    this.fallidos = 0,
   });
 
   final int aplicados;
@@ -25,6 +26,13 @@ class ResultadoAplicacion {
   /// Entidades que esta versión de la app no sabe aplicar. Se guardan crudas;
   /// ver la tabla `deltas_desconocidos`.
   final int desconocidos;
+
+  /// Deltas que la app SÍ reconoció y reventaron al aplicarse.
+  ///
+  /// Es distinto de `desconocidos`, y la diferencia es la que importa al ir a
+  /// verlo: un desconocido se arregla actualizando la app; un fallido es un
+  /// defecto, y quedó guardado con su error en `deltas_desconocidos`.
+  final int fallidos;
 }
 
 class AplicadorDeltas {
@@ -36,19 +44,49 @@ class AplicadorDeltas {
   ///
   /// O entra toda o no entra nada: un catálogo a medias —productos sin sus
   /// precios— haría que el vendedor viera artículos que no puede cotizar.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// UN DELTA QUE REVIENTA SE APARTA; NO SE LLEVA LA TANDA NI LA SINCRONIZACIÓN
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Antes, cualquier excepción al aplicar un delta salía de aquí hacia arriba.
+  /// Parecía conservador y era lo contrario: el cursor **solo avanza después de
+  /// aplicar**, así que la siguiente corrida volvía a traer esa misma tanda, a
+  /// reventar en el mismo renglón, y el teléfono **dejaba de sincronizar para
+  /// siempre** sin decirle nada a nadie. Lo encontró la auditoría de octubre de
+  /// 2026 con un caso real: un delta de baja de cliente contra la llave foránea
+  /// de `ventas`.
+  ///
+  /// Así que cada delta va en su SAVEPOINT. El que revienta se deshace solo, se
+  /// guarda en `deltas_desconocidos` **con su error**, y la tanda sigue. Un
+  /// catálogo al que le falta un renglón es malo; un teléfono congelado en el
+  /// tiempo es peor, y además invisible.
+  ///
+  /// El SAVEPOINT es necesario y no decorativo: sin él, un delta que escribe dos
+  /// veces y falla en la segunda dejaría la primera escritura dentro de la
+  /// transacción que sí se confirma.
   ResultadoAplicacion aplicar(List<Delta> deltas, {required String recibidoEn}) {
     var aplicados = 0;
     var desconocidos = 0;
+    var fallidos = 0;
 
     _db.execute('BEGIN IMMEDIATE');
     try {
       for (final delta in deltas) {
-        final manejado = _aplicarUno(delta, recibidoEn);
-        if (manejado) {
-          aplicados++;
-        } else {
-          desconocidos++;
-          _guardarDesconocido(delta, recibidoEn);
+        _db.execute('SAVEPOINT delta');
+        try {
+          final manejado = _aplicarUno(delta, recibidoEn);
+          _db.execute('RELEASE delta');
+          if (manejado) {
+            aplicados++;
+          } else {
+            desconocidos++;
+            _guardarDesconocido(delta, recibidoEn);
+          }
+        } catch (e) {
+          _db.execute('ROLLBACK TO delta');
+          _db.execute('RELEASE delta');
+          fallidos++;
+          _guardarDesconocido(delta, recibidoEn, error: '$e');
         }
       }
       _db.execute('COMMIT');
@@ -57,7 +95,11 @@ class AplicadorDeltas {
       rethrow;
     }
 
-    return ResultadoAplicacion(aplicados: aplicados, desconocidos: desconocidos);
+    return ResultadoAplicacion(
+      aplicados: aplicados,
+      desconocidos: desconocidos,
+      fallidos: fallidos,
+    );
   }
 
   bool _aplicarUno(Delta delta, String recibidoEn) => switch (delta.entidad) {
@@ -78,12 +120,12 @@ class AplicadorDeltas {
         _ => false,
       };
 
-  void _guardarDesconocido(Delta delta, String recibidoEn) {
+  void _guardarDesconocido(Delta delta, String recibidoEn, {String? error}) {
     _db.execute(
       '''
       INSERT INTO deltas_desconocidos (cursor, entidad, entidad_id, operacion,
-                                       payload, recibido_en)
-      VALUES (?, ?, ?, ?, ?, ?)
+                                       payload, error, recibido_en)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(cursor) DO NOTHING
       ''',
       [
@@ -92,6 +134,7 @@ class AplicadorDeltas {
         delta.entidadId,
         delta.operacion,
         delta.payload == null ? null : jsonEncode(delta.payload),
+        error,
         recibidoEn,
       ],
     );
@@ -745,7 +788,18 @@ class AplicadorDeltas {
 
   bool _cliente(Delta delta) {
     if (delta.operacion == 'delete') {
-      _db.execute('DELETE FROM clientes WHERE id = ?', [delta.entidadId]);
+      // NO se borra, se da de baja — el mismo trato que `producto` y
+      // `lista_precios`, y por una razón más fuerte: `ventas`, `cobros`,
+      // `no_drops` y el borrador apuntan a `clientes` con llave foránea, así que
+      // un DELETE con una venta todavía sin sincronizar aborta la tanda completa
+      // y el teléfono deja de sincronizar para siempre.
+      //
+      // Aquí llega también el cliente que la oficina pasó a OTRA ruta: para este
+      // teléfono dejó de existir, y sus documentos sin subir siguen en pie.
+      _db.execute(
+        'UPDATE clientes SET activo = 0 WHERE id = ?',
+        [delta.entidadId],
+      );
       return true;
     }
     final c = delta.payload!;
@@ -762,8 +816,8 @@ class AplicadorDeltas {
       INSERT INTO clientes (id, codigo, nombre_comercial, telefono, direccion,
                             referencias, lat, lng, ubicacion_origen, secuencia,
                             lista_precios_id, permite_credito, limite_credito,
-                            bloqueado, es_local, sincronizado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+                            bloqueado, es_local, sincronizado, activo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
       ON CONFLICT(id) DO UPDATE SET
         codigo = excluded.codigo,
         nombre_comercial = excluded.nombre_comercial,
@@ -780,7 +834,8 @@ class AplicadorDeltas {
         bloqueado = excluded.bloqueado,
         -- El servidor ya lo conoce: deja de ser un alta local pendiente.
         es_local = 0,
-        sincronizado = 1
+        sincronizado = 1,
+        activo = excluded.activo
       ''',
       [
         c['id'],
@@ -797,6 +852,17 @@ class AplicadorDeltas {
         _aBool(c['permite_credito']),
         _aNumero(c['limite_credito']),
         _aBool(c['bloqueado']),
+        // `estatus` del servidor, traducido a lo único que el teléfono necesita
+        // saber: si este cliente va en la lista de hoy.
+        //
+        // `prospecto` SÍ va: es el cliente que el vendedor dio de alta en la
+        // calle y que la oficina todavía no confirma. Esconderlo sería lo
+        // contrario de para qué existe el alta en campo. Los que se van son
+        // `inactivo` y `baja` — la oficina ya decidió que no se le visita—, y
+        // antes de la auditoría de octubre de 2026 el teléfono no los recibía
+        // nunca: seguía mandando al vendedor a la puerta de un cliente que la
+        // empresa había dado por perdido.
+        _clienteVaEnLaRuta(c['estatus']) ? 1 : 0,
       ],
     );
     return true;
@@ -834,6 +900,14 @@ class AplicadorDeltas {
   }
 
   // -------------------------------------------------------------------------
+
+  /// Si un `estatus` del servidor significa «sigue en la ruta de este teléfono».
+  ///
+  /// Un `estatus` que esta versión no conozca cuenta como activo: perder un
+  /// cliente de la lista por un valor nuevo sería peor que mostrar uno de más, y
+  /// el vendedor nota de inmediato lo segundo.
+  static bool _clienteVaEnLaRuta(Object? estatus) =>
+      estatus is! String || (estatus != 'inactivo' && estatus != 'baja');
 
   /// Los importes del servidor llegan como string (contracts/README.md §1).
   static num? _aNumero(Object? valor) => switch (valor) {
