@@ -16,8 +16,8 @@ medias es lo que convierte un problema de diez minutos en una noche.
 Este documento es el **cómo**. El **por qué** de cada decisión está en
 [DESPLIEGUE.md](DESPLIEGUE.md), y vale leerlo después, no durante.
 
-> **Convención:** donde diga `tudominio.com`, pon tu dominio. Donde diga
-> `IP_DEL_SERVIDOR`, pon la IP del paso 4. Si pegas un comando con esos textos
+> **Convención:** donde diga `distribucionesse.com`, pon tu dominio. Donde diga
+> `138.197.234.56`, pon la IP del paso 4. Si pegas un comando con esos textos
 > literales, no va a funcionar y el error no te lo va a decir claramente.
 
 ---
@@ -122,12 +122,12 @@ y una IP pública.
 Asigna una Reserved IP a `dsd-produccion`.
 
 **✅ Debes ver** una IP nueva asignada al droplet. **Esa** es tu
-`IP_DEL_SERVIDOR` de aquí en adelante — no la IP original del droplet.
+`138.197.234.56` de aquí en adelante — no la IP original del droplet.
 
 Apúntala:
 
 ```
-IP_DEL_SERVIDOR = ____________________
+138.197.234.56 = ____________________
 ```
 
 > **Por qué:** te deja destruir y reconstruir la máquina sin tocar el DNS ni
@@ -179,12 +179,12 @@ IP_DEL_SERVIDOR = ____________________
 **DÓNDE:** en la web de tu registrador de dominios (o de Cloudflare, si lo
 administras ahí).
 
-Crea **dos registros tipo A**, los dos apuntando a tu `IP_DEL_SERVIDOR`:
+Crea **dos registros tipo A**, los dos apuntando a tu `138.197.234.56`:
 
 | Tipo | Nombre | Valor | TTL |
 |---|---|---|---|
-| A | `api` | `IP_DEL_SERVIDOR` | automático / 300 |
-| A | `analitica` | `IP_DEL_SERVIDOR` | automático / 300 |
+| A | `api` | `138.197.234.56` | automático / 300 |
+| A | `analitica` | `138.197.234.56` | automático / 300 |
 
 > ⚠️ **Si usas Cloudflare**, pon el ícono de la nube en **gris (DNS only)**, no
 > naranja. Con la nube naranja, Cloudflare interpone su propio proxy y Let's
@@ -200,11 +200,11 @@ Crea **dos registros tipo A**, los dos apuntando a tu `IP_DEL_SERVIDOR`:
 Este es el paso que más gente se salta y es el que más caro sale.
 
 ```bash
-dig +short api.tudominio.com
-dig +short analitica.tudominio.com
+dig +short api.distribucionesse.com
+dig +short analitica.distribucionesse.com
 ```
 
-**✅ Debes ver** tu `IP_DEL_SERVIDOR` impresa dos veces, una por comando.
+**✅ Debes ver** tu `138.197.234.56` impresa dos veces, una por comando.
 
 **⚠️ Si no imprime nada, o imprime otra IP: NO SIGAS.** Espera y repite. La
 propagación suele tardar de 2 a 30 minutos, a veces más. Pon un temporizador y
@@ -223,7 +223,7 @@ tómate un café.
 **DÓNDE:** en tu **WSL**.
 
 ```bash
-ssh root@IP_DEL_SERVIDOR
+ssh root@138.197.234.56
 ```
 
 La primera vez pregunta si confías en la huella del servidor: escribe `yes`.
@@ -302,7 +302,7 @@ Debe existir y pertenecer a `dsd dsd`.
 sesión de `root` abierta** en la primera.
 
 ```bash
-ssh dsd@IP_DEL_SERVIDOR
+ssh dsd@138.197.234.56
 ```
 
 **✅ Debes ver** el prompt `dsd@dsd-produccion:~$`.
@@ -334,7 +334,7 @@ sudo systemctl restart ssh
 **DÓNDE:** en una **TERCERA terminal de WSL**. No cierres las otras dos.
 
 ```bash
-ssh dsd@IP_DEL_SERVIDOR
+ssh dsd@138.197.234.56
 ```
 
 **✅ Debes ver** el prompt de `dsd`.
@@ -441,7 +441,7 @@ exit
 Y desde tu WSL:
 
 ```bash
-ssh dsd@IP_DEL_SERVIDOR
+ssh dsd@138.197.234.56
 ```
 
 Comprueba:
@@ -499,11 +499,11 @@ for v in DSD_DB_PASSWORD DSD_JWT_SECRETO DSD_CLAVE_API DSD_CLAVE_ANALITICA; do
 done
 ```
 
-Pon tus dominios (**cambia `tudominio.com` por el tuyo en las dos líneas**):
+Pon tus dominios (**cambia `distribucionesse.com` por el tuyo en las dos líneas**):
 
 ```bash
-sed -i "s|^DSD_DOMINIO_API=.*|DSD_DOMINIO_API=api.tudominio.com|" .env
-sed -i "s|^DSD_DOMINIO_ANALITICA=.*|DSD_DOMINIO_ANALITICA=analitica.tudominio.com|" .env
+sed -i "s|^DSD_DOMINIO_API=.*|DSD_DOMINIO_API=api.distribucionesse.com|" .env
+sed -i "s|^DSD_DOMINIO_ANALITICA=.*|DSD_DOMINIO_ANALITICA=analitica.distribucionesse.com|" .env
 ```
 
 Comprueba:
@@ -522,8 +522,8 @@ DSD_CLAVE_API          64 caracteres
 DSD_CLAVE_ANALITICA    64 caracteres
 DSD_ENTORNO=produccion
 DSD_ZONA=America/Mexico_City
-DSD_DOMINIO_API=api.tudominio.com
-DSD_DOMINIO_ANALITICA=analitica.tudominio.com
+DSD_DOMINIO_API=api.distribucionesse.com
+DSD_DOMINIO_ANALITICA=analitica.distribucionesse.com
 DSD_TUNNEL_TOKEN=
 ```
 
@@ -618,7 +618,7 @@ docker compose exec api python -c \
 Y ahora **DÓNDE: en tu WSL**, que es la prueba que de verdad importa:
 
 ```bash
-curl -s https://api.tudominio.com/salud
+curl -s https://api.distribucionesse.com/salud
 ```
 
 **✅ Debes ver**, en los dos casos, una respuesta con esta forma — seis campos, y
@@ -706,7 +706,7 @@ más tarde.
 **DÓNDE:** en el **navegador de tu PC**.
 
 ```
-https://api.tudominio.com/panel
+https://api.distribucionesse.com/panel
 ```
 
 **✅ Debes ver** el candado de HTTPS y la pantalla de entrada. Entra con el código
@@ -734,7 +734,7 @@ sudo reboot
 Espera dos o tres minutos y, **DÓNDE: en tu WSL**:
 
 ```bash
-curl -s https://api.tudominio.com/salud
+curl -s https://api.distribucionesse.com/salud
 ```
 
 **✅ Debes ver** otra vez la misma respuesta, con las cuatro banderas en `true`,

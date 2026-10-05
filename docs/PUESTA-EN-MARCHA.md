@@ -21,17 +21,23 @@ Hay dos sitios de trabajo y conviene tenerlos claros desde ahora:
 
 | | Dónde | Para qué |
 |---|---|---|
-| **El servidor** | `ssh dsd@38.197.234.56`, en `~/Distribution` | Respaldos, revisiones, el panel |
+| **El servidor** | `ssh dsd@138.197.234.56`, en `~/Distribution` | Respaldos, revisiones, el panel |
 | **Tu PC (WSL)** | `~/Distribution` | **Todo lo del APK.** El servidor no compila Android |
 
-> **La IP del servidor (`38.197.234.56`) ya viene puesta en todos los comandos**:
-> se copian y se pegan tal cual.
+> **No queda ningún marcador: todos los comandos se copian y se pegan tal cual.**
+> La IP del servidor es `138.197.234.56` y los nombres son
+> `api.distribucionesse.com` y `analitica.distribucionesse.com`, los dos verificados
+> contra el DNS.
 >
-> **Lo que todavía es un marcador es `api.tudominio.com`.** Aparece 11 veces y hay
-> que cambiarlo por tu dominio real. Y no se puede sustituir por la IP: con
-> `https://` el certificado se valida contra el NOMBRE, así que `https://38.197.234.56`
-> fallaría por certificado aunque el servidor conteste. Dime tu dominio y te dejo
-> el archivo sin un solo marcador.
+> **La IP correcta empieza con `138`, no con `38`.** Lo anoto porque es un dígito
+> fácil de perder al copiarla, y el síntoma engaña: `ssh dsd@38.197.234.56` da
+> `Connection timed out`, que es exactamente lo que da un cortafuegos mal
+> configurado. Te mandaría a revisar reglas durante media hora por un carácter.
+>
+> **Y para hablar con el servidor se usa el NOMBRE, no la IP**, en todo lo que vaya
+> por `https://`: el certificado se valida contra el nombre, así que
+> `https://138.197.234.56/salud` falla por certificado aunque el servidor conteste
+> perfectamente. La IP es solo para `ssh` y `scp`.
 
 > **Un paso es irreversible y está marcado 🔴: el keystore (paso 6).** Si se pierde
 > esa llave, los teléfonos que ya tengan la app no se pueden actualizar nunca más,
@@ -73,7 +79,7 @@ bitácora de la API. Tres comandos, en este orden:
 ```bash
 docker compose logs --tail=40 api
 docker compose ps
-curl -s https://api.tudominio.com/salud
+curl -s https://api.distribucionesse.com/salud
 ```
 
 Lo que importa de cada uno:
@@ -136,7 +142,7 @@ git show --stat HEAD
 | **Código del servidor** (`server/app/`, plantillas HTML) | `docker compose build api worker && docker compose up -d` | Igual: el código va en la imagen |
 | **El laboratorio** (`analytics/`) | `docker compose build analitica && docker compose up -d` | — |
 | **Scripts o documentos** (`scripts/`, `docs/`) | nada más, el `git pull` basta | Se leen del disco, no de la imagen |
-| **La app** (`mobile/`) | **en tu PC**: `make apk DSD_BASE_URL=https://api.tudominio.com` y reinstalar | El servidor no compila Android. Sube el `versionCode` antes (paso 9) |
+| **La app** (`mobile/`) | **en tu PC**: `make apk DSD_BASE_URL=https://api.distribucionesse.com` y reinstalar | El servidor no compila Android. Sube el `versionCode` antes (paso 9) |
 
 > **Si tienes duda, `docker compose build && docker compose up -d` reconstruye
 > todo.** Tarda más, nunca se queda corto, y la caché de Docker hace que lo que no
@@ -171,7 +177,7 @@ base quedó como estaba. Pégame `docker compose logs migraciones`.
 **DÓNDE:** donde apareció el error, no en otro lado.
 
 ```bash
-curl -s https://api.tudominio.com/salud
+curl -s https://api.distribucionesse.com/salud
 ```
 
 **✅ Las cuatro banderas en `true`.** Y después, **repite la acción exacta que
@@ -219,7 +225,7 @@ droplet → **Snapshots** → restaurar `dsd-desplegado-limpio`. Pierdes lo capt
 desde entonces, así que antes de restaurar baja el último respaldo:
 
 ```bash
-scp dsd@38.197.234.56:~/respaldos-dsd/dsd-*.dump ~/
+scp dsd@138.197.234.56:~/respaldos-dsd/dsd-*.dump ~/
 ```
 
 > **Una migración no se deshace con `git checkout`.** El código vuelve atrás, la
@@ -367,7 +373,7 @@ peor que no tener cron**, porque crees que estás respaldado y no lo estás.
 **DÓNDE:** en **tu PC (WSL)**.
 
 ```bash
-scp dsd@38.197.234.56:~/respaldos-dsd/dsd-*.dump ~/respaldos-dsd-copia/
+scp dsd@138.197.234.56:~/respaldos-dsd/dsd-*.dump ~/respaldos-dsd-copia/
 ```
 
 (Crea la carpeta antes con `mkdir -p ~/respaldos-dsd-copia`.)
@@ -497,16 +503,16 @@ cuáles, pero mejor verlo aquí.
 
 ```bash
 cd ~/Distribution
-make apk DSD_BASE_URL=https://api.tudominio.com
+make apk DSD_BASE_URL=https://api.distribucionesse.com
 ```
 
-Cambia `api.tudominio.com` por tu dominio real. Tarda varios minutos.
+Cambia `api.distribucionesse.com` por tu dominio real. Tarda varios minutos.
 
 **✅ Debes ver, al terminar:**
 
 ```
   OK    versión 0.1.0+1  (versionCode 1)
-  OK    servidor https://api.tudominio.com
+  OK    servidor https://api.distribucionesse.com
   OK    firmado con una llave de producción
         CN=Distribuidora, OU=DSD, …
         SHA-256 del certificado: 4f1c9a77e3b8…
@@ -539,7 +545,7 @@ Android y no siempre está en el `PATH`. Dos salidas:
 ```bash
 # A. Decirle dónde está el SDK y volver a revisar, sin recompilar:
 export ANDROID_HOME=$HOME/Android/Sdk
-bash scripts/revisar_apk.sh https://api.tudominio.com
+bash scripts/revisar_apk.sh https://api.distribucionesse.com
 
 # B. O sacar la huella del keystore directamente, que es el mismo certificado:
 keytool -list -v -keystore ~/llaves/dsd-release.jks -alias dsd | grep -i SHA256
@@ -598,7 +604,7 @@ completo y si falla, falla aquí.
 
 ## Paso 12 · Da de alta al vendedor
 
-**DÓNDE:** en el **navegador**, en `https://api.tudominio.com/panel`.
+**DÓNDE:** en el **navegador**, en `https://api.distribucionesse.com/panel`.
 
 **Panel → Usuarios y rutas.** Crea el vendedor con su ruta y su camión. Anota su
 **código de empleado** (por ejemplo `VEND01`) y la contraseña que le pongas.
@@ -648,7 +654,7 @@ ruta descargados.
 teclado. Son 36 caracteres con guiones; cópialo, no lo transcribas.
 
 **⚠️ Si dice que no hay conexión:** abre el navegador **del teléfono** en
-`https://api.tudominio.com/salud`. Si eso no responde, el problema es la red o el
+`https://api.distribucionesse.com/salud`. Si eso no responde, el problema es la red o el
 DNS, no la app.
 
 **⚠️ Si la app muestra una pantalla que dice que se compiló sin servidor**, el APK
@@ -677,7 +683,7 @@ Dos cosas que cambian ahora que el servidor está en internet y simplifican el
 guion:
 
 - **Sáltate todo el apartado de red de WSL.** Ya no aplica: el teléfono habla con
-  `https://api.tudominio.com` desde cualquier red, incluso con datos móviles.
+  `https://api.distribucionesse.com` desde cualquier red, incluso con datos móviles.
 - **Usa el APK de producción del paso 9**, no un build de depuración. Estás probando
   el artefacto de verdad.
 
@@ -715,7 +721,7 @@ se arregla**.
 > | 1 | `make simulacro` | Paso 3 de este documento |
 > | 2 | `make doctor` (zona) | `timedatectl` — ya quedó al instalar |
 > | 3 | `make migrar` | El servicio `migraciones` ya corrió |
-> | 4 | `/salud` con `"rls": true` | `curl -s https://api.tudominio.com/salud` |
+> | 4 | `/salud` con `"rls": true` | `curl -s https://api.distribucionesse.com/salud` |
 > | 5–10 | el panel | el panel, igual |
 
 ## Paso 17 · Los dos puntos que ningún comando puede revisar
