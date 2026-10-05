@@ -87,8 +87,23 @@ corre unas comprobaciones sobre los datos.
 **✅ Debes ver** las líneas de comprobación en verde y un veredicto final de que el
 respaldo es restaurable.
 
-**⚠️ Si falla, no sigas con el resto de esta lista.** `RESPALDOS.md` §2 explica qué
-busca cada comprobación y qué significa cada fallo.
+**⚠️ Si falla, lee QUÉ falló: los tres casos piden cosas opuestas.** El script
+ahora los distingue y te imprime el error de PostgreSQL:
+
+| Dice | Significa | Qué hacer |
+|---|---|---|
+| `la semilla de la prueba chocó con un dato que ya existe` | El respaldo **está bien**; un código de la prueba coincide con uno real | Actualiza el repo (`git pull`) y repite. Si persiste, dímelo |
+| `una invariante del diseño NO se cumple` | El esquema está completo pero **una regla no se aplica**. El caso más grave | No sigas. Pégame la línea `FALLA` |
+| `el esquema restaurado está incompleto` | El dump no trajo algo: un disparador, un índice | No sigas. Pégame el `ERROR:` |
+
+Para investigar sobre la base del simulacro —que normalmente se borra al
+terminar— consérvala:
+
+```bash
+DSD_SIMULACRO_CONSERVAR=1 bash scripts/en_el_servidor.sh simulacro.sh
+```
+
+`RESPALDOS.md` §2 explica qué busca cada comprobación.
 
 > **Por qué es una puerta:** un respaldo que nunca restauraste no es un respaldo,
 > es un archivo. Y un snapshot del proveedor tampoco lo es: un `DELETE` sin `WHERE`

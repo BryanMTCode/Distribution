@@ -15,24 +15,42 @@ BEGIN;
 -- Los roles y las unidades son datos de REFERENCIA: los siembra la migración
 -- 0009. ON CONFLICT DO NOTHING deja correr esta prueba tanto sobre una base
 -- recién migrada como sobre una que ya los tiene.
+--
+-- TODOS LOS CÓDIGOS LLEVAN EL PREFIJO `ZZ-HUMO-`, Y NO ES COSMÉTICO.
+--
+-- Esta prueba no corre solo sobre una base recién migrada: `simulacro.sh` la
+-- corre sobre un RESPALDO DE PRODUCCIÓN RESTAURADO, que ya trae datos reales.
+-- `sucursales.codigo`, `usuarios.codigo`, `almacenes.codigo` y `productos.sku`
+-- son únicos, así que una semilla con códigos verosímiles —'MATRIZ', 'VEND01',
+-- 'BODEGA_PRINCIPAL'— choca con los de verdad. Y choca de la peor forma: con
+-- ON_ERROR_STOP el psql sale distinto de cero y el simulacro concluye «el
+-- esquema restaurado está incompleto», que es FALSO — el esquema está bien, lo
+-- que chocó fue un nombre. Un respaldo bueno se reporta como inservible.
+--
+-- 'MATRIZ' en particular la crea `app.cli crear-usuario` al dar de alta al
+-- primer usuario de oficina, así que el choque ocurre en TODA instalación en
+-- cuanto alguien puede entrar al panel.
+--
+-- Los UUID fijos no chocan (nadie usa esos). Los códigos sí. De ahí el prefijo:
+-- no se parece a nada que la operación vaya a capturar. No los "arregles".
 INSERT INTO roles(codigo, nombre) VALUES ('vendedor','Vendedor'),('admin','Administrador')
 ON CONFLICT (codigo) DO NOTHING;
 INSERT INTO sucursales(id, codigo, nombre)
-     VALUES ('11111111-1111-1111-1111-111111111111','MATRIZ','Matriz');
+     VALUES ('11111111-1111-1111-1111-111111111111','ZZ-HUMO-SUC','Sucursal de la prueba de humo');
 
 INSERT INTO usuarios(id, codigo, nombre, password_hash, rol_codigo, sucursal_id)
-VALUES ('22222222-2222-2222-2222-222222222222','VEND01','Juan Pérez','$argon2id$fake',
+VALUES ('22222222-2222-2222-2222-222222222222','ZZ-HUMO-VEND','Juan Pérez (prueba)','$argon2id$fake',
         'vendedor','11111111-1111-1111-1111-111111111111');
 
 INSERT INTO almacenes(id, codigo, nombre, tipo, responsable_id) VALUES
- ('33333333-3333-3333-3333-333333333333','BODEGA_PRINCIPAL','Bodega','bodega',NULL),
- ('44444444-4444-4444-4444-444444444444','CAMION_01','Camión 01','camion',
+ ('33333333-3333-3333-3333-333333333333','ZZ-HUMO-BOD','Bodega de la prueba','bodega',NULL),
+ ('44444444-4444-4444-4444-444444444444','ZZ-HUMO-CAM','Camión de la prueba','camion',
   '22222222-2222-2222-2222-222222222222');
 
 INSERT INTO unidades_medida(codigo, nombre) VALUES ('PZA','Pieza'),('CAJA','Caja')
 ON CONFLICT (codigo) DO NOTHING;
 INSERT INTO productos(id, sku, nombre, unidad_base)
-VALUES ('55555555-5555-5555-5555-555555555555','SKU-001','Frijol 1kg','PZA');
+VALUES ('55555555-5555-5555-5555-555555555555','ZZ-HUMO-SKU','Frijol de la prueba','PZA');
 INSERT INTO producto_unidades(producto_id, unidad_codigo, factor, es_default) VALUES
  ('55555555-5555-5555-5555-555555555555','PZA',1,true),
  ('55555555-5555-5555-5555-555555555555','CAJA',24,false);
@@ -41,7 +59,7 @@ INSERT INTO dispositivos(id, usuario_id, etiqueta)
 VALUES ('66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222','Moto G54');
 
 INSERT INTO clientes(id, nombre_comercial, origen_alta, lat, lng, ubicacion_origen)
-VALUES ('77777777-7777-7777-7777-777777777777','Abarrotes Doña Mary','campo',
+VALUES ('77777777-7777-7777-7777-777777777777','Abarrotes de la prueba de humo','campo',
         19.4326,-99.1332,'gps');
 
 -- =============================================================================
@@ -56,7 +74,7 @@ CREATE OR REPLACE FUNCTION _insertar_venta_demo() RETURNS void LANGUAGE sql AS $
                         subtotal, total,
                         fecha_dispositivo, fecha_operativa, lat, lng)
     VALUES ('88888888-8888-8888-8888-888888888888',
-            '66666666-6666-6666-6666-666666666666', 123, 'VEND01-000123',
+            '66666666-6666-6666-6666-666666666666', 123, 'ZZ-HUMO-000123',
             '77777777-7777-7777-7777-777777777777',
             '22222222-2222-2222-2222-222222222222',
             '44444444-4444-4444-4444-444444444444',
@@ -89,7 +107,7 @@ BEGIN
                         subtotal, total,
                         fecha_dispositivo, fecha_operativa)
     VALUES (gen_random_uuid(),
-            '66666666-6666-6666-6666-666666666666', 123, 'VEND01-000123',
+            '66666666-6666-6666-6666-666666666666', 123, 'ZZ-HUMO-000123',
             '77777777-7777-7777-7777-777777777777',
             '22222222-2222-2222-2222-222222222222',
             '44444444-4444-4444-4444-444444444444',
@@ -138,13 +156,13 @@ END $$;
 -- -----------------------------------------------------------------------------
 INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id,
                     vendedor_id, fecha_operativa, estado)
-VALUES ('99999999-9999-9999-9999-999999999999','CG-0001',
+VALUES ('99999999-9999-9999-9999-999999999999','ZZ-HUMO-CG-0001',
         '33333333-3333-3333-3333-333333333333',
         '44444444-4444-4444-4444-444444444444',
         '22222222-2222-2222-2222-222222222222', CURRENT_DATE, 'confirmada');
 
 INSERT INTO liquidaciones (id, folio, carga_id, vendedor_id, fecha_operativa)
-VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','LQ-0001',
+VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','ZZ-HUMO-LQ-0001',
         '99999999-9999-9999-9999-999999999999',
         '22222222-2222-2222-2222-222222222222', CURRENT_DATE);
 

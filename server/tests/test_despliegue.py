@@ -685,3 +685,54 @@ def test_el_envoltorio_del_servidor_no_apunta_a_localhost():
         "el envoltorio ya no monta la carpeta de respaldos del host: un respaldo "
         "escrito dentro del contenedor se va con el contenedor"
     )
+
+
+# ---------------------------------------------------------------------------
+# El simulacro de respaldo
+# ---------------------------------------------------------------------------
+# Nada ejercitaba estos dos archivos: ni una prueba ni CI. El fallo de abajo
+# llegó hasta un servidor de producción y ahí se vio.
+
+
+def test_la_semilla_de_humo_no_usa_codigos_de_produccion():
+    """`simulacro.sh` corre esta prueba sobre un respaldo REAL restaurado.
+
+    `sucursales.codigo`, `usuarios.codigo`, `almacenes.codigo` y `productos.sku`
+    son únicos. Una semilla con códigos verosímiles choca con los de verdad, y
+    con ON_ERROR_STOP psql sale distinto de cero: el simulacro concluye «el
+    esquema restaurado está incompleto» y declara inservible un respaldo que
+    sirve. 'MATRIZ' en particular la crea `crear-usuario`, así que el choque
+    ocurre en toda instalación en cuanto alguien puede entrar al panel.
+    """
+    smoke = (_RAIZ / "server" / "db" / "tests" / "smoke_invariantes.sql").read_text(
+        encoding="utf-8"
+    )
+    # `marca="--"`: en SQL el comentario es `--`, no `#`. Con la marca por
+    # omisión esta prueba leía los comentarios del propio archivo —que CITAN
+    # 'MATRIZ' para explicar por qué ya no se usa— y fallaba sobre la prosa.
+    inserciones = _sin_comentarios(smoke, marca="--")
+
+    for codigo in ("'MATRIZ'", "'VEND01'", "'BODEGA_PRINCIPAL'", "'CAMION_01'", "'SKU-001'"):
+        assert codigo not in inserciones, (
+            f"la semilla de smoke_invariantes.sql volvió a usar {codigo}: eso choca "
+            "con el dato real y hace que el simulacro declare malo un respaldo bueno"
+        )
+    assert "ZZ-HUMO-" in inserciones, (
+        "la semilla perdió el prefijo que la mantiene fuera del camino de los "
+        "datos reales"
+    )
+
+
+def test_el_simulacro_no_se_conforma_con_el_codigo_de_salida():
+    """Tres invariantes reportan con texto y dos con WARNING: psql sale CERO.
+
+    Si un disparador dejara de bloquear el UPDATE al libro mayor, el archivo
+    imprimiría 'FALLA · se permitió editar el libro mayor' y psql saldría con
+    cero. Sin el grep, el simulacro diría «las invariantes se cumplen» sobre una
+    base en la que el libro mayor es editable — el fallo exacto que busca.
+    """
+    guion = _sin_comentarios((_RAIZ / "scripts" / "simulacro.sh").read_text(encoding="utf-8"))
+    assert "grep -q 'FALLA'" in guion, (
+        "simulacro.sh volvió a confiar solo en el código de salida de psql: un "
+        "FALLA impreso por una invariante pasaría por verde"
+    )

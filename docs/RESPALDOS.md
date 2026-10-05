@@ -127,6 +127,31 @@ El script dice qué comprobación falló y con qué comando reproducirlo. Lo que
 **no** hay que hacer es dejarlo para después: un simulacro rojo significa que
 ahora mismo no existe forma de recuperarse.
 
+Pero **un rojo en las invariantes tiene tres causas distintas que piden cosas
+opuestas**, y el script las distingue por el error que devuelve PostgreSQL:
+
+| Mensaje | Qué pasa de verdad | Gravedad |
+|---|---|---|
+| `la semilla de la prueba chocó con un dato que ya existe` | El respaldo **está bien**. Un código de la semilla coincide con uno real: `sucursales.codigo`, `usuarios.codigo`, `almacenes.codigo` y `productos.sku` son únicos. Por eso la semilla usa el prefijo `ZZ-HUMO-` | Ninguna, pero hay que arreglar la semilla |
+| `una invariante del diseño NO se cumple` | El esquema está completo y **una regla no se está aplicando**: un disparador que ya no bloquea, un índice de exclusión que ya no excluye | **La peor.** El respaldo se restaura y el sistema que sale no defiende sus reglas |
+| `el esquema restaurado está incompleto` | El dump no trajo algo que hace falta | Alta: el respaldo no sirve |
+
+El segundo caso es el que esta prueba existe para encontrar, y **durante un tiempo
+era invisible**: tres invariantes reportan con un `SELECT` que devuelve texto y dos
+con `RAISE WARNING`, y ninguna de las cinco cambia el código de salida de `psql`.
+El script solo miraba ese código, así que un `FALLA · se permitió editar el libro
+mayor` salía con cero y el simulacro lo reportaba como verde. Ahora también busca
+`FALLA` en la salida.
+
+Para investigar, conserva la base del simulacro en lugar de dejar que se borre:
+
+```bash
+DSD_SIMULACRO_CONSERVAR=1 bash scripts/en_el_servidor.sh simulacro.sh   # en el servidor
+DSD_SIMULACRO_CONSERVAR=1 make simulacro                                # en desarrollo
+```
+
+Y bórrala tú cuando acabes: `psql -c "DROP DATABASE dsd_simulacro"`.
+
 ---
 
 ## 3. Sacar el respaldo del edificio

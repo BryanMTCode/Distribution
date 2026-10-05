@@ -170,20 +170,72 @@ printf '\nLas invariantes del diseño\n'
 # PostgreSQL lo impida.
 SMOKE="$(dirname "$0")/../server/db/tests/smoke_invariantes.sql"
 if [ -f "$SMOKE" ]; then
-    if psql "$BASE_URL" -v ON_ERROR_STOP=1 -q -f "$SMOKE" >/dev/null 2>&1; then
-        bien "las 5 invariantes se cumplen sobre la base restaurada"
+    # La salida se GUARDA, no se tira. Antes iba a /dev/null y el diagnóstico
+    # era una sola línea genérica: había que adivinar entre «el dump no trajo un
+    # disparador» y «la semilla chocó con un dato real», que piden arreglos
+    # opuestos. Sin el ERROR de psql a la vista, no se distinguen.
+    SALIDA_SMOKE="$(mktemp)"
+    if psql "$BASE_URL" -v ON_ERROR_STOP=1 -q -f "$SMOKE" >"$SALIDA_SMOKE" 2>&1 \
+       && ! grep -q 'FALLA' "$SALIDA_SMOKE"; then
+        # El `grep` NO es redundante, y su ausencia era un falso verde.
+        #
+        # De las seis invariantes, tres reportan su resultado con un SELECT que
+        # devuelve el texto 'PASA'/'FALLA' y dos con RAISE WARNING. Ninguna de
+        # esas cinco cambia el código de salida de psql: si mañana un disparador
+        # dejara de bloquear el UPDATE al libro mayor, el archivo imprimiría
+        # 'FALLA · se permitió editar el libro mayor' y psql saldría con CERO.
+        # El simulacro habría dicho «las invariantes se cumplen» sobre una base
+        # en la que el libro mayor es editable, que es exactamente el fallo que
+        # esta prueba existe para encontrar.
+        bien "las 6 invariantes se cumplen sobre la base restaurada"
+        rm -f "$SALIDA_SMOKE"
     else
-        falla "las invariantes NO se cumplen: el esquema restaurado está incompleto"
-        printf '        %sreprodúcelo con:%s psql %s -f %s\n' \
+        PRIMER_ERROR="$(grep -m1 'ERROR:' "$SALIDA_SMOKE" || true)"
+        if printf '%s' "$PRIMER_ERROR" | grep -q 'duplicate key'; then
+            # Esto NO es un respaldo malo: la semilla de la prueba chocó con un
+            # dato real de producción. Decir «esquema incompleto» aquí es
+            # reportar como inservible un respaldo que sirve.
+            falla "la semilla de la prueba chocó con un dato que ya existe"
+            printf '        %s%s%s\n' "$GRIS" "$PRIMER_ERROR" "$FIN"
+            printf '        %sel esquema está BIEN: lo que chocó es un código repetido.%s\n' \
+                "$GRIS" "$FIN"
+            printf '        %sla semilla usa el prefijo ZZ-HUMO- justo para evitarlo;%s\n' \
+                "$GRIS" "$FIN"
+            printf '        %ssi ves esto, alguien le devolvió un código verosímil.%s\n' \
+                "$GRIS" "$FIN"
+        elif grep -q 'FALLA' "$SALIDA_SMOKE"; then
+            # psql salió con cero pero una invariante se reportó incumplida: el
+            # esquema está completo y una REGLA no se está aplicando. Es el caso
+            # más grave de los tres.
+            falla "una invariante del diseño NO se cumple sobre la base restaurada"
+            grep 'FALLA' "$SALIDA_SMOKE" | sed "s/^/        /" >&2
+        else
+            falla "las invariantes NO se cumplen: el esquema restaurado está incompleto"
+            [ -n "$PRIMER_ERROR" ] && printf '        %s%s%s\n' "$GRIS" "$PRIMER_ERROR" "$FIN"
+        fi
+        printf '        %sreprodúcelo con:%s DSD_SIMULACRO_CONSERVAR=1 %s\n' \
+            "$GRIS" "$FIN" "$0"
+        printf '        %sy luego:%s psql <url>/%s -f %s\n' \
             "$GRIS" "$FIN" "$BASE_SIMULACRO" "$SMOKE"
+        printf '        %ssalida completa en %s%s\n' "$GRIS" "$SALIDA_SMOKE" "$FIN"
     fi
 else
     avisa "no se encontró $SMOKE"
 fi
 
 # ---------------------------------------------------------------------------
-"${PSQL_ADMIN[@]}" -c "DROP DATABASE IF EXISTS $BASE_SIMULACRO" >/dev/null
-printf '\n%sbase del simulacro borrada%s\n' "$GRIS" "$FIN"
+# Se conserva si se pide, porque el mensaje de fallo de arriba dice «reprodúcelo
+# con psql sobre esta base» y hasta ahora la borrábamos en la línea siguiente:
+# la instrucción era imposible de seguir.
+if [ -n "${DSD_SIMULACRO_CONSERVAR:-}" ]; then
+    printf '\n%sbase %s CONSERVADA (DSD_SIMULACRO_CONSERVAR)%s\n' \
+        "$GRIS" "$BASE_SIMULACRO" "$FIN"
+    printf '%sbórrala con: psql -c "DROP DATABASE %s"%s\n' \
+        "$GRIS" "$BASE_SIMULACRO" "$FIN"
+else
+    "${PSQL_ADMIN[@]}" -c "DROP DATABASE IF EXISTS $BASE_SIMULACRO" >/dev/null
+    printf '\n%sbase del simulacro borrada%s\n' "$GRIS" "$FIN"
+fi
 
 if [ "$FALLAS" -eq 0 ]; then
     printf '\n%sSimulacro superado.%s Este respaldo SÍ se puede restaurar.\n' "$VERDE" "$FIN"
