@@ -29,6 +29,57 @@ void main() {
   // PUSH · la tabla de decisiones
   // =========================================================================
 
+  test('el lote_id que viaja es un UUID, porque el servidor lo exige así',
+      () async {
+    // ESTA PRUEBA NO EXISTÍA, Y POR ESO NADA LLEGABA AL SERVIDOR EN PRODUCCIÓN.
+    //
+    // El id de lote se construía como `'lote-$operacionId'`, y el esquema del
+    // servidor declara `lote_id: uuid.UUID`. Pydantic rechazaba ese prefijo con un
+    // 422 ANTES de ejecutar una línea del dominio, y ese camino no deja rastro:
+    // `sync_cuarentena` vacía, `ultimo_push` sin tocar —el panel decía
+    // «push: nunca»— y el teléfono mandando el lote entero a su cuarentena local.
+    // El vendedor veía «1 con error» y la venta no aparecía en el tablero.
+    //
+    // Las pruebas de aquí no lo veían porque el transporte falso acepta cualquier
+    // texto —su propia respuesta traía `"lote_id":"l"`— y las del servidor armaban
+    // sus payloads con UUID válidos. Nadie cruzaba los dos lados.
+    encolarAlta(outbox, db, 'c1');
+    final transporte = TransporteFalso([
+      Responde.push(sobres: outbox.siguienteLote()),
+    ]);
+
+    await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
+
+    final enviado = transporte.cuerposEnviados.first['lote_id'] as String;
+    expect(
+      enviado,
+      matches(RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      )),
+      reason: 'el servidor declara lote_id como UUID: cualquier otra forma es un '
+          '422 que no deja rastro en ninguna tabla',
+    );
+  });
+
+  test('el lote_id es el MISMO si se reintenta el mismo tramo', () async {
+    // Es la propiedad que el id derivado del contenido existe para dar: tras un
+    // corte, el servidor tiene que reconocer el lote en vez de duplicarlo.
+    encolarAlta(outbox, db, 'c1');
+
+    final primero = TransporteFalso([const SeCaeLaRed()]);
+    await armarSincronizador(db, primero).sincronizar(cursorActual: 0);
+
+    final segundo = TransporteFalso([
+      Responde.push(sobres: outbox.siguienteLote()),
+    ]);
+    await armarSincronizador(db, segundo).sincronizar(cursorActual: 0);
+
+    expect(
+      segundo.cuerposEnviados.first['lote_id'],
+      equals(primero.cuerposEnviados.first['lote_id']),
+    );
+  });
+
   test('aceptada: el sobre sale de la cola', () async {
     encolarAlta(outbox, db, 'c1');
     final transporte = TransporteFalso([

@@ -29,6 +29,10 @@
 /// sigue.
 library;
 
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import 'dart:math' as math;
 
 import 'aplicador_deltas.dart';
@@ -422,6 +426,38 @@ class Sincronizador {
 
   /// Un id de lote derivado de su contenido: si el teléfono reintenta el mismo
   /// tramo tras un corte, el servidor lo reconoce como el mismo lote.
-  String _loteIdPorDefecto(List<SobreEnCola> lote) =>
-      'lote-${lote.first.operacionId}';
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// TIENE QUE SER UN UUID, Y ANTES NO LO ERA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Devolvía `'lote-\$operacionId'`, y el servidor declara `lote_id: uuid.UUID`.
+  /// Pydantic rechazaba ese prefijo con un **422 antes de ejecutar una sola línea
+  /// del dominio**, y ese camino no dejaba rastro en ningún sitio:
+  ///
+  /// · `sync_cuarentena` solo recibe sobres que llegaron a procesarse → vacía;
+  /// · `dispositivos.ultimo_push` no se tocaba → el panel decía «push: nunca»;
+  /// · y el teléfono, ante un 422, manda el lote entero a su cuarentena LOCAL →
+  ///   «1 con error» en la pantalla del vendedor.
+  ///
+  /// Resultado: NADA de lo que la app creaba llegaba —ni ventas ni clientes—
+  /// mientras el pull seguía funcionando, porque es otra ruta y otro esquema. El
+  /// síntoma era «la venta no aparece en el tablero» y la causa, un prefijo de
+  /// cinco letras.
+  ///
+  /// El UUID se deriva del contenido con SHA-256 para conservar lo que el párrafo
+  /// de arriba promete: el mismo tramo reintentado da el mismo id, y el servidor
+  /// reconoce el lote en vez de duplicarlo. Se fijan la versión 8 —reservada para
+  /// usos propios— y la variante RFC 4122, porque un UUID con esos bits al azar
+  /// es válido para Pydantic pero miente sobre cómo se generó.
+  String _loteIdPorDefecto(List<SobreEnCola> lote) {
+    final h = sha256
+        .convert(utf8.encode('lote:${lote.first.operacionId}'))
+        .toString();
+    final variante =
+        ((int.parse(h.substring(16, 17), radix: 16) & 0x3) | 0x8).toRadixString(16);
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}'
+        '-8${h.substring(13, 16)}'
+        '-$variante${h.substring(17, 20)}'
+        '-${h.substring(20, 32)}';
+  }
 }

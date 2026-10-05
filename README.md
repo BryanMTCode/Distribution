@@ -103,7 +103,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**988 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **477 de Dart** y **232 de widget**, todas en verde.
+**988 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **479 de Dart** y **233 de widget**, todas en verde.
 
 ## Stack
 
@@ -198,7 +198,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, login en línea
-    test/            477 pruebas que corren en segundos
+    test/            479 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -226,7 +226,7 @@ make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
 make pruebas                        # 988 pruebas de Python
-make movil                          # 477 de Dart + 232 de widget
+make movil                          # 479 de Dart + 233 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
