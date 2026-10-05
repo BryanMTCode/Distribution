@@ -14,6 +14,7 @@ convierte el principio §0.1 en una excusa para no validar.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -162,6 +163,75 @@ async def test_el_tablero_cuenta_lo_que_necesita_atencion(
     assert r.status_code == 200
     assert "sin precio en la lista general" in r.text
     assert "Tablero de operación" in r.text
+
+
+async def test_el_efectivo_del_tablero_incluye_las_ventas_de_contado(
+    cliente, semilla, sesion
+):
+    """El tablero decía «$0.00 efectivo a entregar hoy» con ventas de contado ya
+    sincronizadas en el mismo tablero.
+
+    Contaba solo los cobros, y una venta de contado es el caso más común de una
+    ruta: dinero que el vendedor trae en la bolsa y tiene que entregar.
+
+    Esta cuenta tiene que dar lo mismo que `_efectivo_esperado` de
+    `liquidaciones.py`, que es la que decide el arqueo. Si no coinciden, el
+    tablero promete un número y la liquidación cobra otro.
+    """
+    await _entrar(cliente)
+
+    # El semillero no trae cliente ni equipo: los mínimos para que una venta exista.
+    equipo, comprador = uuid.uuid4(), uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta) "
+            "VALUES (:id, :u, 'Equipo de prueba')"
+        ),
+        {"id": equipo, "u": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes (id, nombre_comercial, ruta_id, origen_alta) "
+            "VALUES (:id, 'Tienda del tablero', :r, 'oficina')"
+        ),
+        {"id": comprador, "r": semilla["ruta"]},
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, tipo, estado,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            VALUES (:id, :disp, 9001, 'TEST-9001', :cli, :vend, :alm,
+                    'contado', 'confirmada', 137.50, 137.50, now(), CURRENT_DATE)
+            """
+        ),
+        {
+            "id": uuid.uuid4(),
+            "disp": equipo,
+            "cli": comprador,
+            "vend": semilla["vendedor"],
+            "alm": semilla["camion"],
+        },
+    )
+    await sesion.commit()
+
+    r = await cliente.get("/panel")
+    assert r.status_code == 200
+
+    # Se lee EL RECUADRO, no la página: el mismo importe aparece en «vendido hoy»,
+    # así que un `assert "137.50" in r.text` pasa con el efectivo en cero. Lo
+    # comprobé quitando el arreglo: la prueba seguía verde. Es la cuarta vez en
+    # este repositorio que una afirmación lee de más y por eso no vale nada.
+    recuadro = re.search(
+        r'<div class="numero">([^<]+)</div>\s*<div class="etiqueta">efectivo a entregar hoy</div>',
+        r.text,
+    )
+    assert recuadro, "no se encontró el recuadro del efectivo en el tablero"
+    assert "137.50" in recuadro.group(1), (
+        "la venta de contado no está en el efectivo a entregar: el vendedor trae "
+        f"ese dinero en la bolsa y el tablero muestra {recuadro.group(1).strip()}"
+    )
 
 
 async def test_el_tablero_marca_los_equipos_que_no_sincronizan(

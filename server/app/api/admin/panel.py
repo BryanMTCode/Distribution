@@ -167,12 +167,32 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                   (SELECT count(*) FROM cobros
                     WHERE requiere_revision AND estado = 'confirmado')
                     AS cobros_en_revision,
-                  -- Solo el efectivo: una transferencia entra al sistema pero no a
-                  -- la bolsa del vendedor, y sumarlas haría que la caja nunca
+                  -- EFECTIVO A ENTREGAR = VENTAS DE CONTADO + COBROS EN EFECTIVO.
+                  --
+                  -- Faltaba el primer término, y con él el caso más común de una
+                  -- ruta: una venta de contado es dinero que el vendedor trae en la
+                  -- bolsa y tiene que entregar. Con solo los cobros, un día entero
+                  -- de ventas de contado mostraba «$0.00 efectivo a entregar hoy»
+                  -- junto a las ventas ya sincronizadas en el mismo tablero.
+                  --
+                  -- Esta cuenta tiene que dar LO MISMO que `_efectivo_esperado` de
+                  -- `liquidaciones.py`, que es la que decide el arqueo. Si las dos
+                  -- no coinciden, el tablero promete un número y la liquidación
+                  -- cobra otro — y el vendedor discute con razón.
+                  --
+                  -- Las ventas a CRÉDITO no suman: no se cobró nada. Y de los
+                  -- cobros, solo los de forma `efectivo`: una transferencia entra al
+                  -- sistema pero no a la bolsa, y sumarla haría que la caja nunca
                   -- cuadre y que el descuadre se atribuyera a quien no fue.
-                  (SELECT COALESCE(sum(importe), 0) FROM cobros
-                    WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmado'
-                      AND forma_pago = 'efectivo') AS efectivo_hoy,
+                  (
+                    (SELECT COALESCE(sum(total), 0) FROM ventas
+                      WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada'
+                        AND tipo = 'contado')
+                    +
+                    (SELECT COALESCE(sum(importe), 0) FROM cobros
+                      WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmado'
+                        AND forma_pago = 'efectivo')
+                  ) AS efectivo_hoy,
                   (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
                     WHERE estado IN ('abierta', 'parcial')
                       AND fecha_vencimiento < CURRENT_DATE) AS cartera_vencida,

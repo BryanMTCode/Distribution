@@ -46,6 +46,14 @@ class Contexto:
     almacen_id: uuid.UUID | None = None
     recibido_en: datetime = field(default_factory=lambda: datetime.now(UTC))
 
+    # El reloj DEL TELÉFONO en el instante de enviar el lote, si la app lo manda.
+    #
+    # Es lo único con lo que se puede medir un desfase de reloj de verdad. Ver
+    # `_desfase_de_reloj`: comparar `fecha_dispositivo` contra `recibido_en` mide
+    # el retraso de la cola, no el reloj, y en una operación offline ese retraso
+    # es de horas por diseño.
+    enviado_en: datetime | None = None
+
 
 class ErrorDeManejador(Exception):
     """Fallo de negocio al aplicar una operación.
@@ -241,6 +249,36 @@ DISTANCIA_SOSPECHOSA_M = Decimal("300")
 DESFASE_SOSPECHOSO_SEG = 3600
 
 
+def _desfase_de_reloj(ctx: Contexto, fecha_dispositivo: datetime) -> int | None:
+    """Cuánto miente el reloj del teléfono, en segundos. `None` si no se sabe.
+
+    ───────────────────────────────────────────────────────────────────────────
+    ESTO MEDÍA OTRA COSA, Y MARCABA CASI TODAS LAS VENTAS
+    ───────────────────────────────────────────────────────────────────────────
+    Antes era `recibido_en - fecha_dispositivo`: el instante en que el SERVIDOR
+    recibió el sobre menos el instante en que el teléfono capturó la venta. Eso no
+    es el desfase del reloj, es **cuánto tardó la venta en sincronizarse**.
+
+    Y en este sistema ese retraso es de horas POR DISEÑO: el vendedor sale a las
+    siete, vende sin señal toda la mañana y sincroniza al regresar. Con el umbral
+    en una hora, casi todas las ventas del día salían marcadas «el reloj del
+    equipo está desfasado». La pantalla de revisión lo dice en su propio
+    encabezado: marcar sin que nadie mire convierte la bandera en ruido. Una
+    bandera que se enciende siempre no se mira.
+
+    Lo que sí mide el reloj es `recibido_en - enviado_en`: las dos lecturas son
+    del MISMO instante —uno lo dice el teléfono al mandar, el otro el servidor al
+    recibir— y entre ellas solo hay red. Si difieren en una hora, es el reloj.
+
+    Sin `enviado_en` —una app vieja— se devuelve `None` y no se marca nada: no
+    saber no es lo mismo que estar bien, pero inventar un desfase es peor que
+    admitir que no se puede medir.
+    """
+    if ctx.enviado_en is None:
+        return None
+    return int((ctx.recibido_en - ctx.enviado_en).total_seconds())
+
+
 @manejador_de("venta.crear")
 async def crear_venta(
     sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
@@ -388,8 +426,9 @@ async def crear_venta(
             motivos.append(MOTIVO_LEJOS_DEL_CLIENTE)
 
     fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
-    desfase = int((ctx.recibido_en - fecha_dispositivo).total_seconds())
-    if abs(desfase) > DESFASE_SOSPECHOSO_SEG:
+    desfase_medido = _desfase_de_reloj(ctx, fecha_dispositivo)
+    desfase = desfase_medido or 0
+    if desfase_medido is not None and abs(desfase_medido) > DESFASE_SOSPECHOSO_SEG:
         motivos.append(MOTIVO_RELOJ_DESFASADO)
 
     fecha_operativa = _texto(datos, "fecha_operativa", obligatorio=True)
@@ -447,10 +486,42 @@ async def crear_venta(
         },
     )
 
+    salidas: list[tuple[uuid.UUID, Decimal]] = []
     for cruda in partidas:
         if not isinstance(cruda, dict):
             raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "partida mal formada")
-        await _insertar_partida(sesion, ctx, entidad_id, cruda, motivos, lista_uuid)
+        salidas.append(
+            await _insertar_partida(sesion, ctx, entidad_id, cruda, motivos, lista_uuid)
+        )
+
+    # ------------------------------------------------------------------
+    # LA MERCANCÍA SALE DEL CAMIÓN. Esto faltaba por completo.
+    # ------------------------------------------------------------------
+    # El esquema tiene el tipo de movimiento `'venta'` desde la migración 0004
+    # —«camión → sale del sistema»— y NADA en el código lo insertaba nunca. O sea
+    # que una venta registraba el documento, su cartera y su revisión, y el camión
+    # seguía marcando la misma mercancía que al cargar.
+    #
+    # Lo que eso rompía, y no se ve desde la pantalla de ventas:
+    #
+    # · El inventario del camión en el panel se quedaba en lo cargado todo el día,
+    #   así que nadie podía saber qué le queda a un vendedor a media ruta —ni él
+    #   ni la oficina—.
+    # · `existencias` nunca podía quedar en negativo por una venta, y MODELO-DATOS
+    #   §4 describe justamente ese caso como el comportamiento correcto del §0.1:
+    #   «una venta que llega tarde cuando el camión ya marcaba cero no se rechaza:
+    #   la mercancía ya salió». No se rechazaba porque nunca se intentaba.
+    # · `movimientos_inventario` —el libro mayor— no tenía una sola salida por
+    #   venta, así que la historia del inventario era incompleta por diseño
+    #   accidental: cargas y mermas sí, ventas no.
+    #
+    # El destino es NULL porque la mercancía sale del sistema: se la llevó el
+    # cliente. Y se descuenta SIN comprobar disponible, a propósito: §0.1, el mundo
+    # físico ya ocurrió. El negativo queda visible y la liquidación lo cobra.
+    #
+    # Es seguro hacerlo aquí: la ingesta descarta por `operacion_id` antes de
+    # llamar al manejador, así que un reenvío no vuelve a descontar.
+    await _sacar_del_camion(sesion, ctx, entidad_id, fecha_dispositivo, salidas)
 
     # ------------------------------------------------------------------
     # LA CUENTA POR COBRAR: una venta a crédito es una deuda, o no es nada.
@@ -509,6 +580,73 @@ async def crear_venta(
     await sesion.flush()
 
 
+async def _sacar_del_camion(
+    sesion: AsyncSession,
+    ctx: Contexto,
+    venta_id: uuid.UUID,
+    fecha_dispositivo: datetime,
+    salidas: list[tuple[uuid.UUID, Decimal]],
+) -> None:
+    """Un movimiento `venta` por producto, y el descuento en `existencias`.
+
+    Se agrupa por producto antes de escribir: una venta puede traer el mismo
+    producto en dos renglones —una caja y tres piezas— y el libro mayor se lee
+    mejor con una salida por producto que con una por renglón. El total es el
+    mismo y `existencias` tampoco cambia.
+    """
+    if ctx.almacen_id is None:
+        # Sin camión asignado no hay de dónde descontar. No se rechaza la venta
+        # —ya ocurrió— pero queda dicho en la revisión de la venta, que es donde
+        # la oficina lo va a ver.
+        return
+
+    por_producto: dict[uuid.UUID, Decimal] = {}
+    for producto_id, cantidad in salidas:
+        por_producto[producto_id] = por_producto.get(producto_id, Decimal(0)) + cantidad
+
+    for producto_id, cantidad in por_producto.items():
+        if cantidad <= 0:
+            continue
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO movimientos_inventario
+                  (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
+                   documento_tipo, documento_id, usuario_id, dispositivo_id,
+                   fecha_dispositivo, fecha_servidor)
+                VALUES ('venta', :origen, NULL, :p, :cantidad, 'venta', :doc,
+                        :quien, :equipo, :fecha_dispositivo, :ahora)
+                """
+            ),
+            {
+                "origen": ctx.almacen_id,
+                "p": producto_id,
+                "cantidad": cantidad,
+                "doc": venta_id,
+                "quien": ctx.usuario_id,
+                "equipo": ctx.dispositivo_id,
+                "fecha_dispositivo": fecha_dispositivo,
+                "ahora": ctx.recibido_en,
+            },
+        )
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO existencias (almacen_id, producto_id, cantidad, actualizado_en)
+                VALUES (:a, :p, :delta, :ahora)
+                ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                   SET cantidad = existencias.cantidad + :delta, actualizado_en = :ahora
+                """
+            ),
+            {
+                "a": ctx.almacen_id,
+                "p": producto_id,
+                "delta": -cantidad,
+                "ahora": ctx.recibido_en,
+            },
+        )
+
+
 async def _insertar_partida(
     sesion: AsyncSession,
     ctx: Contexto,
@@ -516,7 +654,7 @@ async def _insertar_partida(
     datos: dict[str, Any],
     motivos: list[str],
     lista_id: uuid.UUID | None,
-) -> None:
+) -> tuple[uuid.UUID, Decimal]:
     """Una partida. La aritmética se rechaza; el precio desactualizado se marca."""
     producto_id = _uuid_obligatorio(datos, "producto_id")
     unidad = _texto(datos, "unidad_codigo", obligatorio=True)
@@ -585,6 +723,12 @@ async def _insertar_partida(
             "importe": importe,
         },
     )
+
+    # Qué y cuánto salió, en unidad base. Lo usa `_sacar_del_camion`: se devuelve
+    # desde aquí en vez de volver a leer el payload, porque `base_esperada` es el
+    # valor ya VALIDADO contra cantidad × factor, y descontar del camión una
+    # cantidad distinta de la que se facturó es la forma de descuadrar un arqueo.
+    return producto_id, base_esperada
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ significa REGISTRAR bien.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -364,11 +364,17 @@ async def test_un_reloj_desfasado_se_marca_y_se_guardan_los_dos(
     sesion: AsyncSession, escenario: dict
 ):
     """El reloj del teléfono miente. No invalida la venta, pero explica por qué
-    los reportes por hora no cuadran."""
+    los reportes por hora no cuadran.
+
+    Se mide con `enviado_en` —el reloj del teléfono AL MANDAR— contra el instante
+    en que el servidor recibe. Entre esas dos lecturas solo hay red, así que una
+    diferencia de horas es el reloj.
+    """
     venta_id = await aplicar(
         sesion,
         escenario,
-        payload(escenario, fecha_dispositivo="2026-09-27T17:42:03.250Z"),
+        payload(escenario),
+        enviado_en=RELOJ_SERVIDOR - timedelta(hours=5),
     )
     await sesion.commit()
 
@@ -378,6 +384,63 @@ async def test_un_reloj_desfasado_se_marca_y_se_guardan_los_dos(
     # Los dos relojes se conservan.
     assert venta["fecha_dispositivo"] is not None
     assert venta["fecha_servidor"] is not None
+
+
+async def test_una_venta_que_espero_en_la_cola_NO_es_un_reloj_desfasado(
+    sesion: AsyncSession, escenario: dict
+):
+    """El fallo que esta prueba cierra marcaba casi todas las ventas de una ruta.
+
+    El desfase se calculaba como `recibido_en - fecha_dispositivo`: el instante en
+    que el servidor recibe menos el instante en que el teléfono capturó la venta.
+    Eso no es el reloj, es **cuánto esperó la venta en la cola** — y en este
+    sistema eso es de horas POR DISEÑO: el vendedor sale a las siete, vende sin
+    señal toda la mañana y sincroniza al regresar.
+
+    Con el umbral en una hora, toda venta capturada con más de una hora de
+    antelación salía marcada «el reloj del equipo está desfasado». La pantalla de
+    revisión lo dice en su encabezado: marcar sin que nadie mire convierte la
+    bandera en ruido. Una bandera que se enciende siempre no se mira, y entonces
+    el día que de verdad haya un reloj mal nadie lo va a ver.
+    """
+    # El reloj del servidor en las pruebas es fijo: se mide contra ése.
+    venta_id = await aplicar(
+        sesion,
+        escenario,
+        # Capturada hace ocho horas: una venta normal de la mañana.
+        payload(
+            escenario,
+            fecha_dispositivo=(RELOJ_SERVIDOR - timedelta(hours=8)).isoformat(),
+        ),
+        # Y mandada ahora, con el reloj del teléfono EN HORA con el servidor.
+        enviado_en=RELOJ_SERVIDOR,
+    )
+    await sesion.commit()
+
+    venta = await leer_venta(sesion, venta_id)
+    assert MOTIVO_RELOJ_DESFASADO not in (venta["revision_motivos"] or []), (
+        "una venta que esperó en la cola se marcó como reloj desfasado: con eso "
+        "se marca casi toda la ruta y la pantalla de revisión deja de servir"
+    )
+
+
+async def test_sin_el_reloj_del_telefono_no_se_inventa_un_desfase(
+    sesion: AsyncSession, escenario: dict
+):
+    """Una app vieja no manda `enviado_en`, y entonces no se puede medir.
+
+    No saber no es lo mismo que estar bien, pero inventar un desfase es peor:
+    marcaría ventas legítimas y escondería las que de verdad tienen el reloj mal.
+    """
+    venta_id = await aplicar(
+        sesion,
+        escenario,
+        payload(escenario, fecha_dispositivo="2026-09-27T17:42:03.250Z"),
+    )
+    await sesion.commit()
+
+    venta = await leer_venta(sesion, venta_id)
+    assert MOTIVO_RELOJ_DESFASADO not in (venta["revision_motivos"] or [])
 
 
 async def test_sin_lista_de_precios_se_marca_y_la_venta_entra(
@@ -518,3 +581,103 @@ async def test_una_venta_de_un_cliente_que_no_existe_se_rechaza(
             sesion, escenario, payload(escenario, cliente_id=str(uuid.uuid4()))
         )
     assert e.value.codigo == CodigoError.CONFLICTO_DE_DATOS
+
+
+# ---------------------------------------------------------------------------
+# La mercancía sale del camión
+# ---------------------------------------------------------------------------
+# Esto no existía: el esquema tiene el movimiento `'venta'` desde la migración
+# 0004 y nada lo insertaba. El camión seguía marcando lo cargado todo el día.
+
+
+async def test_una_venta_descuenta_la_mercancia_del_camion(
+    sesion: AsyncSession, escenario: dict
+):
+    """El inventario del camión del vendedor no bajaba al vender.
+
+    Síntoma en producción: se registra la venta, aparece en el tablero, y el
+    inventario del camión en el panel sigue mostrando lo cargado. Ni el vendedor
+    ni la oficina podían saber qué le queda a media ruta.
+    """
+    antes = await _existencia(sesion, escenario["camion"], escenario["producto"])
+
+    await aplicar(sesion, escenario, payload(escenario))
+    await sesion.commit()
+
+    despues = await _existencia(sesion, escenario["camion"], escenario["producto"])
+    assert despues < antes, (
+        "la venta no descontó del camión: el panel seguiría mostrando la "
+        "mercancía cargada y el arqueo no cuadraría con lo que hay en la caja"
+    )
+
+
+async def test_la_venta_queda_en_el_libro_mayor_de_inventario(
+    sesion: AsyncSession, escenario: dict
+):
+    """`movimientos_inventario` es el libro mayor, y no tenía ni una venta.
+
+    Sin esto la historia del inventario era incompleta por diseño accidental:
+    cargas y mermas sí, ventas no. Y es el libro con el que se audita un
+    descuadre.
+    """
+    venta_id = await aplicar(sesion, escenario, payload(escenario))
+    await sesion.commit()
+
+    filas = (
+        await sesion.execute(
+            text(
+                "SELECT tipo, almacen_origen_id, almacen_destino_id, cantidad "
+                "FROM movimientos_inventario WHERE documento_id = :v"
+            ),
+            {"v": venta_id},
+        )
+    ).mappings().all()
+
+    assert filas, "la venta no dejó ningún movimiento de inventario"
+    for fila in filas:
+        assert fila["tipo"] == "venta"
+        assert fila["almacen_origen_id"] == escenario["camion"]
+        assert fila["almacen_destino_id"] is None, (
+            "la mercancía vendida sale del sistema: se la llevó el cliente"
+        )
+
+
+async def test_el_camion_puede_quedar_en_negativo_por_una_venta_tardia(
+    sesion: AsyncSession, escenario: dict
+):
+    """§0.1: el mundo físico ya ocurrió.
+
+    MODELO-DATOS §4 describe este caso como el comportamiento correcto —«una
+    venta que llega tarde cuando el camión ya marcaba cero no se rechaza: la
+    mercancía ya salió»— y era inalcanzable, porque la venta nunca intentaba
+    descontar. El negativo tiene que quedar VISIBLE: es lo que la liquidación
+    cobra.
+    """
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = 0 "
+            "WHERE almacen_id = :a AND producto_id = :p"
+        ),
+        {"a": escenario["camion"], "p": escenario["producto"]},
+    )
+
+    await aplicar(sesion, escenario, payload(escenario))
+    await sesion.commit()
+
+    assert await _existencia(sesion, escenario["camion"], escenario["producto"]) < 0, (
+        "la venta tardía se rechazó o no se aplicó: la mercancía ya salió del "
+        "camión y el sistema tiene que poder decirlo"
+    )
+
+
+async def _existencia(sesion: AsyncSession, almacen, producto) -> Decimal:
+    valor = (
+        await sesion.execute(
+            text(
+                "SELECT cantidad FROM existencias "
+                "WHERE almacen_id = :a AND producto_id = :p"
+            ),
+            {"a": almacen, "p": producto},
+        )
+    ).scalar_one_or_none()
+    return Decimal(valor or 0)

@@ -233,6 +233,9 @@ class Sincronizador {
           sobres: lote.map((s) => s.payload).toList(),
           appVersion: appVersion,
           colaPendiente: restantes < 0 ? 0 : restantes,
+          // Se lee AQUÍ, justo antes de mandar, no al encolar: lo que el servidor
+          // necesita comparar es el reloj del teléfono en el instante del envío.
+          enviadoEn: _ahora(),
         );
       } on ErrorDeRed catch (e) {
         // No se sabe si llegó. Se conserva todo y se reintenta.

@@ -158,6 +158,7 @@ class ClienteSync {
     required List<Map<String, Object?>> sobres,
     String? appVersion,
     int? colaPendiente,
+    String? enviadoEn,
   }) async {
     final respuesta = await _transporte.post('/v1/sync/push', {
       'lote_id': loteId,
@@ -165,6 +166,13 @@ class ClienteSync {
       if (appVersion != null) 'app_version': appVersion,
       // Entero sin comillas: es un conteo, no dinero (contracts/README.md §1.4).
       if (colaPendiente != null) 'cola_pendiente': colaPendiente,
+      // El reloj de ESTE teléfono ahora mismo. Es lo único con lo que el servidor
+      // puede medir si miente: compara contra su propio reloj al recibir, y entre
+      // las dos lecturas solo hay red. Sin esto, el servidor comparaba contra la
+      // hora de CAPTURA de la venta y marcaba como «reloj desfasado» cualquier
+      // venta que hubiera esperado más de una hora en la cola — o sea casi todas
+      // las de una ruta, que es como esto funciona.
+      if (enviadoEn != null) 'enviado_en': enviadoEn,
     });
     _revisar(respuesta);
     return RespuestaPush.deJson(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -50,6 +51,18 @@ class LoteEntrada(EntradaBase):
     lote_id: uuid.UUID
     sobres: list[SobreEntrada] = Field(min_length=1, max_length=MAX_SOBRES_POR_LOTE)
     app_version: str | None = None
+
+    # El reloj DEL TELÉFONO en el instante de enviar este lote.
+    #
+    # Es lo único con lo que se puede medir si ese reloj miente: se compara contra
+    # el instante en que el servidor recibe, y entre las dos lecturas solo hay
+    # red. Comparar contra `fecha_dispositivo` —como se hacía— mide cuánto tardó
+    # la venta en sincronizarse, que en una operación offline son horas por
+    # diseño: marcaba casi todas las ventas del día como «reloj desfasado».
+    #
+    # Opcional porque una app vieja no lo manda, y entonces no se marca nada: no
+    # saber no es lo mismo que estar bien, pero inventar un desfase es peor.
+    enviado_en: datetime | None = None
 
     # Cuántos sobres le quedan al dispositivo DESPUÉS de este lote.
     #
@@ -149,6 +162,8 @@ async def push(
         usuario_id=actor.usuario_id,
         rutas=tuple(actor.rutas),
         almacen_id=actor.almacen_id,
+
+        enviado_en=entrada.enviado_en,
     )
 
     try:
