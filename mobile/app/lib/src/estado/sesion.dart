@@ -194,6 +194,24 @@ class ControladorSesion extends Notifier<Sesion> {
           'Entra con tu PIN y sincroniza con señal antes de vender.';
     }
 
+    // Y ENTRAR, que es la mitad que faltaba y el botón ya prometía.
+    //
+    // Sin esto, vincular guardaba todo correctamente y la pantalla se limpiaba:
+    // el vendedor volvía a la pantalla de entrada sin un mensaje, sin saber si
+    // había funcionado, y con la contraseña correcta el resultado era
+    // indistinguible de no haber hecho nada. (Con la contraseña MAL sí veía el
+    // error, lo que lo hacía más desconcertante todavía.)
+    //
+    // Se reusa `entrarOffline` en vez de poner `state` a mano: es el mismo camino
+    // de todos los días, así que verifica la credencial que acabamos de guardar
+    // contra la contraseña que el vendedor acaba de teclear. Si eso no cuadrara,
+    // la credencial no serviría mañana y es mejor saberlo ahora que a las 6 am.
+    final entro = await entrarOffline(password);
+    if (entro != ResultadoLogin.ok) {
+      return 'El equipo quedó vinculado, pero no se pudo abrir la sesión '
+          '($entro). Intenta entrar con tu contraseña en la pantalla de entrada.';
+    }
+
     return null;
   }
 

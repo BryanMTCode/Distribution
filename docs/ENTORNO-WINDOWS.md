@@ -82,10 +82,10 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y lo que fija server/uv.lock
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 982
+make pruebas      # deben pasar 988
 ```
 
-Si ves `982 passed` (o `981 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
+Si ves `988 passed` (o `987 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
@@ -514,6 +514,31 @@ meses después en miles de tickets en cuarentena. Que falle el CI es exactamente
 ---
 
 ## 4. Para compilar la app móvil
+
+### Las versiones de Android: nuestro estándar, y van juntas
+
+Flutter no compila el APK de release con las versiones con las que arrancó el
+proyecto. Estas cuatro son el estándar actual, y están **versionadas en el
+repositorio** a propósito:
+
+| Qué | Versión | Dónde |
+|---|---|---|
+| Gradle | **8.14** | `android/gradle/wrapper/gradle-wrapper.properties` |
+| Android Gradle Plugin | **8.11.1** | `android/settings.gradle.kts` |
+| Kotlin | **2.2.20** | `android/settings.gradle.kts` |
+
+> **Se suben las cuatro juntas, nunca una sola.** Los errores de incompatibilidad
+> entre ellas no mencionan la versión: hablan de tareas de Gradle o de clases de
+> Kotlin, y se parecen a un problema del proyecto.
+>
+> **Y van en el repositorio, no en una máquina.** La primera vez este ajuste vivió
+> solo en el disco local y un `git reset --hard` se lo llevó. Si compilas y
+> descubres que hace falta subir alguna, cámbiala aquí y haz commit: lo que no está
+> versionado no existe para la siguiente máquina ni para el siguiente clon.
+
+Se usa `settings.gradle.kts` —sintaxis Kotlin— y no el `settings.gradle`
+tradicional de Groovy.
+
 
 La app ya existe; esto es lo que hace falta para compilarla y correrla desde Windows:
 

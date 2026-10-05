@@ -21,14 +21,14 @@ PRAGMA foreign_keys = ON;
 -- ZONA ESPEJO — se sobrescribe desde /sync/pull
 -- =============================================================================
 
-CREATE TABLE sync_estado (
+CREATE TABLE IF NOT EXISTS sync_estado (
     clave           TEXT PRIMARY KEY,
     valor           TEXT
 );
 -- Filas esperadas: cursor_pull, ultima_sync_ok, carga_id_activa,
 --                  fecha_operativa, dispositivo_id, rango_folio_hasta
 
-CREATE TABLE productos (
+CREATE TABLE IF NOT EXISTS productos (
     id                  TEXT PRIMARY KEY,
     sku                 TEXT NOT NULL,
     codigo_barras       TEXT,
@@ -38,10 +38,10 @@ CREATE TABLE productos (
     tasa_iva            REAL NOT NULL DEFAULT 0,
     activo              INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX ix_productos_barras ON productos(codigo_barras);
-CREATE INDEX ix_productos_nombre ON productos(nombre);
+CREATE INDEX IF NOT EXISTS ix_productos_barras ON productos(codigo_barras);
+CREATE INDEX IF NOT EXISTS ix_productos_nombre ON productos(nombre);
 
-CREATE TABLE producto_unidades (
+CREATE TABLE IF NOT EXISTS producto_unidades (
     producto_id     TEXT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
     unidad_codigo   TEXT NOT NULL,
     factor          REAL NOT NULL,
@@ -55,16 +55,16 @@ CREATE TABLE producto_unidades (
 -- sin una lista por omisión no habría con qué cotizarle. Negarle la venta al
 -- cliente que se acaba de registrar es justo lo contrario de para qué existe el
 -- alta en la calle.
-CREATE TABLE listas_precios (
+CREATE TABLE IF NOT EXISTS listas_precios (
     id              TEXT PRIMARY KEY,
     codigo          TEXT NOT NULL,
     nombre          TEXT NOT NULL,
     es_default      INTEGER NOT NULL DEFAULT 0,
     activo          INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX ix_listas_default ON listas_precios(es_default) WHERE es_default = 1;
+CREATE INDEX IF NOT EXISTS ix_listas_default ON listas_precios(es_default) WHERE es_default = 1;
 
-CREATE TABLE precios (
+CREATE TABLE IF NOT EXISTS precios (
     -- SIN llave foránea a listas_precios a propósito. Los deltas se aplican en
     -- una sola transacción todo-o-nada; si un precio llegara antes que su lista
     -- —el servidor los emite por orden de cursor, no por dependencia—, la
@@ -85,7 +85,7 @@ CREATE TABLE precios (
     PRIMARY KEY (lista_id, producto_id, unidad_codigo)
 );
 
-CREATE TABLE clientes (
+CREATE TABLE IF NOT EXISTS clientes (
     id                      TEXT PRIMARY KEY,
     codigo                  TEXT,
     nombre_comercial        TEXT NOT NULL,
@@ -113,8 +113,8 @@ CREATE TABLE clientes (
     es_local                INTEGER NOT NULL DEFAULT 0,
     sincronizado            INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX ix_clientes_secuencia ON clientes(secuencia);
-CREATE INDEX ix_clientes_nombre    ON clientes(nombre_comercial);
+CREATE INDEX IF NOT EXISTS ix_clientes_secuencia ON clientes(secuencia);
+CREATE INDEX IF NOT EXISTS ix_clientes_nombre    ON clientes(nombre_comercial);
 
 -- Inventario del camión: se siembra con la carga confirmada y se decrementa
 -- localmente. Único dueño ⇒ sin concurrencia.
@@ -128,7 +128,7 @@ CREATE INDEX ix_clientes_nombre    ON clientes(nombre_comercial);
 --
 -- El costo de no tenerla es un renglón huérfano que no aparece en el catálogo
 -- hasta que llegue su producto. El costo de tenerla es un teléfono muerto.
-CREATE TABLE existencias_camion (
+CREATE TABLE IF NOT EXISTS existencias_camion (
     producto_id     TEXT PRIMARY KEY,
     cant_cargada    REAL NOT NULL DEFAULT 0,   -- snapshot inmutable de la carga
     cant_actual     REAL NOT NULL DEFAULT 0,   -- lo que queda ahora mismo
@@ -145,7 +145,7 @@ CREATE TABLE existencias_camion (
 -- `consumido_hasta` se actualiza DENTRO de la misma transacción que escribe el
 -- documento. Si la transacción se deshace, la marca no avanza y el siguiente
 -- intento reutiliza el mismo número: sin hueco y sin duplicado.
-CREATE TABLE folios_rangos (
+CREATE TABLE IF NOT EXISTS folios_rangos (
     tipo            TEXT PRIMARY KEY,          -- 'venta', 'cobro'
     desde           INTEGER NOT NULL,
     hasta           INTEGER NOT NULL,
@@ -155,7 +155,7 @@ CREATE TABLE folios_rangos (
     CHECK (consumido_hasta >= desde - 1 AND consumido_hasta <= hasta)
 );
 
-CREATE TABLE motivos_no_drop (
+CREATE TABLE IF NOT EXISTS motivos_no_drop (
     codigo          TEXT PRIMARY KEY,
     nombre          TEXT NOT NULL,
     categoria       TEXT NOT NULL,
@@ -164,7 +164,7 @@ CREATE TABLE motivos_no_drop (
     activo          INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE motivos_merma (
+CREATE TABLE IF NOT EXISTS motivos_merma (
     codigo          TEXT PRIMARY KEY,
     nombre          TEXT NOT NULL,
     -- Si la pérdida se le carga al vendedor en la liquidación. Lo decide la
@@ -180,7 +180,7 @@ CREATE TABLE motivos_merma (
 );
 
 -- Credencial para login offline: hash Argon2id replicado desde el servidor.
-CREATE TABLE credencial_local (
+CREATE TABLE IF NOT EXISTS credencial_local (
     usuario_id          TEXT PRIMARY KEY,
     codigo              TEXT NOT NULL,
     nombre              TEXT NOT NULL,
@@ -206,7 +206,7 @@ CREATE TABLE credencial_local (
 -- atendiendo, y cambiar de cliente lo reemplaza. Arrastrar renglones de una
 -- tienda a la siguiente sería la forma más rápida de facturarle a quien no pidió
 -- nada.
-CREATE TABLE carrito_borrador (
+CREATE TABLE IF NOT EXISTS carrito_borrador (
     id              INTEGER PRIMARY KEY CHECK (id = 1),   -- fila única
     cliente_id      TEXT NOT NULL,
     a_credito       INTEGER NOT NULL DEFAULT 0,
@@ -224,7 +224,7 @@ CREATE TABLE carrito_borrador (
 -- también en PostgreSQL: por eso reenviar un lote nunca duplica un ticket.
 -- =============================================================================
 
-CREATE TABLE ventas (
+CREATE TABLE IF NOT EXISTS ventas (
     id                      TEXT PRIMARY KEY,          -- uuidv7 local
     folio_consecutivo       INTEGER NOT NULL UNIQUE,   -- dentro del rango asignado
     folio_local             TEXT NOT NULL UNIQUE,      -- 'VEND01-000123' (impreso)
@@ -252,10 +252,10 @@ CREATE TABLE ventas (
     sincronizada            INTEGER NOT NULL DEFAULT 0,
     creado_en               TEXT NOT NULL
 );
-CREATE INDEX ix_ventas_pendientes ON ventas(sincronizada) WHERE sincronizada = 0;
-CREATE INDEX ix_ventas_cliente    ON ventas(cliente_id);
+CREATE INDEX IF NOT EXISTS ix_ventas_pendientes ON ventas(sincronizada) WHERE sincronizada = 0;
+CREATE INDEX IF NOT EXISTS ix_ventas_cliente    ON ventas(cliente_id);
 
-CREATE TABLE venta_partidas (
+CREATE TABLE IF NOT EXISTS venta_partidas (
     id                  TEXT PRIMARY KEY,
     venta_id            TEXT NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
     linea               INTEGER NOT NULL,
@@ -272,7 +272,7 @@ CREATE TABLE venta_partidas (
     UNIQUE (venta_id, linea)
 );
 
-CREATE TABLE cobros (
+CREATE TABLE IF NOT EXISTS cobros (
     id                  TEXT PRIMARY KEY,
     folio_consecutivo   INTEGER NOT NULL UNIQUE,
     folio_local         TEXT NOT NULL UNIQUE,
@@ -298,7 +298,7 @@ CREATE TABLE cobros (
     creado_en           TEXT NOT NULL
 );
 
-CREATE TABLE mermas (
+CREATE TABLE IF NOT EXISTS mermas (
     id                  TEXT PRIMARY KEY,
     folio_consecutivo   INTEGER NOT NULL UNIQUE,
     tipo                TEXT NOT NULL,              -- merma | devolucion_cliente
@@ -315,14 +315,14 @@ CREATE TABLE mermas (
     sincronizada        INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE merma_detalle (
+CREATE TABLE IF NOT EXISTS merma_detalle (
     id              TEXT PRIMARY KEY,
     merma_id        TEXT NOT NULL REFERENCES mermas(id) ON DELETE CASCADE,
     producto_id     TEXT NOT NULL REFERENCES productos(id),
     cantidad_base   REAL NOT NULL
 );
 
-CREATE TABLE no_drops (
+CREATE TABLE IF NOT EXISTS no_drops (
     id                      TEXT PRIMARY KEY,
     folio_consecutivo       INTEGER NOT NULL UNIQUE,
     visita_id               TEXT,
@@ -351,7 +351,7 @@ CREATE TABLE no_drops (
 -- 'cuarentena' y la cola sigue avanzando.
 -- =============================================================================
 
-CREATE TABLE outbox (
+CREATE TABLE IF NOT EXISTS outbox (
     operacion_id    TEXT PRIMARY KEY,          -- uuidv7; llave de idempotencia
     tipo            TEXT NOT NULL,             -- 'venta.crear','cobro.crear',...
     entidad_id      TEXT NOT NULL,
@@ -371,8 +371,8 @@ CREATE TABLE outbox (
     creado_en       TEXT NOT NULL,
     confirmado_en   TEXT
 );
-CREATE INDEX ix_outbox_cola ON outbox(estado, secuencia);
-CREATE UNIQUE INDEX ix_outbox_entidad ON outbox(tipo, entidad_id);
+CREATE INDEX IF NOT EXISTS ix_outbox_cola ON outbox(estado, secuencia);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_outbox_entidad ON outbox(tipo, entidad_id);
 
 -- ---------------------------------------------------------------------------
 -- Deltas que esta versión de la app no sabe aplicar
@@ -382,7 +382,7 @@ CREATE UNIQUE INDEX ix_outbox_entidad ON outbox(tipo, entidad_id);
 -- descartar el delta en silencio (pérdida invisible). Se guarda el crudo y el
 -- cursor avanza. Una versión futura de la app los reprocesa, y el inspector de
 -- sync los muestra para que nadie descubra la pérdida por accidente.
-CREATE TABLE deltas_desconocidos (
+CREATE TABLE IF NOT EXISTS deltas_desconocidos (
     cursor          INTEGER PRIMARY KEY,
     entidad         TEXT NOT NULL,
     entidad_id      TEXT NOT NULL,
@@ -391,7 +391,7 @@ CREATE TABLE deltas_desconocidos (
     recibido_en     TEXT NOT NULL
 );
 
-CREATE TABLE sync_bitacora (
+CREATE TABLE IF NOT EXISTS sync_bitacora (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     lote_id         TEXT,
     direccion       TEXT NOT NULL CHECK (direccion IN ('push','pull')),
@@ -407,7 +407,7 @@ CREATE TABLE sync_bitacora (
 
 -- Alimenta la pantalla "Inspector de sync" de la app. Se usa durante años:
 -- es la diferencia entre depurar con datos y depurar con adivinanzas.
-CREATE VIEW v_pendientes_sync AS
+CREATE VIEW IF NOT EXISTS v_pendientes_sync AS
 SELECT
     (SELECT COUNT(*) FROM outbox WHERE estado = 'pendiente')   AS pendientes,
     (SELECT COUNT(*) FROM outbox WHERE estado = 'cuarentena')  AS en_cuarentena,
@@ -436,7 +436,7 @@ SELECT
 -- `calculado_en` que viene dentro del JSON. Las dos se muestran: el servidor
 -- calculó a las 10:05 y el teléfono lo bajó a las 10:40, así que la cifra tiene
 -- 35 minutos de camino más los que tuviera al calcularse.
-CREATE TABLE tablero_cache (
+CREATE TABLE IF NOT EXISTS tablero_cache (
     clave           TEXT PRIMARY KEY,   -- 'tablero:2026-10-01' | 'mapa:2026-10-01'
     cuerpo          TEXT NOT NULL,      -- la respuesta JSON tal como llegó
     recibido_en     TEXT NOT NULL

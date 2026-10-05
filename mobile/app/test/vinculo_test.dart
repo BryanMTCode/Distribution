@@ -154,6 +154,26 @@ void main() {
     expect(servidor.llamadas.last, contains('/folios'));
   });
 
+  testWidgets('vincular ENTRA, no solo guarda', (tester) async {
+    // El fallo que esto cierra: vincular guardaba credencial, folios y token
+    // correctamente, y la pantalla se limpiaba sin más. El vendedor volvía a la
+    // pantalla de entrada sin un mensaje y sin saber si había funcionado — con la
+    // contraseña BIEN el resultado era indistinguible de no haber hecho nada, y
+    // con la contraseña mal sí veía el error, lo que lo hacía más desconcertante.
+    //
+    // El botón dice «Vincular y entrar». Esto exige la segunda mitad.
+    await montarApp(tester, extras: _con(_ServidorDeVinculo()));
+
+    expect(find.byKey(const Key('boton_abrir_vinculo')), findsOneWidget,
+        reason: 'antes de vincular se está en la pantalla de entrada');
+
+    await _vincular(tester);
+
+    expect(find.byKey(const Key('boton_abrir_vinculo')), findsNothing,
+        reason: 'después de vincular la app sigue en la pantalla de entrada: '
+            'vincular guardó todo y no abrió la sesión');
+  });
+
   testWidgets('si los folios se caen, el equipo YA quedó vinculado',
       (tester) async {
     // Es la decisión de orden: la credencial se guarda antes. Si la red se corta
@@ -238,9 +258,13 @@ Future<void> _vincular(WidgetTester tester) async {
     find.byKey(const Key('campo_codigo_vinculo')),
     'VEND01',
   );
+  // `pinCorrecto` y no un texto cualquiera: el `password_hash` que manda el
+  // servidor falso es el de ESA contraseña, igual que en la realidad. Vincular
+  // termina abriendo la sesión con la credencial recién guardada, así que una
+  // contraseña que no corresponda al hash haría fallar ese último paso.
   await tester.enterText(
     find.byKey(const Key('campo_password_vinculo')),
-    'lo-que-sea',
+    pinCorrecto,
   );
   await tester.enterText(find.byKey(const Key('campo_equipo_vinculo')), _idEquipo);
   await tester.tap(find.byKey(const Key('boton_vincular')));
