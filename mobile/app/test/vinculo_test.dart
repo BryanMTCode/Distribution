@@ -154,6 +154,23 @@ void main() {
     expect(servidor.llamadas.last, contains('/folios'));
   });
 
+  testWidgets('el campo del login diario acepta letras, no solo números',
+      (tester) async {
+    // Bloqueante y silencioso: el campo verifica contra `passwordHash` —la
+    // contraseña de la oficina, con letras— y abría el teclado NUMÉRICO. En un
+    // teléfono eso significa que la contraseña no se puede escribir, así que el
+    // login de todos los días era imposible y el único camino que funcionaba era
+    // volver a vincular el equipo con los tres datos, cada vez.
+    await montarApp(tester, extras: _con(_ServidorDeVinculo()));
+
+    final campo = tester.widget<TextField>(find.byKey(const Key('campo_pin')));
+    expect(campo.keyboardType, equals(TextInputType.text),
+        reason: 'con teclado numérico la contraseña del vendedor no se puede '
+            'teclear: el login diario queda imposible');
+    expect(campo.obscureText, isTrue,
+        reason: 'se teclea a la vista de quien esté enfrente en la tienda');
+  });
+
   testWidgets('vincular ENTRA, no solo guarda', (tester) async {
     // El fallo que esto cierra: vincular guardaba credencial, folios y token
     // correctamente, y la pantalla se limpiaba sin más. El vendedor volvía a la

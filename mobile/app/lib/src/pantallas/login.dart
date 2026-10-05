@@ -187,16 +187,34 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                   const SizedBox(height: 12),
                   Text('Ruta', style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 32),
+                  // ESTE CAMPO PIDE LA CONTRASEÑA, NO UN PIN, y decía «PIN»
+                  // con teclado NUMÉRICO. Las dos cosas estaban mal y la segunda
+                  // era bloqueante:
+                  //
+                  // `intentarLoginOffline` verifica lo que se teclea contra
+                  // `credencial.passwordHash`, que es el hash de la contraseña
+                  // que la oficina le puso al vendedor —mínimo 12 caracteres, con
+                  // letras—. No existe ningún PIN: no se genera en ninguna parte
+                  // del sistema. Con el teclado numérico, esa contraseña NO SE
+                  // PUEDE ESCRIBIR, así que el login diario era imposible y el
+                  // único camino que funcionaba era volver a vincular el equipo
+                  // con los tres datos, cada vez.
+                  //
+                  // Si algún día se quiere un PIN corto de verdad para el día a
+                  // día, es otra cosa: hace falta que el servidor mande su hash
+                  // aparte en `credencial_local`. Mientras no exista, la pantalla
+                  // tiene que pedir lo que de verdad verifica.
                   TextField(
                     key: const Key('campo_pin'),
                     controller: _pin,
                     obscureText: true,
-                    keyboardType: TextInputType.number,
+                    keyboardType: TextInputType.text,
                     autofocus: true,
                     textInputAction: TextInputAction.go,
                     onSubmitted: (_) => _verificando ? null : _entrar(),
                     decoration: const InputDecoration(
-                      labelText: 'PIN',
+                      labelText: 'Tu contraseña',
+                      helperText: 'La misma que te dio la oficina. No hay PIN aparte.',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
