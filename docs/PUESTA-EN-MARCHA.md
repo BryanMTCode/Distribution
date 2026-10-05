@@ -559,7 +559,28 @@ El APK quedó en:
 mobile/app/build/app/outputs/flutter-apk/app-release.apk
 ```
 
-**Camino A — por cable, con `adb`.** Necesitas el teléfono visible desde WSL. Desde
+**Camino A — por Drive (el que usamos).** El teléfono del vendedor no va a estar
+enchufado a tu PC, así que éste es el camino real. En WSL:
+
+```bash
+wslpath -w ~/Distribution/mobile/app/build/app/outputs/flutter-apk/app-release.apk
+```
+
+`make apk` ya imprime esa ruta al terminar, así que normalmente no hace falta
+correrlo aparte. Pega la ruta en el explorador de Windows, sube el `.apk` a Drive,
+y ábrelo desde el teléfono.
+
+En el teléfono, la primera vez, Android pide permiso para **instalar de orígenes
+desconocidos**: se concede a la app desde la que abres el archivo (Drive o el
+gestor de archivos), no a la app que instalas.
+
+> 🔴 **Instálalo ENCIMA del que ya está. NO DESINSTALES.** Desinstalar borra la
+> base local del vendedor, con las ventas, los cobros y las mermas que todavía no
+> hubiera subido. Si Android dice «App not installed», **no desinstales para
+> salir del paso**: es un problema de firma o de `versionCode`, y desinstalar
+> cambia un problema de diez minutos por dinero perdido. Dímelo y lo vemos.
+
+**Camino B — por cable, con `adb`**, si el teléfono está enchufado. Desde
 **PowerShell como administrador**:
 
 ```powershell
@@ -576,17 +597,8 @@ adb install -r mobile/app/build/app/outputs/flutter-apk/app-release.apk
 
 **✅ Debes ver** `Success`.
 
-**Camino B — copiando el archivo** (más simple si `usbipd` da problemas). En WSL:
-
-```bash
-wslpath -w ~/Distribution/mobile/app/build/app/outputs/flutter-apk/app-release.apk
-```
-
-Esa ruta la pegas en el explorador de Windows, copias el `.apk` al teléfono por
-cable o por la nube, y lo abres desde el teléfono. Android va a pedir permiso para
-instalar de orígenes desconocidos: concédelo.
-
-**✅ En los dos casos debes ver** el ícono de la app en el teléfono.
+**✅ En los dos casos debes ver** el ícono de la app en el teléfono, y al abrirla
+la pantalla de entrada — no una pantalla negra.
 
 > **La prueba que de verdad importa, y que solo se puede hacer una vez que hay algo
 > instalado:** instalar un APK nuevo **encima** de uno ya instalado. La firma y el

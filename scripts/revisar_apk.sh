@@ -99,7 +99,29 @@ else
 fi
 
 echo
-echo "Instalar en un teléfono conectado:"
+echo "Para instalarlo hay dos caminos. El de abajo es el que se usa aquí:"
+echo
+
+# El reparto real de este proyecto es por la nube (Drive) y no por cable: el
+# teléfono del vendedor no está enchufado a la PC, y `usbipd` desde WSL es un paso
+# frágil de más. Así que el camino principal es sacar el archivo a Windows, y para
+# eso hace falta la ruta en formato de Windows: dentro de WSL, `\\wsl$\...` es lo
+# único que el explorador y el navegador entienden.
+if command -v wslpath >/dev/null 2>&1; then
+    RUTA_WIN="$(wslpath -w "$APK" 2>/dev/null || true)"
+    echo "  1. Súbelo a Drive. Pega esta ruta en el explorador de Windows:"
+    printf '     %s%s%s\n' "$GRIS" "${RUTA_WIN:-$APK}" "$FIN"
+    echo "  2. Ábrelo desde el teléfono y acepta instalar de orígenes desconocidos."
+else
+    echo "  1. Súbelo a Drive y ábrelo desde el teléfono:"
+    printf '     %s%s%s\n' "$GRIS" "$APK" "$FIN"
+fi
+echo
+printf '  %sINSTÁLALO ENCIMA del que ya está. NO DESINSTALES:%s\n' "$ROJO" "$FIN"
+printf '  %sdesinstalar borra la base local del vendedor, con las ventas, los%s\n' "$GRIS" "$FIN"
+printf '  %scobros y las mermas que todavía no hubiera subido.%s\n' "$GRIS" "$FIN"
+echo
+echo "  O por cable, si el teléfono está enchufado:"
 printf '  %sadb install -r %s%s\n' "$GRIS" "$APK" "$FIN"
 echo
 printf '%sAntes de repartirlo: pruébalo en un teléfono que YA tenga la versión%s\n' "$GRIS" "$FIN"
