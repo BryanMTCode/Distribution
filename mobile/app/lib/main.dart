@@ -29,6 +29,28 @@ Future<void> main() async {
   //
   // Con esto, un arranque roto muestra qué pasó y qué hacer. No arregla la causa;
   // la hace reportable, que es la diferencia entre media hora y una mañana.
+  // UN ERROR AL CONSTRUIR UNA PANTALLA NO PASA POR EL `try` DE ABAJO.
+  //
+  // El `try` cubre lo que ocurre ANTES y DURANTE la llamada a `runApp`. Una
+  // excepción dentro del `build` de un widget ocurre DESPUÉS: la atrapa Flutter,
+  // y en release su widget de error por omisión es un rectángulo gris sin texto
+  // —que en una pantalla oscura se ve NEGRO—. O sea: el mismo síntoma, por otro
+  // camino, y el `try` no lo tocaba.
+  //
+  // `ErrorWidget.builder` reemplaza ese rectángulo por algo legible. Es la
+  // diferencia entre «no abre» y un mensaje que se puede reportar.
+  ErrorWidget.builder = (detalles) => VistaDeErrorDesnuda(
+        error: detalles.exception,
+        traza: detalles.stack ?? StackTrace.empty,
+      );
+
+  // Y los errores asíncronos que no revientan ningún build: sin esto se van al
+  // log del sistema, que en un teléfono en la calle nadie va a leer.
+  FlutterError.onError = (detalles) {
+    FlutterError.presentError(detalles);
+    debugPrint('DSD error de Flutter: ${detalles.exception}');
+  };
+
   try {
     const almacen = AlmacenSeguroDelSistema();
 
@@ -53,6 +75,63 @@ Future<void> main() async {
     );
   } on Object catch (e, traza) {
     runApp(PantallaDeArranqueRoto(error: e, traza: traza));
+  }
+}
+
+/// El error, sin depender de Material ni de nada que pueda estar roto.
+///
+/// Se usa como `ErrorWidget.builder`, y ahí este widget puede quedar insertado en
+/// cualquier punto del árbol —incluso por encima del `MaterialApp`—, así que no
+/// puede usar `Scaffold` ni `Text` a secas: sin `Directionality` arriba, un `Text`
+/// lanza su propia excepción y Flutter entra en un bucle de errores que acaba,
+/// otra vez, en una pantalla sin nada.
+class VistaDeErrorDesnuda extends StatelessWidget {
+  const VistaDeErrorDesnuda({required this.error, required this.traza, super.key});
+
+  final Object error;
+  final StackTrace traza;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: const Color(0xFFFFFFFF),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'La app falló al dibujar esta pantalla',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'No desinstales: desinstalar borra las ventas que no se '
+                  'hayan subido. Enséñale esto a la oficina.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF000000)),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      '$error\n\n$traza',
+                      style: const TextStyle(fontSize: 10, color: Color(0xFF333333)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
