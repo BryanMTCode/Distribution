@@ -736,3 +736,70 @@ async def test_sin_token_la_api_no_filtra_nada_bajo_rls(cliente_rls, dos_rutas):
     datos» en vez de «no estás autenticado».
     """
     assert (await cliente_rls.get("/v1/clientes")).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Los disparadores que alimentan `change_log`
+# ---------------------------------------------------------------------------
+# Estas pruebas no existían, y por eso un fallo que dejaba el panel en 500 llegó
+# hasta un servidor de producción. Todas las de arriba prueban LECTURAS: que el
+# rol restringido no vea lo que no le toca. Ninguna probaba una ESCRITURA, y las
+# escrituras del catálogo disparan `fn_registrar_cambio`, que inserta en
+# `change_log` — una tabla con RLS y sin política de INSERT.
+
+
+@pytest.mark.asyncio
+async def test_el_rol_restringido_puede_dar_de_alta_un_producto(alcance):
+    """El síntoma era «Internal Server Error» al dar de alta un producto.
+
+    Causa: `change_log` tiene RLS con política de SELECT y ninguna de INSERT, y
+    la 0022 lo justificó diciendo que los disparadores «corren con los
+    privilegios del dueño de la tabla». En PostgreSQL eso es falso: corren con
+    los de QUIEN INVOCA salvo `SECURITY DEFINER`. Así que el disparador corría
+    como `dsd_api` y PostgreSQL rechazaba su INSERT con «new row violates
+    row-level security policy for table change_log».
+
+    No se veía en desarrollo porque ahí la API usa el rol dueño, que salta las
+    políticas de sus propias tablas: el fallo solo existe donde RLS está en uso.
+    """
+    con = await alcance("admin", usuario=uuid.uuid4())
+    await con.execute(
+        text(
+            "INSERT INTO productos (id, sku, nombre, unidad_base, tasa_iva) "
+            "VALUES (:id, 'RLS-ALTA-01', 'Producto de prueba', 'PZA', 0.16)"
+        ),
+        {"id": uuid.uuid4()},
+    )
+    cuantos = (
+        await con.execute(
+            text("SELECT count(*) FROM productos WHERE sku = 'RLS-ALTA-01'")
+        )
+    ).scalar_one()
+    assert cuantos == 1, (
+        "el rol restringido no pudo dar de alta un producto: revisa que los "
+        "disparadores de change_log sigan siendo SECURITY DEFINER (migración 0029)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_el_rol_restringido_sigue_sin_poder_escribir_el_libro_de_cambios(alcance):
+    """Y la intención de la 0022 se conserva: solo el disparador escribe ahí.
+
+    El arreglo fue `SECURITY DEFINER` en las funciones, NO una política de
+    INSERT en `change_log`. La diferencia importa: con una política, la API
+    podría publicar al teléfono de un vendedor lo que quisiera. Con
+    SECURITY DEFINER, solo puede hacerlo el disparador.
+    """
+    con = await alcance("admin", usuario=uuid.uuid4())
+    with pytest.raises(Exception) as e:
+        await con.execute(
+            text(
+                "INSERT INTO change_log (entidad, entidad_id, operacion, payload) "
+                "VALUES ('producto', :id, 'insert', '{}'::jsonb)"
+            ),
+            {"id": uuid.uuid4()},
+        )
+    assert "row-level security" in str(e.value).lower(), (
+        "la API puede escribir directamente en change_log: alguien le agregó una "
+        f"política de INSERT. Error recibido: {e.value}"
+    )

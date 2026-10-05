@@ -362,3 +362,23 @@ CREATE POLICY change_log_alcance ON change_log
 -- Sin política de INSERT: al `change_log` solo escriben los disparadores, que
 -- corren con los privilegios del dueño de la tabla y por lo tanto saltan RLS.
 -- Que la API no pueda insertar ahí directamente es correcto.
+--
+-- ===========================================================================
+-- CORRECCIÓN: el párrafo de arriba ES FALSO. Lo arregla la migración 0029.
+-- ===========================================================================
+-- En PostgreSQL una función de disparador corre con los privilegios de QUIEN
+-- INVOCA, no del dueño de la tabla, salvo que se declare `SECURITY DEFINER` — y
+-- ninguna de las cuatro `fn_registrar_cambio*` lo estaba. Consecuencia: con la
+-- API conectada como `dsd_api`, CUALQUIER escritura de catálogo, carga o cartera
+-- terminaba en «new row violates row-level security policy for table
+-- change_log», o sea un 500. Y solo en producción, porque en desarrollo la API
+-- usa el rol dueño y salta las políticas de sus propias tablas.
+--
+-- La conclusión de la última línea sí era correcta —la API no debe escribir el
+-- libro de cambios directamente— y por eso la 0029 arregla el MECANISMO
+-- (SECURITY DEFINER en las cuatro funciones) y no agrega una política de INSERT
+-- aquí.
+--
+-- Se deja el texto original a la vista en lugar de reescribirlo: esta migración
+-- ya corrió en producción, y el razonamiento equivocado explica el fallo mejor
+-- que su ausencia.
