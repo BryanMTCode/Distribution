@@ -604,3 +604,38 @@ Future<void> tocarEnElMenu(WidgetTester tester, Key opcion) async {
   await tester.tap(find.byKey(opcion));
   await tester.pumpAndSettle();
 }
+
+/// Un producto en el camión, con su saldo actual.
+///
+/// `cargada` y `actual` son distintas a propósito en las pruebas: la pantalla
+/// tiene que mostrar el SALDO, y con los dos valores iguales no se podría
+/// distinguir si lee la columna correcta.
+void sembrarEnElCamion(
+  BaseLocal base, {
+  required String sku,
+  required String nombre,
+  required double cargada,
+  required double actual,
+  int porCaja = 24,
+}) {
+  final id = 'prod-$sku';
+  base.db.execute(
+    'INSERT INTO productos (id, sku, nombre, unidad_base) VALUES (?, ?, ?, ?)',
+    [id, sku, nombre, 'PZA'],
+  );
+  base.db.execute(
+    'INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, es_default) '
+    'VALUES (?, ?, ?, ?)',
+    [id, 'PZA', 1.0, 1],
+  );
+  base.db.execute(
+    'INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, es_default) '
+    'VALUES (?, ?, ?, ?)',
+    [id, 'CAJA', porCaja.toDouble(), 0],
+  );
+  base.db.execute(
+    'INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual) '
+    'VALUES (?, ?, ?)',
+    [id, cargada, actual],
+  );
+}

@@ -72,6 +72,7 @@ class ProductoDelCamion {
     required this.nombre,
     required this.existenciaBase,
     required this.unidades,
+    required this.unidadBase,
     this.codigoBarras,
   });
 
@@ -79,6 +80,10 @@ class ProductoDelCamion {
   final String sku;
   final String nombre;
   final String? codigoBarras;
+
+  /// 'PZA'. La unidad en la que está [existenciaBase], y la que se imprime al
+  /// lado del número: «5 PZA» se entiende, «5 base» no.
+  final String unidadBase;
 
   /// Lo que el camión dice que queda. Es referencia, **no tope**: la merma se
   /// registra aunque el conteo diga que no había (§0.1).
@@ -240,6 +245,7 @@ class RepoCatalogo {
              p.sku,
              p.nombre,
              p.codigo_barras,
+             p.unidad_base,
              e.cant_actual AS existencia,
              u.unidad_codigo,
              u.factor,
@@ -269,6 +275,7 @@ class RepoCatalogo {
           sku: primera['sku'] as String,
           nombre: primera['nombre'] as String,
           codigoBarras: primera['codigo_barras'] as String?,
+          unidadBase: primera['unidad_base'] as String,
           existenciaBase:
               Cantidad.deBase((primera['existencia'] as num).toDouble()),
           unidades: [

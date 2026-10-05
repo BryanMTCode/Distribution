@@ -15,6 +15,7 @@ import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import 'abono.dart';
 import 'alta_cliente.dart';
+import 'camion.dart';
 import 'catalogo.dart';
 import 'mi_dia.dart';
 import 'merma.dart';
@@ -52,8 +53,17 @@ class PantallaClientes extends ConsumerWidget {
         // sembrados con la ruta real, pero eso no justifica acoplar las dos
         // cosas.
         title: Row(
+          // `Flexible` con elipsis, y no un `Text` a secas: el AppBar le da al
+          // título el espacio que sobra después de las acciones, y con tres
+          // iconos más la marca DEMO ese espacio no alcanza. Sin esto la fila
+          // desbordaba 46 píxeles —lo encontró la suite en modo demo— y cada
+          // pantalla nueva en la barra volvería a romperla. Que el título cede
+          // es lo correcto: el nombre de la pantalla se adivina, un botón
+          // recortado no se puede tocar.
           children: [
-            const Text('Mi ruta'),
+            const Flexible(
+              child: Text('Mi ruta', overflow: TextOverflow.ellipsis),
+            ),
             if (modoDemoDisponible) ...[
               const SizedBox(width: 8),
               Container(
@@ -96,6 +106,14 @@ class PantallaClientes extends ConsumerWidget {
           // «Mi día» va PRIMERO entre las acciones, antes de merma y de salir:
           // es lo que el vendedor abre varias veces al día, y las otras dos son
           // excepcionales. El orden de los iconos es el orden de uso.
+          IconButton(
+            key: const Key('boton_camion'),
+            tooltip: 'Mi camión',
+            icon: const Icon(Icons.local_shipping_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PantallaCamion()),
+            ),
+          ),
           IconButton(
             key: const Key('boton_mi_dia'),
             tooltip: 'Mi día',
