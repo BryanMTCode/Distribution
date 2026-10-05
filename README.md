@@ -70,6 +70,7 @@ siguiente, así que no se le cobra como faltante al vendedor.
 | **Usuarios, rutas, almacenes y listas** desde el panel | ✅ 23 pruebas |
 | Arranque del primer usuario (`make usuario`) — **sin contraseña por omisión** | ✅ con pruebas |
 | **Liquidación** — el camión es un almacén rodante: lo que durmió arriba no es faltante | ✅ 39 pruebas |
+| **Gerencia corrige y el teléfono se entera** — cancelar y corregir ventas, ajustar el camión, editar y eliminar productos | ✅ 52 + 25 de Dart |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
@@ -105,7 +106,7 @@ siguiente, así que no se le cobra como faltante al vendedor.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1003 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **509 de Dart** y **248 de widget**, todas en verde.
+**1055 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **538 de Dart** y **252 de widget**, todas en verde.
 
 ## Stack
 
@@ -200,7 +201,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, login en línea
-    test/            509 pruebas que corren en segundos
+    test/            538 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -208,7 +209,7 @@ mobile/
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial, MI DÍA,
                      MI CAMIÓN, gerencia/ (tablero, mapa del día)
-    test/            248 pruebas de widget, sin emulador
+    test/            252 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -227,8 +228,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1003 pruebas de Python
-make movil                          # 509 de Dart + 248 de widget
+make pruebas                        # 1055 pruebas de Python
+make movil                          # 538 de Dart + 252 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

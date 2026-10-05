@@ -161,6 +161,23 @@ class AplicadorDeltas {
   bool _precio(Delta delta) {
     final p = delta.payload;
     if (p == null) return true;
+
+    // Un precio QUITADO se borra, y el payload dice cuál.
+    //
+    // El delta de precio se acota por `producto_id`, no por la llave del renglón:
+    // un producto tiene un precio por lista y por presentación. Antes el servidor
+    // mandaba el DELETE con el payload en NULL y el aplicador salía por arriba sin
+    // hacer nada, así que **el vendedor seguía ofreciendo una presentación que la
+    // oficina había retirado**, al precio que tenía. Desde la migración 0033 el
+    // payload del borrado trae los tres campos que identifican el renglón.
+    if (delta.operacion == 'delete') {
+      _db.execute(
+        'DELETE FROM precios '
+        ' WHERE lista_id = ? AND producto_id = ? AND unidad_codigo = ?',
+        [p['lista_id'], p['producto_id'], p['unidad_codigo']],
+      );
+      return true;
+    }
     _db.execute(
       '''
       INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio,

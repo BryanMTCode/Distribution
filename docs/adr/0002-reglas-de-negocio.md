@@ -3429,15 +3429,114 @@ merma, una devolución, y los siete puntos de control con el número exacto que 
 que salir.
 
 Las cifras no se inventaron: se calcularon con las fórmulas del propio sistema
-—`esperado_en_camion = cargado − vendido − merma + devuelto` y
-`efectivo_esperado = contado + cobros en efectivo`— y se verificaron contra el
-código que las implementa. De paso salieron dos correcciones a mi propio borrador:
+—`esperado_en_camion` y `efectivo_esperado = contado + cobros en efectivo`— y se
+verificaron contra el código que las implementa. De paso salieron dos correcciones
+a mi propio borrador:
 
-- Afirmé que el cierre solo pone el camión en cero. **Sí devuelve el retorno a la
-  bodega** (`tipo = 'retorno'`, origen camión, destino bodega) y después ajusta el
-  residuo. Lo comprobé leyendo el handler, no suponiéndolo.
+- Afirmé que el cierre solo pone el camión en cero. En ese momento **también
+  devolvía el retorno a la bodega**, y lo comprobé leyendo el handler en vez de
+  suponerlo. (Las dos cosas cambiaron en octubre de 2026 con el camión rodante: hoy
+  el cierre no baja mercancía y deja el camión en lo contado. Ver §17 y la
+  migración 0030; los puntos de control del simulacro están recalculados.)
 - La cifra final de la bodega para un producto estaba mal: sumé la existencia
   inicial en vez de la que quedó después de la carga. 48 + 39 = 87, no 135.
 
 Un guion de pruebas con un número equivocado es peor que ninguno: manda a buscar un
 defecto que no existe.
+
+---
+
+## 49. Gerencia edita, y lo que edita llega al teléfono
+
+**Decisión (dirección, octubre de 2026).** Gerencia deja de ser de solo lectura
+sobre la operación. Puede cancelar y corregir ventas, ajustar el inventario de un
+camión y editar o eliminar productos. **La regla que gobierna las tres: lo que
+gerencia cambia en la web tiene que llegar al teléfono del vendedor.**
+
+La migración 0009 decía lo contrario con todas sus palabras —«Gerencia es de SOLO
+LECTURA sobre la operación. Monitorea, no opera»— y los tres permisos ya existían
+en el catálogo sin estar concedidos, así que esto es un cambio de política y no de
+modelo. `inventario.liquidar` NO se concede: cerrar el día firma un arqueo con el
+nombre de quien lo cierra.
+
+Conviene saber qué abarcan esos permisos, porque son más amplios que las tres
+pantallas: `catalogo.administrar` cubre los datos del producto **y sus precios**, y
+`inventario.ajustar` cubre también las entradas y salidas de bodega. Partirlos
+fragmentaría el modelo de permisos para una distinción que nadie pidió.
+
+### La regla de los deltas, que quedó explícita al construir esto
+
+Tres mecanismos distintos aparecieron, y la diferencia entre ellos no es de estilo:
+
+| Lo que viaja | Idempotencia | Dónde se usa |
+|---|---|---|
+| **El estado completo** | se compara contra lo local | la venta corregida o cancelada |
+| **Una diferencia firmada** | se marca lo aplicado | la carga, el ajuste del cierre, el ajuste del camión |
+| **Un borrado identificado** | el DELETE es idempotente solo | quitar un precio |
+
+Dicho corto: **lo que viaja como diferencia se marca; lo que viaja como estado se
+compara.** Un estado es más simple pero envejece —aplicar «el camión tiene 12»
+cinco minutos tarde borra las ventas de esos cinco minutos—; una diferencia
+sobrevive al retraso pero no se puede aplicar dos veces, y un `pull` se repite cada
+vez que la red se corta a media tanda.
+
+### Corregir un documento que ya está impreso
+
+La remisión salió de la impresora del camión y el cliente la tiene en la mano. Nada
+de lo que pase en el panel cambia ese papel, y de ahí salen los límites:
+
+- **Las cantidades solo bajan.** El papel es el techo de lo que se entregó;
+  entregar más es mercancía que salió sin documento, y eso es una venta nueva.
+- **Los precios no se tocan**, por lo mismo que §7: el descuento después del hecho
+  desde un escritorio es el mismo descuento.
+- **La venta no se borra**, se cancela. El folio está impreso y
+  `movimientos_inventario` es append-only.
+- **Una corrección deja huella visible** (`corregida_en`, `corregida_por`,
+  `correccion_motivo`), y la pantalla lo dice con esas palabras: «esta venta ya no
+  coincide con su remisión impresa». Un sistema que permite corregir sin dejar
+  huella no es más flexible, es menos auditable.
+
+Y dos bloqueos que no se negocian: **un día ya liquidado no se toca** —alguien firmó
+ese cierre contra un conteo físico— y **una venta a crédito con cobros aplicados
+tampoco**, porque quedaría un pago aplicado a una factura que no existe.
+
+### El ajuste del camión es una excepción a §0.2, y se escribió como tal
+
+La migración 0025 prohibió las entradas directas a un camión porque «le cambiaría el
+inventario bajo los pies a alguien que está vendiendo offline con otra cifra en el
+teléfono». La objeción sigue siendo correcta, y lo que la responde es el delta: el
+teléfono converge. Lo que queda es la ventana entre escribir y sincronizar, que es
+la misma que tiene todo lo demás (§0.3).
+
+El ajuste **no se le cobra al vendedor**, y eso ya lo resolvía la 0030: el saldo
+inicial del cierre se deduce del saldo vivo del camión, así que absorbe las
+correcciones de oficina. Al vendedor se le cobra la diferencia entre su conteo y lo
+que el sistema tiene.
+
+### Eliminar un producto son dos cosas distintas
+
+**Dar de baja** (`activo = false`) es lo que se quiere casi siempre: desaparece del
+catálogo del teléfono, su historia queda intacta, y es reversible. **Borrar de
+verdad** solo tiene sentido para el producto que se capturó por error y nunca se
+usó, y solo entonces se puede: si aparece en una venta, el servidor dice en qué
+documento y manda a darlo de baja. No se ofrece cascada, porque la cascada aquí
+significaría borrar ventas.
+
+El SKU sí se edita, con su unicidad validada y su cambio asentado en `auditoria`. La
+razón por la que no se editaba era operativa —«es con lo que la bodega lo
+identifica»— y esa razón se vuelve en contra el día que está mal escrito. La unidad
+base sigue sin editarse, y ésa sí es de integridad: cambiarla convertiría en piezas
+lo que se contó en cajas sin tocar un solo número.
+
+### Y el defecto que apareció al construirlo
+
+Quitar un precio en el panel **nunca llegaba al teléfono**. El delta de `precio` se
+acota por `producto_id` y el disparador genérico manda el DELETE con el payload en
+NULL, así que el teléfono no podía saber cuál de los precios del producto se había
+quitado y no hacía nada. La pantalla decía «el vendedor ya no la verá» y era falso:
+seguía ofreciéndola, al precio retirado, y la venta entraba marcada con
+`precio_desactualizado` — una marca imposible de entender, porque el precio que el
+teléfono usó ya no existía en ninguna lista.
+
+Lo arregla la migración 0033 con un disparador propio para `precios` que, al borrar,
+emite los tres campos que identifican el renglón.

@@ -306,7 +306,8 @@ Pregunta, en este orden:
 
 1. **Código de empleado** — ej. `ADMIN01`. Es con lo que entras.
 2. **Nombre** — el que aparece en el panel.
-3. **Rol** — `admin` (todo), `gerente` (solo lectura), `supervisor` (opera). Enter deja `admin`.
+3. **Rol** — `admin` (todo), `gerente` (monitorea **y corrige**: ventas, inventario de camión
+   y catálogo, desde octubre de 2026), `supervisor` (opera). Enter deja `admin`.
 4. **Contraseña, dos veces** — **mínimo 12 caracteres**. No se muestra ni queda en el historial.
 
 > El rol `vendedor` se rechaza aquí a propósito: un vendedor no entra al panel, entra por la app. Los
@@ -637,8 +638,8 @@ verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
 
 ```bash
 make lint          # ruff sobre app y tests
-make pruebas       # 1003 pruebas de Python — necesita la base arriba
-make movil         # 509 de Dart + 248 de widget
+make pruebas       # 1055 pruebas de Python — necesita la base arriba
+make movil         # 538 de Dart + 252 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -1087,8 +1088,8 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 1003 pruebas de Python contra PostgreSQL real, 509 de Dart,
-   248 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
+1. **Lo construido está probado de verdad**: 1055 pruebas de Python contra PostgreSQL real, 538 de Dart,
+   252 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
 2. **Lo que falta es lo menos riesgoso.** La Fase 2 —el motor de sincronización, la que puede hundir un

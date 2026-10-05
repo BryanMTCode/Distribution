@@ -177,6 +177,29 @@
       style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
              border-radius:10px;padding:20px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="rejilla">
+    <div class="campo">
+      <label for="sku">SKU</label>
+      <input type="text" id="sku" name="sku" value="{{ producto.sku }}"
+             required style="width:100%;text-transform:uppercase">
+      <div class="ayuda">
+        Es con lo que la bodega y el vendedor lo identifican. Se puede corregir —el
+        cambio queda asentado con tu nombre y llega al teléfono—, pero si ya está
+        impreso en etiquetas, cámbialo sabiendo eso.
+      </div>
+    </div>
+    <div class="campo">
+      <label for="unidad_base">Unidad base</label>
+      <input type="text" id="unidad_base" value="{{ producto.unidad_base }}"
+             disabled style="width:100%">
+      <div class="ayuda">
+        <strong>No se edita.</strong> Todo el inventario y todas las partidas de
+        venta están expresados en ella: cambiarla convertiría en piezas lo que se
+        contó en cajas sin tocar un solo número. Si está mal, da de baja este
+        producto y crea el correcto.
+      </div>
+    </div>
+  </div>
   <div class="campo">
     <label for="nombre">Nombre</label>
     <input type="text" id="nombre" name="nombre" value="{{ producto.nombre }}"
@@ -222,6 +245,40 @@
     </div>
   </div>
   <button type="submit">Guardar datos</button>
+</form>
+
+{# --------------------------------------------------------------------- #}
+{# Eliminar.                                                             #}
+{# --------------------------------------------------------------------- #}
+{# Va al final, separado y con su explicación, porque las dos cosas que   #}
+{# la gente llama «eliminar» son distintas y solo una se puede: dar de    #}
+{# baja es la casilla de arriba y es reversible; borrar de verdad solo    #}
+{# existe para el producto que se capturó por error y nunca se usó.       #}
+<h2>Eliminar del catálogo</h2>
+<form method="post" action="/panel/productos/{{ producto.id }}/eliminar"
+      style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p style="margin-top:0" class="sutil">
+    Esto <strong>borra el producto</strong>, con sus presentaciones y sus precios.
+    Solo funciona si nunca se usó: si aparece en una venta, una carga, un conteo o
+    un movimiento de inventario, el servidor lo dice y no lo borra — una venta es
+    un papel que un cliente tiene en la mano.
+  </p>
+  <p class="sutil">
+    <strong>Si el producto ya se usó, lo que quieres es darlo de baja:</strong>
+    quita la casilla «Activo en el catálogo» de arriba y guarda. Desaparece del
+    teléfono y de los formularios, su historia queda intacta, y se puede revertir.
+  </p>
+  <div class="campo">
+    <label>
+      <input type="checkbox" name="confirmo" value="1" id="confirmo_eliminar">
+      Entiendo que un borrado no se deshace
+    </label>
+  </div>
+  <button type="submit" class="peligro" id="boton_eliminar">
+    Borrar «{{ producto.sku }}»
+  </button>
 </form>
 {% endif %}
 {% endblock %}

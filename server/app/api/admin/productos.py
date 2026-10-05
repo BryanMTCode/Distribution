@@ -43,6 +43,7 @@ ahora o al cierre del día.
 
 from __future__ import annotations
 
+import json
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
@@ -90,6 +91,7 @@ async def listar(
     sesion: SesionDep,
     q: str = "",
     filtro: str = "todos",
+    guardado: str = "",
 ) -> HTMLResponse:
     """El catálogo, con la advertencia de lo que el vendedor no puede vender.
 
@@ -160,6 +162,7 @@ async def listar(
             "q": busqueda,
             "filtro": filtro,
             "puede_editar": actor.puede(PERMISO),
+            "guardado": guardado,
         },
         actor=actor,
         seccion="Productos",
@@ -365,6 +368,7 @@ async def guardar_datos(
     actor: ActorWeb,
     sesion: SesionDep,
     producto_id: uuid.UUID,
+    sku: Annotated[str, Form()] = "",
     nombre: Annotated[str, Form()] = "",
     codigo_barras: Annotated[str, Form()] = "",
     tasa_iva: Annotated[str, Form()] = "0.0000",
@@ -372,35 +376,79 @@ async def guardar_datos(
     activo: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Edita los datos del producto.
+    """Edita los datos del producto, el SKU incluido.
 
-    El SKU y la unidad base **no se editan**. El SKU porque es con lo que la
-    bodega y el vendedor lo identifican; la unidad base porque todo el inventario
-    y todas las partidas de venta están expresados en ella: cambiarla convertiría
-    en piezas lo que se contó en cajas, sin tocar ningún número.
+    ───────────────────────────────────────────────────────────────────────────
+    EL SKU SÍ SE EDITA; LA UNIDAD BASE NO, Y NO ES LA MISMA CLASE DE NEGATIVA
+    ───────────────────────────────────────────────────────────────────────────
+    El SKU no se editaba «porque es con lo que la bodega y el vendedor lo
+    identifican». Eso es una razón operativa, no de integridad: ninguna tabla
+    apunta al SKU —todas apuntan al `id`—, así que cambiarlo no rompe nada. Y la
+    razón operativa se vuelve en contra el día que el SKU está mal escrito: deja
+    de identificar y no se puede arreglar. La dirección pidió poder cambiarlo
+    (octubre 2026), así que se puede, con su unicidad validada y su cambio
+    asentado en `auditoria`.
+
+    La unidad base sigue sin editarse, y ésa sí es de integridad: TODO el
+    inventario y TODAS las partidas de venta están expresados en ella. Cambiarla
+    convertiría en piezas lo que se contó en cajas sin tocar un solo número —el
+    camión diría 240 y querría decir otra cosa—. Para eso se da de baja el producto
+    y se crea el correcto.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
     if not nombre.strip():
         return _volver(producto_id, error="El nombre no puede quedar vacío.")
+    clave = sku.strip().upper()
+    if not clave:
+        return _volver(producto_id, error="El SKU no puede quedar vacío.")
     try:
         iva = _tasa(tasa_iva)
     except CapturaInvalida as e:
         return _volver(producto_id, error=str(e))
 
+    antes = (
+        await sesion.execute(
+            text("SELECT sku, nombre FROM productos WHERE id = :id"),
+            {"id": producto_id},
+        )
+    ).mappings().first()
+    if antes is None:
+        return RedirectResponse("/panel/productos", status_code=303)
+
+    # La unicidad se comprueba antes de escribir para poder decir de quién es el
+    # SKU. El UNIQUE de la base lo impediría igual, pero su error no le dice a
+    # nadie que el código ya lo tiene el atún.
+    if clave != antes["sku"]:
+        dueno = (
+            await sesion.execute(
+                text(
+                    "SELECT nombre FROM productos WHERE upper(sku) = :s AND id <> :id"
+                ),
+                {"s": clave, "id": producto_id},
+            )
+        ).scalar_one_or_none()
+        if dueno is not None:
+            return _volver(
+                producto_id,
+                error=f"El SKU «{clave}» ya es de «{dueno}». Dos productos con el "
+                "mismo código son dos productos que la bodega no puede distinguir.",
+            )
+
     await sesion.execute(
         text(
             """
             UPDATE productos
-               SET nombre = :nombre, codigo_barras = :barras, tasa_iva = :iva,
-                   categoria_id = :categoria, activo = :activo,
+               SET sku = :sku, nombre = :nombre, codigo_barras = :barras,
+                   tasa_iva = :iva, categoria_id = :categoria, activo = :activo,
                    actualizado_en = now()
              WHERE id = :id
             """
         ),
         {
             "id": producto_id,
+            "sku": clave[:40],
             "nombre": nombre.strip()[:200],
             "barras": texto_o_nulo(codigo_barras, maximo=40),
             "iva": iva,
@@ -408,8 +456,207 @@ async def guardar_datos(
             "activo": bool(activo),
         },
     )
+
+    # El cambio de SKU se asienta aparte: es el único dato del producto que alguien
+    # usa para buscarlo en papel, y el día que la bodega no encuentre «SOPA-70» hay
+    # que poder saber en qué se convirtió.
+    if clave != antes["sku"]:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO auditoria
+                  (entidad, entidad_id, accion, usuario_id, datos_antes,
+                   datos_despues, ocurrido_en)
+                VALUES ('producto', :id, 'cambiar_sku', :quien,
+                        CAST(:antes AS jsonb), CAST(:despues AS jsonb), now())
+                """
+            ),
+            {
+                "id": producto_id,
+                "quien": actor.usuario_id,
+                "antes": json.dumps({"sku": antes["sku"]}, ensure_ascii=False),
+                "despues": json.dumps({"sku": clave[:40]}, ensure_ascii=False),
+            },
+        )
+
     await sesion.commit()
-    return _volver(producto_id, guardado="Datos guardados.")
+    aviso = "Datos guardados."
+    if clave != antes["sku"]:
+        aviso += (
+            f" El SKU pasó de «{antes['sku']}» a «{clave}»: el teléfono lo recibe "
+            "en la siguiente sincronización."
+        )
+    return _volver(producto_id, guardado=aviso)
+
+
+# ---------------------------------------------------------------------------
+# Eliminar un producto
+# ---------------------------------------------------------------------------
+# Las tablas que, si tienen un solo renglón, impiden el borrado. Son los
+# DOCUMENTOS: una venta, una carga, un conteo, un asiento del libro mayor.
+#
+# Están enumeradas a mano y no sacadas de `pg_constraint` a propósito. Sacarlas de
+# la base incluiría las de configuración —precios, presentaciones— que sí se van
+# con el producto, y el día que alguien agregue una tabla nueva es mejor que el
+# borrado falle con un error de llave foránea que explique dónde, que descubrir
+# meses después que se borró un producto que estaba en un documento.
+_DOCUMENTOS_QUE_IMPIDEN = (
+    ("venta_partidas", "ventas"),
+    ("carga_detalle", "cargas"),
+    ("merma_detalle", "mermas o devoluciones"),
+    ("entrada_detalle", "entradas de bodega"),
+    ("salida_detalle", "salidas de bodega"),
+    ("liquidacion_detalle", "liquidaciones"),
+    ("traspaso_detalle", "traspasos"),
+    ("ajustes_camion", "ajustes de camión"),
+    ("movimientos_inventario", "movimientos de inventario"),
+    ("producto_costos", "costos registrados"),
+)
+
+# Lo que se va CON el producto: su configuración. No son hechos, son parámetros —
+# cuánto mide una caja, a cuánto se vende en cada lista—, y sin el producto no
+# significan nada.
+_CONFIGURACION_QUE_SE_VA = (
+    "promociones",
+    "precios",
+    "producto_unidades",
+    "existencias",
+)
+
+
+@router.post("/{producto_id}/eliminar")
+async def eliminar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    producto_id: uuid.UUID,
+    confirmo: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Borra un producto que NUNCA se usó. Si se usó, se da de baja.
+
+    ───────────────────────────────────────────────────────────────────────────
+    LAS DOS COSAS QUE LA GENTE LLAMA «ELIMINAR», Y SOLO UNA SE PUEDE
+    ───────────────────────────────────────────────────────────────────────────
+    **Dar de baja** (`activo = false`) es lo que se quiere el 99 % de las veces: el
+    producto deja de aparecer en el catálogo del teléfono y en los formularios de
+    captura, y toda su historia sigue en pie. Ya existe, es la casilla «activo» de
+    los datos, y es reversible.
+
+    **Borrar de verdad** solo tiene sentido para el producto que se dio de alta por
+    error y nunca se usó: el SKU equivocado, el duplicado que alguien capturó dos
+    veces. Y solo entonces se puede, porque un producto que aparece en una venta no
+    se puede borrar sin romper esa venta — y una venta es un papel que un cliente
+    tiene en la mano.
+
+    Así que esto comprueba cada documento antes de borrar y, cuando encuentra uno,
+    **dice cuál y manda a dar de baja**. No ofrece un borrado en cascada: la
+    cascada aquí significaría borrar ventas.
+    """
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+
+    producto = (
+        await sesion.execute(
+            text("SELECT id, sku, nombre, activo FROM productos WHERE id = :id"),
+            {"id": producto_id},
+        )
+    ).mappings().first()
+    if producto is None:
+        return RedirectResponse("/panel/productos", status_code=303)
+
+    if not confirmo:
+        return _volver(
+            producto_id,
+            error="Marca la casilla de confirmación: un borrado no se deshace.",
+        )
+
+    # Los documentos, uno por uno, para poder nombrarlos.
+    for tabla, como_se_llama in _DOCUMENTOS_QUE_IMPIDEN:
+        cuantos = (
+            await sesion.execute(
+                text(f"SELECT count(*) FROM {tabla} WHERE producto_id = :p"),  # noqa: S608
+                {"p": producto_id},
+            )
+        ).scalar_one()
+        if cuantos:
+            return _volver(
+                producto_id,
+                error=(
+                    f"«{producto['nombre']}» aparece en {cuantos} {como_se_llama}: "
+                    "no se puede borrar sin romper esos documentos. Lo que sí puedes "
+                    "es DARLO DE BAJA —quita la casilla «activo» y guarda—: "
+                    "desaparece del catálogo del teléfono y de los formularios, y su "
+                    "historia queda intacta."
+                ),
+            )
+
+    # Y la existencia. Un producto con saldo en algún almacén no es un error de
+    # captura: es mercancía que alguien tiene en un anaquel o arriba de un camión.
+    con_saldo = (
+        await sesion.execute(
+            text(
+                "SELECT a.nombre, e.cantidad FROM existencias e "
+                "  JOIN almacenes a ON a.id = e.almacen_id "
+                " WHERE e.producto_id = :p AND e.cantidad <> 0 LIMIT 1"
+            ),
+            {"p": producto_id},
+        )
+    ).mappings().first()
+    if con_saldo is not None:
+        return _volver(
+            producto_id,
+            error=(
+                f"Hay {con_saldo['cantidad']} en {con_saldo['nombre']}. Un producto "
+                "con existencia no es un error de captura: es mercancía que alguien "
+                "tiene. Dale salida o ajústala primero, o dalo de baja."
+            ),
+        )
+
+    # El antes, ANTES: después del DELETE no hay de dónde leerlo.
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO auditoria
+              (entidad, entidad_id, accion, usuario_id, datos_antes, ocurrido_en)
+            VALUES ('producto', :id, 'eliminar', :quien, CAST(:antes AS jsonb), now())
+            """
+        ),
+        {
+            "id": producto_id,
+            "quien": actor.usuario_id,
+            "antes": json.dumps(
+                {"sku": producto["sku"], "nombre": producto["nombre"]},
+                ensure_ascii=False,
+            ),
+        },
+    )
+
+    for tabla in _CONFIGURACION_QUE_SE_VA:
+        await sesion.execute(
+            text(f"DELETE FROM {tabla} WHERE producto_id = :p"),  # noqa: S608
+            {"p": producto_id},
+        )
+    await sesion.execute(
+        text("DELETE FROM productos WHERE id = :id"), {"id": producto_id}
+    )
+    await sesion.commit()
+
+    # El teléfono NO lo borra: lo desactiva. Está así desde el principio en el
+    # aplicador de deltas, con su razón —«un producto retirado puede seguir
+    # apareciendo en ventas ya hechas que aún no sincronizan»—, y es lo correcto:
+    # un DELETE local contra la llave foránea de `venta_partidas` abortaría la tanda
+    # entera y el dispositivo no volvería a sincronizar nunca.
+    # A la lista, no al detalle: el producto ya no existe y su pantalla daría 404.
+    aviso = (
+        f"«{producto['nombre']}» ({producto['sku']}) se borró. En los teléfonos "
+        "queda desactivado, no borrado: una venta que todavía no sincroniza puede "
+        "apuntarle."
+    )
+    return RedirectResponse(
+        f"/panel/productos?guardado={quote(aviso)}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/{producto_id}/presentaciones")

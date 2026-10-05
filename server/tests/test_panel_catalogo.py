@@ -488,6 +488,7 @@ async def test_desactivar_no_borra(cliente, semilla, sesion):
         f"/panel/productos/{producto_id}",
         data={
             "csrf": _csrf_de(detalle),
+            "sku": "REF-1L",
             "nombre": "Refresco de cola 1 L",
             "tasa_iva": "0.1600",
             # Sin `activo`: la casilla desmarcada no se manda.

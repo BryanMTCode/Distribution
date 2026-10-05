@@ -8,6 +8,8 @@
   que se descubre cuando un cliente lo pide.
 </p>
 
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
 <form class="barra" method="get" action="/panel/productos">
   <input type="search" name="q" value="{{ q }}" placeholder="Nombre, SKU o código de barras"
          style="min-width:260px">
