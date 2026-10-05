@@ -627,25 +627,82 @@ da de alta a un empleado no tiene por qué conocer: el panel las hace en un paso
 
 ## 17. La liquidación: la única pantalla que compara
 
-**Decisión.** El cierre del día calcula `esperado = cargado − vendido − merma +
-devuelto` de sus propios documentos, y lo compara contra un **conteo físico** del
-camión. La diferencia es lo único que importa del cierre.
+**Decisión (actualizada en octubre de 2026 por la dirección).** El camión es un
+**almacén rodante**: la mercancía que no se vende se queda a dormir arriba y se
+acumula con la carga del día siguiente. El cierre del día calcula
+
+    esperado = inicial + cargado − vendido − merma + devuelto
+
+de sus propios documentos, y lo compara contra un **conteo físico** de lo que se
+quedó arriba del camión. La diferencia es lo único que importa del cierre.
 
 Todas las demás pantallas **registran**. Esta compara, y es por eso la única que
 puede atrapar un descuadre.
 
+### El camión NO amanece en ceros, y por qué eso cambió todo
+
+El modelo original era el opuesto en sus tres capas: la carga confirmada era «el
+inventario completo del día», el cierre bajaba lo contado a la bodega y escribía un
+ajuste para dejar el camión en cero, y el teléfono vaciaba `existencias_camion` al
+recibir la carga liquidada.
+
+Con mercancía durmiendo arriba del camión, ese modelo **le cobraba al vendedor como
+faltante todo lo que no había vendido, cada noche**. Era mercancía fantasma: estaba
+en el camión, se podía contar y tocar, y el sistema la declaraba perdida.
+
+Lo que cambió (migración 0030):
+
+1. La ecuación gana el término `inicial`. Sin él, todo el saldo de días anteriores
+   aparecía como descuadre.
+2. `cant_retornada` pasó a llamarse **`cant_contada`**: ya no baja mercancía a la
+   bodega, se cuenta lo que se queda. Un nombre que miente sobre lo que guarda es el
+   origen del siguiente error, y este renglón decide cuánto se le cobra a una
+   persona.
+3. Los renglones del cierre son los del **camión**, no los de la carga: la unión de
+   lo que se cargó hoy y de todo lo que el camión trae con saldo distinto de cero.
+   Si solo mirara la carga, el producto que lleva tres días arriba no tendría
+   renglón, nadie lo contaría y nadie notaría si desapareciera.
+4. El cierre deja el camión **en lo contado**, no en cero, y cuando el conteo cuadra
+   **no escribe ningún movimiento**: no pasó nada físico que registrar.
+5. El delta de la carga liquidada le lleva al teléfono **el ajuste**, no la orden de
+   vaciar.
+
+Cuando el vendedor sí entrega mercancía —cambia de ruta, se descontinúa un
+producto— eso es un **traspaso** camión → bodega, que es un documento con su propia
+huella y su propia aceptación en el teléfono (§14). No es un efecto secundario del
+cierre del día.
+
+### El saldo inicial se deduce, no se fotografía
+
+`inicial` sale de `saldo_inicial(en_camion, cargado, vendido, merma, devuelto)`, que
+es la ecuación despejada: el saldo que el sistema tiene **ahora** menos lo que los
+documentos de hoy le hicieron. No se guarda un snapshot al confirmar la carga, por
+dos razones:
+
+- Un snapshot envejece. Entre confirmar la carga y cerrar el día entran ventas que
+  el teléfono sincroniza tarde, y el inicial tiene que seguir siendo el de esa
+  mañana sin que nadie lo recalcule a mano.
+- Un ajuste de oficina a media mañana —una corrección de inventario, un traspaso
+  entre camiones— queda **absorbido** en el inicial, y eso es lo correcto: al
+  vendedor se le cobra la diferencia entre su conteo y lo que el sistema tiene,
+  nunca las correcciones que hizo la oficina.
+
+La consecuencia útil es que `esperado` acaba siendo siempre el saldo vivo del
+camión, así que `diferencia` es siempre «lo que conté menos lo que el sistema
+tiene»: el único número que se le puede cobrar a una persona y defender frente a
+ella.
+
 ### El devuelto suma, y es el signo que se escribe mal
 
-Una devolución de cliente **entra** al camión, así que tiene que volver a la
-bodega. Restarla haría aparecer un faltante del tamaño exacto de las devoluciones
-del día, y el vendedor pagaría por mercancía que devolvió bien.
+Una devolución de cliente **entra** al camión, así que sigue arriba al contarlo.
+Restarla haría aparecer un faltante del tamaño exacto de las devoluciones del día, y
+el vendedor pagaría por mercancía que devolvió bien.
 
 La ecuación vive en `app/domain/liquidacion.py`, en la columna generada
-`liquidacion_detalle.diferencia` de PostgreSQL, y —cuando llegue la Fase 6— en el
-teléfono. Hay una prueba que compara el módulo de dominio contra la columna
-generada con cuatro conteos distintos: si divergieran, el vendedor y la oficina
-estarían discutiendo sobre dos números, cada uno convencido de tener el del
-sistema.
+`liquidacion_detalle.diferencia` de PostgreSQL, y en el teléfono. Hay una prueba que
+compara el módulo de dominio contra la columna generada con cuatro conteos distintos:
+si divergieran, el vendedor y la oficina estarían discutiendo sobre dos números, cada
+uno convencido de tener el del sistema.
 
 ### El conteo nace en cero, no en el esperado
 
@@ -655,30 +712,49 @@ bien. Contar el camión es el único dato que esta pantalla no puede calcular, y
 justamente el que le da sentido a los demás.
 
 Y un campo **vacío vale cero**, no "no lo cambies": al contar un camión, el
-producto que no se anotó es el que no venía. Con la otra semántica, un producto que
-se terminó quedaría con el conteo de un intento anterior y el faltante
+producto que no se anotó es el que no está arriba. Con la otra semántica, un producto
+que se terminó quedaría con el conteo de un intento anterior y el faltante
 desaparecería sin que nadie lo decidiera.
 
-### Al cerrar, el camión queda EXACTAMENTE en cero
+### Al cerrar, el camión queda EXACTAMENTE en lo contado
 
 Tres cosas en una transacción:
 
-1. **`retorno`** camión → bodega por lo contado. Es el movimiento físico.
-2. **`ajuste`** por el faltante o el sobrante. Es el paso que se olvida: sin él el
-   camión arrastra un saldo fantasma para siempre, el faltante de hoy queda como
-   existencia, y el cierre de mañana empieza con un sobrante que nadie puso ahí.
-3. La carga pasa a **`liquidada`**, y ese `UPDATE` publica el delta que **vacía
-   `existencias_camion` en el teléfono** (§14). Sin esto el vendedor saldría mañana
-   con el inventario de ayer en la pantalla.
+1. Las cifras calculadas se **recalculan** desde los documentos. Es el mismo motivo
+   por el que el arqueo recalcula el efectivo esperado, y aquí pesa más: lo que
+   quedara viejo sería la cantidad de mercancía que se le cobra a una persona.
+2. **`ajuste`** por la diferencia, para dejar el camión en lo contado. Si cuadra, no
+   se escribe nada.
+3. La carga pasa a **`liquidada`**, y ese `UPDATE` publica el delta que le lleva al
+   teléfono el ajuste (§14).
 
-El ajuste se calcula leyendo la existencia **después** del retorno, no deduciéndola
-de `diferencia`: si las dos no coincidieran, el que tiene razón es el inventario, y
-el objetivo es dejar el camión en cero.
+El ajuste se escribe por el valor de `diferencia` —la columna generada—, que es el
+mismo número que la pantalla le muestra al vendedor y el mismo que el teléfono va a
+aplicar. Un número distinto en cualquiera de los tres lados es una discusión sin
+árbitro.
 
 Un faltante sale del sistema (`origen = camión`, `destino = NULL`) y es la pérdida
-que se le carga al vendedor. Un sobrante entra al camión, para que el retorno ya
-registrado cuadre — si el signo estuviera al revés, el camión quedaría al doble en
-negativo.
+que se le carga al vendedor. Un sobrante entra al camión — si el signo estuviera al
+revés, el teléfono mostraría mañana menos de lo que el vendedor trae.
+
+### El teléfono SUMA la carga, y por eso recuerda cuáles ya sumó
+
+Reemplazar era idempotente por naturaleza: escribir dos veces el mismo número da el
+mismo número. Sumar no lo es, y un `pull` se repite cada vez que la red se corta a
+media tanda. Sumar la misma carga dos veces le regalaría al camión una carga
+completa: el vendedor la ofrecería, no la tendría, y el descuadre saldría en la
+liquidación sin explicación.
+
+De eso se encarga la tabla local `cargas_aplicadas`, con su gemela para el cierre:
+una carga se suma una vez y un ajuste se aplica una vez.
+
+### El cierre publica una DIFERENCIA, no un conteo
+
+La oficina liquida lo de ayer a media mañana, con la carga de hoy ya encima del
+camión y con ventas hechas. Un conteo de ayer aplicado como «el camión tiene esto»
+borraría la carga de hoy y las ventas de la mañana. Una diferencia se suma al saldo
+que haya y sigue siendo correcta cuando llega tarde — que es la forma de §0.3
+aplicada a este delta.
 
 ### No se cierra con operaciones pendientes, y por una razón concreta
 

@@ -10,7 +10,9 @@ se vende y se cobra offline, se registra lo que se perdió y a quién no se le v
 cuadra contra la ecuación, y la oficina puede leer lo que pasó: cobros marcados, cartera por antigüedad
 y efectividad de visita por causa. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
-en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes.
+en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes, y el **camión como
+almacén rodante** — la mercancía que no se vende se queda arriba y se acumula con la carga del día
+siguiente, así que no se le cobra como faltante al vendedor.
 
 | Pieza | Estado |
 |---|---|
@@ -64,10 +66,10 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Captura de catálogo y precios** con cuatro decimales | ✅ 20 pruebas |
 | **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
 | **Carga del camión** — bodega → camión, con su delta y su detalle | ✅ 20 pruebas |
-| El teléfono aplica la carga sin revivir lo ya vendido | ✅ 12 pruebas de Dart |
+| El teléfono **suma** la carga al sobrante, sin duplicarla en un `pull` repetido | ✅ 18 pruebas de Dart |
 | **Usuarios, rutas, almacenes y listas** desde el panel | ✅ 23 pruebas |
 | Arranque del primer usuario (`make usuario`) — **sin contraseña por omisión** | ✅ con pruebas |
-| **Liquidación y retorno** — la ecuación que atrapa descuadres | ✅ 25 pruebas |
+| **Liquidación** — el camión es un almacén rodante: lo que durmió arriba no es faltante | ✅ 39 pruebas |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
@@ -103,7 +105,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**995 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **503 de Dart** y **248 de widget**, todas en verde.
+**1003 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **509 de Dart** y **248 de widget**, todas en verde.
 
 ## Stack
 
@@ -198,7 +200,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, login en línea
-    test/            503 pruebas que corren en segundos
+    test/            509 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -225,8 +227,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 995 pruebas de Python
-make movil                          # 503 de Dart + 248 de widget
+make pruebas                        # 1003 pruebas de Python
+make movil                          # 509 de Dart + 248 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

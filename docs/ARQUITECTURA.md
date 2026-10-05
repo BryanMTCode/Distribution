@@ -246,23 +246,31 @@ existencias          (snapshot, actualizado en la MISMA transacción que el movi
 El libro mayor es la verdad auditable; `existencias` es la caché transaccional. Un job nocturno
 reconcilia ambos y alerta ante cualquier divergencia.
 
+**El camión es un ALMACÉN RODANTE** (dirección, octubre 2026). La mercancía que no se vende se queda a
+dormir arriba y se acumula con la carga del día siguiente: el camión **no amanece en ceros**, y lo que
+durmió arriba no es un faltante. Ver ADR 0002 §17 y la migración 0030.
+
 **Ciclo diario del DSD** — es lo que hace seguro el offline:
 
-1. **Carga / embarque.** Al amanecer, traspaso `BODEGA_PRINCIPAL → CAMION_01`. Ese documento genera el
-   *snapshot base* que el teléfono descarga con `carga_id` y versión.
+1. **Carga / embarque.** Al amanecer, traspaso `BODEGA_PRINCIPAL → CAMION_01`. El teléfono lo **suma** a
+   lo que ya traía, con `carga_id` y versión, y recuerda qué cargas ya sumó para que un `pull` repetido
+   no las duplique.
 2. **Venta en ruta (offline).** Todos los decrementos ocurren contra `CAMION_01`, que tiene un único
    dueño. Cero concurrencia, cero conflictos.
-3. **Liquidación / cierre.** Retorno de producto no vendido y arqueo de efectivo. El servidor recalcula:
+3. **Liquidación / cierre.** Conteo físico de lo que se quedó arriba del camión, y arqueo de efectivo. El
+   servidor recalcula:
 
    ```
-   carga − ventas − mermas − devoluciones − retorno = diferencia
+   contado − (inicial + carga − ventas − mermas + devoluciones) = diferencia
    ```
 
-   Si `diferencia ≠ 0` se levanta un **faltante** ligado al vendedor. Los descuadres se atrapan
-   contablemente, no a mano.
+   Si `diferencia ≠ 0` se levanta un **faltante** ligado al vendedor, y el camión queda exactamente en lo
+   contado. Los descuadres se atrapan contablemente, no a mano.
 
-**La bodega principal solo se mueve por eventos de carga y retorno, procesados por el servidor. Una venta
-offline jamás toca el stock de bodega.** De ahí viene la garantía.
+**La bodega principal solo se mueve por eventos de carga, traspaso y ajuste, procesados por el servidor.
+Una venta offline jamás toca el stock de bodega.** De ahí viene la garantía. El cierre del día **no**
+mueve la bodega: cuando el vendedor sí entrega mercancía, eso es un traspaso camión → bodega, con su
+propio documento y su propia aceptación.
 
 ### 2.3 Sin tickets duplicados: idempotencia, no esperanza
 

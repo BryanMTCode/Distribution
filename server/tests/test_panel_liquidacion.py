@@ -1,4 +1,4 @@
-"""Fase 7 · El cierre del día: liquidación, retorno y el camión en cero.
+"""Fase 7 · El cierre del día: el camión es un almacén rodante.
 
 ────────────────────────────────────────────────────────────────────────────
 QUÉ DEFIENDEN ESTAS PRUEBAS
@@ -7,19 +7,26 @@ Es la única pantalla que **compara** en vez de registrar, así que lo que se
 prueba no es que guarde bien: es que la ecuación dé el número correcto y que el
 inventario quede consistente después.
 
-    esperado   = cargado − vendido − merma + devuelto
-    diferencia = retornado − esperado
+    esperado   = inicial + cargado − vendido − merma + devuelto
+    diferencia = contado − esperado
 
-Cuatro cosas que se rompen en silencio:
+Seis cosas que se rompen en silencio, y cada una le cuesta dinero a una persona:
 
-1. **El signo del devuelto.** Una devolución de cliente ENTRA al camión, así que
+1. **El saldo INICIAL.** La mercancía que no se vendió duerme arriba del camión y
+   se acumula con la carga del día siguiente (dirección, octubre 2026). Sin ese
+   término, todo lo que durmió arriba se le cobraba al vendedor como faltante,
+   cada noche.
+2. **El camión se queda con LO CONTADO**, no en cero. Y no baja nada a la bodega:
+   ya no hay retorno diario.
+3. **El signo del devuelto.** Una devolución de cliente ENTRA al camión, así que
    suma al esperado. Restarla haría aparecer un faltante del tamaño exacto de las
-   devoluciones del día — y el vendedor pagaría por mercancía que devolvió bien.
-2. **El camión tiene que quedar en CERO.** Si el faltante se queda como existencia,
-   el cierre de mañana empieza con un sobrante que nadie puso ahí.
-3. **El módulo de dominio y la columna generada de PostgreSQL** tienen que dar lo
+   devoluciones del día.
+4. **Los renglones son los del camión, no los de la carga.** Un producto que lleva
+   tres días arriba y hoy no se cargó tiene que contarse igual, o nadie notaría si
+   desapareciera.
+5. **El módulo de dominio y la columna generada de PostgreSQL** tienen que dar lo
    mismo, o el vendedor y la oficina discuten sobre dos números distintos.
-4. **No se puede cerrar con operaciones pendientes.** Una venta que entra después
+6. **No se puede cerrar con operaciones pendientes.** Una venta que entra después
    del cierre convierte un sobrante en un cuadre, y el cierre ya lo dijo por
    escrito.
 """
@@ -227,17 +234,47 @@ async def _abrir(cliente, carga_id) -> str:
     return r.headers["location"].split("/panel/liquidaciones/")[1].split("?")[0]
 
 
-async def _contar(cliente, liquidacion_id: str, sesion, cuanto: str):
-    renglon = (
-        await sesion.execute(
-            text("SELECT id FROM liquidacion_detalle WHERE liquidacion_id = :l"),
-            {"l": uuid.UUID(liquidacion_id)},
-        )
-    ).scalar_one()
+async def _contar(
+    cliente, liquidacion_id: str, sesion, cuanto: str, *, producto=None
+):
+    """Captura el conteo de UN renglón. `producto` cuando hay más de uno."""
+    consulta = "SELECT id FROM liquidacion_detalle WHERE liquidacion_id = :l"
+    parametros: dict = {"l": uuid.UUID(liquidacion_id)}
+    if producto is not None:
+        consulta += " AND producto_id = :p"
+        parametros["p"] = producto
+    renglon = (await sesion.execute(text(consulta), parametros)).scalar_one()
     detalle = await cliente.get(f"/panel/liquidaciones/{liquidacion_id}")
     return await cliente.post(
         f"/panel/liquidaciones/{liquidacion_id}/contar",
-        data={"csrf": _csrf(cliente, detalle), f"retornada_{renglon}": cuanto},
+        data={"csrf": _csrf(cliente, detalle), f"contada_{renglon}": cuanto},
+        follow_redirects=True,
+    )
+
+
+async def _contar_todos(cliente, liquidacion_id: str, sesion, conteos: dict):
+    """Captura el conteo de VARIOS renglones en un solo POST.
+
+    Tiene que ser un solo POST: el formulario trata un campo ausente como cero —al
+    contar un camión, el producto que no se anotó es el que no está arriba—, así que
+    mandar un renglón a la vez borraría el conteo del anterior.
+    """
+    renglones = (
+        await sesion.execute(
+            text(
+                "SELECT id, producto_id FROM liquidacion_detalle "
+                " WHERE liquidacion_id = :l"
+            ),
+            {"l": uuid.UUID(liquidacion_id)},
+        )
+    ).mappings().all()
+    detalle = await cliente.get(f"/panel/liquidaciones/{liquidacion_id}")
+    datos = {"csrf": _csrf(cliente, detalle)}
+    for f in renglones:
+        datos[f"contada_{f['id']}"] = conteos[f["producto_id"]]
+    return await cliente.post(
+        f"/panel/liquidaciones/{liquidacion_id}/contar",
+        data=datos,
         follow_redirects=True,
     )
 
@@ -276,8 +313,8 @@ async def test_LA_ECUACION_DE_PYTHON_Y_LA_DE_POSTGRESQL_DAN_LO_MISMO(
         fila = (
             await sesion.execute(
                 text(
-                    "SELECT cant_cargada, cant_vendida, cant_merma, cant_devuelta, "
-                    "       cant_retornada, diferencia "
+                    "SELECT cant_inicial, cant_cargada, cant_vendida, cant_merma, "
+                    "       cant_devuelta, cant_contada, diferencia "
                     "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
                 ),
                 {"l": uuid.UUID(liq)},
@@ -285,11 +322,12 @@ async def test_LA_ECUACION_DE_PYTHON_Y_LA_DE_POSTGRESQL_DAN_LO_MISMO(
         ).mappings().one()
 
         en_python = RenglonDeLiquidacion(
+            inicial=Decimal(fila["cant_inicial"]),
             cargado=Decimal(fila["cant_cargada"]),
             vendido=Decimal(fila["cant_vendida"]),
             merma=Decimal(fila["cant_merma"]),
             devuelto=Decimal(fila["cant_devuelta"]),
-            retornado=Decimal(fila["cant_retornada"]),
+            contado=Decimal(fila["cant_contada"]),
         ).diferencia
         assert en_python == Decimal(fila["diferencia"]), (
             f"con {contado} contadas, Python dice {en_python} y PostgreSQL "
@@ -311,7 +349,7 @@ async def test_abrir_trae_lo_cargado_y_lo_vendido_de_los_documentos(
     fila = (
         await sesion.execute(
             text(
-                "SELECT cant_cargada, cant_vendida, cant_retornada "
+                "SELECT cant_inicial, cant_cargada, cant_vendida, cant_contada "
                 "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
             ),
             {"l": uuid.UUID(liq)},
@@ -320,9 +358,11 @@ async def test_abrir_trae_lo_cargado_y_lo_vendido_de_los_documentos(
 
     assert fila["cant_cargada"] == Decimal("240.000")
     assert fila["cant_vendida"] == Decimal("180.000")
+    # Este camión amaneció vacío: 60 arriba − 240 cargadas + 180 vendidas = 0.
+    assert fila["cant_inicial"] == Decimal("0.000")
     # El conteo nace en CERO, no en el esperado: prellenarlo haría que cerrar sin
     # contar diera cuadre perfecto, y el cierre no significaría nada.
-    assert fila["cant_retornada"] == Decimal("0.000")
+    assert fila["cant_contada"] == Decimal("0.000")
 
 
 async def test_el_efectivo_esperado_son_las_ventas_de_contado(
@@ -386,7 +426,7 @@ async def test_un_campo_vacio_en_el_conteo_vale_CERO(
 
     contado = (
         await sesion.execute(
-            text("SELECT cant_retornada FROM liquidacion_detalle WHERE liquidacion_id = :l"),
+            text("SELECT cant_contada FROM liquidacion_detalle WHERE liquidacion_id = :l"),
             {"l": uuid.UUID(liq)},
         )
     ).scalar_one()
@@ -401,49 +441,104 @@ async def test_el_conteo_no_acepta_negativos(cliente, semilla, dia_de_trabajo, s
 
 
 # ---------------------------------------------------------------------------
-# Cerrar: el retorno y el ajuste
+# Cerrar: el ajuste, y la mercancía que se queda arriba
 # ---------------------------------------------------------------------------
 
 
-async def test_cerrar_cuadrado_deja_el_camion_en_cero_y_devuelve_a_la_bodega(
+async def _existencias(sesion, producto) -> dict:
+    return dict(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT almacen_id, cantidad FROM existencias WHERE producto_id = :p"
+                ),
+                {"p": producto},
+            )
+        ).all()
+    )
+
+
+async def test_cerrar_cuadrado_DEJA_LA_MERCANCIA_ARRIBA_DEL_CAMION(
     cliente, semilla, dia_de_trabajo, sesion
 ):
-    """240 cargadas − 180 vendidas = 60 esperadas, y se cuentan 60."""
+    """240 cargadas − 180 vendidas = 60 esperadas, y se cuentan 60.
+
+    El camión es un almacén rodante: esas 60 se quedan arriba para mañana. Antes
+    bajaban a la bodega y el camión quedaba en cero, que es justo lo que hacía que
+    al día siguiente el vendedor empezara con un inventario que no correspondía a
+    lo que traía encima.
+    """
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
     await _contar(cliente, liq, sesion, "60")
     r = await _cerrar(cliente, liq)
 
     assert "Cuadró producto por producto" in r.text
+    assert "sin ajustes" in r.text
 
-    existencias = dict(
-        (
-            await sesion.execute(
-                text(
-                    "SELECT almacen_id, cantidad FROM existencias WHERE producto_id = :p"
-                ),
-                {"p": dia_de_trabajo["producto"]},
-            )
-        ).all()
-    )
-    # El camión queda EXACTAMENTE en cero.
-    assert existencias[semilla["camion"]] == Decimal("0.000")
-    # Y la bodega recupera las 60: 760 de partida + 60.
-    assert existencias[semilla["bodega"]] == Decimal("820.000")
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("60.000")
+    # Y la bodega no recibió nada: no bajó mercancía.
+    assert existencias[semilla["bodega"]] == Decimal("760.000")
 
-    retorno = (
+    # Ni un movimiento: cuando el conteo cuadra no pasó nada físico que registrar.
+    movimientos = (
         await sesion.execute(
             text(
-                "SELECT cantidad, almacen_origen_id, almacen_destino_id "
-                "  FROM movimientos_inventario WHERE tipo = 'retorno'"
+                "SELECT count(*) FROM movimientos_inventario "
+                " WHERE tipo IN ('retorno', 'ajuste')"
             )
         )
-    ).mappings().one()
-    assert retorno["cantidad"] == Decimal("60.000")
-    assert retorno["almacen_origen_id"] == semilla["camion"]
-    assert retorno["almacen_destino_id"] == semilla["bodega"]
+    ).scalar_one()
+    assert movimientos == 0
 
-    # Sin ajustes: no hubo diferencia que absorber.
+
+async def test_LO_QUE_DURMIO_EN_EL_CAMION_NO_ES_FALTANTE(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """La prueba de la decisión de octubre 2026, y la razón de la migración 0030.
+
+    El camión amaneció con 40 piezas de días anteriores, le cargaron 240 y vendió
+    180: debe haber 100 arriba. Se cuentan 100.
+
+    Con la ecuación vieja —sin el término inicial— el esperado habría sido 60 y
+    esas 40 piezas que el vendedor podía tocar aparecían como sobrante; y el cierre
+    le habría dejado el camión en cero, cobrándole las 100 como faltante al día
+    siguiente. Era mercancía fantasma: estaba arriba del camión y el sistema la
+    declaraba perdida.
+    """
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = cantidad + 40 "
+            " WHERE almacen_id = :a AND producto_id = :p"
+        ),
+        {"a": semilla["camion"], "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT cant_inicial FROM liquidacion_detalle WHERE liquidacion_id = :l"
+            ),
+            {"l": uuid.UUID(liq)},
+        )
+    ).mappings().one()
+    assert fila["cant_inicial"] == Decimal("40.000")
+
+    await _contar(cliente, liq, sesion, "100")
+    r = await _cerrar(cliente, liq)
+
+    assert "Cuadró producto por producto" in r.text
+    assert "faltante de" not in r.text
+
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("100.000")
+
+    # Y ni un movimiento de ajuste: no había nada que cobrarle.
     ajustes = (
         await sesion.execute(
             text("SELECT count(*) FROM movimientos_inventario WHERE tipo = 'ajuste'")
@@ -452,14 +547,68 @@ async def test_cerrar_cuadrado_deja_el_camion_en_cero_y_devuelve_a_la_bodega(
     assert ajustes == 0
 
 
-async def test_UN_FALTANTE_NO_SE_QUEDA_COMO_EXISTENCIA_DEL_CAMION(
+async def test_un_producto_que_HOY_NO_SE_CARGO_se_cuenta_igual(
     cliente, semilla, dia_de_trabajo, sesion
 ):
-    """Es el paso que se olvida, y el que hace que el inventario signifique algo.
+    """El que lleva tres días arriba y hoy no vino en la carga.
 
-    Se esperaban 60 y vuelven 54: faltan 6. Si esas 6 se quedaran como existencia
-    del camión, el cierre de mañana empezaría con un sobrante de 6 que nadie puso
-    ahí, y el descuadre de hoy contaminaría el de mañana para siempre.
+    Si el cierre solo mirara `carga_detalle`, ese producto no tendría renglón:
+    nadie lo contaría y nadie notaría si desapareciera del camión. Con el camión
+    como almacén rodante ese caso es el normal, no la excepción.
+    """
+    viejo = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO productos (id, sku, nombre, unidad_base) "
+            "VALUES (:p, 'SOPA-70', 'Sopa de fideo 70 g', 'PZA')"
+        ),
+        {"p": viejo},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO existencias (almacen_id, producto_id, cantidad) "
+            "VALUES (:c, :p, 25)"
+        ),
+        {"c": semilla["camion"], "p": viejo},
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+
+    renglones = (
+        await sesion.execute(
+            text(
+                "SELECT producto_id, cant_inicial, cant_cargada "
+                "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
+            ),
+            {"l": uuid.UUID(liq)},
+        )
+    ).mappings().all()
+    porProducto = {f["producto_id"]: f for f in renglones}
+    assert viejo in porProducto, "el sobrante de días anteriores no entró al cierre"
+    assert porProducto[viejo]["cant_inicial"] == Decimal("25.000")
+    assert porProducto[viejo]["cant_cargada"] == Decimal("0.000")
+
+    # Se cuentan 20 de las 25: faltan 5, y el camión se queda con 20.
+    await _contar_todos(
+        cliente, liq, sesion, {dia_de_trabajo["producto"]: "60", viejo: "20"}
+    )
+    r = await _cerrar(cliente, liq)
+
+    assert "faltante de 5 unidades" in r.text
+    existencias = await _existencias(sesion, viejo)
+    assert existencias[semilla["camion"]] == Decimal("20.000")
+
+
+async def test_UN_FALTANTE_SALE_DEL_SISTEMA_Y_EL_RESTO_SE_QUEDA(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Se esperaban 60 y se cuentan 54: faltan 6.
+
+    Las 6 salen del sistema —es la pérdida, y es lo que se le cobra—, y las 54 que
+    sí están se quedan arriba del camión. Si el faltante se quedara como existencia,
+    el cierre de mañana empezaría con un sobrante que nadie puso ahí.
     """
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
@@ -469,18 +618,11 @@ async def test_UN_FALTANTE_NO_SE_QUEDA_COMO_EXISTENCIA_DEL_CAMION(
     assert "1 producto(s) con diferencia" in r.text
     assert "faltante de 6 unidades" in r.text
 
-    en_camion = (
-        await sesion.execute(
-            text(
-                "SELECT cantidad FROM existencias "
-                " WHERE almacen_id = :a AND producto_id = :p"
-            ),
-            {"a": semilla["camion"], "p": dia_de_trabajo["producto"]},
-        )
-    ).scalar_one()
-    assert en_camion == Decimal("0.000")
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("54.000")
+    # La bodega no recibió nada: la mercancía no bajó.
+    assert existencias[semilla["bodega"]] == Decimal("760.000")
 
-    # El ajuste saca las 6 del sistema: es la pérdida, y es lo que se le cobra.
     ajuste = (
         await sesion.execute(
             text(
@@ -493,26 +635,12 @@ async def test_UN_FALTANTE_NO_SE_QUEDA_COMO_EXISTENCIA_DEL_CAMION(
     assert ajuste["almacen_origen_id"] == semilla["camion"]
     assert ajuste["almacen_destino_id"] is None
 
-    # Y la bodega solo recibió las 54 que de verdad volvieron.
-    en_bodega = (
-        await sesion.execute(
-            text(
-                "SELECT cantidad FROM existencias "
-                " WHERE almacen_id = :a AND producto_id = :p"
-            ),
-            {"a": semilla["bodega"], "p": dia_de_trabajo["producto"]},
-        )
-    ).scalar_one()
-    assert en_bodega == Decimal("814.000")
 
+async def test_un_sobrante_entra_al_camion(cliente, semilla, dia_de_trabajo, sesion):
+    """Se cuentan 66 donde se esperaban 60: casi siempre es una venta sin sincronizar.
 
-async def test_un_sobrante_tambien_deja_el_camion_en_cero(
-    cliente, semilla, dia_de_trabajo, sesion
-):
-    """Vuelven 66 donde se esperaban 60: casi siempre es una venta sin sincronizar.
-
-    El retorno de 66 deja el camión en −6, así que el ajuste tiene que entrar al
-    camión, no salir. Si el signo estuviera al revés, el camión quedaría en −12.
+    El ajuste tiene que ENTRAR al camión. Si el signo estuviera al revés, el camión
+    quedaría en 54 y mañana el vendedor vería menos de lo que trae.
     """
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
@@ -521,16 +649,8 @@ async def test_un_sobrante_tambien_deja_el_camion_en_cero(
 
     assert "sobrante de 6 unidades" in r.text
 
-    en_camion = (
-        await sesion.execute(
-            text(
-                "SELECT cantidad FROM existencias "
-                " WHERE almacen_id = :a AND producto_id = :p"
-            ),
-            {"a": semilla["camion"], "p": dia_de_trabajo["producto"]},
-        )
-    ).scalar_one()
-    assert en_camion == Decimal("0.000")
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("66.000")
 
     ajuste = (
         await sesion.execute(
@@ -545,17 +665,97 @@ async def test_un_sobrante_tambien_deja_el_camion_en_cero(
     assert ajuste["almacen_destino_id"] == semilla["camion"]
 
 
-async def test_CERRAR_VACIA_EL_INVENTARIO_DEL_TELEFONO(
+async def test_el_cierre_RECALCULA_antes_de_declarar(
     cliente, semilla, dia_de_trabajo, sesion
 ):
-    """La carga pasa a `liquidada`, y ese UPDATE publica el delta que el aplicador
-    de Dart usa para borrar `existencias_camion`.
+    """Una venta que entra entre abrir y cerrar no puede acabar cobrada como faltante.
 
-    Sin esto el vendedor saldría mañana con el inventario de ayer en la pantalla.
+    Es el mismo motivo por el que el arqueo recalcula el efectivo esperado, y aquí
+    pesa más: lo que quedara viejo sería la cantidad de mercancía que se le cobra a
+    una persona.
     """
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
-    await _contar(cliente, liq, sesion, "60")
+    await _contar(cliente, liq, sesion, "40")
+
+    # Llegan 20 piezas vendidas, tarde.
+    otra = uuid.uuid4()
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, carga_id, tipo,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            VALUES (:v, :d, 9, 'VEND01-000009', :c, :u, :a, :carga, 'contado',
+                    250.00, 250.00, now(), :dia)
+            """
+        ),
+        {
+            "v": otra,
+            "d": dia_de_trabajo["dispositivo"],
+            "c": dia_de_trabajo["cliente"],
+            "u": semilla["vendedor"],
+            "a": semilla["camion"],
+            "carga": dia_de_trabajo["carga"],
+            "dia": dia_de_trabajo["dia"],
+        },
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO venta_partidas (id, venta_id, linea, producto_id, unidad_codigo,
+                                        factor_unidad, cantidad, cantidad_base,
+                                        precio_unitario, importe)
+            VALUES (:id, :v, 1, :p, 'PZA', 1, 20.000, 20.000, 12.5000, 250.00)
+            """
+        ),
+        {"id": uuid.uuid4(), "v": otra, "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = cantidad - 20 "
+            " WHERE almacen_id = :c AND producto_id = :p"
+        ),
+        {"c": semilla["camion"], "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.commit()
+
+    await _cerrar(cliente, liq)
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT cant_vendida, diferencia FROM liquidacion_detalle "
+                " WHERE liquidacion_id = :l"
+            ),
+            {"l": uuid.UUID(liq)},
+        )
+    ).mappings().one()
+    assert fila["cant_vendida"] == Decimal("200.000"), "no recalculó lo vendido"
+    # 240 cargadas − 200 vendidas = 40 esperadas, y se contaron 40: cuadra.
+    assert fila["diferencia"] == Decimal("0.000")
+
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("40.000")
+
+
+async def test_CERRAR_LE_LLEVA_AL_TELEFONO_EL_AJUSTE_NO_EL_VACIADO(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """La carga pasa a `liquidada`, y ese UPDATE publica el delta del cierre.
+
+    Antes ese delta era la orden de **borrar** `existencias_camion`: el teléfono
+    amanecía en ceros. Ahora lleva el AJUSTE que la oficina escribió al comparar el
+    conteo contra el saldo del sistema, y el teléfono se lo SUMA a lo que tenga.
+
+    Se publica la diferencia y no el conteo a propósito: la oficina puede liquidar
+    lo de ayer a media mañana, con la carga de hoy ya encima del camión. Un conteo
+    de ayer aplicado como «el camión tiene esto» borraría la carga de hoy y las
+    ventas de la mañana. Una diferencia sigue siendo correcta cuando llega tarde.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "54")
     await _cerrar(cliente, liq)
 
     estado = (
@@ -579,25 +779,56 @@ async def test_CERRAR_VACIA_EL_INVENTARIO_DEL_TELEFONO(
     # Acotado al vendedor: la carga solo le importa a su equipo.
     assert delta["vendedor_id"] == semilla["vendedor"]
 
+    ajustes = delta["payload"]["ajustes"]
+    assert len(ajustes) == 1
+    assert ajustes[0]["producto_id"] == str(dia_de_trabajo["producto"])
+    # Negativo: al teléfono le sobran 6 piezas que no están en el camión.
+    assert Decimal(ajustes[0]["cantidad"]) == Decimal("-6.000")
 
-async def test_cerrar_dos_veces_no_duplica_el_retorno(
+
+async def test_un_cierre_que_cuadra_no_publica_ajustes(
     cliente, semilla, dia_de_trabajo, sesion
 ):
-    """Un doble clic devolvería la mercancía dos veces a la bodega."""
+    """El caso normal. Publicar ceros sería ruido que el teléfono tendría que
+    ignorar, y cada renglón de ruido es una oportunidad de aplicarlo mal."""
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
     await _contar(cliente, liq, sesion, "60")
     await _cerrar(cliente, liq)
 
+    delta = (
+        await sesion.execute(
+            text(
+                "SELECT payload FROM change_log "
+                " WHERE entidad = 'carga' AND entidad_id = :c "
+                " ORDER BY cursor DESC LIMIT 1"
+            ),
+            {"c": dia_de_trabajo["carga"]},
+        )
+    ).mappings().one()
+    assert delta["payload"]["ajustes"] == []
+
+
+async def test_cerrar_dos_veces_no_duplica_el_ajuste(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Un doble clic cobraría el faltante dos veces."""
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "54")
+    await _cerrar(cliente, liq)
+
     segunda = await _cerrar(cliente, liq)
     assert "Ya estaba cerrada" in segunda.text
 
-    retornos = (
+    ajustes = (
         await sesion.execute(
-            text("SELECT count(*) FROM movimientos_inventario WHERE tipo = 'retorno'")
+            text("SELECT count(*) FROM movimientos_inventario WHERE tipo = 'ajuste'")
         )
     ).scalar_one()
-    assert retornos == 1
+    assert ajustes == 1
+    existencias = await _existencias(sesion, dia_de_trabajo["producto"])
+    assert existencias[semilla["camion"]] == Decimal("54.000")
 
 
 async def test_el_libro_mayor_del_cierre_no_se_puede_editar(
@@ -661,12 +892,15 @@ async def test_NO_SE_CIERRA_CON_SOBRES_EN_CUARENTENA(
     ).scalar_one()
     assert estado != "cerrada"
     # Y no se movió nada de inventario.
-    retornos = (
+    movimientos = (
         await sesion.execute(
-            text("SELECT count(*) FROM movimientos_inventario WHERE tipo = 'retorno'")
+            text(
+                "SELECT count(*) FROM movimientos_inventario "
+                " WHERE tipo IN ('retorno', 'ajuste')"
+            )
         )
     ).scalar_one()
-    assert retornos == 0
+    assert movimientos == 0
 
 
 async def test_no_se_cierra_si_el_equipo_no_ha_sincronizado(
@@ -1047,3 +1281,75 @@ async def test_cerrar_exige_el_token_csrf(cliente, semilla, dia_de_trabajo, sesi
         data={"csrf": "inventado", "confirmo_sincronizado": "1"},
     )
     assert r.status_code == 403
+
+
+async def test_una_venta_SIN_CARGA_cuenta_en_el_cierre_del_dia(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """El vendedor que sale a vender lo que le quedó, sin carga nueva.
+
+    Con el camión rodante eso dejó de ser raro: puede salir con el sobrante, o
+    vender después de que la oficina liquidó la carga de ayer. Esas ventas llevan
+    `carga_id` nulo. Si el cierre no las contara, el renglón diría que el camión
+    amaneció con menos de lo que amaneció, y el papel que firma el vendedor
+    explicaría su día con un número falso.
+
+    La diferencia no cambia —el esperado siempre acaba siendo el saldo vivo del
+    camión, ver `saldo_inicial`—, pero las columnas que la explican sí, y son las
+    que alguien lee seis meses después para entender un faltante.
+    """
+    huerfana = uuid.uuid4()
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, carga_id, tipo,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            VALUES (:v, :d, 7, 'VEND01-000007', :c, :u, :a, NULL, 'contado',
+                    125.00, 125.00, now(), :dia)
+            """
+        ),
+        {
+            "v": huerfana,
+            "d": dia_de_trabajo["dispositivo"],
+            "c": dia_de_trabajo["cliente"],
+            "u": semilla["vendedor"],
+            "a": semilla["camion"],
+            "dia": dia_de_trabajo["dia"],
+        },
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO venta_partidas (id, venta_id, linea, producto_id, unidad_codigo,
+                                        factor_unidad, cantidad, cantidad_base,
+                                        precio_unitario, importe)
+            VALUES (:id, :v, 1, :p, 'PZA', 1, 10.000, 10.000, 12.5000, 125.00)
+            """
+        ),
+        {"id": uuid.uuid4(), "v": huerfana, "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = cantidad - 10 "
+            " WHERE almacen_id = :c AND producto_id = :p"
+        ),
+        {"c": semilla["camion"], "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT cant_inicial, cant_vendida FROM liquidacion_detalle "
+                " WHERE liquidacion_id = :l"
+            ),
+            {"l": uuid.UUID(liq)},
+        )
+    ).mappings().one()
+    assert fila["cant_vendida"] == Decimal("190.000"), "no contó la venta sin carga"
+    # Y el inicial sigue siendo cero: ese camión amaneció vacío de verdad.
+    assert fila["cant_inicial"] == Decimal("0.000")

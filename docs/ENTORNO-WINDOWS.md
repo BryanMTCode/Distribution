@@ -82,7 +82,7 @@ git checkout claude/exciting-hamilton-asnv8o
 make instalar     # uv baja Python 3.12 y lo que fija server/uv.lock
 make db           # PostgreSQL + PostGIS en Docker
 make migrar       # aplica las 28 migraciones
-make pruebas      # deben pasar 995
+make pruebas      # deben pasar 1003
 ```
 
 Si ves `995 passed` (o `993 passed, 1 skipped`: una prueba del tablero se salta el día 1 del mes), tu entorno está bien. Si no, el error casi siempre es uno de estos tres:
@@ -395,8 +395,9 @@ pantalla te pide:
   revisar ese cierre más adelante se verá que descansó en tu palabra y no en un dato
   del equipo, que es la verdad.
 
-Al cerrar, el camión queda en cero (con el retorno a bodega más un ajuste por la
-diferencia) y el teléfono vacía su inventario en la siguiente sincronización.
+Al cerrar, el camión queda **en lo contado**: la mercancía que no se vendió se
+queda arriba para el día siguiente y solo la diferencia se escribe como ajuste. El
+teléfono recibe ese ajuste en la siguiente sincronización, no una orden de vaciarse.
 
 ### Ver el inventario
 

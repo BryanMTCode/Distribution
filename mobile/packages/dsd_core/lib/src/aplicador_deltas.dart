@@ -67,7 +67,7 @@ class AplicadorDeltas {
         'cliente' => _cliente(delta),
         'cartera' => _cartera(delta, recibidoEn),
         'lista_precios' => _listaPrecios(delta),
-        'carga' => _carga(delta),
+        'carga' => _carga(delta, recibidoEn),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
         // Las promociones todavía no se aplican: se aceptan para no llenar
@@ -291,45 +291,47 @@ class AplicadorDeltas {
   // La carga del camión
   // -------------------------------------------------------------------------
 
-  /// El inventario con el que el vendedor sale a la calle.
+  /// El inventario que el vendedor trae encima.
   ///
   /// ───────────────────────────────────────────────────────────────────────
-  /// LA CARGA CONFIRMADA ES EL SNAPSHOT BASE DEL DÍA
+  /// EL CAMIÓN ES UN ALMACÉN RODANTE: LA CARGA SE SUMA, NO REEMPLAZA
   /// ───────────────────────────────────────────────────────────────────────
-  /// Es el único delta que trae su detalle dentro del mismo payload, y no es un
-  /// capricho: el teléfono necesita la carga **completa o nada**. Con un delta
-  /// por renglón, una tanda cortada a la mitad dejaría el camión con cinco de
-  /// los doce productos que trae, y el vendedor descubriría el faltante frente
-  /// al cliente.
+  /// Decisión de la dirección, octubre 2026: la mercancía que no se vende se
+  /// queda a dormir en el camión y se acumula con la carga del día siguiente.
+  ///
+  /// Antes este método hacía lo contrario, y lo decía con estas palabras: «la
+  /// carga confirmada es el inventario completo con el que arranca el día». Con
+  /// mercancía que duerme arriba, eso le borraba al vendedor lo que traía, y el
+  /// cierre del servidor se lo cobraba como faltante.
   ///
   /// ───────────────────────────────────────────────────────────────────────
-  /// LO QUE NUNCA DEBE PASAR: QUE REAPLICAR EL DELTA REVIVA LO VENDIDO
+  /// SUMAR OBLIGA A SABER SI YA SE SUMÓ
   /// ───────────────────────────────────────────────────────────────────────
-  /// Un `pull` se puede repetir tras un corte de red, y entonces este mismo
-  /// delta llega dos veces. Si la segunda vez volviera a escribir
-  /// `cant_actual = cant_cargada`, el camión recuperaría en la base la
-  /// mercancía que ya salió físicamente, y el vendedor podría venderla otra
-  /// vez. El descuadre aparecería en la liquidación como un faltante que nadie
-  /// sabría explicar.
+  /// Reemplazar era idempotente por naturaleza: escribir dos veces el mismo
+  /// número da el mismo número. Sumar no lo es. Un `pull` se puede repetir tras
+  /// un corte de red, y entonces este mismo delta llega dos veces; sumarlo dos
+  /// veces le regalaría al camión una carga completa. El vendedor la ofrecería,
+  /// no la tendría, y el descuadre saldría en la liquidación sin explicación.
   ///
-  /// Por eso el `ON CONFLICT` lleva un `WHERE`: un renglón que **ya pertenece a
-  /// esta carga** no se toca. Solo se sobrescribe el que viene de otra carga —el
-  /// sobrante de ayer— o el que no tenía ninguna.
+  /// De eso se encarga `cargas_aplicadas`: una carga se suma UNA vez, y la
+  /// segunda llegada solo refresca los marcadores del día.
   ///
   /// ───────────────────────────────────────────────────────────────────────
-  /// UNA CARGA QUE YA TERMINÓ NO BORRA LA DE HOY
+  /// EL CIERRE TRAE UN AJUSTE, NO UNA ORDEN DE VACIAR
   /// ───────────────────────────────────────────────────────────────────────
-  /// Cuando la oficina liquida o cancela una carga, el servidor emite otro delta
-  /// de esa misma carga con el estado nuevo. Ese delta puede llegar **después**
-  /// de la carga de hoy —la oficina liquida lo de ayer a media mañana—, así que
-  /// no puede tratarse como "éste es el inventario vigente": borraría el de hoy
-  /// y repondría el de ayer.
+  /// Cuando la oficina liquida, el delta llega con `estado: 'liquidada'` y con
+  /// los `ajustes` del conteo físico: la diferencia, con signo, entre lo que se
+  /// contó arriba del camión y lo que el sistema creía. El teléfono la SUMA.
   ///
-  /// La regla: un estado terminal borra **solo sus propios renglones**. Si la de
-  /// hoy ya los reemplazó, no borra nada, que es exactamente lo correcto.
-  bool _carga(Delta delta) {
+  /// Es una diferencia y no un conteo por una razón de calendario: la oficina
+  /// liquida lo de ayer a media mañana, con la carga de hoy ya encima y con
+  /// ventas hechas. Un conteo de ayer aplicado como «el camión tiene esto»
+  /// borraría la carga de hoy y las ventas de la mañana. Una diferencia sigue
+  /// siendo correcta cuando llega tarde.
+  bool _carga(Delta delta, String recibidoEn) {
     if (delta.operacion == 'delete') {
-      _borrarCarga(delta.entidadId);
+      // El payload de un borrado viene vacío, así que no hay detalle que restar.
+      _soltarCargaActiva(delta.entidadId);
       return true;
     }
 
@@ -338,9 +340,17 @@ class AplicadorDeltas {
 
     final estado = c['estado'] as String?;
 
-    // Terminales: la carga se acabó. Solo lo suyo.
-    if (estado == 'liquidada' || estado == 'cancelada') {
-      _borrarCarga(delta.entidadId);
+    // El cierre del día: se aplica el ajuste y la carga deja de ser la activa.
+    // La mercancía NO se borra: sigue arriba del camión.
+    if (estado == 'liquidada') {
+      _aplicarAjusteDelCierre(delta.entidadId, c['ajustes'], recibidoEn);
+      _soltarCargaActiva(delta.entidadId);
+      return true;
+    }
+
+    // Cancelada: la carga nunca debió salir, así que se deshace lo que subió.
+    if (estado == 'cancelada') {
+      _deshacerCarga(delta.entidadId, c['detalle']);
       return true;
     }
 
@@ -350,83 +360,151 @@ class AplicadorDeltas {
 
     final detalle = (c['detalle'] as List?) ?? const [];
 
-    // Una carga confirmada SIN renglones no vacía el camión.
+    // Una carga confirmada SIN renglones no cambia el inventario.
     //
     // El panel no deja confirmar una carga vacía, así que esto solo puede llegar
     // de un script corriendo contra la base —alguien que inserta la carga ya en
-    // 'confirmada' y le pone el detalle después—. El delta saldría con
-    // `detalle: []`, y tratarlo como el inventario del día le dejaría el camión
-    // vacío al vendedor a media ruta.
-    //
-    // Ignorarlo es seguro porque el caso legítimo no existe: una carga sin
-    // renglones no es una carga. Si el detalle llega después, el UPDATE que lo
-    // acompañe publica otro delta con los renglones completos.
-    if (detalle.isEmpty) return true;
+    // 'confirmada' y le pone el detalle después—. Lo que NO se hace es marcarla
+    // como aplicada: si se marcara, el delta que llegara después con los
+    // renglones completos no entraría nunca.
+    if (detalle.isEmpty) {
+      _marcarCargaActiva(delta.entidadId, c['fecha_operativa']);
+      return true;
+    }
 
-    // Lo que no es de esta carga es el sobrante de un día anterior. Se va: la
-    // carga confirmada es el inventario completo con el que arranca el día.
-    _db.execute(
-      'DELETE FROM existencias_camion WHERE carga_id IS NOT ?',
-      [delta.entidadId],
-    );
+    if (!_cargaYaAplicada(delta.entidadId)) {
+      for (final fila in detalle) {
+        final r = fila as Map<String, Object?>;
+        final producto = r['producto_id'] as String?;
+        if (producto == null) continue;
 
-    for (final fila in detalle) {
-      final r = fila as Map<String, Object?>;
-      final producto = r['producto_id'] as String?;
-      if (producto == null) continue;
+        // La cantidad llega como string de tres decimales
+        // (contracts/README.md §1.4). Pasa por `Cantidad` para que ningún
+        // `double` la toque: de ahí salen las milésimas enteras y de vuelta al
+        // REAL de SQLite, que es lo que el resto del teléfono ya lee.
+        final cantidad = Cantidad.deTexto(_aTextoCantidad(r['cantidad']));
 
-      // La cantidad llega como string de tres decimales
-      // (contracts/README.md §1.4). Pasa por `Cantidad` para que ningún
-      // `double` la toque: de ahí salen las milésimas enteras y de vuelta al
-      // REAL de SQLite, que es lo que el resto del teléfono ya lee.
-      final cantidad = Cantidad.deTexto(_aTextoCantidad(r['cantidad']));
+        _db.execute(
+          "INSERT INTO existencias_camion (producto_id, cant_cargada, "
+          "                                cant_actual, carga_id) "
+          "VALUES (?1, ?2, ?2, ?3) "
+          "ON CONFLICT(producto_id) DO UPDATE SET "
+          // El saldo SE SUMA: lo de antes sigue arriba del camión.
+          "  cant_actual  = existencias_camion.cant_actual + excluded.cant_actual, "
+          // Y `cant_cargada` es lo de ESTA carga, no un acumulado: dice cuánto
+          // entregó la bodega la última vez, que es lo que se compara contra el
+          // papel de la carga.
+          "  cant_cargada = excluded.cant_cargada, "
+          "  carga_id     = excluded.carga_id",
+          [producto, cantidad.milesimos / 1000, delta.entidadId],
+        );
+      }
 
       _db.execute(
-        '''
-        INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual,
-                                        carga_id)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(producto_id) DO UPDATE SET
-          cant_cargada = excluded.cant_cargada,
-          cant_actual  = excluded.cant_actual,
-          carga_id     = excluded.carga_id
-        WHERE existencias_camion.carga_id IS NOT excluded.carga_id
-        ''',
-        [
-          producto,
-          cantidad.milesimos / 1000,
-          cantidad.milesimos / 1000,
-          delta.entidadId,
-        ],
+        'INSERT INTO cargas_aplicadas (carga_id, aplicada_en) VALUES (?, ?)',
+        [delta.entidadId, recibidoEn],
       );
     }
 
-    // La carga activa: de aquí la lee el carrito para estampar `carga_id` en
-    // cada venta. Sin ella las ventas del día no se pueden amarrar a la carga y
-    // la liquidación no tendría contra qué cuadrar.
-    _db.execute(
-      '''
-      INSERT INTO sync_estado (clave, valor) VALUES ('carga_id_activa', ?)
-      ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
-      ''',
-      [delta.entidadId],
-    );
-    if (c['fecha_operativa'] != null) {
-      _db.execute(
-        '''
-        INSERT INTO sync_estado (clave, valor) VALUES ('fecha_operativa', ?)
-        ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
-        ''',
-        [c['fecha_operativa']],
-      );
-    }
+    _marcarCargaActiva(delta.entidadId, c['fecha_operativa']);
     return true;
   }
 
-  void _borrarCarga(String cargaId) {
-    _db.execute('DELETE FROM existencias_camion WHERE carga_id = ?', [cargaId]);
-    // Si la que terminó era la activa, deja de serlo. Una venta sin carga es
-    // mejor que una venta amarrada a una carga ya liquidada.
+  bool _cargaYaAplicada(String cargaId) => _db
+      .select('SELECT 1 FROM cargas_aplicadas WHERE carga_id = ?', [cargaId])
+      .isNotEmpty;
+
+  /// La carga activa: de aquí la lee el carrito para estampar `carga_id` en cada
+  /// venta. Sin ella las ventas del día no se pueden amarrar a la carga y la
+  /// liquidación no tendría contra qué cuadrar.
+  void _marcarCargaActiva(String cargaId, Object? fechaOperativa) {
+    _db.execute(
+      "INSERT INTO sync_estado (clave, valor) VALUES ('carga_id_activa', ?) "
+      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      [cargaId],
+    );
+    if (fechaOperativa != null) {
+      _db.execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('fecha_operativa', ?) "
+        'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+        [fechaOperativa],
+      );
+    }
+  }
+
+  /// El ajuste que la oficina escribió al comparar el conteo contra el sistema.
+  ///
+  /// Negativo es faltante —se le cobró al vendedor, y sale del camión—; positivo
+  /// es sobrante y entra. Se aplica UNA vez: aplicarlo dos dejaría el teléfono
+  /// con menos mercancía de la que el vendedor trae encima.
+  void _aplicarAjusteDelCierre(
+    String cargaId,
+    Object? ajustes,
+    String recibidoEn,
+  ) {
+    final ya = _db.select(
+      'SELECT ajuste_aplicado_en FROM cargas_aplicadas WHERE carga_id = ?',
+      [cargaId],
+    );
+    if (ya.isNotEmpty && ya.single['ajuste_aplicado_en'] != null) return;
+
+    if (ajustes is List) {
+      for (final fila in ajustes) {
+        if (fila is! Map<String, Object?>) continue;
+        final producto = fila['producto_id'] as String?;
+        if (producto == null) continue;
+        final cantidad = Cantidad.deTexto(_aTextoCantidad(fila['cantidad']));
+        if (cantidad.esCero) continue;
+
+        // Sin `INSERT`: un ajuste sobre un producto que el camión no trae no
+        // crea el renglón. Si no lo trae, el ajuste ya está reflejado en eso.
+        _db.execute(
+          'UPDATE existencias_camion SET cant_actual = cant_actual + ? '
+          ' WHERE producto_id = ?',
+          [cantidad.milesimos / 1000, producto],
+        );
+      }
+    }
+
+    // Se marca aunque la carga no estuviera registrada —puede venir de antes de
+    // esta versión—: lo que importa es no aplicar el mismo ajuste dos veces.
+    _db.execute(
+      'INSERT INTO cargas_aplicadas (carga_id, aplicada_en, ajuste_aplicado_en) '
+      'VALUES (?1, ?2, ?2) '
+      'ON CONFLICT(carga_id) DO UPDATE SET ajuste_aplicado_en = ?2',
+      [cargaId, recibidoEn],
+    );
+  }
+
+  /// Deshace lo que una carga había subido al camión.
+  ///
+  /// Resta su detalle en vez de borrar los renglones: lo que había ANTES de esa
+  /// carga sigue arriba del camión, y borrar el renglón se llevaría también el
+  /// sobrante de los días anteriores.
+  ///
+  /// Si la carga nunca se aplicó no hay nada que deshacer, y eso es lo correcto:
+  /// cancelar un borrador no debe mover inventario.
+  void _deshacerCarga(String cargaId, Object? detalle) {
+    if (_cargaYaAplicada(cargaId) && detalle is List) {
+      for (final fila in detalle) {
+        if (fila is! Map<String, Object?>) continue;
+        final producto = fila['producto_id'] as String?;
+        if (producto == null) continue;
+        final cantidad = Cantidad.deTexto(_aTextoCantidad(fila['cantidad']));
+        _db.execute(
+          'UPDATE existencias_camion SET cant_actual = cant_actual - ? '
+          ' WHERE producto_id = ?',
+          [cantidad.milesimos / 1000, producto],
+        );
+      }
+      _db.execute('DELETE FROM cargas_aplicadas WHERE carga_id = ?', [cargaId]);
+    }
+    _soltarCargaActiva(cargaId);
+  }
+
+  /// Si la carga que terminó era la activa, deja de serlo. Una venta sin carga es
+  /// mejor que una venta amarrada a una carga ya cerrada.
+  void _soltarCargaActiva(String cargaId) {
     _db.execute(
       "DELETE FROM sync_estado WHERE clave = 'carga_id_activa' AND valor = ?",
       [cargaId],

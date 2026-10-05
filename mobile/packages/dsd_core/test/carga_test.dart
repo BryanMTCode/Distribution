@@ -1,21 +1,35 @@
 /// La carga del camión, del lado del teléfono.
 ///
 /// ───────────────────────────────────────────────────────────────────────────
+/// EL CAMIÓN ES UN ALMACÉN RODANTE
+/// ───────────────────────────────────────────────────────────────────────────
+/// Decisión de la dirección, octubre 2026: la mercancía que no se vende se queda
+/// a dormir en el camión y se acumula con la carga del día siguiente. Así que la
+/// carga **se suma** al saldo; no lo reemplaza.
+///
+/// ───────────────────────────────────────────────────────────────────────────
 /// QUÉ DEFIENDEN ESTAS PRUEBAS
 /// ───────────────────────────────────────────────────────────────────────────
 /// El delta de carga es el único que trae su detalle dentro del payload, y el
-/// único que puede **destruir** inventario que el vendedor ya usó. Dos escenarios
-/// lo rompen en silencio y ninguno se nota probando el camino feliz:
+/// único que puede **destruir** inventario que el vendedor ya usó. Cuatro
+/// escenarios lo rompen en silencio y ninguno se nota probando el camino feliz:
 ///
-/// 1. **El `pull` se repite tras un corte de red.** Si reaplicar el delta
-///    volviera a poner `cant_actual = cant_cargada`, el camión recuperaría en la
-///    base la mercancía que ya salió físicamente. El vendedor la volvería a
-///    vender, y el faltante aparecería en la liquidación sin explicación.
+/// 1. **El `pull` se repite tras un corte de red.** El mismo delta llega dos
+///    veces. Sumarlo dos veces le regalaría al camión una carga completa: el
+///    vendedor la ofrecería, no la tendría, y el descuadre saldría en la
+///    liquidación sin explicación. Reemplazar era idempotente por naturaleza;
+///    sumar exige recordar qué cargas ya entraron.
 ///
-/// 2. **La oficina liquida la carga de ayer a media mañana.** Ese delta llega
-///    DESPUÉS de la carga de hoy. Si se tratara como "éste es el inventario
-///    vigente", borraría el de hoy y repondría el de ayer — con el camión ya en
-///    la calle.
+/// 2. **La carga de hoy no puede borrar el sobrante de ayer.** Es la decisión de
+///    negocio: lo de antes sigue arriba del camión.
+///
+/// 3. **La oficina liquida la carga de ayer a media mañana.** Ese delta llega
+///    DESPUÉS de la carga de hoy y con ventas ya hechas. Por eso trae el AJUSTE
+///    del conteo —una diferencia con signo— y no el conteo: un conteo de ayer
+///    aplicado como "el camión tiene esto" borraría la carga de hoy.
+///
+/// 4. **El ajuste del cierre tampoco se aplica dos veces**, o el faltante se le
+///    cobraría al vendedor por duplicado.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -31,6 +45,7 @@ Delta _cargaDelta(
   String cargaId, {
   String estado = 'confirmada',
   List<Map<String, Object?>> detalle = const [],
+  List<Map<String, Object?>>? ajustes,
   String fecha = '2026-09-29',
   String operacion = 'upsert',
 }) =>
@@ -46,8 +61,15 @@ Delta _cargaDelta(
         'version': 1,
         'fecha_operativa': fecha,
         'detalle': detalle,
+        if (ajustes != null) 'ajustes': ajustes,
       },
     );
+
+/// Un renglón de ajuste del cierre: la diferencia CON SIGNO.
+Map<String, Object?> _ajuste(String producto, String cantidad) => {
+      'producto_id': producto,
+      'cantidad': cantidad,
+    };
 
 Map<String, Object?> _renglon(String producto, String cantidad) => {
       'producto_id': producto,
@@ -125,8 +147,10 @@ void main() {
     );
   });
 
-  test('REAPLICAR EL MISMO DELTA NO REVIVE LO VENDIDO', () {
-    // El caso que un `pull` repetido provoca de verdad.
+  test('REAPLICAR EL MISMO DELTA NO SUMA LA CARGA DOS VECES', () {
+    // El caso que un `pull` repetido provoca de verdad. Con la carga sumándose en
+    // vez de reemplazando, esto es lo único que separa al vendedor de ver el
+    // doble de mercancía de la que trae.
     final delta = _cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]);
     aplicar(delta);
 
@@ -139,27 +163,47 @@ void main() {
     expect(
       cantidadActual(_atun),
       equals(150.0),
-      reason: 'reaplicar la carga repuso mercancía que ya salió del camión',
+      reason: 'reaplicar la carga volvió a sumarla, o repuso lo ya vendido',
     );
-    // Y el snapshot de lo cargado sigue siendo el original.
+    // Y el snapshot de lo cargado sigue siendo el de esa carga.
     expect(
       db.select('SELECT cant_cargada FROM existencias_camion').single['cant_cargada'],
       equals(240.0),
     );
   });
 
-  test('una carga nueva se lleva el sobrante de la anterior', () {
+  test('UNA CARGA NUEVA SE SUMA AL SOBRANTE DE LA ANTERIOR', () {
+    // La decisión de negocio, probada: el camión no amanece en ceros.
+    //
+    // Antes esta prueba afirmaba lo contrario —"una carga nueva se lleva el
+    // sobrante de la anterior"— porque el modelo era que la carga confirmada era
+    // el inventario completo del día. Con mercancía durmiendo arriba del camión,
+    // eso le borraba al vendedor lo que traía y el cierre se lo cobraba.
+    aplicar(_cargaDelta(_ayer, detalle: [_renglon(_sopa, '48.000')]));
+    db.execute('UPDATE existencias_camion SET cant_actual = 6');
+
+    aplicar(_cargaDelta(_hoy, detalle: [
+      _renglon(_atun, '240.000'),
+      _renglon(_sopa, '24.000'),
+    ]));
+
+    // Las 6 sopas que quedaron ayer siguen arriba, más las 24 de hoy.
+    expect(cantidadActual(_sopa), equals(30.0));
+    expect(cantidadActual(_atun), equals(240.0));
+    expect(cargaActiva(), equals(_hoy));
+  });
+
+  test('un producto que hoy no se cargó se queda con su saldo', () {
     aplicar(_cargaDelta(_ayer, detalle: [_renglon(_sopa, '48.000')]));
     db.execute('UPDATE existencias_camion SET cant_actual = 6');
 
     aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
 
-    // La carga confirmada es el inventario COMPLETO del día: lo que no viene en
-    // ella no está en el camión. Dejar las 6 sopas de ayer haría que el vendedor
-    // las ofreciera sin traerlas.
-    expect(cantidadActual(_sopa), isNull);
-    expect(cantidadActual(_atun), equals(240.0));
-    expect(cargaActiva(), equals(_hoy));
+    expect(
+      cantidadActual(_sopa),
+      equals(6.0),
+      reason: 'el vendedor trae esas 6 sopas y tiene que poder venderlas',
+    );
   });
 
   test('LIQUIDAR LA CARGA DE AYER NO BORRA LA DE HOY', () {
@@ -168,7 +212,8 @@ void main() {
     aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
     db.execute('UPDATE existencias_camion SET cant_actual = 150');
 
-    aplicar(_cargaDelta(_ayer, estado: 'liquidada', detalle: [_renglon(_sopa, '48.000')]));
+    aplicar(_cargaDelta(_ayer,
+        estado: 'liquidada', detalle: [_renglon(_sopa, '48.000')], ajustes: []));
 
     expect(
       cantidadActual(_atun),
@@ -178,13 +223,78 @@ void main() {
     expect(cargaActiva(), equals(_hoy), reason: 'perdió la carga activa del día');
   });
 
-  test('cancelar la carga vigente vacía el camión y suelta la carga activa', () {
+  test('EL CIERRE NO VACÍA EL CAMIÓN: la mercancía se queda arriba', () {
+    // Lo que antes hacía este delta era borrar `existencias_camion`. El vendedor
+    // amanecía en ceros con el camión lleno.
     aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
-    aplicar(_cargaDelta(_hoy, estado: 'cancelada'));
+    db.execute('UPDATE existencias_camion SET cant_actual = 60');
 
-    expect(db.select('SELECT * FROM existencias_camion'), isEmpty);
+    aplicar(_cargaDelta(_hoy, estado: 'liquidada', ajustes: []));
+
+    expect(cantidadActual(_atun), equals(60.0));
+    // Pero la carga ya terminó: deja de ser la activa.
+    expect(cargaActiva(), isNull);
+  });
+
+  test('el ajuste del cierre se SUMA al saldo, con su signo', () {
+    // El conteo dijo 54 donde el sistema tenía 60: faltan 6, y la oficina las
+    // sacó del camión. El teléfono tiene que quedar en el mismo número que el
+    // servidor, o mañana los dos discuten.
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+    db.execute('UPDATE existencias_camion SET cant_actual = 60');
+
+    aplicar(_cargaDelta(_hoy,
+        estado: 'liquidada', ajustes: [_ajuste(_atun, '-6.000')]));
+
+    expect(cantidadActual(_atun), equals(54.0));
+  });
+
+  test('un sobrante del cierre entra al camión', () {
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+    db.execute('UPDATE existencias_camion SET cant_actual = 60');
+
+    aplicar(_cargaDelta(_hoy,
+        estado: 'liquidada', ajustes: [_ajuste(_atun, '6.000')]));
+
+    expect(cantidadActual(_atun), equals(66.0));
+  });
+
+  test('EL AJUSTE DEL CIERRE NO SE APLICA DOS VECES', () {
+    // El delta de la carga liquidada se puede repetir igual que cualquier otro.
+    // Aplicar el faltante dos veces se lo cobraría al vendedor por duplicado.
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+    db.execute('UPDATE existencias_camion SET cant_actual = 60');
+
+    final cierre = _cargaDelta(_hoy,
+        estado: 'liquidada', ajustes: [_ajuste(_atun, '-6.000')]);
+    aplicar(cierre);
+    aplicar(cierre);
+
+    expect(cantidadActual(_atun), equals(54.0));
+  });
+
+  test('cancelar la carga vigente RESTA lo que esa carga había subido', () {
+    // Y no borra el renglón: lo que el camión traía de antes sigue arriba.
+    aplicar(_cargaDelta(_ayer, detalle: [_renglon(_atun, '40.000')]));
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+    expect(cantidadActual(_atun), equals(280.0));
+
+    aplicar(_cargaDelta(_hoy,
+        estado: 'cancelada', detalle: [_renglon(_atun, '240.000')]));
+
+    expect(cantidadActual(_atun), equals(40.0));
     // Una venta sin carga es mejor que una venta amarrada a una carga cancelada.
     expect(cargaActiva(), isNull);
+  });
+
+  test('cancelar una carga que nunca se aplicó no mueve inventario', () {
+    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
+
+    aplicar(_cargaDelta(_ayer,
+        estado: 'cancelada', detalle: [_renglon(_atun, '100.000')]));
+
+    expect(cantidadActual(_atun), equals(240.0));
+    expect(cargaActiva(), equals(_hoy));
   });
 
   test('un borrador no llena el camión', () {
@@ -197,21 +307,21 @@ void main() {
     expect(cargaActiva(), isNull);
   });
 
-  test('una carga confirmada SIN renglones no vacía el camión', () {
+  test('una carga confirmada SIN renglones no se marca como aplicada', () {
     // El panel no deja confirmar una carga vacía, así que esto solo llega de un
     // script contra la base: alguien inserta la carga ya en 'confirmada' y le
-    // pone el detalle después. Ese delta sale con `detalle: []`, y tratarlo como
-    // el inventario del día le dejaría el camión vacío al vendedor a media ruta.
-    aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
-    db.execute('UPDATE existencias_camion SET cant_actual = 150');
-
+    // pone el detalle después. Si se marcara como aplicada, el delta que llegara
+    // después con los renglones completos no entraría NUNCA.
     aplicar(_cargaDelta('carga-vacia', detalle: const []));
+    expect(db.select('SELECT * FROM existencias_camion'), isEmpty);
 
-    expect(cantidadActual(_atun), equals(150.0));
-    expect(cargaActiva(), equals(_hoy));
+    aplicar(_cargaDelta('carga-vacia', detalle: [_renglon(_atun, '240.000')]));
+    expect(cantidadActual(_atun), equals(240.0));
   });
 
-  test('un delta de borrado se lleva solo lo de esa carga', () {
+  test('un delta de borrado no se lleva el inventario del camión', () {
+    // El payload de un borrado viene vacío: no hay detalle que restar, y restar a
+    // ciegas sería peor. Solo suelta la carga activa si era esa.
     aplicar(_cargaDelta(_hoy, detalle: [_renglon(_atun, '240.000')]));
     aplicar(_cargaDelta(_ayer, operacion: 'delete'));
 

@@ -151,8 +151,8 @@ END $$;
 -- =============================================================================
 -- INVARIANTE 4 — La liquidación detecta el faltante aritméticamente.
 -- =============================================================================
---   retornado - (cargado - vendido - merma + devuelto) = diferencia
--- Cargó 100, vendió 60, mermó 5, regresó 30 ⇒ faltan 5 piezas.
+--   contado - (inicial + cargado - vendido - merma + devuelto) = diferencia
+-- Amaneció con 20, cargó 100, vendió 60, mermó 5, contó 50 ⇒ faltan 5 piezas.
 -- -----------------------------------------------------------------------------
 INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id,
                     vendedor_id, fecha_operativa, estado)
@@ -166,11 +166,13 @@ VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','ZZ-HUMO-LQ-0001',
         '99999999-9999-9999-9999-999999999999',
         '22222222-2222-2222-2222-222222222222', CURRENT_DATE);
 
+-- Con saldo inicial: el camión amaneció con 20 piezas de días anteriores
+-- (migración 0030). Sin ese término, esas 20 saldrían como faltante.
 INSERT INTO liquidacion_detalle
-    (liquidacion_id, producto_id, cant_cargada, cant_vendida, cant_merma,
-     cant_devuelta, cant_retornada)
+    (liquidacion_id, producto_id, cant_inicial, cant_cargada, cant_vendida,
+     cant_merma, cant_devuelta, cant_contada)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        '55555555-5555-5555-5555-555555555555', 100, 60, 5, 0, 30);
+        '55555555-5555-5555-5555-555555555555', 20, 100, 60, 5, 0, 50);
 
 \echo '--- INVARIANTE 4: cálculo de faltante en liquidación ---'
 SELECT CASE WHEN diferencia = -5

@@ -441,7 +441,10 @@ las cuatro pantallas están enlazadas entre sí.
 1. Escoge almacén. El camión es un almacén como cualquier otro: ahí ves lo que trae cada vendedor.
 2. Un número **en negativo no es un error del sistema**: es un conteo por revisar. Pasa cuando se cargó
    más de lo registrado, o cuando una venta offline entró con el camión ya en cero.
-3. Si la pantalla dice que **la caché no cuadra con el libro mayor**, eso **sí** es un bug: alguna
+3. Y un saldo que **no amanece en cero es lo normal**: el camión es un almacén rodante y lo que no se
+   vendió se queda arriba (ADR 0002 §17). Lo que lo pone en cero es que se venda todo, no que pase la
+   noche.
+4. Si la pantalla dice que **la caché no cuadra con el libro mayor**, eso **sí** es un bug: alguna
    transacción escribió el movimiento y no la existencia. Entra al producto; el libro mayor es
    *append-only*, así que es el que tiene razón, y su saldo corriente te dice en qué movimiento se
    separaron.
@@ -634,8 +637,8 @@ verdad— está en [`docs/RESPALDOS.md`](RESPALDOS.md).
 
 ```bash
 make lint          # ruff sobre app y tests
-make pruebas       # 622 pruebas de Python — necesita la base arriba
-make movil         # 503 de Dart + 248 de widget
+make pruebas       # 1003 pruebas de Python — necesita la base arriba
+make movil         # 509 de Dart + 248 de widget
 ```
 
 > Si `make pruebas` falla con errores de conexión a mitad de la corrida y los mismos archivos pasan al
@@ -1084,7 +1087,7 @@ la que vale para medir.
 El 93 % es de **alcance planeado**, y hay dos razones por las que el proyecto está mejor de lo que ese
 número sugiere:
 
-1. **Lo construido está probado de verdad**: 995 pruebas de Python contra PostgreSQL real, 503 de Dart,
+1. **Lo construido está probado de verdad**: 1003 pruebas de Python contra PostgreSQL real, 509 de Dart,
    248 de widget, y **siete** verificaciones de frescura de contratos en CI —vectores canónicos, deltas,
    importes, OpenAPI, ticket, sobres y esquema local—, cada una capaz de poner el CI en rojo si el
    código y su contrato se separan. No hay deuda oculta en lo hecho.
@@ -1095,7 +1098,7 @@ número sugiere:
 Y una razón por la que está peor:
 
 3. **Nada de esto ha visto un vendedor real.** Sigue siendo cierto y sigue siendo lo único que puede
-   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 995 pruebas
+   invalidar decisiones de diseño. Lo que cambió es que ya hay con qué medirlo: las 1003 pruebas
    demuestran que el sistema hace lo que decidimos, y **ninguna demuestra que lo que decidimos sea lo
    correcto**. Eso solo lo dice un vendedor en la calle, y ahora el piloto produce un veredicto con
    cifras en vez de una anécdota. Dos semanas de un vendedor con el teléfono en la mano valen más que

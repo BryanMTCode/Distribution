@@ -302,9 +302,11 @@ funcionando y eso sí es un defecto.
 
 **Panel → Liquidación → Abrir**, sobre la carga de hoy.
 
-Captura el **retorno contado físicamente**. Pon exactamente esto:
+Captura **lo que cuentas físicamente arriba del camión**. No baja a la bodega: el
+camión es un almacén rodante y la mercancía se queda para mañana. Pon exactamente
+esto:
 
-| SKU | Contado |
+| SKU | Contado arriba del camión |
 |---|---|
 | `SOPA-70G` | **192** |
 | `FRIJOL-1K` | **70** |
@@ -316,9 +318,9 @@ Y el **efectivo entregado**: **1 945.40**
 
 | Qué | Tiene que decir | De dónde sale |
 |---|---|---|
-| Diferencia de `SOPA-70G` | **0** | 240 − 72 − 0 + 24 = 192 |
-| Diferencia de `FRIJOL-1K` | **0** | 100 − 30 − 0 + 0 = 70 |
-| Diferencia de `ACEITE-900` | **0** | 48 − 6 − 3 + 0 = 39 |
+| Diferencia de `SOPA-70G` | **0** | 0 + 240 − 72 − 0 + 24 = 192 |
+| Diferencia de `FRIJOL-1K` | **0** | 0 + 100 − 30 − 0 + 0 = 70 |
+| Diferencia de `ACEITE-900` | **0** | 0 + 48 − 6 − 3 + 0 = 39 |
 | **Efectivo esperado** | **1 945.40** | 825.40 + 620.00 de contado + 500.00 de cobro |
 | **Diferencia de efectivo** | **0.00** | 1 945.40 entregado − 1 945.40 esperado |
 
@@ -329,24 +331,41 @@ sumando el cobro.
 **Cierra la liquidación.** Tiene que dejarte, porque la cola está en cero y la
 cuarentena vacía.
 
-### ✅ Punto de control 7 — el camión en cero y la bodega completa
+### ✅ Punto de control 7 — la mercancía se queda arriba del camión
 
-El cierre hace dos cosas en la misma transacción: mueve el retorno de vuelta a la
-bodega (`tipo = 'retorno'`) y después deja el camión **exactamente en cero**. Si
-el conteo cuadró, ese segundo paso no tiene nada que ajustar.
+El cierre deja el camión **exactamente en lo contado**. Como el conteo cuadró, no
+hay nada que ajustar: **no se escribe ni un movimiento**.
 
-Panel → Inventario, **camión** del vendedor: los tres productos en **0**.
-
-Panel → Inventario, **bodega**:
+Panel → Inventario, **camión** del vendedor:
 
 | SKU | Tiene que decir | De dónde sale |
 |---|---|---|
-| `SOPA-70G` | **432** | 240 que quedaron + 192 del retorno |
-| `FRIJOL-1K` | **170** | 100 + 70 |
-| `ACEITE-900` | **87** | 48 + 39 |
+| `SOPA-70G` | **192** | lo contado, que se queda arriba |
+| `FRIJOL-1K` | **70** | ídem |
+| `ACEITE-900` | **39** | ídem |
 
-Y en Panel → Inventario → movimientos tiene que haber un asiento `retorno` por
-producto. El libro mayor es append-only: ahí queda el rastro de los dos pasos.
+Panel → Inventario, **bodega**: **sin cambios** respecto al punto de control de la
+carga. No bajó mercancía.
+
+| SKU | Tiene que decir | De dónde sale |
+|---|---|---|
+| `SOPA-70G` | **240** | lo que quedó al cargar el camión |
+| `FRIJOL-1K` | **100** | ídem |
+| `ACEITE-900` | **48** | ídem |
+
+Y en Panel → Inventario → movimientos **no** debe haber ningún asiento `retorno`
+ni `ajuste` de esta liquidación. Si aparece un `ajuste`, el conteo no cuadró y el
+punto de control 6 lo tenía que haber dicho antes.
+
+> **Para ver el otro camino**, cuenta 190 de `SOPA-70G` en vez de 192 y cierra: el
+> panel declara un faltante de 2, escribe UN `ajuste` que las saca del sistema, y el
+> camión queda en 190. Esas 2 son lo que se le cobra al vendedor. Las otras 190 se
+> quedan arriba.
+
+**Esto es lo que cambió en octubre de 2026** (migración 0030): antes el cierre
+bajaba las 192 a la bodega y dejaba el camión en cero, así que al día siguiente el
+vendedor amanecía sin la mercancía que traía encima — y el cierre se la había
+cobrado como faltante.
 
 ---
 

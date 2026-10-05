@@ -702,7 +702,8 @@ guion:
   el artefacto de verdad.
 
 **✅ Debes terminar** con las dos diferencias de la liquidación en cero y el camión
-en cero.
+con exactamente lo que contaste —no en cero: la mercancía se queda arriba para el
+día siguiente—.
 
 **⚠️ Si un punto de control no cuadra, para ahí.** Apunta el número del punto y la
 cifra que te salió: eso ubica la pieza sin adivinar.

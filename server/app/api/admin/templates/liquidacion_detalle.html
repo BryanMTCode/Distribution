@@ -27,7 +27,8 @@
     el {{ c.cerrada_en.strftime('%d/%m/%Y %H:%M') }}
     {% if c.cerrada_por_nombre %}por {{ c.cerrada_por_nombre }}{% endif %}
   {% endif %}.
-  El retorno y los ajustes ya están en el libro mayor, y el camión quedó en cero.
+  Los ajustes ya están en el libro mayor, y el camión quedó exactamente en lo
+  contado: la mercancía se queda arriba para el día siguiente.
 </div>
 {# ----------------------------------------------------------------------- #}
 {# Sobre QUÉ descansó este cierre.                                         #}
@@ -127,11 +128,12 @@
       <thead>
         <tr>
           <th>Producto</th>
+          <th class="numero">Amaneció</th>
           <th class="numero">Cargado</th>
           <th class="numero">Vendido</th>
           <th class="numero">Merma</th>
           <th class="numero">Devuelto</th>
-          <th class="numero">Debe volver</th>
+          <th class="numero">Debe haber</th>
           <th class="numero">Contado</th>
           <th class="numero">Diferencia</th>
         </tr>
@@ -143,6 +145,7 @@
             <strong>{{ r.nombre }}</strong>
             <div class="sutil"><span class="mono">{{ r.sku }}</span></div>
           </td>
+          <td class="numero">{{ r.cant_inicial|entero }}</td>
           <td class="numero">{{ r.cant_cargada|entero }}</td>
           <td class="numero">{{ r.cant_vendida|entero }}</td>
           <td class="numero">{{ r.cant_merma|entero }}</td>
@@ -150,8 +153,8 @@
           <td class="numero"><strong>{{ r.esperado|entero }}</strong></td>
           <td class="numero">
             {% if abierta and puede_editar %}
-              <input type="text" name="retornada_{{ r.id }}" inputmode="numeric"
-                     value="{{ r.cant_retornada|entero }}"
+              <input type="text" name="contada_{{ r.id }}" inputmode="numeric"
+                     value="{{ r.cant_contada|entero }}"
                      style="width:90px;text-align:right">
               {% if r.presentaciones %}
                 {% for p in r.presentaciones %}
@@ -163,7 +166,7 @@
                 {% endfor %}
               {% endif %}
             {% else %}
-              {{ r.cant_retornada|entero }}
+              {{ r.cant_contada|entero }}
             {% endif %}
           </td>
           <td class="numero">
@@ -215,12 +218,15 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <p style="margin-top:0">Al cerrar, en una sola transacción:</p>
   <ol class="sutil" style="margin:0 0 14px 18px">
-    <li><strong>Retorno</strong> del camión a la bodega por lo que se contó.</li>
+    <li>Las cifras calculadas se <strong>recalculan</strong>: entre abrir y cerrar
+        pueden haber entrado ventas que el teléfono sincronizó tarde, y lo que
+        quedara viejo sería mercancía cobrada de más o de menos.</li>
     <li><strong>Ajuste</strong> por el faltante o el sobrante, para que el camión
-        quede exactamente en cero. Sin esto arrastraría un saldo fantasma y el
-        descuadre de hoy contaminaría el cierre de mañana.</li>
-    <li>La carga pasa a <strong>liquidada</strong>, y con eso el teléfono
-        <strong>vacía su inventario</strong> en la siguiente sincronización.</li>
+        quede exactamente <strong>en lo contado</strong>. Si cuadra no se escribe
+        ningún movimiento: no pasó nada físico que registrar.</li>
+    <li>La carga pasa a <strong>liquidada</strong>, y con eso el teléfono recibe
+        <strong>el saldo corregido</strong> en la siguiente sincronización. La
+        mercancía NO baja a la bodega: se queda arriba del camión.</li>
   </ol>
 
   {# ----------------------------------------------------------------------- #}

@@ -129,8 +129,22 @@ CREATE TABLE IF NOT EXISTS clientes (
 CREATE INDEX IF NOT EXISTS ix_clientes_secuencia ON clientes(secuencia);
 CREATE INDEX IF NOT EXISTS ix_clientes_nombre    ON clientes(nombre_comercial);
 
--- Inventario del camión: se siembra con la carga confirmada y se decrementa
--- localmente. Único dueño ⇒ sin concurrencia.
+-- Inventario del camión: un SALDO que las cargas suben y las ventas bajan.
+-- Único dueño ⇒ sin concurrencia.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- EL CAMIÓN ES UN ALMACÉN RODANTE: NO AMANECE EN CEROS
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Decisión de la dirección, octubre 2026: la mercancía que no se vende se queda
+-- a dormir en el camión y se acumula con la carga del día siguiente. Así que una
+-- carga confirmada **se suma** a lo que haya; no lo reemplaza. Antes lo
+-- reemplazaba —"la carga es el inventario completo del día"— y el cierre le
+-- cobraba al vendedor como faltante todo lo que había dormido arriba.
+--
+-- Que se sume obliga a algo que reemplazar no necesitaba: saber si una carga YA
+-- se aplicó. Un `pull` repetido tras un corte de red trae el mismo delta otra
+-- vez, y sumarlo dos veces le regalaría al camión una carga entera. De eso se
+-- encarga `cargas_aplicadas`.
 --
 -- SIN llave foránea a productos, por la misma razón que `precios.lista_id`: los
 -- deltas se aplican en una transacción todo-o-nada, y si el renglón de una carga
@@ -143,9 +157,28 @@ CREATE INDEX IF NOT EXISTS ix_clientes_nombre    ON clientes(nombre_comercial);
 -- hasta que llegue su producto. El costo de tenerla es un teléfono muerto.
 CREATE TABLE IF NOT EXISTS existencias_camion (
     producto_id     TEXT PRIMARY KEY,
-    cant_cargada    REAL NOT NULL DEFAULT 0,   -- snapshot inmutable de la carga
-    cant_actual     REAL NOT NULL DEFAULT 0,   -- lo que queda ahora mismo
-    carga_id        TEXT
+    -- Lo que subió en la ÚLTIMA carga que tocó este renglón. Es informativo:
+    -- cuánto le entregó la bodega la última vez, no el total histórico.
+    cant_cargada    REAL NOT NULL DEFAULT 0,
+    cant_actual     REAL NOT NULL DEFAULT 0,   -- el saldo: lo que trae ahora mismo
+    carga_id        TEXT                       -- la última carga que lo tocó
+);
+
+-- Qué cargas ya se sumaron al camión, y si su cierre ya se aplicó.
+--
+-- Es la memoria que hace idempotente la acumulación. Sin ella, el mismo delta
+-- llegando dos veces —un `pull` repetido tras un corte de red— sumaría la carga
+-- dos veces, y el vendedor vería el doble de mercancía de la que trae: la
+-- ofrecería, no la tendría, y el descuadre aparecería en la liquidación sin que
+-- nadie pudiera explicarlo.
+--
+-- `ajuste_aplicado_en` es lo mismo para el cierre: el delta de la carga liquidada
+-- trae el ajuste del conteo físico, y sumarlo dos veces cobraría el faltante dos
+-- veces.
+CREATE TABLE IF NOT EXISTS cargas_aplicadas (
+    carga_id            TEXT PRIMARY KEY,
+    aplicada_en         TEXT NOT NULL,
+    ajuste_aplicado_en  TEXT
 );
 
 -- Rangos de folio asignados por el servidor.

@@ -1,18 +1,39 @@
-"""Fase 7 · Liquidación y retorno: el cierre del día.
+"""Fase 7 · Liquidación: el cierre del día.
+
+────────────────────────────────────────────────────────────────────────────
+EL CAMIÓN ES UN ALMACÉN RODANTE
+────────────────────────────────────────────────────────────────────────────
+Decisión de la dirección, octubre 2026: la mercancía que no se vende se queda a
+dormir en el camión y se acumula con la carga del día siguiente. **El camión no
+amanece en ceros, y lo que durmió arriba no es un faltante.**
+
+Este módulo hacía lo contrario: bajaba todo a la bodega y escribía un ajuste para
+dejar el camión en cero, así que cada noche le cobraba al vendedor todo lo que no
+había vendido. Lo que cambió, en concreto:
+
+  · la ecuación gana el saldo inicial;
+  · el conteo es de lo que SE QUEDA arriba, no de lo que baja (`cant_contada`);
+  · el cierre deja el camión en lo contado, no en cero, y cuando cuadra no
+    escribe ningún movimiento;
+  · el delta de la carga liquidada le lleva al teléfono el ajuste, no el vaciado.
 
 ────────────────────────────────────────────────────────────────────────────
 AQUÍ SE ATRAPAN LOS DESCUADRES, Y ES LA ÚNICA PANTALLA QUE LOS ATRAPA
 ────────────────────────────────────────────────────────────────────────────
-    esperado   = cargado − vendido − merma + devuelto
-    diferencia = retornado − esperado
+    esperado   = inicial + cargado − vendido − merma + devuelto
+    diferencia = contado − esperado
 
-`retornado` es lo que se **cuenta físicamente** al bajar el camión. Todo lo demás
-lo calcula el sistema de sus propios documentos. La diferencia es lo único que
-importa del cierre, y tiene dos lecturas:
+`contado` es lo que se **cuenta físicamente arriba del camión**. Todo lo demás lo
+calcula el sistema de sus propios documentos. La diferencia es lo único que importa
+del cierre, y tiene dos lecturas:
 
     faltante (negativo)  salió mercancía sin documento. Se le cobra al vendedor.
-    sobrante (positivo)  viene más de lo que el sistema sabe. Casi siempre es una
+    sobrante (positivo)  hay más de lo que el sistema sabe. Casi siempre es una
                          venta que el teléfono no ha sincronizado todavía.
+
+Y los renglones del cierre son los del CAMIÓN, no los de la carga: un producto que
+lleva tres días arriba y hoy no se cargó tiene que contarse igual, o nadie notaría
+si desapareció.
 
 ────────────────────────────────────────────────────────────────────────────
 POR QUÉ NO SE PUEDE CERRAR CON OPERACIONES PENDIENTES
@@ -50,16 +71,19 @@ QUÉ PASA AL CERRAR
 ────────────────────────────────────────────────────────────────────────────
 En una transacción:
 
-1. **`retorno`** camión → bodega por lo que se contó. Es el movimiento físico.
-2. **`ajuste`** por lo que sobra o falta, para que el camión quede EXACTAMENTE en
-   cero. Sin esto el camión arrastra un saldo fantasma para siempre, y el faltante
-   de hoy contamina el cierre de mañana.
-3. La carga pasa a **`liquidada`**, y ese UPDATE publica el delta que **vacía
-   `existencias_camion` en el teléfono** (migración 0015 + el aplicador de Dart).
+1. Las cifras calculadas se **recalculan**: entre abrir y cerrar entran ventas que
+   el teléfono sincronizó tarde, y lo que quedara viejo sería la cantidad de
+   mercancía que se le cobra a una persona.
+2. **`ajuste`** por la diferencia, para que el camión quede EXACTAMENTE en lo
+   contado. Si cuadra no se escribe nada: no pasó nada físico que registrar.
+3. La carga pasa a **`liquidada`**, y ese UPDATE publica el delta que le lleva al
+   teléfono **el ajuste** (migración 0030 + el aplicador de Dart). Antes le llevaba
+   la orden de vaciar el camión.
 4. La liquidación queda `cuadrada` o `con_diferencia`, según la ecuación.
 
-El paso 2 es el que se olvida, y es el que hace que el inventario del camión
-signifique algo al día siguiente.
+No hay movimiento camión → bodega. Cuando el vendedor sí entrega mercancía —cambia
+de ruta, se descontinúa un producto— eso es un traspaso, que es un documento con su
+propia huella y su propia aceptación en el teléfono.
 """
 
 from __future__ import annotations
@@ -83,7 +107,11 @@ from app.api.admin.comun import (
     texto_o_nulo,
 )
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
-from app.domain.liquidacion import RenglonDeLiquidacion, diferencia_de_efectivo
+from app.domain.liquidacion import (
+    RenglonDeLiquidacion,
+    diferencia_de_efectivo,
+    saldo_inicial,
+)
 from app.workers.cola import encolar
 
 router = APIRouter(
@@ -194,12 +222,16 @@ async def abrir(
 ):
     """Abre la liquidación con las cantidades que el sistema ya conoce.
 
-    `cant_retornada` nace en **cero**, no en "lo esperado". Prellenarla con el
+    `cant_contada` nace en **cero**, no en "lo esperado". Prellenarla con el
     esperado haría que cerrar sin contar diera cuadre perfecto, y entonces el
     cierre no significaría nada: sería un botón que dice que todo está bien.
 
     Contar el camión es el único dato que esta pantalla no puede calcular, y es
     justamente el que le da sentido a los demás.
+
+    Las cifras calculadas que se guardan aquí son un primer borrador para la
+    pantalla: entre abrir y cerrar entran ventas que el teléfono sincroniza tarde.
+    El cierre las vuelve a calcular antes de declarar nada.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -233,9 +265,12 @@ async def abrir(
             f"/panel/liquidaciones/{ya}", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    renglones = await _renglones_calculados(sesion, carga)
+    renglones = _con_inicial(await _renglones_calculados(sesion, carga))
     if not renglones:
-        return _a_lista(error="Esa carga no tiene renglones: no hay qué liquidar.")
+        return _a_lista(
+            error="Ni esa carga trae renglones ni el camión tiene saldo: "
+            "no hay qué liquidar."
+        )
 
     liquidacion_id = uuid.uuid4()
     consecutivo = (
@@ -267,15 +302,17 @@ async def abrir(
             text(
                 """
                 INSERT INTO liquidacion_detalle
-                  (id, liquidacion_id, producto_id, cant_cargada, cant_vendida,
-                   cant_merma, cant_devuelta, cant_retornada)
-                VALUES (:id, :l, :p, :cargada, :vendida, :merma, :devuelta, 0)
+                  (id, liquidacion_id, producto_id, cant_inicial, cant_cargada,
+                   cant_vendida, cant_merma, cant_devuelta, cant_contada)
+                VALUES (:id, :l, :p, :inicial, :cargada, :vendida, :merma,
+                        :devuelta, 0)
                 """
             ),
             {
                 "id": uuid.uuid4(),
                 "l": liquidacion_id,
                 "p": r["producto_id"],
+                "inicial": r["inicial"],
                 "cargada": r["cargada"],
                 "vendida": r["vendida"],
                 "merma": r["merma"],
@@ -338,8 +375,9 @@ async def detalle(
         await sesion.execute(
             text(
                 """
-                SELECT d.id, d.producto_id, d.cant_cargada, d.cant_vendida,
-                       d.cant_merma, d.cant_devuelta, d.cant_retornada, d.diferencia,
+                SELECT d.id, d.producto_id, d.cant_inicial, d.cant_cargada,
+                       d.cant_vendida, d.cant_merma, d.cant_devuelta,
+                       d.cant_contada, d.diferencia,
                        p.sku, p.nombre, p.unidad_base,
                        pu.presentaciones
                   FROM liquidacion_detalle d
@@ -365,11 +403,12 @@ async def detalle(
     renglones = []
     for d in crudos:
         r = RenglonDeLiquidacion(
+            inicial=Decimal(d["cant_inicial"]),
             cargado=Decimal(d["cant_cargada"]),
             vendido=Decimal(d["cant_vendida"]),
             merma=Decimal(d["cant_merma"]),
             devuelto=Decimal(d["cant_devuelta"]),
-            retornado=Decimal(d["cant_retornada"]),
+            contado=Decimal(d["cant_contada"]),
         )
         renglones.append(
             {
@@ -421,11 +460,11 @@ async def contar(
 ):
     """Captura el conteo físico del camión.
 
-    Los campos vienen como `retornada_<id del renglón>`, así que se leen del
+    Los campos vienen como `contada_<id del renglón>`, así que se leen del
     formulario crudo. Un campo **vacío significa cero**, no "no lo cambies": al
-    contar un camión, el producto que no se anotó es el que no venía. Si significara
-    "no lo toques", un producto que se terminó quedaría con el conteo de un intento
-    anterior y el faltante desaparecería sin que nadie lo decidiera.
+    contar un camión, el producto que no se anotó es el que no está arriba. Si
+    significara "no lo toques", un producto que se terminó quedaría con el conteo de
+    un intento anterior y el faltante desaparecería sin que nadie lo decidiera.
     """
     actor.exigir(PERMISO)
     formulario = await peticion.form()
@@ -449,7 +488,7 @@ async def contar(
     ).scalars().all()
 
     for renglon in renglones:
-        crudo = formulario.get(f"retornada_{renglon}")
+        crudo = formulario.get(f"contada_{renglon}")
         try:
             # Se lee con el lector de cantidades de tres decimales, no con `int`:
             # la columna es numeric(14,3) y un día puede haber un producto a granel.
@@ -458,7 +497,7 @@ async def contar(
             return _volver(liquidacion_id, error=str(e))
 
         await sesion.execute(
-            text("UPDATE liquidacion_detalle SET cant_retornada = :r WHERE id = :id"),
+            text("UPDATE liquidacion_detalle SET cant_contada = :r WHERE id = :id"),
             {"r": contado, "id": renglon},
         )
 
@@ -555,11 +594,14 @@ async def cerrar(
     confirmo_sincronizado: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Cierra el día: retorno, ajuste, carga liquidada.
+    """Cierra el día: cifras al día, ajuste por la diferencia, carga liquidada.
 
     Todo en una transacción, y en este orden, porque el ajuste se calcula **sobre
-    la existencia que deja el retorno**: hacerlo antes daría un número que no
+    las cifras recién recalculadas**: hacerlo antes daría un número que no
     corresponde a nada.
+
+    No baja mercancía a la bodega. El camión es un almacén rodante: se queda con
+    lo que se contó.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -594,82 +636,107 @@ async def cerrar(
             "un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.",
         )
 
+    ahora = datetime.now(UTC)
+    camion = cabecera["almacen_destino_id"]
+
+    # ------------------------------------------------------------------
+    # Las cifras calculadas, otra vez, justo antes de declarar.
+    # ------------------------------------------------------------------
+    # Las que se guardaron al abrir son un borrador: entre abrir y cerrar entran
+    # ventas que el teléfono sincronizó tarde. Es el mismo motivo por el que el
+    # arqueo recalcula el efectivo esperado, y aquí pesa más: lo que quedara
+    # desactualizado sería la cantidad de mercancía que se le cobra a una persona.
+    #
+    # Con esto, `diferencia` —la columna generada— acaba siendo exactamente
+    # «lo contado menos el saldo vivo del camión», que es el único número
+    # defendible frente al vendedor. Ver `saldo_inicial`.
+    for r in _con_inicial(await _renglones_calculados(sesion, cabecera["carga_id"])):
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO liquidacion_detalle
+                  (id, liquidacion_id, producto_id, cant_inicial, cant_cargada,
+                   cant_vendida, cant_merma, cant_devuelta, cant_contada)
+                VALUES (:id, :l, :p, :inicial, :cargada, :vendida, :merma,
+                        :devuelta, 0)
+                ON CONFLICT (liquidacion_id, producto_id) DO UPDATE SET
+                  cant_inicial  = excluded.cant_inicial,
+                  cant_cargada  = excluded.cant_cargada,
+                  cant_vendida  = excluded.cant_vendida,
+                  cant_merma    = excluded.cant_merma,
+                  cant_devuelta = excluded.cant_devuelta
+                """
+            ),
+            {
+                "id": uuid.uuid4(),
+                "l": liquidacion_id,
+                "p": r["producto_id"],
+                "inicial": r["inicial"],
+                "cargada": r["cargada"],
+                "vendida": r["vendida"],
+                "merma": r["merma"],
+                "devuelta": r["devuelta"],
+            },
+        )
+
     renglones = (
         await sesion.execute(
             text(
-                "SELECT producto_id, cant_retornada, diferencia "
+                "SELECT producto_id, cant_contada, diferencia "
                 "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
             ),
             {"l": liquidacion_id},
         )
     ).mappings().all()
 
-    ahora = datetime.now(UTC)
-    camion = cabecera["almacen_destino_id"]
-    bodega = cabecera["almacen_origen_id"]
-
-    for r in renglones:
-        retornada = Decimal(r["cant_retornada"])
-        if retornada > 0:
-            await _mover(
-                sesion,
-                tipo="retorno",
-                origen=camion,
-                destino=bodega,
-                producto=r["producto_id"],
-                cantidad=retornada,
-                documento=liquidacion_id,
-                quien=actor.usuario_id,
-                ahora=ahora,
-            )
-
     # ------------------------------------------------------------------
-    # El ajuste que deja el camión EXACTAMENTE en cero.
+    # El ajuste que deja el camión EXACTAMENTE EN LO CONTADO.
     # ------------------------------------------------------------------
-    # Es el paso que se olvida. Sin él el camión arrastra un saldo fantasma para
-    # siempre: el faltante de hoy queda como existencia y contamina el cierre de
-    # mañana, que empezaría con un sobrante que nadie puso ahí.
+    # Aquí estaba el defecto que la dirección mandó corregir en octubre de 2026.
+    # Este bloque dejaba el camión en CERO y le cobraba el resto al vendedor como
+    # faltante. Con mercancía que duerme arriba del camión, eso le cobraba cada
+    # noche todo lo que no había vendido: mercancía que se puede tocar y contar, y
+    # que el sistema declaraba perdida.
     #
-    # Se lee la existencia DESPUÉS del retorno, no se deduce de `diferencia`: si
-    # por cualquier razón las dos no coincidieran, el que tiene razón es el
-    # inventario, y el objetivo es que el camión quede en cero.
+    # Ahora el conteo manda y el camión se queda con lo contado. Lo que se escribe
+    # es un solo movimiento por producto, el de la diferencia, y **cuando el conteo
+    # cuadra no se escribe nada**: no pasó nada físico que registrar.
+    #
+    # Tampoco baja mercancía a la bodega: ya no hay retorno diario. Cuando el
+    # vendedor sí entrega algo —cambia de ruta, se descontinúa un producto— eso es
+    # un traspaso camión → bodega, que es un documento con su propia huella y su
+    # propia aceptación.
     ajustes = 0
     sobrantes = Decimal(0)
     faltantes = Decimal(0)
     for r in renglones:
-        quedan = (
-            await sesion.execute(
-                text(
-                    "SELECT cantidad FROM existencias "
-                    " WHERE almacen_id = :a AND producto_id = :p"
-                ),
-                {"a": camion, "p": r["producto_id"]},
-            )
-        ).scalar_one_or_none()
-        if quedan is None:
-            continue
-        resto = Decimal(quedan)
-        if resto == 0:
+        # Se usa `diferencia` y no una resta hecha aquí: es la columna generada,
+        # la misma que la pantalla le muestra al vendedor y la misma que el
+        # teléfono va a aplicar. Un número distinto en cualquiera de los tres
+        # lados es una discusión sin árbitro.
+        diferencia = Decimal(r["diferencia"])
+        if diferencia == 0:
             continue
 
-        if resto > 0:
-            # El sistema creía que había más de lo que volvió: faltante. Sale del
+        if diferencia < 0:
+            # Se contó menos de lo que el sistema tenía: faltante. Sale del
             # sistema, y es lo que se le cobra al vendedor.
             await _mover(
                 sesion, tipo="ajuste", origen=camion, destino=None,
-                producto=r["producto_id"], cantidad=resto,
+                producto=r["producto_id"], cantidad=-diferencia,
                 documento=liquidacion_id, quien=actor.usuario_id, ahora=ahora,
             )
-            faltantes += resto
+            faltantes += -diferencia
         else:
-            # Volvió más de lo que el sistema sabía: sobrante. Entra al camión para
-            # que el retorno ya registrado cuadre y el saldo quede en cero.
+            # Se contó más: sobrante. Entra al camión. Casi siempre es una venta
+            # que el teléfono no ha sincronizado, y por eso el cierre se bloquea
+            # cuando quedan operaciones pendientes.
             await _mover(
                 sesion, tipo="ajuste", origen=None, destino=camion,
-                producto=r["producto_id"], cantidad=-resto,
+                producto=r["producto_id"], cantidad=diferencia,
                 documento=liquidacion_id, quien=actor.usuario_id, ahora=ahora,
             )
-            sobrantes += -resto
+            sobrantes += diferencia
         ajustes += 1
 
     con_diferencia = (
@@ -710,7 +777,10 @@ async def cerrar(
         },
     )
 
-    # Este UPDATE publica el delta que VACÍA `existencias_camion` en el teléfono.
+    # Este UPDATE publica el delta de la carga liquidada. Ya no vacía el camión
+    # del teléfono: le lleva el AJUSTE que se acaba de escribir, para que el saldo
+    # del teléfono y el del servidor queden en el mismo número. Ver la migración
+    # 0030 y `_carga` en el aplicador de deltas.
     await sesion.execute(
         text("UPDATE cargas SET estado = 'liquidada' WHERE id = :c"),
         {"c": cabecera["carga_id"]},
@@ -759,10 +829,15 @@ async def cerrar(
         if sobrantes:
             partes.append(f"sobrante de {sobrantes.to_integral_value():,} unidades")
         aviso += (
-            f"Se escribieron {ajustes} ajuste(s) para dejar el camión en cero "
+            f"Se escribieron {ajustes} ajuste(s) para dejar el camión en lo contado "
             f"({' y '.join(partes)}). "
         )
-    aviso += "El teléfono vacía su inventario en la siguiente sincronización."
+    else:
+        aviso += "El camión se queda con lo contado, sin ajustes. "
+    aviso += (
+        "La mercancía se queda arriba del camión: el teléfono recibe el saldo "
+        "corregido en la siguiente sincronización."
+    )
     return _a_lista(guardado=aviso)
 
 
@@ -826,13 +901,30 @@ async def _mover(
 
 
 async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
-    """Cargado, vendido, merma y devuelto por producto, de los documentos.
+    """Inicial, cargado, vendido, merma y devuelto por producto, de los documentos.
 
-    Las tres últimas salen de las operaciones del **día operativo de esa carga y
-    ese vendedor**, no de la carga: una merma no trae `carga_id`, y amarrarla por
+    Las tres de en medio salen de las operaciones del **día operativo de esa carga
+    y ese vendedor**, no de la carga: una merma no trae `carga_id`, y amarrarla por
     fecha y vendedor es lo que el modelo permite. Si un vendedor llegara a tener dos
     cargas el mismo día el índice `uq_carga_vendedor_dia` lo impide, así que la
     atadura es única.
+
+    ───────────────────────────────────────────────────────────────────────────
+    LOS RENGLONES SON LOS DEL CAMIÓN, NO LOS DE LA CARGA
+    ───────────────────────────────────────────────────────────────────────────
+    Antes se partía de `carga_detalle`: lo que la bodega entregó hoy. Con el
+    camión como almacén rodante eso deja fuera justo lo que importa — el producto
+    que lleva tres días arriba y hoy no se cargó no aparecería en el cierre, así
+    que nadie lo contaría y nadie notaría si desapareció.
+
+    Así que los renglones son la UNIÓN de dos conjuntos: lo que se cargó hoy y lo
+    que el camión tiene con saldo distinto de cero. Un producto en los dos sale
+    una vez.
+
+    `inicial` se deduce del saldo vivo del camión, no de un snapshot. El por qué
+    está en `saldo_inicial`, y la consecuencia es la que importa: `esperado` acaba
+    siendo el saldo que el sistema tiene AHORA, así que la diferencia que se le
+    cobra al vendedor es siempre «lo que conté menos lo que el sistema tiene».
     """
     return [
         dict(f)
@@ -843,21 +935,60 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                     WITH la_carga AS (
                         SELECT id, vendedor_id, fecha_operativa, almacen_destino_id
                           FROM cargas WHERE id = :c
+                    ),
+                    cargado AS (
+                        SELECT producto_id, sum(cantidad) AS cargada
+                          FROM carga_detalle
+                         WHERE carga_id = :c
+                         GROUP BY producto_id
+                    ),
+                    arriba AS (
+                        SELECT e.producto_id, e.cantidad AS en_camion
+                          FROM existencias e
+                          CROSS JOIN la_carga c
+                         WHERE e.almacen_id = c.almacen_destino_id
+                           AND e.cantidad <> 0
+                    ),
+                    productos_del_cierre AS (
+                        SELECT producto_id FROM cargado
+                        UNION
+                        SELECT producto_id FROM arriba
                     )
-                    SELECT d.producto_id,
-                           sum(d.cantidad) AS cargada,
+                    SELECT pc.producto_id,
+                           COALESCE(g.cargada, 0) AS cargada,
+                           COALESCE(a.en_camion, 0) AS en_camion,
                            COALESCE(v.vendida, 0) AS vendida,
                            COALESCE(m.merma, 0) AS merma,
                            COALESCE(m.devuelta, 0) AS devuelta
-                      FROM carga_detalle d
+                      FROM productos_del_cierre pc
                       CROSS JOIN la_carga c
+                      LEFT JOIN cargado g ON g.producto_id = pc.producto_id
+                      LEFT JOIN arriba  a ON a.producto_id = pc.producto_id
                       LEFT JOIN LATERAL (
+                            -- Las ventas de esta carga, Y las del día que salieron
+                            -- SIN carga.
+                            --
+                            -- Lo segundo dejó de ser un caso raro con el camión
+                            -- rodante: el vendedor puede salir a vender lo que le
+                            -- quedó, sin carga nueva, o vender después de que la
+                            -- oficina liquidó la de ayer. Esas ventas llevan
+                            -- `carga_id` nulo, y sin esta rama el renglón diría que
+                            -- el camión amaneció con menos de lo que amaneció.
+                            --
+                            -- No se cuentan dos veces: la primera rama exige esta
+                            -- carga y la segunda exige que no haya ninguna.
                             SELECT sum(vp.cantidad_base) AS vendida
                               FROM venta_partidas vp
                               JOIN ventas ve ON ve.id = vp.venta_id
-                             WHERE vp.producto_id = d.producto_id
-                               AND ve.carga_id = c.id
+                             WHERE vp.producto_id = pc.producto_id
                                AND ve.estado = 'confirmada'
+                               AND (
+                                     ve.carga_id = c.id
+                                  OR (ve.carga_id IS NULL
+                                      AND ve.vendedor_id = c.vendedor_id
+                                      AND ve.almacen_id = c.almacen_destino_id
+                                      AND ve.fecha_operativa = c.fecha_operativa)
+                               )
                       ) v ON true
                       LEFT JOIN LATERAL (
                             SELECT
@@ -868,20 +999,35 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                                 AS devuelta
                               FROM merma_detalle md
                               JOIN mermas me ON me.id = md.merma_id
-                             WHERE md.producto_id = d.producto_id
+                             WHERE md.producto_id = pc.producto_id
                                AND me.vendedor_id = c.vendedor_id
                                AND me.almacen_id = c.almacen_destino_id
                                AND me.fecha_operativa = c.fecha_operativa
                                AND me.estado = 'confirmada'
                       ) m ON true
-                     WHERE d.carga_id = :c
-                     GROUP BY d.producto_id, v.vendida, m.merma, m.devuelta
                     """
                 ),
                 {"c": carga_id},
             )
         ).mappings().all()
     ]
+
+
+def _con_inicial(renglones: list[dict]) -> list[dict]:
+    """Agrega `inicial` a cada renglón, con el módulo de dominio.
+
+    En Python y no en SQL a propósito: es la ecuación del negocio despejada, y
+    vive en un solo lugar con su explicación. Ver `saldo_inicial`.
+    """
+    for r in renglones:
+        r["inicial"] = saldo_inicial(
+            Decimal(r["en_camion"]),
+            Decimal(r["cargada"]),
+            Decimal(r["vendida"]),
+            Decimal(r["merma"]),
+            Decimal(r["devuelta"]),
+        )
+    return renglones
 
 
 async def _efectivo_esperado(sesion, vendedor_id, fecha_operativa) -> Decimal:
