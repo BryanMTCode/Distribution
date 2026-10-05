@@ -52,6 +52,7 @@ import 'carrito.dart';
 import 'dinero.dart';
 import 'folios.dart';
 import 'outbox.dart';
+import 'precio.dart';
 import 'sobre.dart';
 import 'ubicacion.dart';
 
@@ -113,6 +114,40 @@ class VentaRechazada implements Exception {
   @override
   String toString() =>
       'venta rechazada (${motivo.codigo})${detalle == null ? '' : ': $detalle'}';
+}
+
+/// Falló algo que **no** es una regla de negocio: la base no contestó, el disco
+/// se llenó, otra operación tenía la base tomada.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// POR QUÉ ESTA EXCEPCIÓN CARGA UN «¿QUEDÓ ESCRITA?»
+/// ─────────────────────────────────────────────────────────────────────────
+/// Al vendedor no le sirve el nombre del error: le sirve saber si vuelve a
+/// cobrar o no. Cobrar dos veces le duplica la venta al cliente y le descuadra
+/// el camión; no cobrar cuando falló de verdad le regala la mercancía. Son las
+/// dos únicas salidas, y la diferencia entre ellas es si la fila de `ventas`
+/// alcanzó a quedar.
+///
+/// [quedoEscrita] en `null` significa que no se pudo averiguar —la base no
+/// contestó ni para preguntarle—. Se dice así y no se adivina: adivinar «no
+/// quedó» es exactamente lo que duplica la venta.
+class CierreRoto implements Exception {
+  const CierreRoto({
+    required this.causa,
+    required this.quedoEscrita,
+    this.folioLocal,
+  });
+
+  final Object causa;
+
+  /// `true` quedó, `false` no quedó, `null` no se pudo saber.
+  final bool? quedoEscrita;
+
+  /// El folio que se le había asignado, para poder buscarla.
+  final String? folioLocal;
+
+  @override
+  String toString() => 'cierre roto (escrita=$quedoEscrita): $causa';
 }
 
 /// Una venta ya guardada. Es lo que se imprime y lo que se le muestra al
@@ -186,7 +221,38 @@ class CierreDeVenta {
   /// compuesto desde la cola local. Se pasa el veredicto y no el estado porque
   /// **la pantalla ya se lo mostró al vendedor**: recalcularlo aquí podría dar
   /// otra respuesta que el vendedor nunca vio.
+  /// Lanza `VentaRechazada` si una regla de la calle lo impide, y `CierreRoto`
+  /// si falla el equipo. **No lanza nada más**: quien llama tiene un botón
+  /// girando y necesita una respuesta siempre, incluso para fallar.
   VentaGuardada cerrar(
+    Carrito carrito, {
+    required String clienteId,
+    required bool creditoPermitido,
+    Ubicacion? ubicacion,
+    String? visitaId,
+    String? observaciones,
+  }) {
+    try {
+      return _cerrar(
+        carrito,
+        clienteId: clienteId,
+        creditoPermitido: creditoPermitido,
+        ubicacion: ubicacion,
+        visitaId: visitaId,
+        observaciones: observaciones,
+      );
+    } on VentaRechazada {
+      rethrow;
+    } on CierreRoto {
+      rethrow;
+    } catch (e) {
+      // Falló la preparación —leer el rango de folios, pedir la secuencia de la
+      // cola—, que ocurre ANTES de escribir: por eso no quedó nada.
+      throw CierreRoto(causa: e, quedoEscrita: false);
+    }
+  }
+
+  VentaGuardada _cerrar(
     Carrito carrito, {
     required String clienteId,
     required bool creditoPermitido,
@@ -278,114 +344,154 @@ class CierreDeVenta {
       ],
     );
 
-    _outbox.encolar(
-      sobre,
-      creadoEn: momento,
-      escribirNegocio: (db) {
-        db.execute(
-          '''
-          INSERT INTO ventas (id, folio_consecutivo, folio_local, visita_id,
-                              cliente_id, carga_id, tipo, estado,
-                              lista_precios_id, lista_precios_version,
-                              subtotal, descuento, impuestos, total,
-                              lat, lng, ubicacion_precision_m,
-                              fecha_dispositivo, fecha_operativa,
-                              impreso, reimpresiones, sincronizada, creado_en)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmada', ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?, 0, 0, 0, ?)
-          ''',
-          [
-            ventaId,
-            consecutivo,
-            folioLocal,
-            visita,
-            clienteId,
-            _identidad.cargaId,
-            carrito.aCredito ? 'credito' : 'contado',
-            primera.listaPreciosId,
-            primera.listaPreciosVersion,
-            _aReal(carrito.subtotal),
-            _aReal(carrito.descuento),
-            _aReal(carrito.impuestos),
-            _aReal(carrito.total),
-            ubicacion?.lat,
-            ubicacion?.lng,
-            ubicacion?.precisionMetros,
-            momento,
-            fechaOperativa,
-            momento,
-          ],
-        );
-
-        for (final p in partidas) {
-          final l = p.renglon;
+    // La escritura va envuelta: una falla que no es del negocio —base tomada,
+    // disco lleno— no puede salir de aquí como una excepción cualquiera. La
+    // pantalla tiene un botón girando esperando una respuesta, y «ninguna
+    // respuesta» la dejaba girando para siempre. Ver `CierreRoto`.
+    try {
+      _outbox.encolar(
+        sobre,
+        creadoEn: momento,
+        escribirNegocio: (db) {
           db.execute(
             '''
-            INSERT INTO venta_partidas (id, venta_id, linea, producto_id,
-                                        unidad_codigo, factor_unidad, cantidad,
-                                        cantidad_base, precio_unitario, descuento,
-                                        tasa_iva, importe)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            INSERT INTO ventas (id, folio_consecutivo, folio_local, visita_id,
+                                cliente_id, carga_id, tipo, estado,
+                                lista_precios_id, lista_precios_version,
+                                subtotal, descuento, impuestos, total,
+                                lat, lng, ubicacion_precision_m,
+                                fecha_dispositivo, fecha_operativa,
+                                impreso, reimpresiones, sincronizada, creado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmada', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 0, 0, 0, ?)
             ''',
             [
-              p.id,
               ventaId,
-              p.linea,
-              l.presentacion.productoId,
-              l.presentacion.unidadCodigo,
-              l.presentacion.factor.diezmilesimos / 10000,
-              l.cantidad.milesimos / 1000,
-              l.enUnidadesBase.milesimos / 1000,
-              l.presentacion.precio.diezmilesimos / 10000,
-              l.presentacion.tasaIva,
-              _aReal(l.importe),
+              consecutivo,
+              folioLocal,
+              visita,
+              clienteId,
+              _identidad.cargaId,
+              carrito.aCredito ? 'credito' : 'contado',
+              primera.listaPreciosId,
+              primera.listaPreciosVersion,
+              _aReal(carrito.subtotal),
+              _aReal(carrito.descuento),
+              _aReal(carrito.impuestos),
+              _aReal(carrito.total),
+              ubicacion?.lat,
+              ubicacion?.lng,
+              ubicacion?.precisionMetros,
+              momento,
+              fechaOperativa,
+              momento,
             ],
           );
-        }
 
-        // El descuento del camión se agrupa por producto: dos cajas y tres
-        // piezas de la misma sopa son dos partidas pero **una sola** existencia.
-        // Descontarlas por separado con la guarda `>= cantidad` funcionaría, pero
-        // agrupar deja el mensaje de error correcto cuando falta.
-        final porProducto = <String, num>{};
-        for (final p in partidas) {
-          porProducto.update(
-            p.renglon.presentacion.productoId,
-            (v) => v + p.renglon.enUnidadesBase.milesimos / 1000,
-            ifAbsent: () => p.renglon.enUnidadesBase.milesimos / 1000,
-          );
-        }
-
-        for (final entrada in porProducto.entries) {
-          // La guarda va DENTRO del UPDATE: verificar antes y actualizar después
-          // dejaría una ventana en medio. Si no afecta filas, la transacción
-          // entera se deshace y no queda ni venta ni folio quemado.
-          final afectadas = db.select(
-            '''
-            UPDATE existencias_camion
-               SET cant_actual = cant_actual - ?
-             WHERE producto_id = ?
-               AND cant_actual >= ?
-            RETURNING producto_id
-            ''',
-            [entrada.value, entrada.key, entrada.value],
-          );
-          if (afectadas.isEmpty) {
-            throw VentaRechazada(
-              MotivoNoVenta.sinExistencia,
-              'ya no hay ${entrada.value} en el camión de ${entrada.key}',
+          for (final p in partidas) {
+            final l = p.renglon;
+            db.execute(
+              '''
+              INSERT INTO venta_partidas (id, venta_id, linea, producto_id,
+                                          unidad_codigo, factor_unidad, cantidad,
+                                          cantidad_base, precio_unitario, descuento,
+                                          tasa_iva, importe)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+              ''',
+              [
+                p.id,
+                ventaId,
+                p.linea,
+                l.presentacion.productoId,
+                l.presentacion.unidadCodigo,
+                l.presentacion.factor.diezmilesimos / 10000,
+                l.cantidad.milesimos / 1000,
+                l.enUnidadesBase.milesimos / 1000,
+                l.presentacion.precio.diezmilesimos / 10000,
+                l.presentacion.tasaIva,
+                _aReal(l.importe),
+              ],
             );
           }
-        }
 
-        // La marca del folio, en la misma transacción. Es lo que hace que un
-        // rollback no deje hueco en la numeración impresa.
-        db.execute(
-          'UPDATE folios_rangos SET consumido_hasta = ? WHERE tipo = ?',
-          [consecutivo, 'venta'],
-        );
-      },
-    );
+          // El descuento del camión se agrupa por producto: dos cajas y tres
+          // piezas de la misma sopa son dos partidas pero **una sola** existencia.
+          // Descontarlas por separado con la guarda `>= cantidad` funcionaría, pero
+          // agrupar deja el mensaje de error correcto cuando falta.
+          //
+          // Se suma en MILÉSIMAS ENTERAS, no en `double`: ver la nota de la guarda.
+          final porProducto = <String, int>{};
+          for (final p in partidas) {
+            porProducto.update(
+              p.renglon.presentacion.productoId,
+              (v) => v + p.renglon.enUnidadesBase.milesimos,
+              ifAbsent: () => p.renglon.enUnidadesBase.milesimos,
+            );
+          }
+
+          for (final entrada in porProducto.entries) {
+            // ───────────────────────────────────────────────────────────────────
+            // LA GUARDA COMPARA EN MILÉSIMAS, NO EN EL REAL CRUDO
+            // ───────────────────────────────────────────────────────────────────
+            // `cant_actual` es REAL, y restarle cantidades una venta tras otra
+            // deja deriva binaria: la última pieza del camión acaba guardada como
+            // 0.9999999999999998. La pantalla la lee con `Cantidad.deBase`, que
+            // redondea a milésimas, y le dice al vendedor «queda 1». Comparar el
+            // REAL crudo contra 1.0 rechazaba esa venta: el catálogo ofrecía la
+            // pieza y el cierre la negaba, siempre, sin forma de salir del paso
+            // más que cargar otra vez. **Bug de campo, octubre 2026.**
+            //
+            // Así que la comparación se hace con la MISMA regla de redondeo que
+            // la pantalla —`ROUND(x * 1000)`, que es lo que hace
+            // `Cantidad.deBase`— y el resultado se escribe ya redondeado, de modo
+            // que la deriva no se acumula en vez de arrastrarse todo el día.
+          //
+          // La milésima no es un número elegido aquí: es el grano de `Cantidad`
+          // y el de `existencias.cantidad` en el servidor, que es
+          // `numeric(14,3)` —exacto, sin deriva—. Redondear a milésimas al
+          // escribir es lo que mantiene las dos bases diciendo lo mismo.
+            //
+            // La guarda va DENTRO del UPDATE: verificar antes y actualizar después
+            // dejaría una ventana en medio. Si no afecta filas, la transacción
+            // entera se deshace y no queda ni venta ni folio quemado.
+            final afectadas = db.select(
+              '''
+              UPDATE existencias_camion
+                 SET cant_actual = (CAST(ROUND(cant_actual * 1000) AS INTEGER) - ?1)
+                                   / 1000.0
+               WHERE producto_id = ?2
+                 AND CAST(ROUND(cant_actual * 1000) AS INTEGER) >= ?1
+              RETURNING producto_id
+              ''',
+              [entrada.value, entrada.key],
+            );
+            if (afectadas.isEmpty) {
+              throw VentaRechazada(
+                MotivoNoVenta.sinExistencia,
+                'ya no hay ${Cantidad.deBase(entrada.value / 1000).textoCorto} '
+                'en el camión de ${entrada.key}',
+              );
+            }
+          }
+
+          // La marca del folio, en la misma transacción. Es lo que hace que un
+          // rollback no deje hueco en la numeración impresa.
+          db.execute(
+            'UPDATE folios_rangos SET consumido_hasta = ? WHERE tipo = ?',
+            [consecutivo, 'venta'],
+          );
+        },
+      );
+    } on VentaRechazada {
+      // Regla de negocio: la transacción ya se deshizo sola y no quedó nada.
+      rethrow;
+    } catch (e) {
+      throw CierreRoto(
+        causa: e,
+        quedoEscrita: _quedoEscrita(ventaId),
+        folioLocal: folioLocal,
+      );
+    }
 
     return VentaGuardada(
       id: ventaId,
@@ -402,6 +508,27 @@ class CierreDeVenta {
       ubicacion: ubicacion,
       foliosRestantes: rango.restantes,
     );
+  }
+
+  /// ¿Alcanzó a quedar la fila de la venta?
+  ///
+  /// Se intenta cerrar primero cualquier transacción que haya quedado abierta:
+  /// si el ROLLBACK del outbox fue lo que falló, un SELECT en esta misma
+  /// conexión vería las filas **sin confirmar** y contestaría que sí quedó
+  /// cuando todavía puede deshacerse.
+  bool? _quedoEscrita(String ventaId) {
+    try {
+      _db.execute('ROLLBACK');
+    } catch (_) {
+      // No había transacción abierta, que es el caso normal.
+    }
+    try {
+      return _db
+          .select('SELECT 1 FROM ventas WHERE id = ?', [ventaId]).isNotEmpty;
+    } catch (_) {
+      // La base no contesta ni para preguntarle. No se adivina.
+      return null;
+    }
   }
 
   /// Marca la venta como impresa.

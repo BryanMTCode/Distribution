@@ -287,6 +287,25 @@ class CobroSinIdentidad extends EstadoCobro {
   const CobroSinIdentidad();
 }
 
+/// Falló el equipo, no el negocio.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// ESTE ESTADO EXISTE PORQUE «NINGÚN ESTADO» ERA PEOR
+/// ─────────────────────────────────────────────────────────────────────────
+/// Antes, una excepción que no fuera `VentaRechazada` se iba hacia arriba y el
+/// estado se quedaba en `CobroEnCurso`: el botón girando, desactivado, y el
+/// vendedor sin poder cobrar en todo el día sin matar la app. Un cobro que falla
+/// tiene que aterrizar en un estado **terminal** siempre.
+class CobroRoto extends EstadoCobro {
+  const CobroRoto({required this.quedoEscrita, this.folioLocal});
+
+  /// `true` quedó, `false` no quedó, `null` no se pudo saber. Es lo que decide
+  /// si el vendedor vuelve a cobrar. Ver `CierreRoto`.
+  final bool? quedoEscrita;
+
+  final String? folioLocal;
+}
+
 class ControladorCobro extends Notifier<EstadoCobro> {
   @override
   EstadoCobro build() => const CobroInactivo();
@@ -305,13 +324,36 @@ class ControladorCobro extends Notifier<EstadoCobro> {
     }
 
     state = const CobroEnCurso();
+
+    final VentaGuardada venta;
     try {
-      final venta = cierre.cerrar(
+      venta = cierre.cerrar(
         ref.read(carritoProvider),
         clienteId: clienteId,
         creditoPermitido: evaluacion?.permitida ?? false,
         ubicacion: ubicacion,
       );
+    } on VentaRechazada catch (e) {
+      state = CobroFallido(e.motivo, e.detalle);
+      return;
+    } on CierreRoto catch (e) {
+      state = CobroRoto(
+        quedoEscrita: e.quedoEscrita,
+        folioLocal: e.folioLocal,
+      );
+      return;
+    } catch (_) {
+      // `cerrar` promete no lanzar otra cosa, pero el botón girando para siempre
+      // es tan caro que esta red se queda puesta de todos modos.
+      state = const CobroRoto(quedoEscrita: null);
+      return;
+    }
+
+    // De aquí hacia abajo la venta YA es un documento. Nada de lo que sigue
+    // puede impedir que el estado llegue a `VentaCerrada`: si la limpieza
+    // tronara, el vendedor se quedaría con el botón girando sobre una venta que
+    // sí se guardó, y la cobraría otra vez.
+    try {
       // El carrito ya es un documento: se vacía para que nadie lo cobre dos
       // veces tocando atrás.
       ref.read(carritoProvider.notifier).vaciar();
@@ -320,10 +362,11 @@ class ControladorCobro extends Notifier<EstadoCobro> {
       ref.invalidate(clientesProvider);
       ref.invalidate(resumenColaProvider);
       ref.invalidate(existenciasProvider);
-      state = VentaCerrada(venta);
-    } on VentaRechazada catch (e) {
-      state = CobroFallido(e.motivo, e.detalle);
+    } catch (_) {
+      // Se sigue de frente: la venta está escrita y la pantalla del ticket es
+      // lo que el cliente está esperando.
     }
+    state = VentaCerrada(venta);
   }
 
   void reiniciar() => state = const CobroInactivo();

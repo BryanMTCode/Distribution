@@ -60,6 +60,11 @@ class PantallaCarrito extends ConsumerWidget {
                 ),
               ),
             );
+        case CobroRoto():
+          // Diálogo y no aviso al pie: en los dos casos malos el vendedor TIENE
+          // que leerlo antes de volver a tocar el botón, y un aviso que se va
+          // en cuatro segundos no sirve para eso.
+          _avisarCobroRoto(context, ref, estado);
         case CobroInactivo() || CobroEnCurso():
           break;
       }
@@ -107,6 +112,57 @@ class PantallaCarrito extends ConsumerWidget {
               ],
             ),
     );
+  }
+
+  /// Lo único que el vendedor necesita decidir: ¿vuelve a cobrar o no?
+  ///
+  /// El nombre del error no se muestra. No le dice nada a quien está frente al
+  /// cliente, y el que sí importa —si la venta quedó escrita— ya viene resuelto
+  /// desde el cierre.
+  Future<void> _avisarCobroRoto(
+    BuildContext context,
+    WidgetRef ref,
+    CobroRoto roto,
+  ) async {
+    final folio = roto.folioLocal == null ? '' : ' (folio ${roto.folioLocal})';
+    final (titulo, cuerpo) = switch (roto.quedoEscrita) {
+      false => (
+          'No se guardó la venta',
+          'El equipo falló y no quedó nada registrado: ni la venta ni la '
+              'mercancía descontada. Vuelve a cobrar.',
+        ),
+      true => (
+          'La venta SÍ quedó registrada',
+          'Quedó guardada$folio, pero la pantalla del ticket no pudo abrirse. '
+              'NO la vuelvas a cobrar: búscala en Mi día y, si necesita papel, '
+              'reimprímela desde ahí.',
+        ),
+      null => (
+          'No se sabe si la venta quedó',
+          'El equipo falló y no se pudo averiguar si la venta$folio se '
+              'guardó. ANTES de volver a cobrar, revisa Mi día: si el total ya '
+              'la incluye, no la cobres otra vez.',
+        ),
+    };
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('aviso_cobro_roto'),
+        title: Text(titulo),
+        content: Text(cuerpo),
+        actions: [
+          FilledButton(
+            key: const Key('entendido_cobro_roto'),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+    // El estado vuelve a inactivo para que el botón quede usable: el vendedor ya
+    // sabe qué pasó y qué sigue.
+    ref.read(cobroProvider.notifier).reiniciar();
   }
 
   Future<void> _confirmarVaciar(BuildContext context, WidgetRef ref) async {

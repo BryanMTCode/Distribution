@@ -18,7 +18,7 @@ está construido: la pantalla **Piloto** del panel, las tablas de la migración
 
 ## 0. Por qué este paso vale más que las dos fases siguientes
 
-Hay 995 pruebas de Python, 495 de Dart y 240 de widget. Todas prueban que el
+Hay 995 pruebas de Python, 503 de Dart y 248 de widget. Todas prueban que el
 sistema hace lo que decidimos que hiciera.
 
 **Ninguna prueba que lo que decidimos sea lo correcto.** Eso solo lo puede

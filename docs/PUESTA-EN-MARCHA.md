@@ -200,8 +200,10 @@ pasó?», y esta tabla es la única que la contesta.
 | # | Fecha | Qué veías | Causa real | Arreglo | Verificado |
 |---|---|---|---|---|---|
 | 1 | 2026-10-05 | «Internal Server Error» al dar de alta un producto en el panel | `change_log` tiene RLS sin política de INSERT, y los disparadores que la alimentan corrían como `dsd_api` en vez de como su dueño. También impedía confirmar cargas y sincronizar ventas a crédito | Migración **0029**: las cuatro `fn_registrar_cambio*` pasan a `SECURITY DEFINER` con `search_path` fijado | ☐ |
-| 2 | | | | | |
-| 3 | | | | | |
+| 2 | 2026-10-05 | El celular se quedaba en pantalla negra al segundo arranque, y el login rebotaba al inicio | El esquema local no era idempotente (se aplica en cada arranque) y la sesión offline no fijaba el token | `IF NOT EXISTS` en las 32 tablas locales; `entrarOffline` fija el token; pantalla de arranque roto en vez de negra | ☐ |
+| 3 | 2026-10-05 | «1 con error» al sincronizar ventas: no llegaban al tablero | El `lote_id` del empujón no era un UUID y el servidor contestaba 422 antes de tocar el dominio (sin rastro en cuarentena) | `lote_id` derivado del contenido con SHA-256; el servidor ahora registra los 422 con ruta y campo | ☐ |
+| 4 | 2026-10-05 | «Se queda cargando y no avanza la venta» al vender lo último que quedaba de un producto | Dos fallas juntas: la guarda de existencia comparaba el REAL crudo contra la cantidad —con deriva, la última pieza se negaba para siempre— y cualquier falla que no fuera de negocio dejaba el botón girando sin estado terminal | La guarda compara en milésimas con la misma regla de redondeo que la pantalla; el cierre ahora solo lanza `VentaRechazada` o `CierreRoto`, y la pantalla avisa en diálogo si la venta quedó o no | ☐ |
+| 5 | | | | | |
 
 ---
 

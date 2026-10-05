@@ -103,7 +103,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**995 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **495 de Dart** y **240 de widget**, todas en verde.
+**995 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **503 de Dart** y **248 de widget**, todas en verde.
 
 ## Stack
 
@@ -198,15 +198,15 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, login en línea
-    test/            479 pruebas que corren en segundos
+    test/            503 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
-                     merma y devolución, no-drop, lienzo espacial,
-                     gerencia/ (tablero, mapa del día)
-    test/            231 pruebas de widget, sin emulador
+                     merma y devolución, no-drop, lienzo espacial, MI DÍA,
+                     MI CAMIÓN, gerencia/ (tablero, mapa del día)
+    test/            248 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -226,7 +226,7 @@ make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
 make pruebas                        # 995 pruebas de Python
-make movil                          # 495 de Dart + 240 de widget
+make movil                          # 503 de Dart + 248 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
