@@ -152,4 +152,57 @@ void main() {
 
     expect(repo.delDia(_hoy).ventas.single.cliente, equals('Doña Mary'));
   });
+
+  group('lo que la oficina tocó', () {
+    test('UNA VENTA CANCELADA DEJA DE SUMAR AL EFECTIVO', () {
+      // Es lo mismo que hace el arqueo del servidor. Si siguiera sumando, el
+      // vendedor llegaría a la bodega esperando entregar un dinero que la oficina
+      // ya no le va a pedir.
+      venta(folio: 'A-1', total: 500);
+      venta(folio: 'A-2', total: 300, estado: 'cancelada');
+
+      final dia = repo.delDia(_hoy);
+      expect(dia.efectivo, equals(Dinero.deTexto('500.00')));
+      expect(dia.ventas.length, equals(1));
+    });
+
+    test('pero APARECE, con su motivo', () {
+      // Si solo bajara el total, el vendedor vería su número caer sin explicación
+      // y pensaría que la app le perdió una venta.
+      venta(folio: 'A-2', total: 300, estado: 'cancelada');
+      db.execute(
+        "UPDATE ventas SET nota_oficina = 'se facturó al cliente equivocado' "
+        "WHERE folio_local = 'A-2'",
+      );
+
+      final tocadas = repo.delDia(_hoy).tocadasPorOficina;
+      expect(tocadas.length, equals(1));
+      expect(tocadas.single.folio, equals('A-2'));
+      expect(tocadas.single.cancelada, isTrue);
+      expect(tocadas.single.nota, equals('se facturó al cliente equivocado'));
+    });
+
+    test('una corregida sigue contando, con su importe nuevo', () {
+      venta(folio: 'A-3', total: 600);
+      db.execute(
+        "UPDATE ventas SET nota_oficina = 'eran 2 cajas, no 20' "
+        "WHERE folio_local = 'A-3'",
+      );
+
+      final dia = repo.delDia(_hoy);
+      expect(dia.efectivo, equals(Dinero.deTexto('600.00')));
+      expect(dia.tocadasPorOficina.single.cancelada, isFalse);
+      expect(dia.tocadasPorOficina.single.nota, equals('eran 2 cajas, no 20'));
+    });
+
+    test('un día limpio no trae ninguna', () {
+      venta(folio: 'A-1', total: 500);
+      expect(repo.delDia(_hoy).tocadasPorOficina, isEmpty);
+    });
+
+    test('lo que la oficina tocó AYER no aparece hoy', () {
+      venta(folio: 'A-9', total: 300, estado: 'cancelada', fecha: _ayer);
+      expect(repo.delDia(_hoy).tocadasPorOficina, isEmpty);
+    });
+  });
 }

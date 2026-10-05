@@ -713,7 +713,13 @@ async def test_una_fecha_futura_se_rechaza(cliente, sesion, semilla):
     assert "futura" in r.headers["location"]
 
 
-async def test_sin_el_permiso_se_ve_y_no_se_captura(cliente, sesion, semilla):
+async def test_EL_GERENTE_SI_REGISTRA_UNA_SALIDA(cliente, sesion, semilla):
+    """Decisión de la dirección, octubre 2026: gerencia deja de ser de solo lectura.
+
+    Lo que contiene el riesgo de una salida no es la falta del permiso, es que queda
+    con su folio, su tipo, su motivo y el nombre de quien la capturó — y que un
+    conteo no puede dejar la existencia en negativo.
+    """
     from app.core.seguridad import hashear_password
 
     await sesion.execute(
@@ -730,11 +736,10 @@ async def test_sin_el_permiso_se_ve_y_no_se_captura(cliente, sesion, semilla):
 
     r = await cliente.get("/panel/salidas")
     assert r.status_code == 200
-    assert "inventario.ajustar" in solo_texto(r)
-    assert "Registrar una salida" not in solo_texto(r)
+    assert "Registrar una salida" in solo_texto(r)
 
-    bloqueado = await _abrir(cliente, semilla, tipo="conteo")
-    assert bloqueado.status_code == 403
+    abierta = await _abrir(cliente, semilla, tipo="conteo")
+    assert abierta.status_code == 303
 
 
 # ===========================================================================

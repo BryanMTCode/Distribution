@@ -44,6 +44,37 @@ class VentaDeMiDia {
   bool get esContado => tipo == 'contado';
 }
 
+/// Una venta del día que la OFICINA canceló o corrigió.
+///
+/// ───────────────────────────────────────────────────────────────────────────
+/// POR QUÉ ESTO SE MUESTRA Y NO SE ESCONDE
+/// ───────────────────────────────────────────────────────────────────────────
+/// Una venta cancelada deja de sumar en el efectivo del día, y eso es correcto: el
+/// arqueo del servidor tampoco la cuenta. Pero si solo cambiara el total, el
+/// vendedor vería su número bajar sin explicación y pensaría que la app le perdió
+/// una venta — y la próxima vez apuntaría en papel «por si acaso».
+///
+/// Así que aparece, con su motivo, que es el que gerencia escribió en el panel.
+class VentaTocadaPorOficina {
+  const VentaTocadaPorOficina({
+    required this.folio,
+    required this.cliente,
+    required this.total,
+    required this.cancelada,
+    this.nota,
+  });
+
+  final String folio;
+  final String cliente;
+
+  /// Lo que la venta dice AHORA. En una cancelada ya no se le entrega nada.
+  final Dinero total;
+  final bool cancelada;
+
+  /// Por qué. Lo escribió la oficina al hacer el cambio.
+  final String? nota;
+}
+
 /// El corte del día, tal como lo va a ver el vendedor.
 class MiDia {
   const MiDia({
@@ -53,9 +84,13 @@ class MiDia {
     required this.cobrosEfectivo,
     required this.cobrosOtros,
     required this.sinSincronizar,
+    this.tocadasPorOficina = const [],
   });
 
   final List<VentaDeMiDia> ventas;
+
+  /// Lo que la oficina canceló o corrigió hoy.
+  final List<VentaTocadaPorOficina> tocadasPorOficina;
 
   /// Ventas de contado del día. Dinero que entró a la bolsa.
   final Dinero contado;
@@ -118,6 +153,33 @@ class RepoMiDia {
         )
         .toList();
 
+    // Lo que la oficina tocó hoy: las canceladas —que ya no están en la lista de
+    // arriba, porque esa pide `confirmada`— y las corregidas, que sí están pero con
+    // otro importe. Las dos llevan la nota que gerencia escribió.
+    final tocadas = _db
+        .select(
+          '''
+          SELECT v.folio_local, v.total, v.estado, v.nota_oficina,
+                 COALESCE(c.nombre_comercial, 'Cliente nuevo') AS cliente
+            FROM ventas v
+            LEFT JOIN clientes c ON c.id = v.cliente_id
+           WHERE v.fecha_operativa = ?
+             AND (v.estado = 'cancelada' OR v.nota_oficina IS NOT NULL)
+           ORDER BY v.folio_consecutivo DESC
+          ''',
+          [fechaOperativa],
+        )
+        .map(
+          (f) => VentaTocadaPorOficina(
+            folio: f['folio_local'] as String,
+            cliente: f['cliente'] as String,
+            total: _dinero(f['total']),
+            cancelada: (f['estado'] as String?) == 'cancelada',
+            nota: f['nota_oficina'] as String?,
+          ),
+        )
+        .toList();
+
     Dinero sumaVentas(bool contado) => ventas
         .where((v) => v.esContado == contado)
         .fold(Dinero.cero, (acc, v) => acc + v.total);
@@ -152,6 +214,7 @@ class RepoMiDia {
       cobrosEfectivo: sumaCobros("= 'efectivo'"),
       cobrosOtros: sumaCobros("<> 'efectivo'"),
       sinSincronizar: pendientes,
+      tocadasPorOficina: tocadas,
     );
   }
 }

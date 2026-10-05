@@ -129,6 +129,84 @@ class PantallaMiDia extends ConsumerWidget {
             ),
           ],
 
+          // ---------------------------------------------------------------
+          // LO QUE LA OFICINA TOCÓ HOY
+          // ---------------------------------------------------------------
+          // Una venta que gerencia canceló deja de sumar en el número de arriba, y
+          // eso es correcto: el arqueo del servidor tampoco la cuenta. Pero si solo
+          // bajara el total, el vendedor vería su número caer sin explicación y
+          // pensaría que la app le perdió una venta — y al día siguiente apuntaría
+          // en papel «por si acaso». Así que aparece, con el motivo que la oficina
+          // escribió.
+          if (dia.tocadasPorOficina.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Card(
+              key: const Key('tarjeta_oficina'),
+              color: colores.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.edit_note_outlined, size: 20, color: colores.outline),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            dia.tocadasPorOficina.length == 1
+                                ? 'La oficina cambió una venta de hoy'
+                                : 'La oficina cambió '
+                                    '${dia.tocadasPorOficina.length} ventas de hoy',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ya está descontado del efectivo de arriba. La mercancía '
+                      'volvió a tu camión.',
+                      style: TextStyle(fontSize: 12, color: colores.outline),
+                    ),
+                    for (final t in dia.tocadasPorOficina)
+                      Padding(
+                        key: Key('oficina_${t.folio}'),
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${t.folio} · ${t.cliente}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                Text(
+                                  t.cancelada ? 'cancelada' : '\$${t.total.texto}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: t.cancelada ? colores.error : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (t.nota != null)
+                              Text(
+                                '«${t.nota}»',
+                                style: TextStyle(fontSize: 12, color: colores.outline),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 24),
           Text('Mis ventas de hoy', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),

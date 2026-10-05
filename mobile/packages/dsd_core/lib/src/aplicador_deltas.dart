@@ -68,6 +68,7 @@ class AplicadorDeltas {
         'cartera' => _cartera(delta, recibidoEn),
         'lista_precios' => _listaPrecios(delta),
         'carga' => _carga(delta, recibidoEn),
+        'venta' => _venta(delta, recibidoEn),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
         // Las promociones todavía no se aplican: se aceptan para no llenar
@@ -522,6 +523,144 @@ class AplicadorDeltas {
         final num n => n.toStringAsFixed(3),
         _ => '0.000',
       };
+
+  // -------------------------------------------------------------------------
+  // La venta que la oficina cambió
+  // -------------------------------------------------------------------------
+
+  /// Una venta que la OFICINA canceló o corrigió.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// NO LLEGA LA DIFERENCIA: LLEGAN LAS PARTIDAS, Y SE COMPARAN
+  /// ───────────────────────────────────────────────────────────────────────
+  /// El servidor podría mandar «devuelve 432 piezas al camión» y sería un payload
+  /// más chico. No lo hace, y la razón es la de siempre con los deltas: un `pull`
+  /// se repite cuando la red se corta a media tanda, y aplicar dos veces «devuelve
+  /// 432» le regala al camión 432 piezas que no existen.
+  ///
+  /// Así que viajan las partidas como quedaron, y el teléfono devuelve al camión la
+  /// DIFERENCIA contra lo que él tiene guardado. Aplicarlo dos veces da cero la
+  /// segunda vez: la comparación es idempotente por construcción, sin tabla de
+  /// marcas y sin que nadie tenga que acordarse.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// UNA VENTA QUE ESTE TELÉFONO NO TIENE NO SE INVENTA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Pasa después de reinstalar la app: el servidor tiene la venta y el teléfono
+  /// no. Entonces no hay con qué comparar, y tocar el camión sería adivinar —el
+  /// saldo que este teléfono trae ya viene del servidor, con esa venta dentro—. Se
+  /// ignora, que es lo correcto: lo que el vendedor necesita de una venta vieja lo
+  /// ve en el panel, no en su «Mi día» de hoy.
+  bool _venta(Delta delta, String recibidoEn) {
+    final v = delta.payload;
+    if (v == null) return true;
+
+    final local = _db.select(
+      'SELECT estado, total FROM ventas WHERE id = ?',
+      [delta.entidadId],
+    );
+    if (local.isEmpty) return true;
+
+    final cancelada = (v['estado'] as String?) == 'cancelada';
+
+    // Lo que el teléfono tiene por producto, en unidad base.
+    final mias = <String, int>{};
+    for (final f in _db.select(
+      'SELECT producto_id, cantidad_base FROM venta_partidas WHERE venta_id = ?',
+      [delta.entidadId],
+    )) {
+      mias.update(
+        f['producto_id'] as String,
+        (previo) =>
+            previo + Cantidad.deBase((f['cantidad_base'] as num).toDouble()).milesimos,
+        ifAbsent: () =>
+            Cantidad.deBase((f['cantidad_base'] as num).toDouble()).milesimos,
+      );
+    }
+
+    // Lo que el servidor dice que quedó. Una venta cancelada no tiene nada: toda
+    // su mercancía vuelve.
+    final suyas = <String, int>{};
+    final partidas = (v['partidas'] as List?) ?? const [];
+    if (!cancelada) {
+      for (final fila in partidas) {
+        if (fila is! Map<String, Object?>) continue;
+        final producto = fila['producto_id'] as String?;
+        if (producto == null) continue;
+        final base = Cantidad.deTexto(_aTextoCantidad(fila['cantidad_base']));
+        suyas.update(
+          producto,
+          (previo) => previo + base.milesimos,
+          ifAbsent: () => base.milesimos,
+        );
+      }
+    }
+
+    // La diferencia vuelve al camión. Sin `INSERT`: un producto que el camión no
+    // trae no se crea aquí — si no lo trae, es porque la carga no lo subió, y un
+    // renglón nuevo le mostraría al vendedor mercancía que no tiene.
+    for (final producto in {...mias.keys, ...suyas.keys}) {
+      final vuelve = (mias[producto] ?? 0) - (suyas[producto] ?? 0);
+      if (vuelve == 0) continue;
+      _db.execute(
+        'UPDATE existencias_camion SET cant_actual = cant_actual + ? '
+        ' WHERE producto_id = ?',
+        [vuelve / 1000, producto],
+      );
+    }
+
+    // Y la venta queda como el servidor la tiene. Las partidas se reescriben
+    // completas: una cancelada se queda sin ninguna, y una corregida puede haber
+    // perdido un renglón entero.
+    _db.execute('DELETE FROM venta_partidas WHERE venta_id = ?', [delta.entidadId]);
+    for (final fila in partidas) {
+      if (fila is! Map<String, Object?>) continue;
+      final producto = fila['producto_id'] as String?;
+      if (producto == null) continue;
+      _db.execute(
+        'INSERT INTO venta_partidas (id, venta_id, linea, producto_id, '
+        '                            unidad_codigo, factor_unidad, cantidad, '
+        '                            cantidad_base, precio_unitario, tasa_iva, '
+        '                            importe) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          fila['id'] as String? ?? '${delta.entidadId}-${fila['linea']}',
+          delta.entidadId,
+          _aNumero(fila['linea']) ?? 1,
+          producto,
+          fila['unidad_codigo'] as String? ?? 'PZA',
+          _aNumero(fila['factor_unidad']) ?? 1,
+          _aNumero(fila['cantidad']) ?? 0,
+          _aNumero(fila['cantidad_base']) ?? 0,
+          _aNumero(fila['precio_unitario']) ?? 0,
+          _aNumero(fila['tasa_iva']) ?? 0,
+          _aNumero(fila['importe']) ?? 0,
+        ],
+      );
+    }
+
+    // La nota es para que el vendedor LEA por qué su venta cambió. Que cambie sin
+    // decirle por qué es la forma más rápida de que deje de confiar en el sistema.
+    final motivo = cancelada
+        ? (v['cancelacion_motivo'] as String?)
+        : (v['correccion_motivo'] as String?);
+
+    _db.execute(
+      'UPDATE ventas SET estado = ?, subtotal = ?, descuento = ?, impuestos = ?, '
+      '                 total = ?, nota_oficina = ? '
+      ' WHERE id = ?',
+      [
+        v['estado'] as String? ?? 'confirmada',
+        _aNumero(v['subtotal']) ?? 0,
+        _aNumero(v['descuento']) ?? 0,
+        _aNumero(v['impuestos']) ?? 0,
+        _aNumero(v['total']) ?? 0,
+        motivo,
+        delta.entidadId,
+      ],
+    );
+    return true;
+  }
 
   // -------------------------------------------------------------------------
   // Clientes

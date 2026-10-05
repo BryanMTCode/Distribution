@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block titulo %}Venta {{ v.folio_local }}{% endblock %}
+{% block contenido %}
+<h1>Venta {{ v.folio_local }}</h1>
+<p class="subtitulo">
+  {{ v.cliente }}{% if v.cliente_codigo %} <span class="mono">{{ v.cliente_codigo }}</span>{% endif %}
+  · {{ v.vendedor }} · {{ v.camion }}
+  · {{ v.fecha_operativa.strftime('%d/%m/%Y') }}
+  · #{{ v.folio_servidor }}
+  · <a href="/panel/ventas">volver a ventas</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{# --------------------------------------------------------------------- #}
+{# El estado del documento, antes que cualquier botón.                   #}
+{# --------------------------------------------------------------------- #}
+{# Quien abre esta pantalla para corregir algo necesita saber primero si  #}
+{# ya la tocaron: dos correcciones del mismo renglón por dos personas     #}
+{# distintas es el error que esta caja previene.                          #}
+{% if v.estado == 'cancelada' %}
+<div class="aviso-caja error" id="venta_cancelada">
+  <strong>Cancelada</strong>
+  {% if v.cancelada_en %}el {{ v.cancelada_en.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+  {% if v.cancelada_por_nombre %}por {{ v.cancelada_por_nombre }}{% endif %}.
+  {% if v.cancelacion_motivo %}<div>«{{ v.cancelacion_motivo }}»</div>{% endif %}
+  <div class="sutil">
+    {% if v.reingresa_stock %}
+      La mercancía volvió al camión.
+    {% else %}
+      La mercancía NO volvió al camión: se entregó y sigue fuera.
+    {% endif %}
+    El papel que el cliente tiene en la mano sigue impreso: esta cancelación vive
+    en el sistema, no en su copia.
+  </div>
+</div>
+{% elif v.corregida_en %}
+<div class="aviso-caja neutro" id="venta_corregida">
+  <strong>Corregida</strong> el {{ v.corregida_en.strftime('%d/%m/%Y %H:%M') }}
+  {% if v.corregida_por_nombre %}por {{ v.corregida_por_nombre }}{% endif %}.
+  {% if v.correccion_motivo %}<div>«{{ v.correccion_motivo }}»</div>{% endif %}
+  <div class="sutil">
+    <strong>Esta venta ya no coincide con su remisión impresa.</strong> Si el
+    cliente reclama con el papel en la mano, ésta es la explicación.
+  </div>
+</div>
+{% endif %}
+
+{% if v.requiere_revision %}
+<div class="aviso-caja error" id="venta_por_revisar">
+  <strong>Marcada para revisión:</strong>
+  {% for m in v.revision_motivos %}<span class="etiqueta-motivo">{{ m }}</span>{% endfor %}
+  <div class="sutil">
+    El servidor nunca rechaza una venta de la calle: la acepta y la marca. Mirarla
+    y darla por revisada es la otra mitad de esa regla — una bandera que nadie baja
+    deja de significar algo.
+  </div>
+  <form method="post" action="/panel/ventas/{{ v.id }}/revisada"
+        style="margin-top:10px;display:flex;gap:8px;align-items:center">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="nota" maxlength="200" style="flex:1"
+           placeholder="Qué encontraste (opcional, queda en el historial)">
+    <button type="submit" class="secundario" id="boton_revisada">Ya la revisé</button>
+  </form>
+</div>
+{% endif %}
+
+{# --------------------------------------------------------------------- #}
+{# Los renglones, con la aritmética a la vista.                          #}
+{# --------------------------------------------------------------------- #}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Producto</th>
+        <th class="numero">Cantidad</th>
+        <th class="numero">Precio</th>
+        <th class="numero">Importe</th>
+        {% if abierta_para_editar %}<th class="numero">Corregir a</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in partidas %}
+      <tr>
+        <td class="sutil">{{ p.linea }}</td>
+        <td>
+          <strong>{{ p.nombre }}</strong>
+          <div class="sutil"><span class="mono">{{ p.sku }}</span></div>
+        </td>
+        <td class="numero">
+          {{ p.cantidad|entero }} {{ p.unidad_codigo }}
+          {% if p.factor_unidad|float != 1.0 %}
+            <div class="sutil">{{ p.cantidad_base|entero }} {{ p.unidad_base }}</div>
+          {% endif %}
+        </td>
+        <td class="numero">${{ '%.4f'|format(p.precio_unitario) }}</td>
+        <td class="numero">${{ '%.2f'|format(p.importe) }}</td>
+        {% if abierta_para_editar %}
+        <td class="numero">
+          <input type="text" form="forma_corregir" name="cantidad_{{ p.id }}"
+                 inputmode="decimal" style="width:90px;text-align:right"
+                 placeholder="{{ p.cantidad|entero }}">
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="{{ 5 if not abierta_para_editar else 6 }}" class="numero">
+          <strong>Total {{ total_texto }}</strong>
+          <span class="sutil">· {{ v.tipo }}</span>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+{% if bloqueos %}
+<div class="aviso-caja error" id="bloqueos_venta">
+  <strong>Esta venta no se puede cambiar:</strong>
+  <ul style="margin:8px 0 0 18px">
+    {% for b in bloqueos %}<li>{{ b }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if abierta_para_editar %}
+{# --------------------------------------------------------------------- #}
+{# Corregir cantidades.                                                  #}
+{# --------------------------------------------------------------------- #}
+<h2>Corregir cantidades</h2>
+<form method="post" action="/panel/ventas/{{ v.id }}/corregir" id="forma_corregir"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p style="margin-top:0" class="sutil">
+    Escribe la cantidad correcta en los renglones de arriba. Lo que dejes en blanco
+    queda como está. Las cantidades <strong>solo pueden bajar</strong>: el papel que
+    el cliente tiene es el techo de lo que se entregó, y entregar más de lo que dice
+    la remisión es mercancía que salió sin documento — eso es una venta nueva, no una
+    corrección. Un renglón en <strong>0</strong> desaparece del documento.
+  </p>
+  <label>
+    Motivo <span class="sutil">(obligatorio, mínimo 10 caracteres)</span>
+    <textarea name="motivo" rows="2" maxlength="600" required
+              placeholder="Ej.: el vendedor capturó 20 cajas y entregó 2; el cliente confirmó por teléfono"></textarea>
+  </label>
+  <p class="sutil">
+    La diferencia vuelve al saldo del camión y el teléfono del vendedor la recibe en
+    la siguiente sincronización. Queda registrado quién corrigió, cuándo y por qué.
+  </p>
+  <button type="submit" id="boton_corregir">Corregir la venta</button>
+</form>
+
+{# --------------------------------------------------------------------- #}
+{# Cancelar.                                                             #}
+{# --------------------------------------------------------------------- #}
+<h2>Cancelar la venta</h2>
+<form method="post" action="/panel/ventas/{{ v.id }}/cancelar"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p style="margin-top:0" class="sutil">
+    La venta pasa a <strong>cancelada</strong>: deja de contar en el día, en el
+    efectivo esperado y —si era a crédito— en la deuda del cliente. No se borra: el
+    folio está impreso en un papel que alguien tiene.
+  </p>
+  <label style="display:flex;gap:8px;align-items:flex-start">
+    <input type="checkbox" name="reingresa_stock" value="1" checked
+           id="reingresa_stock" style="margin-top:4px">
+    <span>
+      <strong>La mercancía vuelve al camión</strong>
+      <div class="sutil">
+        Déjalo marcado si la mercancía no salió o el cliente la devolvió. Quítalo
+        solo si el cliente SÍ se la llevó y lo que sigue es registrarla a nombre de
+        quien se la llevó — si no, el camión la tendría dos veces.
+      </div>
+    </span>
+  </label>
+  <label>
+    Motivo <span class="sutil">(obligatorio, mínimo 10 caracteres)</span>
+    <textarea name="motivo" rows="2" maxlength="600" required
+              placeholder="Ej.: se facturó al cliente equivocado; el pedido era de La Esquina"></textarea>
+  </label>
+  <button type="submit" class="peligro" id="boton_cancelar">Cancelar la venta</button>
+</form>
+{% endif %}
+{% endblock %}

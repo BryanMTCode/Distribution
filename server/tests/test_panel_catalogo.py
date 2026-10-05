@@ -551,8 +551,17 @@ async def gerente(sesion, semilla) -> None:
     await sesion.commit()
 
 
-async def test_el_gerente_ve_los_precios_y_no_los_cambia(cliente, semilla, gerente):
-    """La UI oculta, el servidor prohíbe. Las dos cosas, no una."""
+async def test_EL_GERENTE_SI_CAMBIA_EL_CATALOGO(cliente, semilla, gerente):
+    """Decisión de la dirección, octubre 2026: gerencia deja de ser de solo lectura.
+
+    La migración 0009 decía «Gerencia es de SOLO LECTURA sobre la operación:
+    monitorea, no opera», y la 0031 le concede `catalogo.administrar`.
+
+    Conviene saber qué abarca ese permiso, porque es uno y cubre dos cosas: los
+    DATOS del producto —nombre, SKU, código de barras— y sus PRECIOS. No hay forma
+    de conceder lo primero sin lo segundo sin partir el permiso en dos, y partirlo
+    fragmentaría el modelo de permisos para una distinción que nadie pidió.
+    """
     await _entrar(cliente, "ADMIN01")
     producto_id = await _crear_producto(cliente)
     await cliente.get("/panel/salir")
@@ -561,10 +570,8 @@ async def test_el_gerente_ve_los_precios_y_no_los_cambia(cliente, semilla, geren
     lectura = await cliente.get(f"/panel/productos/{producto_id}")
     assert lectura.status_code == 200
     assert "Refresco de cola 1 L" in lectura.text
-    # La UI no le ofrece el formulario…
-    assert "Guardar precios" not in lectura.text
+    assert "Guardar precios" in lectura.text
 
-    # …y aunque lo mande a mano, el servidor lo rechaza.
     r = await cliente.post(
         f"/panel/productos/{producto_id}/precios",
         data={
@@ -572,9 +579,9 @@ async def test_el_gerente_ve_los_precios_y_no_los_cambia(cliente, semilla, geren
             "lista_id": str(semilla["lista_precios"]),
             "precio_CAJA": "1.00",
         },
+        follow_redirects=False,
     )
-    assert r.status_code == 403
-    assert "catalogo.administrar" in r.text
+    assert r.status_code == 303
 
 
 async def test_capturar_un_precio_exige_el_token_csrf(cliente, semilla):

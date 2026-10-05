@@ -564,14 +564,17 @@ void sembrarVentaDelDia(
   String tipo = 'contado',
   String cliente = 'c1',
   int sincronizada = 0,
+  String estado = 'confirmada',
+  String? notaOficina,
 }) {
   final momento = relojDePrueba().toUtc().toIso8601String();
   base.db.execute(
     'INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, '
-    'estado, total, fecha_dispositivo, fecha_operativa, sincronizada, creado_en) '
-    "VALUES (?, ?, ?, ?, ?, 'confirmada', ?, ?, ?, ?, ?)",
-    [folio, folio.hashCode.abs(), folio, cliente, tipo, total, momento,
-     momento.substring(0, 10), sincronizada, momento],
+    'estado, total, fecha_dispositivo, fecha_operativa, sincronizada, creado_en, '
+    'nota_oficina) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [folio, folio.hashCode.abs(), folio, cliente, tipo, estado, total, momento,
+     momento.substring(0, 10), sincronizada, momento, notaOficina],
   );
 }
 

@@ -27,7 +27,7 @@ class BaseLocal {
   /// Base en memoria, para pruebas.
   factory BaseLocal.enMemoria() {
     final db = sqlite3.openInMemory();
-    db.execute(esquemaLocal);
+    aplicarEsquemaLocal(db);
     return BaseLocal(db);
   }
 
@@ -45,7 +45,10 @@ class BaseLocal {
     }
     db.execute('PRAGMA journal_mode = WAL');
     db.execute('PRAGMA foreign_keys = ON');
-    db.execute(esquemaLocal);
+    // El esquema Y las columnas que llegaron después: este teléfono puede venir
+    // de una versión anterior, y `CREATE TABLE IF NOT EXISTS` no agrega columnas
+    // a una tabla que ya existe. Ver `aplicarEsquemaLocal`.
+    aplicarEsquemaLocal(db);
     return BaseLocal(db, ruta: ruta);
   }
 

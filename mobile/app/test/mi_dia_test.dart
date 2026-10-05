@@ -82,4 +82,52 @@ void main() {
 
     expect(textoQueContiene('Todavía no has vendido hoy'), findsOneWidget);
   });
+
+  group('lo que la oficina cambió', () {
+    testWidgets('APARECE CON SU MOTIVO, y ya está descontado', (tester) async {
+      // Sin esto, el vendedor ve su efectivo bajar sin explicación y concluye que
+      // la app le perdió una venta. Al día siguiente apunta en papel «por si
+      // acaso», y ahí se pierde el sistema.
+      await montarApp(
+        tester,
+        credencial: credencialDelServidor(),
+        sembrar: (base) {
+          sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+          sembrarVentaDelDia(base, folio: 'V1', total: 500.00);
+          sembrarVentaDelDia(
+            base,
+            folio: 'V2',
+            total: 300.00,
+            estado: 'cancelada',
+            notaOficina: 'se facturó al cliente equivocado',
+          );
+        },
+      );
+      await entrarCon(tester, pinCorrecto);
+      await abrirMiDia(tester);
+
+      // El efectivo ya NO incluye la cancelada.
+      expect(textoDe(tester, const Key('monto_efectivo')), equals('\$500.00'));
+
+      expect(find.byKey(const Key('tarjeta_oficina')), findsOneWidget);
+      expect(find.byKey(const Key('oficina_V2')), findsOneWidget);
+      expect(textoQueContiene('se facturó al cliente equivocado'), findsOneWidget);
+      expect(textoQueContiene('La mercancía volvió a tu camión'), findsOneWidget);
+    });
+
+    testWidgets('un día que la oficina no tocó no muestra la tarjeta', (tester) async {
+      await montarApp(
+        tester,
+        credencial: credencialDelServidor(),
+        sembrar: (base) {
+          sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+          sembrarVentaDelDia(base, folio: 'V1', total: 500.00);
+        },
+      );
+      await entrarCon(tester, pinCorrecto);
+      await abrirMiDia(tester);
+
+      expect(find.byKey(const Key('tarjeta_oficina')), findsNothing);
+    });
+  });
 }

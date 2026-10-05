@@ -696,9 +696,19 @@ async def test_el_folio_es_consecutivo_y_no_max_mas_uno(cliente, sesion, semilla
 # ===========================================================================
 # 7. Los permisos
 # ===========================================================================
-async def test_sin_el_permiso_se_ve_y_no_se_captura(cliente, sesion, semilla):
-    """El gerente mide y no ajusta: una entrada es la operación con la que se
-    puede tapar un faltante (ADR 0002 §0)."""
+async def test_EL_GERENTE_SI_CAPTURA_UNA_ENTRADA(cliente, sesion, semilla):
+    """Decisión de la dirección, octubre 2026: gerencia deja de ser de solo lectura.
+
+    Esta prueba decía lo contrario —«el gerente mide y no ajusta: una entrada es la
+    operación con la que se puede tapar un faltante»— y se invirtió a propósito, no
+    por un descuido. El riesgo que describía sigue siendo real: lo que lo contiene no
+    es la falta del permiso, es que cada entrada queda con su folio, su motivo y el
+    nombre de quien la capturó.
+
+    Que la puerta se cierre para quien NO tiene el permiso lo prueba
+    `test_un_gerente_no_cierra_el_dia` en la liquidación, con un permiso que
+    gerencia sigue sin llevar.
+    """
     from app.core.seguridad import hashear_password
 
     await sesion.execute(
@@ -715,19 +725,7 @@ async def test_sin_el_permiso_se_ve_y_no_se_captura(cliente, sesion, semilla):
 
     r = await cliente.get("/panel/entradas")
     assert r.status_code == 200
-    texto = solo_texto(r)
-    assert "inventario.ajustar" in texto
-    assert "Recibir mercancía" not in texto
-
-    # Y el POST tampoco: la pantalla sin botón no es la defensa.
-    csrf = _csrf(cliente)
-    bloqueado = await cliente.post(
-        "/panel/entradas/nueva",
-        data={"csrf": csrf, "motivo": "compra",
-              "almacen_destino_id": str(semilla["bodega"])},
-        follow_redirects=False,
-    )
-    assert bloqueado.status_code == 403
+    assert "Recibir mercancía" in solo_texto(r)
 
 
 async def test_el_permiso_tiene_dueno(sesion):
@@ -737,6 +735,12 @@ async def test_el_permiso_tiene_dueno(sesion):
     —porque salta los permisos por código— y el supervisor, que es quien está en
     la bodega a las seis de la mañana, no. Un permiso sin dueño es una función
     que parece construida.
+
+    Desde la 0031 también lo lleva **gerencia**. La 0009 decía «Gerencia es de SOLO
+    LECTURA sobre la operación: monitorea, no opera», y la dirección lo revirtió en
+    octubre de 2026: quiere que gerencia pueda corregir lo que ve. Esta prueba se
+    actualizó a propósito, y por eso enumera los dueños en vez de contarlos: el día
+    que aparezca un tercero, alguien tiene que decidirlo, no descubrirlo.
     """
     duenos = (
         await sesion.execute(
@@ -746,9 +750,7 @@ async def test_el_permiso_tiene_dueno(sesion):
             )
         )
     ).scalars().all()
-    assert duenos == ["supervisor"], (
-        "quien mide no ajusta: gerencia no lleva este permiso"
-    )
+    assert duenos == ["gerente", "supervisor"]
 
 
 async def test_el_supervisor_si_puede_recibir(cliente, sesion, semilla):

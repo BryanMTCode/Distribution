@@ -410,6 +410,7 @@ async def ventas(
                 SELECT v.id, v.folio_local, v.folio_servidor, v.total, v.tipo,
                        v.fecha_operativa, v.fecha_dispositivo, v.requiere_revision,
                        v.revision_motivos, v.distancia_cliente_m, v.desfase_reloj_seg,
+                       v.estado, v.corregida_en,
                        c.nombre_comercial AS cliente, u.nombre AS vendedor
                   FROM ventas v
                   JOIN clientes c ON c.id = v.cliente_id

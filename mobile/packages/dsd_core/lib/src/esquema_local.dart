@@ -296,6 +296,10 @@ CREATE TABLE IF NOT EXISTS ventas (
     -- reimpresión debe salir IDÉNTICA al original, marcada como COPIA.
     ticket_escpos           BLOB,
     sincronizada            INTEGER NOT NULL DEFAULT 0,
+    -- Por qué la oficina canceló o corrigió esta venta. Viaja en el delta de la
+    -- venta para que el vendedor lo LEA: que su venta cambie sin decirle por qué
+    -- es la forma más rápida de que deje de confiar en el sistema.
+    nota_oficina            TEXT,
     creado_en               TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_ventas_pendientes ON ventas(sincronizada) WHERE sincronizada = 0;

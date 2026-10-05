@@ -16,6 +16,7 @@ export 'src/credito.dart';
 export 'src/dia_operativo.dart';
 export 'src/dinero.dart';
 export 'src/escpos.dart';
+export 'src/esquema_al_dia.dart';
 export 'src/esquema_local.dart';
 export 'src/dispositivo_cliente.dart';
 export 'src/folios.dart';

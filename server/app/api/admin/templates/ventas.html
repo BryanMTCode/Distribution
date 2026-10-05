@@ -31,9 +31,16 @@
       {% for f in filas %}
       <tr>
         <td>
-          <span class="mono">{{ f.folio_local }}</span>
+          {# El folio es el enlace: es con lo que la oficina identifica la venta #}
+          {# cuando el cliente llama, así que es donde la mano va a buscar.      #}
+          <a href="/panel/ventas/{{ f.id }}" class="mono">{{ f.folio_local }}</a>
           <div class="sutil">
             #{{ f.folio_servidor }} · {{ f.fecha_operativa.strftime('%d/%m') }}
+            {% if f.estado == 'cancelada' %}
+              · <strong style="color:var(--alerta)">cancelada</strong>
+            {% elif f.corregida_en %}
+              · corregida
+            {% endif %}
           </div>
         </td>
         <td>{{ f.cliente }}</td>
