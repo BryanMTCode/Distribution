@@ -7,6 +7,14 @@
 
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
+# `build/` es salida generada y `android/` no tiene Dart: analizarlos solo produce
+# ruido, y en CI un warning en código generado pone rojo el paso de análisis —que
+# además corta las tres tandas de pruebas, porque van después.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+
 include: package:flutter_lints/flutter.yaml
 
 linter:
