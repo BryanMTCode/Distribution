@@ -143,6 +143,22 @@ class ControladorSync extends Notifier<EstadoSync> {
   @override
   EstadoSync build() => const SyncInactiva();
 
+  /// Devuelve a la cola lo que quedó con error y vuelve a sincronizar.
+  ///
+  /// Existe porque un sobre en cuarentena no se reintenta nunca, y eso es
+  /// correcto cuando el rechazo fue por los datos y desastroso cuando fue por un
+  /// fallo nuestro: un `lote_id` mal formado dejó ventas válidas sin poder subir
+  /// con el bug ya arreglado. El vendedor no tiene por qué saber la diferencia;
+  /// lo que necesita es poder volver a intentarlo.
+  Future<int> reintentarLoQueFallo() async {
+    final cuantos = ref.read(outboxProvider).reencolarCuarentena();
+    if (cuantos > 0) {
+      ref.invalidate(resumenColaProvider);
+      await sincronizar();
+    }
+    return cuantos;
+  }
+
   Future<void> sincronizar() async {
     final transporte = ref.read(transporteProvider);
     if (transporte == null) {

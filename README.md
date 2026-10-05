@@ -103,7 +103,7 @@ en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**988 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **479 de Dart** y **235 de widget**, todas en verde.
+**988 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **483 de Dart** y **236 de widget**, todas en verde.
 
 ## Stack
 
@@ -226,7 +226,7 @@ make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
 make pruebas                        # 988 pruebas de Python
-make movil                          # 479 de Dart + 235 de widget
+make movil                          # 483 de Dart + 236 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

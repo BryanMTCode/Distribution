@@ -206,4 +206,80 @@ void main() {
     expect(guardado.hashPayload, equals(sobre.hash));
     expect(guardado.payload['hash_payload'], equals(sobre.hash));
   });
+
+  // =========================================================================
+  // Volver de la cuarentena
+  // =========================================================================
+  // Hasta que esto existió, un sobre en cuarentena estaba muerto: `siguienteLote`
+  // solo toma `pendiente` y nada lo devolvía. Un fallo NUESTRO —un `lote_id` que
+  // no era UUID, que hacía que el servidor contestara 422 a todo— dejaba ventas
+  // válidas sin poder subir nunca, con el bug ya arreglado.
+
+  test('reencolar devuelve a la cola lo que quedó con error', () {
+    outbox.encolar(
+      sobreDeCliente('c1'),
+      escribirNegocio: escribirCliente('c1', 'Doña Mary'),
+      creadoEn: _ahora,
+    );
+    final lote = outbox.siguienteLote();
+    outbox.aCuarentena(lote.first.operacionId, 'un 422 de los nuestros');
+
+    expect(outbox.siguienteLote(), isEmpty, reason: 'en cuarentena no se reenvía');
+    expect(outbox.resumen().enCuarentena, equals(1));
+
+    expect(outbox.reencolarCuarentena(), equals(1));
+
+    expect(outbox.resumen().enCuarentena, equals(0));
+    expect(outbox.resumen().pendientes, equals(1));
+    expect(outbox.siguienteLote().length, equals(1));
+  });
+
+  test('reencolar respeta el orden: el alta del cliente antes que su venta', () {
+    // Es el caso que se vio en producción. La venta a un cliente creado en el
+    // teléfono referencia un id que solo existe aquí; si el alta del cliente se
+    // reenviara DESPUÉS, el servidor rechazaría la venta por «referencia a un
+    // cliente que no existe» — que es exactamente lo que pasó.
+    outbox.encolar(
+      sobreDeCliente('cliente-nuevo', secuencia: 1),
+      escribirNegocio: escribirCliente('cliente-nuevo', 'Tienda nueva'),
+      creadoEn: _ahora,
+    );
+    outbox.encolar(
+      sobreDeCliente('venta-de-ese-cliente', secuencia: 2),
+      escribirNegocio: escribirCliente('venta-de-ese-cliente', 'La venta'),
+      creadoEn: _ahora,
+    );
+    for (final s in outbox.siguienteLote()) {
+      outbox.aCuarentena(s.operacionId, 'el 422 se llevó las dos');
+    }
+
+    expect(outbox.reencolarCuarentena(), equals(2));
+
+    final reenviado = outbox.siguienteLote();
+    expect(reenviado.length, equals(2));
+    expect(
+      reenviado.first.secuencia < reenviado.last.secuencia,
+      isTrue,
+      reason: 'se reenvía en el orden en que se capturó, o la venta llega antes '
+          'que el cliente al que pertenece',
+    );
+  });
+
+  test('reencolar no hace nada si no hay nada con error', () {
+    expect(outbox.reencolarCuarentena(), equals(0));
+  });
+
+  test('la cuarentena se puede listar con su motivo', () {
+    // Para decirle al vendedor QUÉ pasó, no solo cuántos quedaron.
+    outbox.encolar(
+      sobreDeCliente('c1'),
+      escribirNegocio: escribirCliente('c1', 'Doña Mary'),
+      creadoEn: _ahora,
+    );
+    outbox.aCuarentena(outbox.siguienteLote().first.operacionId, 'cliente inexistente');
+
+    final lista = outbox.enCuarentena();
+    expect(lista.length, equals(1));
+    expect(lista.first.error, equals('cliente inexistente'));
+  });
 }

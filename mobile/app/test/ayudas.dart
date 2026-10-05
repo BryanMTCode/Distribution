@@ -301,7 +301,11 @@ void sembrarCobroPendiente(
 /// Un payload de relleno (`{}`) haría pasar pruebas que en producción
 /// fallarían: el sincronizador manda ese JSON tal cual, y el servidor espera
 /// encontrar ahí el `operacion_id`.
-void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
+void sembrarPendienteEnCola(
+  BaseLocal base, {
+  int cuantos = 1,
+  bool enCuarentena = false,
+}) {
   for (var i = 0; i < cuantos; i++) {
     final sobre = SobreLocal(
       operacionId: 'op-$i',
@@ -319,7 +323,7 @@ void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
       '''
       INSERT INTO outbox (operacion_id, tipo, entidad_id, payload, hash_payload,
                           secuencia, visita_id, estado, intentos, creado_en)
-      VALUES (?, 'cliente.crear', ?, ?, ?, ?, ?, 'pendiente', 0,
+      VALUES (?, 'cliente.crear', ?, ?, ?, ?, ?, ?, 0,
               '2026-09-24T09:00:00.000Z')
       ''',
       [
@@ -329,6 +333,7 @@ void sembrarPendienteEnCola(BaseLocal base, {int cuantos = 1}) {
         sobre.hash,
         i,
         sobre.visitaId,
+        enCuarentena ? 'cuarentena' : 'pendiente',
       ],
     );
   }

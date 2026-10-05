@@ -141,4 +141,33 @@ void main() {
     await entrarYSincronizar(tester, transporte: null);
     expect(textoQueContiene('Entraste sin señal'), findsOneWidget);
   });
+
+  testWidgets('se puede reintentar lo que quedó con error', (tester) async {
+    // Un sobre en cuarentena no se reintenta nunca solo, y eso es correcto cuando
+    // el rechazo vino de los datos. Cuando vino de un fallo del sistema —un
+    // `lote_id` que no era UUID hacía que el servidor contestara 422 a todo— el
+    // vendedor se quedaba con ventas capturadas que no podían subir, con el bug ya
+    // arreglado y sin nada que tocar en la pantalla.
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) => sembrarPendienteEnCola(base, cuantos: 1, enCuarentena: true),
+      extras: [
+        transporteProvider.overrideWithValue(TransporteDePrueba()),
+        tokenProvider.overrideWith((_) => 'token-de-prueba'),
+      ],
+    );
+    await entrarCon(tester, pinCorrecto);
+
+    expect(textoQueContiene('1 con error'), findsOneWidget);
+    expect(textoQueContiene('toca para reintentar'), findsOneWidget,
+        reason: 'si no se dice, nadie adivina que la barra se toca');
+
+    await tester.tap(find.byKey(const Key('barra_pendientes')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('barra_pendientes')), findsNothing,
+        reason: 'reintentar lo devolvió a la cola, el servidor lo aceptó y ya no '
+            'queda nada que mostrar');
+  });
 }

@@ -210,33 +210,65 @@ String _resumenCompleto(ResultadoSincronizacion r) {
 /// Mientras haya cola sin sincronizar, se ve. Un número de pendientes que crece
 /// es la primera señal de que algo va mal, y el vendedor es quien lo nota
 /// primero.
-class _BarraPendientes extends StatelessWidget implements PreferredSizeWidget {
+class _BarraPendientes extends ConsumerWidget implements PreferredSizeWidget {
   const _BarraPendientes({required this.cola});
 
   final ResumenCola cola;
 
+  // 32 px alcanzan para una línea de texto y no para un botón dentro de la fila:
+  // el primer intento puso un TextButton ahí y el toque NO LO ALCANZABA —la fila
+  // se recortaba dentro de la barra—. Lo detectó la prueba de widget porque el
+  // toque no hacía nada; en un teléfono habría sido un botón a la vista que no
+  // responde, que es peor.
+  //
+  // Así que no hay botón: cuando hay algo con error, LA BARRA COMPLETA es lo que
+  // se toca. Un solo widget, del ancho de la pantalla, imposible de recortar y
+  // más fácil de acertar con el pulgar en un camión.
   @override
   Size get preferredSize => const Size.fromHeight(32);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colores = Theme.of(context).colorScheme;
-    final cuarentena = cola.enCuarentena > 0 ? ' · ${cola.enCuarentena} con error' : '';
-    return Container(
-      key: const Key('barra_pendientes'),
+    final hayErrores = cola.enCuarentena > 0;
+    final cuarentena = hayErrores ? ' · ${cola.enCuarentena} con error' : '';
+
+    final contenido = Container(
       width: double.infinity,
-      color: colores.tertiaryContainer,
+      color: hayErrores ? colores.errorContainer : colores.tertiaryContainer,
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       child: Row(
         children: [
-          Icon(Icons.cloud_upload_outlined, size: 16, color: colores.onTertiaryContainer),
+          Icon(
+            hayErrores ? Icons.refresh : Icons.cloud_upload_outlined,
+            size: 16,
+            color: hayErrores ? colores.onErrorContainer : colores.onTertiaryContainer,
+          ),
           const SizedBox(width: 8),
-          Text(
-            'Por enviar: ${cola.pendientes}$cuarentena',
-            style: TextStyle(color: colores.onTertiaryContainer, fontSize: 13),
+          Expanded(
+            child: Text(
+              hayErrores
+                  ? 'Por enviar: ${cola.pendientes}$cuarentena · toca para reintentar'
+                  : 'Por enviar: ${cola.pendientes}',
+              style: TextStyle(
+                color:
+                    hayErrores ? colores.onErrorContainer : colores.onTertiaryContainer,
+                fontSize: 13,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
+    );
+
+    if (!hayErrores) {
+      return Container(key: const Key('barra_pendientes'), child: contenido);
+    }
+    return InkWell(
+      key: const Key('barra_pendientes'),
+      onTap: () => ref.read(syncProvider.notifier).reintentarLoQueFallo(),
+      child: contenido,
     );
   }
 }

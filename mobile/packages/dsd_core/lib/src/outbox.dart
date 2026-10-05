@@ -62,7 +62,15 @@ class ResumenCola {
   /// sincronizar.
   final String? masAntiguo;
 
-  bool get todoSincronizado => pendientes == 0;
+  /// Nada que mostrar: ni cola por subir ni nada con error.
+  ///
+  /// La cuarentena CUENTA, y no contaba. Con `pendientes == 0` a secas, un
+  /// teléfono con una venta en cuarentena y nada pendiente ocultaba la barra: el
+  /// vendedor no veía el «1 con error» ni el botón para reintentarlo, y la única
+  /// señal de que una venta no llegó era que no aparecía en el tablero de la
+  /// oficina. Es el estado exacto en que quedó un equipo tras el fallo del
+  /// `lote_id`.
+  bool get todoSincronizado => pendientes == 0 && enCuarentena == 0;
 }
 
 /// Repositorio de la cola sobre SQLite.
@@ -168,6 +176,61 @@ class Outbox {
       [error, operacionId],
     );
   }
+
+  /// Devuelve a la cola lo que quedó en cuarentena, en su orden original.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// POR QUÉ ESTO TIENE QUE EXISTIR
+  /// ───────────────────────────────────────────────────────────────────────
+  /// `siguienteLote` solo toma sobres `pendiente`, así que hasta ahora un sobre
+  /// en cuarentena estaba muerto: no había forma de reintentarlo desde el
+  /// teléfono, nunca.
+  ///
+  /// Eso está bien cuando el rechazo es por los DATOS —una venta a un cliente que
+  /// de verdad no existe no mejora reintentándola—, y está muy mal cuando el
+  /// rechazo fue por un FALLO NUESTRO. Pasó: un `lote_id` que no era UUID hacía
+  /// que el servidor contestara 422 a todo, y el teléfono mandó a cuarentena
+  /// ventas y clientes perfectamente válidos. Arreglado el bug, esos documentos
+  /// seguían sin poder subir — dinero capturado en la calle que no llegaba.
+  ///
+  /// Y arrastra un efecto peor: una venta a un cliente creado en el teléfono
+  /// referencia un `cliente_id` que solo existe aquí. Si el alta del cliente cae
+  /// en cuarentena y la venta no, la venta llega al servidor y es rechazada por
+  /// «referencia a un cliente que no existe». El orden importa, y por eso esto
+  /// reencola **respetando la secuencia**: el alta del cliente vuelve a viajar
+  /// antes que su venta.
+  ///
+  /// Se reinician los intentos y se limpia el último error: lo que se reintenta
+  /// es la operación, no su historial de fracasos.
+  ///
+  /// Devuelve cuántos sobres volvieron a la cola.
+  int reencolarCuarentena() {
+    final cuantos = _db
+        .select("SELECT COUNT(*) AS n FROM outbox WHERE estado='cuarentena'")
+        .first['n'] as int;
+    if (cuantos == 0) return 0;
+    _db.execute(
+      "UPDATE outbox SET estado='pendiente', intentos=0, ultimo_error=NULL, "
+      "proximo_intento=NULL WHERE estado='cuarentena'",
+    );
+    return cuantos;
+  }
+
+  /// Lo que quedó con error, con su motivo. Para poder decirle al vendedor QUÉ
+  /// pasó en lugar de solo contarle cuántos.
+  List<({String operacionId, String tipo, String? error})> enCuarentena() => _db
+      .select(
+        "SELECT operacion_id, tipo, ultimo_error FROM outbox "
+        "WHERE estado='cuarentena' ORDER BY secuencia",
+      )
+      .map(
+        (f) => (
+          operacionId: f['operacion_id'] as String,
+          tipo: f['tipo'] as String,
+          error: f['ultimo_error'] as String?,
+        ),
+      )
+      .toList();
 
   /// Registra un fallo de transporte: el sobre sigue pendiente y se reintenta
   /// más tarde con espera creciente.
