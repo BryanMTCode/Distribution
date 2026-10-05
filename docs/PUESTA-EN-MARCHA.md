@@ -7,6 +7,16 @@ que **la app esté lista para trabajar**.
 Misma forma que el manual de instalación: secuencia lineal, **DÓNDE** estás en cada
 paso, comandos completos, **✅ qué debes ver** y **⚠️ qué hacer si no.**
 
+**El documento tiene dos mitades que se usan distinto:**
+
+| | Qué es | Cuándo |
+|---|---|---|
+| **Parte 0** | El ciclo para los errores que encuentres: capturarlos, aplicar el arreglo y verificarlo | **Cada vez que algo falle**, en cualquier momento de lo demás |
+| **Partes 1 a 6** | El camino: respaldos, la llave, el APK, el teléfono, el simulacro y el piloto | Una vez, en orden |
+
+La Parte 0 va primera porque la vas a necesitar mientras haces las otras. No es un
+paso que se tacha: es el procedimiento al que vuelves.
+
 Hay dos sitios de trabajo y conviene tenerlos claros desde ahora:
 
 | | Dónde | Para qué |
@@ -24,6 +34,203 @@ Antes de empezar, en **los dos** sitios:
 ```bash
 cd ~/Distribution && git pull origin main
 ```
+
+---
+
+# Parte 0 · El ciclo de los errores que vas encontrando
+
+**Esta parte no se hace una vez: se usa cada vez que algo falla mientras haces el
+resto.** Lo de abajo es la Parte 1 y siguientes, que es el camino. Esto es qué
+hacer cuando el camino se rompe — y se va a romper, porque el sistema se está
+estrenando contra la realidad por primera vez.
+
+Ya pasó una vez y vale como ejemplo: **«Internal Server Error» al dar de alta un
+producto.** No era el producto. Era que en producción la API se conecta con un rol
+restringido y los disparadores que publican los cambios al teléfono no podían
+escribir. Lo mismo habría impedido confirmar una carga y sincronizar una venta a
+crédito. Un síntoma chico, una causa grande.
+
+De ahí la regla de esta parte: **un error no se rodea, se reporta y se arregla.**
+
+---
+
+## Paso 0.1 · Captura el error de forma que sirva
+
+**DÓNDE:** en **el servidor**, en `~/Distribution`, en cuanto veas la falla.
+
+«Internal Server Error» en el navegador no dice nada: el detalle está en la
+bitácora de la API. Tres comandos, en este orden:
+
+```bash
+docker compose logs --tail=40 api
+docker compose ps
+curl -s https://api.tudominio.com/salud
+```
+
+Lo que importa de cada uno:
+
+| Comando | Qué buscas |
+|---|---|
+| `logs api --tail 40` | El *traceback*. La última línea nombra la causa; las de `psycopg` o `sqlalchemy` nombran la tabla |
+| `ps` | Que `api` siga `Up (healthy)` y no reiniciándose en bucle |
+| `/salud` | Las cuatro banderas. **`"rls": false` cambia el diagnóstico de todo** |
+
+> **⚠️ Pégame la salida dentro de un bloque de código**, con tres acentos graves
+> antes y después. No es estética: la salida de Gradle y de Docker trae líneas que
+> empiezan con `>`, y si las pegas sueltas en tu terminal, bash las lee como
+> redirección y te crea archivos con nombres raros. Ya te pasó: así aparecieron
+> `mobile/app/Error:` y `mobile/app/Failed`.
+
+Y dime estas tres cosas, que valen más que el traceback:
+
+1. **Qué estabas haciendo**, con la pantalla exacta (*Panel → Productos → Nuevo*).
+2. **Qué esperabas** y qué pasó.
+3. **Si funciona en tu PC.** Si allí sí y en el servidor no, eso ya acota la causa
+   a lo que difiere: el rol restringido, RLS, la zona horaria o el `.env`.
+
+---
+
+## Paso 0.2 · Respalda antes de aplicar cualquier arreglo
+
+**DÓNDE:** en **el servidor**.
+
+```bash
+bash scripts/en_el_servidor.sh respaldar.sh
+```
+
+**✅ Debes ver** `OK  dsd-AAAAMMDD-HHMMSS.dump`.
+
+No te lo brinques ni cuando el arreglo «es sólo un cambio de código». Cuesta
+segundos y es la diferencia entre volver atrás y no poder.
+
+---
+
+## Paso 0.3 · Trae el arreglo y aplícalo según lo que cambió
+
+**DÓNDE:** en **el servidor**.
+
+```bash
+git pull origin main
+```
+
+**Y ahora lo que importa: no todos los arreglos se aplican igual.** Mira qué
+tocó el commit y usa la fila que corresponda:
+
+```bash
+git log --oneline -1
+git show --stat HEAD
+```
+
+| Si el arreglo tocó | Comando | Por qué |
+|---|---|---|
+| **Una migración** (`server/db/migrations/`, `server/db/alembic/`) | `docker compose build migraciones api worker && docker compose up -d` | El archivo de migración vive **dentro de la imagen**: sin `build`, `alembic` no lo ve y no hace nada |
+| **Código del servidor** (`server/app/`, plantillas HTML) | `docker compose build api worker && docker compose up -d` | Igual: el código va en la imagen |
+| **El laboratorio** (`analytics/`) | `docker compose build analitica && docker compose up -d` | — |
+| **Scripts o documentos** (`scripts/`, `docs/`) | nada más, el `git pull` basta | Se leen del disco, no de la imagen |
+| **La app** (`mobile/`) | **en tu PC**: `make apk DSD_BASE_URL=https://api.tudominio.com` y reinstalar | El servidor no compila Android. Sube el `versionCode` antes (paso 9) |
+
+> **Si tienes duda, `docker compose build && docker compose up -d` reconstruye
+> todo.** Tarda más, nunca se queda corto, y la caché de Docker hace que lo que no
+> cambió sea rápido.
+
+---
+
+## Paso 0.4 · Si el arreglo traía una migración, compruébala
+
+**DÓNDE:** en **el servidor**. Sáltate este paso si no tocó migraciones.
+
+```bash
+docker compose logs --tail=10 migraciones
+docker compose ps
+```
+
+**✅ Debes ver** que `alembic` llegó a la revisión nueva, y en `ps`:
+
+- `migraciones` en **`Exited (0)`** ← cero es correcto: hizo su trabajo y terminó.
+- `api` en **`Up (healthy)`**.
+
+**⚠️ Si `migraciones` salió con un código distinto de 0**, la migración falló y la
+base quedó como estaba. Pégame `docker compose logs migraciones`.
+
+**⚠️ Si `api` se reinicia en bucle** después de una migración, mira
+`docker compose logs --tail=30 api` antes de tocar nada.
+
+---
+
+## Paso 0.5 · 🚦 PUERTA: verifica el arreglo donde falló
+
+**DÓNDE:** donde apareció el error, no en otro lado.
+
+```bash
+curl -s https://api.tudominio.com/salud
+```
+
+**✅ Las cuatro banderas en `true`.** Y después, **repite la acción exacta que
+fallaba** — si era dar de alta un producto, da de alta un producto. Que el
+servicio esté sano no prueba que el camino roto esté arreglado.
+
+**⚠️ Si sigue fallando**, vuelve al paso 0.1 y captura otra vez: el traceback ya
+va a nombrar algo distinto, y eso es progreso, no un retroceso.
+
+---
+
+## Paso 0.6 · Anótalo
+
+Una línea por error, en el registro de abajo. No es burocracia: cuando el
+vendedor esté en la calle y algo se repita, la pregunta va a ser «¿esto ya nos
+pasó?», y esta tabla es la única que la contesta.
+
+### Registro de errores encontrados
+
+| # | Fecha | Qué veías | Causa real | Arreglo | Verificado |
+|---|---|---|---|---|---|
+| 1 | 2026-10-05 | «Internal Server Error» al dar de alta un producto en el panel | `change_log` tiene RLS sin política de INSERT, y los disparadores que la alimentan corrían como `dsd_api` en vez de como su dueño. También impedía confirmar cargas y sincronizar ventas a crédito | Migración **0029**: las cuatro `fn_registrar_cambio*` pasan a `SECURITY DEFINER` con `search_path` fijado | ☐ |
+| 2 | | | | | |
+| 3 | | | | | |
+
+---
+
+## Si un arreglo empeora las cosas
+
+Dos salidas, de la más barata a la más cara:
+
+**1. Volver al commit anterior** (sirve si fue código, no una migración):
+
+```bash
+cd ~/Distribution
+git log --oneline -5          # elige el de antes
+git checkout <hash-anterior>
+docker compose build api worker && docker compose up -d
+```
+
+Y dímelo, para arreglarlo bien y que vuelvas a `main`.
+
+**2. El snapshot del proveedor**, si la base quedó mal. En DigitalOcean, el
+droplet → **Snapshots** → restaurar `dsd-desplegado-limpio`. Pierdes lo capturado
+desde entonces, así que antes de restaurar baja el último respaldo:
+
+```bash
+scp dsd@IP_DEL_SERVIDOR:~/respaldos-dsd/dsd-*.dump ~/
+```
+
+> **Una migración no se deshace con `git checkout`.** El código vuelve atrás, la
+> base no. Si hay que revertir una migración, dímelo: `alembic downgrade` existe,
+> pero cada migración decide qué puede deshacer sin perder datos y eso se mira
+> caso por caso.
+
+---
+
+## Lo que NO es un error del sistema
+
+Para que no gastes un reporte en esto:
+
+| Lo que ves | Qué es |
+|---|---|
+| `migraciones` y `roles` en `Exited (0)` | **Correcto.** Son tareas que terminan, no servicios |
+| El primer `docker compose up` tarda 10–25 min | Normal: construye dos imágenes |
+| `make respaldo` da `connection refused` en el servidor | Usa `bash scripts/en_el_servidor.sh respaldar.sh`: ahí la base no publica puerto |
+| No existe `mobile/app/android/gradlew` tras clonar | Normal: Flutter lo regenera |
+| El panel pide entrar otra vez tras un `up -d` | La sesión vive en una cookie firmada; reiniciar la API no la invalida, pero el navegador puede haber caducado |
 
 ---
 
@@ -533,6 +740,9 @@ contesta «bien» siempre y no sirve para nada.
 ---
 
 # Resumen: la lista para tachar
+
+**La Parte 0 no se tacha**: se usa cada vez que algo falla, y su registro de
+errores se va llenando. Lo que se tacha es el camino:
 
 | | Paso | Dónde |
 |---|---|---|
