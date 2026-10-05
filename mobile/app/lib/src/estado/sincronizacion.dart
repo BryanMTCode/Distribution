@@ -237,6 +237,9 @@ class ControladorSync extends Notifier<EstadoSync> {
     required String? motivo,
   }) async {
     await ref.read(repoCredencialProvider).olvidar();
+    // Y que la pantalla de entrada deje de decir de quién era: un equipo borrado
+    // en remoto no debe seguir anunciando a su vendedor.
+    ref.invalidate(credencialGuardadaProvider);
     await ref.read(almacenSeguroProvider).borrar('llave_base_local');
     await ref.read(almacenSeguroProvider).borrar(claveRefreshToken);
     ref.read(baseLocalProvider).borrarTodo();

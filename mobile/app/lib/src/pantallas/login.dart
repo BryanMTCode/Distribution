@@ -186,6 +186,28 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                   const Icon(Icons.local_shipping_outlined, size: 64),
                   const SizedBox(height: 12),
                   Text('Ruta', style: Theme.of(context).textTheme.headlineMedium),
+
+                  // De quién es este teléfono. Sale de la credencial que dejó la
+                  // vinculación, así que aparece sola en cuanto el equipo queda
+                  // vinculado y desaparece si la credencial vence o se borra en
+                  // remoto. Sin ella no se inventa un nombre: la pantalla queda
+                  // como estaba.
+                  ...switch (ref.watch(credencialGuardadaProvider)) {
+                    AsyncData(value: final c?) => [
+                        const SizedBox(height: 8),
+                        Text(
+                          c.nombre,
+                          key: const Key('etiqueta_vendedor'),
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          c.codigo,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    _ => const <Widget>[],
+                  },
+
                   const SizedBox(height: 32),
                   // ESTE CAMPO PIDE LA CONTRASEÑA, NO UN PIN, y decía «PIN»
                   // con teclado NUMÉRICO. Las dos cosas estaban mal y la segunda

@@ -1,6 +1,8 @@
 /// Sesión y dependencias de la app.
 library;
 
+import 'dart:async';
+
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,6 +25,18 @@ final baseLocalProvider = Provider<BaseLocal>(
 
 final repoCredencialProvider = Provider<RepoCredencial>(
   (ref) => RepoCredencial(ref.watch(almacenSeguroProvider)),
+);
+
+/// De quién es este teléfono, según la credencial que dejó la vinculación.
+///
+/// La pantalla de entrada lo muestra para que el vendedor no tenga que recordar
+/// con qué código quedó vinculado su equipo —y para que la oficina vea de un
+/// vistazo, con el teléfono en la mano, a quién pertenece sin entrar a nada.
+///
+/// `null` antes de vincular, y también cuando la credencial venció o se borró
+/// por un borrado remoto: en los tres casos lo honesto es no decir ningún nombre.
+final credencialGuardadaProvider = FutureProvider<CredencialLocal?>(
+  (ref) => ref.watch(repoCredencialProvider).leer(),
 );
 final repoClientesProvider = Provider<RepoClientes>(
   (ref) => RepoClientes(ref.watch(baseLocalProvider).db),
@@ -92,7 +106,56 @@ class ControladorSesion extends Notifier<Sesion> {
     state = resultado == ResultadoLogin.ok
         ? SesionAbierta(credencial!)
         : SinSesion(motivo: resultado);
+
+    // Y, SI HAY RED, UN TOKEN — porque sin él entrar no sirve de nada.
+    //
+    // `tokenProvider` lo ponían solo `vincularEquipo` y los caminos de Gerencia.
+    // Este, que es el de TODOS LOS DÍAS, no lo ponía: el vendedor entraba con su
+    // contraseña, el token quedaba en null, y al sincronizar la app contestaba
+    // «Entraste sin señal» —con señal de sobra— porque es literalmente lo que
+    // ve: no hay token. La única forma de volver a sincronizar era vincular el
+    // equipo otra vez, que sí hace login en línea.
+    //
+    // NO SE ESPERA a que termine, y eso es la parte importante: entrar es lo
+    // primero que hace el vendedor en la bodega, muchas veces sin datos, y no
+    // puede quedarse colgado hasta que una petición agote su tiempo límite. La
+    // sesión ya está abierta arriba; esto solo añade la capacidad de sincronizar
+    // cuando se pueda. Si falla, no pasa nada y «sin señal» será verdad.
+    // Solo si no hay token ya. `vincularEquipo` termina llamando aquí y acaba de
+    // conseguir uno: sin esta condición, vincular haría DOS logins en línea —dos
+    // viajes y dos verificaciones Argon2 en el servidor por cada equipo— y lo
+    // detectó una prueba que esperaba los folios como última llamada.
+    if (resultado == ResultadoLogin.ok && ref.read(tokenProvider) == null) {
+      unawaited(_conseguirTokenEnLinea(credencial!.codigo, password));
+    }
     return resultado;
+  }
+
+  /// Login en línea silencioso, para dejar la sesión en condiciones de subir.
+  ///
+  /// Se traga cualquier error a propósito: nada de lo que pase aquí debe cambiar
+  /// lo que el vendedor ve después de entrar. Si no hay red, se queda sin token y
+  /// la pantalla de sincronización lo dirá con razón.
+  Future<void> _conseguirTokenEnLinea(String codigo, String password) async {
+    try {
+      final fila = ref
+          .read(baseLocalProvider)
+          .db
+          .select("SELECT valor FROM sync_estado WHERE clave = 'dispositivo_id'");
+      if (fila.isEmpty) return;
+
+      final sesion = await ClienteAuth(ref.read(transporteSinSesionProvider)).entrar(
+        codigo: codigo,
+        password: password,
+        dispositivoId: fila.first['valor'] as String,
+      );
+      ref.read(tokenProvider.notifier).state = sesion.accessToken;
+      await ref
+          .read(almacenSeguroProvider)
+          .escribir(claveRefreshToken, sesion.refreshToken);
+    } on Object {
+      // Sin red, o el servidor dijo que no. Se entró igual: es el punto.
+    }
   }
 
   /// Vincula ESTE teléfono a su vendedor, la primera vez.
@@ -162,6 +225,10 @@ class ControladorSesion extends Notifier<Sesion> {
     }
 
     await ref.read(repoCredencialProvider).guardar(credencial);
+    // El nombre de la pantalla de entrada se lee de aquí, y es un FutureProvider:
+    // ya se evaluó como `null` al construirse la pantalla y Riverpod lo cachea.
+    // Sin invalidarlo, el teléfono no diría de quién es hasta reiniciar la app.
+    ref.invalidate(credencialGuardadaProvider);
     ref.read(baseLocalProvider).db.execute(
       "INSERT INTO sync_estado (clave, valor) VALUES ('dispositivo_id', ?) "
       'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',

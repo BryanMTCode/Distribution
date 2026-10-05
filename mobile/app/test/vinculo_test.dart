@@ -171,6 +171,56 @@ void main() {
         reason: 'se teclea a la vista de quien esté enfrente en la tienda');
   });
 
+  testWidgets('entrar con la contraseña consigue token para poder sincronizar',
+      (tester) async {
+    // El fallo: `tokenProvider` lo ponían solo `vincularEquipo` y los caminos de
+    // Gerencia. El login de TODOS LOS DÍAS no lo ponía, así que el vendedor
+    // entraba bien y al sincronizar la app decía «Entraste sin señal» —con señal
+    // de sobra—, porque sin token no intenta. La única salida era volver a
+    // vincular el equipo, que sí hace login en línea.
+    final servidor = _ServidorDeVinculo();
+    await montarApp(tester, extras: _con(servidor));
+
+    await _vincular(tester);
+    final loginsTrasVincular =
+        servidor.llamadas.where((l) => l == '/v1/auth/login').length;
+
+    // Salir borra el token y el refresh, pero NO la credencial.
+    await tester.tap(find.byKey(const Key('boton_salir')));
+    await tester.pumpAndSettle();
+
+    // Y entrar como cada mañana: solo la contraseña.
+    await tester.enterText(find.byKey(const Key('campo_pin')), pinCorrecto);
+    await tester.tap(find.byKey(const Key('boton_entrar')));
+    await tester.pumpAndSettle();
+
+    expect(
+      servidor.llamadas.where((l) => l == '/v1/auth/login').length,
+      greaterThan(loginsTrasVincular),
+      reason: 'entrar con la contraseña no pidió token: el vendedor queda dentro '
+          'de la app y sin poder subir nada, y la pantalla dirá «sin señal»',
+    );
+  });
+
+  testWidgets('la pantalla de inicio dice de quién es el teléfono',
+      (tester) async {
+    // Para que el vendedor no tenga que recordar con qué código quedó vinculado
+    // su equipo, y para que la oficina vea de quién es con el teléfono en la mano.
+    final servidor = _ServidorDeVinculo();
+    await montarApp(tester, extras: _con(servidor));
+
+    expect(find.byKey(const Key('etiqueta_vendedor')), findsNothing,
+        reason: 'sin vincular no hay nombre que mostrar, y no se inventa');
+
+    await _vincular(tester);
+    await tester.tap(find.byKey(const Key('boton_salir')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('etiqueta_vendedor')), findsOneWidget);
+    expect(find.text('Juan Pérez'), findsOneWidget);
+    expect(find.text('VEND01'), findsOneWidget);
+  });
+
   testWidgets('vincular ENTRA, no solo guarda', (tester) async {
     // El fallo que esto cierra: vincular guardaba credencial, folios y token
     // correctamente, y la pantalla se limpiaba sin más. El vendedor volvía a la
