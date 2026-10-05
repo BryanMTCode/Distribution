@@ -21,8 +21,17 @@ Hay dos sitios de trabajo y conviene tenerlos claros desde ahora:
 
 | | Dónde | Para qué |
 |---|---|---|
-| **El servidor** | `ssh dsd@IP_DEL_SERVIDOR`, en `~/Distribution` | Respaldos, revisiones, el panel |
+| **El servidor** | `ssh dsd@38.197.234.56`, en `~/Distribution` | Respaldos, revisiones, el panel |
 | **Tu PC (WSL)** | `~/Distribution` | **Todo lo del APK.** El servidor no compila Android |
+
+> **La IP del servidor (`38.197.234.56`) ya viene puesta en todos los comandos**:
+> se copian y se pegan tal cual.
+>
+> **Lo que todavía es un marcador es `api.tudominio.com`.** Aparece 11 veces y hay
+> que cambiarlo por tu dominio real. Y no se puede sustituir por la IP: con
+> `https://` el certificado se valida contra el NOMBRE, así que `https://38.197.234.56`
+> fallaría por certificado aunque el servidor conteste. Dime tu dominio y te dejo
+> el archivo sin un solo marcador.
 
 > **Un paso es irreversible y está marcado 🔴: el keystore (paso 6).** Si se pierde
 > esa llave, los teléfonos que ya tengan la app no se pueden actualizar nunca más,
@@ -210,7 +219,7 @@ droplet → **Snapshots** → restaurar `dsd-desplegado-limpio`. Pierdes lo capt
 desde entonces, así que antes de restaurar baja el último respaldo:
 
 ```bash
-scp dsd@IP_DEL_SERVIDOR:~/respaldos-dsd/dsd-*.dump ~/
+scp dsd@38.197.234.56:~/respaldos-dsd/dsd-*.dump ~/
 ```
 
 > **Una migración no se deshace con `git checkout`.** El código vuelve atrás, la
@@ -358,7 +367,7 @@ peor que no tener cron**, porque crees que estás respaldado y no lo estás.
 **DÓNDE:** en **tu PC (WSL)**.
 
 ```bash
-scp dsd@IP_DEL_SERVIDOR:~/respaldos-dsd/dsd-*.dump ~/respaldos-dsd-copia/
+scp dsd@38.197.234.56:~/respaldos-dsd/dsd-*.dump ~/respaldos-dsd-copia/
 ```
 
 (Crea la carpeta antes con `mkdir -p ~/respaldos-dsd-copia`.)
