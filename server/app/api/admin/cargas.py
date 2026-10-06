@@ -288,6 +288,7 @@ async def detalle(
     carga_id: uuid.UUID,
     error: str = "",
     guardado: str = "",
+    buscar: str = "",
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
@@ -355,6 +356,15 @@ async def detalle(
 
     faltan = [r for r in renglones if Decimal(r["cantidad"]) > Decimal(r["en_bodega"])]
 
+    editable = carga["estado"] in EDITABLE
+    surtido = (
+        await _lo_que_hay_en_la_bodega(
+            sesion, carga_id, carga["almacen_origen_id"], buscar
+        )
+        if editable and actor.puede(PERMISO)
+        else []
+    )
+
     return render(
         peticion,
         "carga_detalle.html",
@@ -363,8 +373,10 @@ async def detalle(
             "renglones": renglones,
             "faltan": faltan,
             "total_piezas": sum((Decimal(r["cantidad"]) for r in renglones), Decimal(0)),
-            "editable": carga["estado"] in EDITABLE,
+            "editable": editable,
             "puede_editar": actor.puede(PERMISO),
+            "surtido": surtido,
+            "buscar": buscar,
             # Los bloqueos del §2.3, visibles mientras se captura: enterarse al
             # confirmar, después de quince renglones, es perder el trabajo.
             "bloqueos": (
@@ -482,6 +494,203 @@ async def agregar_renglon(
             f"= {sin_decimales(en_base)} {fila['unidad_base']}."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Cargar varios productos a la vez, desde lo que hay en la bodega
+# ---------------------------------------------------------------------------
+# La primera pantalla de carga pedía el SKU y capturaba de uno en uno. Para una
+# carga de treinta productos eso son treinta vueltas de teclear, guardar y
+# esperar la página, y la dirección lo pidió en octubre de 2026: «quiero que me
+# aparezcan todos los artículos en existencia del almacén que voy a cargar y
+# poder cargar varios al mismo tiempo».
+#
+# La tabla sale de la BODEGA DE ORIGEN de la carga, no del catálogo entero: lo que
+# se puede subir al camión es lo que hay en ese anaquel. Lo que la bodega tiene en
+# cero o en negativo no aparece; para eso queda la captura por SKU.
+
+async def _lo_que_hay_en_la_bodega(
+    sesion, carga_id: uuid.UUID, bodega_id: uuid.UUID, buscar: str
+) -> list[dict]:
+    """Cada producto con existencia en la bodega, con sus presentaciones.
+
+    Trae también cuánto de ese producto va ya en esta carga: quien captura ve en
+    el mismo renglón «hay 480, ya llevas 240» y no tiene que bajar a la tabla de
+    arriba para no cargarlo dos veces.
+
+    La presentación por omisión es la MÁS GRANDE, no la marcada `es_default`:
+    ésa es la de VENDER —el teléfono vende por pieza— y en la bodega se carga por
+    caja. Con `es_default`, quien escribe «10» pensando en cajas subiría diez
+    piezas.
+    """
+    condiciones = ["e.almacen_id = :b", "e.cantidad > 0", "p.activo"]
+    parametros: dict[str, object] = {"b": bodega_id, "c": carga_id}
+    termino = (buscar or "").strip()
+    if termino:
+        condiciones.append(
+            "(p.nombre ILIKE :q OR p.sku ILIKE :q OR p.codigo_barras = :exacto)"
+        )
+        parametros["q"] = f"%{termino}%"
+        parametros["exacto"] = termino
+
+    filas = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT p.id, p.sku, p.nombre, p.unidad_base,
+                       e.cantidad AS en_bodega,
+                       COALESCE(ya.cantidad, 0) AS ya_en_la_carga,
+                       pu.presentaciones
+                  FROM existencias e
+                  JOIN productos p ON p.id = e.producto_id
+                  LEFT JOIN LATERAL (
+                        SELECT sum(d.cantidad) AS cantidad
+                          FROM carga_detalle d
+                         WHERE d.carga_id = :c AND d.producto_id = p.id
+                  ) ya ON true
+                  LEFT JOIN LATERAL (
+                        SELECT json_agg(json_build_object(
+                                 'unidad', u.unidad_codigo,
+                                 'factor', u.factor::text)
+                               ORDER BY u.factor DESC) AS presentaciones
+                          FROM producto_unidades u
+                         WHERE u.producto_id = p.id AND u.activo
+                  ) pu ON true
+                 WHERE {" AND ".join(condiciones)}
+                 ORDER BY p.nombre
+                 LIMIT 500
+                """  # noqa: S608 — las condiciones son constantes del código
+            ),
+            parametros,
+        )
+    ).mappings().all()
+
+    surtido = []
+    for f in filas:
+        presentaciones = f["presentaciones"] or []
+        # Vienen ordenadas por factor de mayor a menor.
+        por_omision = presentaciones[0]["unidad"] if presentaciones else None
+        surtido.append({**dict(f), "por_omision": por_omision})
+    return surtido
+
+
+@router.post("/{carga_id}/renglones")
+async def agregar_varios(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    carga_id: uuid.UUID,
+):
+    """Agrega de una vez todos los renglones que traigan cantidad.
+
+    Los campos llegan como `cantidad_<producto_id>` y `unidad_<producto_id>`. Un
+    renglón vacío se ignora: es el producto que hoy no se carga.
+
+    ───────────────────────────────────────────────────────────────────────────
+    SE GUARDA LO BUENO Y SE NOMBRA LO MALO
+    ───────────────────────────────────────────────────────────────────────────
+    Si un renglón trae un dedazo —«2.5» cajas, una letra—, los demás se guardan y
+    el mensaje dice exactamente cuál no entró y por qué. La alternativa, todo o
+    nada, haría perder veinte cantidades tecleadas por un error en una, y la
+    página regresa con los campos vacíos: habría que capturar todo otra vez.
+
+    Cada renglón pasa por las MISMAS validaciones que la captura de uno en uno:
+    bultos enteros, la presentación tiene que existir, y la conversión a unidad
+    base con `cantidad_base`, la misma función que usa el teléfono.
+    """
+    actor.exigir(PERMISO)
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+
+    estado = (
+        await sesion.execute(
+            text("SELECT estado FROM cargas WHERE id = :id"), {"id": carga_id}
+        )
+    ).scalar_one_or_none()
+    if estado is None:
+        return RedirectResponse("/panel/cargas", status_code=status.HTTP_303_SEE_OTHER)
+    if estado not in EDITABLE:
+        return _volver(
+            carga_id,
+            error="Esta carga ya salió de la bodega. Se corrige con un traspaso o "
+            "un ajuste, no editándola.",
+        )
+
+    pedidos: list[tuple[uuid.UUID, str, str]] = []
+    for clave, valor in formulario.multi_items():
+        if not clave.startswith("cantidad_") or not str(valor).strip():
+            continue
+        try:
+            producto_id = uuid.UUID(clave.removeprefix("cantidad_"))
+        except ValueError:
+            continue
+        pedidos.append(
+            (producto_id, str(valor), str(formulario.get(f"unidad_{producto_id}", "")))
+        )
+
+    if not pedidos:
+        return _volver(
+            carga_id,
+            error="No escribiste ninguna cantidad. Llena la columna «Cargar» de los "
+            "productos que suben al camión.",
+        )
+
+    agregados: list[str] = []
+    rechazados: list[str] = []
+    for producto_id, cantidad, unidad_codigo in pedidos:
+        fila = (
+            await sesion.execute(
+                text(
+                    "SELECT p.nombre, p.unidad_base, u.factor "
+                    "  FROM productos p "
+                    "  LEFT JOIN producto_unidades u ON u.producto_id = p.id "
+                    "       AND u.unidad_codigo = :u AND u.activo "
+                    " WHERE p.id = :p AND p.activo"
+                ),
+                {"p": producto_id, "u": unidad_codigo},
+            )
+        ).mappings().first()
+        if fila is None:
+            rechazados.append("un producto que ya no está activo")
+            continue
+        if fila["factor"] is None:
+            rechazados.append(f"{fila['nombre']}: no tiene la presentación {unidad_codigo}")
+            continue
+        try:
+            cuantas = _leer_bultos(cantidad)
+            en_base = cantidad_base(cuantas, Decimal(fila["factor"]))
+        except (CapturaInvalida, CantidadInvalida) as e:
+            rechazados.append(f"{fila['nombre']}: {str(e).rstrip('.')}")
+            continue
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO carga_detalle (id, carga_id, producto_id, cantidad, lote)
+                VALUES (:id, :c, :p, :cant, NULL)
+                ON CONFLICT (carga_id, producto_id, COALESCE(lote, ''))
+                  DO UPDATE SET cantidad = carga_detalle.cantidad + excluded.cantidad
+                """
+            ),
+            {"id": uuid.uuid4(), "c": carga_id, "p": producto_id, "cant": en_base},
+        )
+        agregados.append(
+            f"{fila['nombre']} {sin_decimales(cuantas)} {unidad_codigo}"
+        )
+
+    await sesion.commit()
+
+    if rechazados and not agregados:
+        return _volver(carga_id, error="No se agregó nada. " + "; ".join(rechazados) + ".")
+    mensaje = f"Se agregaron {len(agregados)} producto(s): " + ", ".join(agregados) + "."
+    if rechazados:
+        # Hay que verlo: va como error, con lo que sí entró dicho primero.
+        return _volver(
+            carga_id,
+            error=mensaje + " NO entraron: " + "; ".join(rechazados)
+            + ". Corrígelos y vuelve a agregarlos.",
+        )
+    return _volver(carga_id, guardado=mensaje)
 
 
 @router.post("/{carga_id}/renglon/{renglon_id}/quitar")

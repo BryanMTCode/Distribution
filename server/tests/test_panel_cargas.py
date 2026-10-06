@@ -1079,3 +1079,198 @@ async def test_la_carga_confirmada_dice_cuanto_queda_en_el_camion(
     assert "Se cargó" in plano
     # 10 cajas de 24 = 240 cargadas; menos 48 vendidas = 192.
     assert "192" in plano
+
+
+# ===========================================================================
+# Cargar varios a la vez, desde lo que hay en la bodega (octubre 2026)
+# ===========================================================================
+@pytest.fixture
+async def otro_producto(sesion, semilla) -> uuid.UUID:
+    """Galletas: caja de 12, 60 piezas en bodega. Y un tercero SIN existencia."""
+    galletas, sin_existencia = uuid.uuid4(), uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO productos (id, sku, nombre, unidad_base, tasa_iva) VALUES "
+            "(:g, 'GALL-200', 'Galletas 200 g', 'PZA', 0.16), "
+            "(:s, 'AGOT-1', 'Producto agotado', 'PZA', 0)"
+        ),
+        {"g": galletas, "s": sin_existencia},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO producto_unidades (producto_id, unidad_codigo, factor, es_default) "
+            "VALUES (:g, 'PZA', 1, true), (:g, 'CAJA', 12, false), "
+            "       (:s, 'PZA', 1, true)"
+        ),
+        {"g": galletas, "s": sin_existencia},
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO existencias (almacen_id, producto_id, cantidad) "
+            "VALUES (:b, :g, 60), (:b, :s, 0)"
+        ),
+        {"b": semilla["bodega"], "g": galletas, "s": sin_existencia},
+    )
+    await sesion.commit()
+    return galletas
+
+
+async def _agregar_varios(cliente, carga_id, campos: dict):
+    detalle = await cliente.get(f"/panel/cargas/{carga_id}")
+    return await cliente.post(
+        f"/panel/cargas/{carga_id}/renglones",
+        data={"csrf": _csrf(cliente, detalle), **campos},
+        follow_redirects=True,
+    )
+
+
+async def _renglones_de(sesion, carga_id) -> dict:
+    return {
+        f["sku"]: f["cantidad"]
+        for f in (
+            await sesion.execute(
+                text(
+                    "SELECT p.sku, d.cantidad FROM carga_detalle d "
+                    "  JOIN productos p ON p.id = d.producto_id "
+                    " WHERE d.carga_id = :c"
+                ),
+                {"c": uuid.UUID(carga_id)},
+            )
+        ).mappings().all()
+    }
+
+
+async def test_la_carga_muestra_todo_lo_que_hay_en_la_bodega(
+    cliente, semilla, catalogo, otro_producto
+):
+    """Sin teclear un solo SKU: lo que se puede subir es lo que hay en el anaquel."""
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    html = (await cliente.get(f"/panel/cargas/{carga}")).text
+
+    assert f'name="cantidad_{catalogo["producto"]}"' in html
+    assert f'name="cantidad_{otro_producto}"' in html
+    # Lo que la bodega tiene en cero no se ofrece: no hay de dónde subirlo.
+    assert "Producto agotado" not in html
+
+
+async def test_varios_productos_se_agregan_con_un_solo_boton(
+    cliente, semilla, sesion, catalogo, otro_producto
+):
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    await _agregar_varios(
+        cliente,
+        carga,
+        {
+            f"cantidad_{catalogo['producto']}": "10",
+            f"unidad_{catalogo['producto']}": "CAJA",
+            f"cantidad_{otro_producto}": "3",
+            f"unidad_{otro_producto}": "CAJA",
+        },
+    )
+
+    renglones = await _renglones_de(sesion, carga)
+    # 10 cajas de 24 y 3 cajas de 12, convertidas una sola vez a piezas.
+    assert renglones == {"ATUN-140": Decimal("240.000"), "GALL-200": Decimal("36.000")}
+
+
+async def test_los_renglones_vacios_no_se_tocan(
+    cliente, semilla, sesion, catalogo, otro_producto
+):
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    await _agregar_varios(
+        cliente,
+        carga,
+        {
+            f"cantidad_{catalogo['producto']}": "2",
+            f"unidad_{catalogo['producto']}": "CAJA",
+            f"cantidad_{otro_producto}": "",
+            f"unidad_{otro_producto}": "CAJA",
+        },
+    )
+    assert await _renglones_de(sesion, carga) == {"ATUN-140": Decimal("48.000")}
+
+
+async def test_un_renglon_con_error_no_tumba_a_los_demas(
+    cliente, semilla, sesion, catalogo, otro_producto
+):
+    """Perder veinte cantidades tecleadas por un dedazo en una sería peor que el
+    dedazo: se guardan las buenas y se nombra la mala."""
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    r = await _agregar_varios(
+        cliente,
+        carga,
+        {
+            f"cantidad_{catalogo['producto']}": "10",
+            f"unidad_{catalogo['producto']}": "CAJA",
+            f"cantidad_{otro_producto}": "2.5",
+            f"unidad_{otro_producto}": "CAJA",
+        },
+    )
+    plano = solo_texto(r)
+
+    assert await _renglones_de(sesion, carga) == {"ATUN-140": Decimal("240.000")}
+    assert "NO entraron" in plano
+    assert "Galletas 200 g" in plano
+
+
+async def test_la_presentacion_por_omision_es_la_caja_no_la_de_vender(
+    cliente, semilla, catalogo
+):
+    """`es_default` es la de VENDER (pieza). Quien carga escribe «10» pensando en
+    cajas; con la pieza por omisión subiría diez piezas."""
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    html = (await cliente.get(f"/panel/cargas/{carga}")).text
+    selector = html[html.index(f'name="unidad_{catalogo["producto"]}"') :]
+    selector = selector[: selector.index("</select>")]
+    assert '<option value="CAJA" selected>' in selector
+
+
+async def test_agregar_otra_vez_suma_y_la_tabla_dice_cuanto_ya_va(
+    cliente, semilla, sesion, catalogo
+):
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    campos = {
+        f"cantidad_{catalogo['producto']}": "5",
+        f"unidad_{catalogo['producto']}": "CAJA",
+    }
+    await _agregar_varios(cliente, carga, campos)
+    await _agregar_varios(cliente, carga, campos)
+
+    assert await _renglones_de(sesion, carga) == {"ATUN-140": Decimal("240.000")}
+
+
+async def test_el_filtro_acota_la_lista(cliente, semilla, catalogo, otro_producto):
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    html = (await cliente.get(f"/panel/cargas/{carga}?buscar=GALL")).text
+    assert f'name="cantidad_{otro_producto}"' in html
+    assert f'name="cantidad_{catalogo["producto"]}"' not in html
+
+
+async def test_una_carga_confirmada_no_acepta_mas(
+    cliente, semilla, sesion, catalogo
+):
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga, cantidad="1")
+    await _confirmar(cliente, carga)
+
+    html = (await cliente.get(f"/panel/cargas/{carga}")).text
+    assert 'id="forma_varios"' not in html
+    r = await cliente.post(
+        f"/panel/cargas/{carga}/renglones",
+        data={
+            "csrf": _csrf(cliente),
+            f"cantidad_{catalogo['producto']}": "5",
+            f"unidad_{catalogo['producto']}": "CAJA",
+        },
+        follow_redirects=True,
+    )
+    assert "ya salió de la bodega" in solo_texto(r)
+    assert await _renglones_de(sesion, carga) == {"ATUN-140": Decimal("24.000")}

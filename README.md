@@ -68,6 +68,7 @@ la bodega sube cuando alguien la cuenta.
 | **Captura de catálogo y precios** con cuatro decimales | ✅ 20 pruebas |
 | **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
 | **Carga del camión** — bodega → camión, con su delta y su detalle | ✅ 20 pruebas |
+| **Cargar varios a la vez** — la carga lista lo que hay en la bodega, se escriben cantidades y un botón | ✅ 8 pruebas |
 | El teléfono **suma** la carga al sobrante, sin duplicarla en un `pull` repetido | ✅ 18 pruebas de Dart |
 | **Usuarios, rutas, almacenes y listas** desde el panel | ✅ 23 pruebas |
 | Arranque del primer usuario (`make usuario`) — **sin contraseña por omisión** | ✅ con pruebas |
@@ -112,7 +113,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1155 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **267 de widget**, todas en verde.
+**1163 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **267 de widget**, todas en verde.
 
 ## Stack
 
@@ -237,7 +238,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1155 pruebas de Python
+make pruebas                        # 1163 pruebas de Python
 make movil                          # 578 de Dart + 267 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

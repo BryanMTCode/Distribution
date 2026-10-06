@@ -119,26 +119,108 @@
 {% endif %}
 
 {% if editable and puede_editar %}
-<h2>Agregar al camión</h2>
-<form class="barra" method="post" action="/panel/cargas/{{ carga.id }}/renglon">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <input type="text" name="producto" placeholder="SKU o código de barras" required
-         autofocus style="min-width:220px">
-  <input type="text" name="cantidad" inputmode="numeric" placeholder="cuántos bultos"
-         required style="width:150px">
-  <select name="unidad_codigo" required>
-    <option value="CAJA">CAJA</option>
-    <option value="PZA">PZA</option>
-  </select>
-  <input type="text" name="lote" placeholder="lote (opcional)" style="width:140px">
-  <button type="submit">Agregar</button>
-</form>
-<p class="sutil">
-  Se captura en <strong>bultos</strong> —cajas o piezas, como se levantan con las
-  manos— y el sistema los convierte a unidad base al guardar. La multiplicación
-  ocurre una sola vez, aquí: es lo que evita que media empresa cuente cajas y la
-  otra media piezas.
+<h2 id="agregar">Agregar al camión</h2>
+<p class="sutil" style="margin-top:-4px">
+  Todo lo que hay en <strong>{{ carga.bodega }}</strong>. Escribe cuántos bultos
+  suben de cada producto —cajas o piezas, como se levantan con las manos— y agrega
+  todos con un solo botón. Los renglones vacíos no se tocan.
 </p>
+
+<form class="barra" method="get" action="/panel/cargas/{{ carga.id }}#agregar">
+  <input type="search" name="buscar" value="{{ buscar }}"
+         placeholder="Filtrar por nombre, SKU o código de barras" style="min-width:300px">
+  <button type="submit" class="secundario">Filtrar</button>
+  {% if buscar %}<a href="/panel/cargas/{{ carga.id }}#agregar">ver todos</a>{% endif %}
+</form>
+
+{% if surtido %}
+<form method="post" action="/panel/cargas/{{ carga.id }}/renglones" id="forma_varios">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tabla-marco">
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th class="numero">Hay en bodega</th>
+          <th class="numero">Ya va en esta carga</th>
+          <th class="numero">Cargar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in surtido %}
+        <tr>
+          <td>
+            <strong>{{ s.nombre }}</strong>
+            <div class="sutil"><span class="mono">{{ s.sku }}</span></div>
+          </td>
+          <td class="numero">
+            {{ s.en_bodega|entero }} {{ s.unidad_base }}
+            {% for p in s.presentaciones or [] %}
+              {% if p.factor|entero != '1' %}
+                <div class="sutil">= {{ (s.en_bodega|float / p.factor|float)|round(1) }} {{ p.unidad }}</div>
+              {% endif %}
+            {% endfor %}
+          </td>
+          <td class="numero">
+            {% if s.ya_en_la_carga %}{{ s.ya_en_la_carga|entero }} {{ s.unidad_base }}
+            {% else %}<span class="sutil">—</span>{% endif %}
+          </td>
+          <td class="numero" style="white-space:nowrap">
+            <input type="text" name="cantidad_{{ s.id }}" inputmode="numeric"
+                   style="width:80px; text-align:right" aria-label="Bultos de {{ s.nombre }}">
+            {% if s.presentaciones %}
+            <select name="unidad_{{ s.id }}" aria-label="Presentación de {{ s.nombre }}">
+              {% for p in s.presentaciones %}
+                <option value="{{ p.unidad }}" {% if p.unidad == s.por_omision %}selected{% endif %}>{{ p.unidad }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+              <span class="sutil" title="Sin presentaciones activas">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <button type="submit" id="boton_agregar_varios" style="margin-top:12px">
+    Agregar al camión
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Si un renglón trae un error, los demás se guardan igual y se te dice cuál no entró.
+  </span>
+</form>
+{% else %}
+<div class="vacio">
+  {% if buscar %}Nada en la bodega coincide con «{{ buscar }}».
+  {% else %}La bodega no tiene nada con existencia. Recibe mercancía en
+  <a href="/panel/entradas">Entradas</a> antes de cargar.{% endif %}
+</div>
+{% endif %}
+
+<details style="margin-top:18px">
+  <summary class="sutil" style="cursor:pointer">
+    ¿No aparece? Captura por SKU o código de barras (con lote)
+  </summary>
+  <form class="barra" method="post" action="/panel/cargas/{{ carga.id }}/renglon"
+        style="margin-top:10px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="producto" placeholder="SKU o código de barras" required
+           style="min-width:220px">
+    <input type="text" name="cantidad" inputmode="numeric" placeholder="cuántos bultos"
+           required style="width:150px">
+    <select name="unidad_codigo" required>
+      <option value="CAJA">CAJA</option>
+      <option value="PZA">PZA</option>
+    </select>
+    <input type="text" name="lote" placeholder="lote (opcional)" style="width:140px">
+    <button type="submit">Agregar</button>
+  </form>
+  <p class="sutil">
+    Para lo que la bodega tiene en cero o en negativo, o para capturar el lote. La
+    conversión a unidad base ocurre una sola vez, al guardar.
+  </p>
+</details>
 
 <h2>Confirmar</h2>
 <form method="post" action="/panel/cargas/{{ carga.id }}/confirmar"

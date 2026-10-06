@@ -3871,3 +3871,31 @@ existían y que la auditoría de sincronización dejó blindados:
 El teléfono nunca hace un `DELETE` local de algo que una venta sin subir pueda
 referenciar: lo desactiva. Un `DELETE` contra la llave foránea de `venta_partidas`
 abortaría la tanda y el teléfono no volvería a sincronizar (ver la auditoría, §2).
+
+## 53. La carga se arma desde lo que hay en la bodega, varios productos a la vez
+
+**Decisión (octubre 2026).** El detalle de una carga en borrador ya no pide el SKU de
+uno en uno. Lista **cada producto con existencia en la bodega de origen**, con cuánto
+hay, cuánto va ya en esta carga y una casilla para escribir cuántos bultos suben.
+Un solo botón agrega todos los renglones que traigan cantidad
+(`POST /panel/cargas/{id}/renglones`).
+
+- **La lista sale de la bodega, no del catálogo.** Lo que se puede subir al camión es
+  lo que hay en ese anaquel. Lo que está en cero o en negativo no aparece; para eso
+  queda la captura por SKU, plegada debajo, que además es la única que captura lote.
+- **La presentación por omisión es la más grande** (la caja), no la marcada
+  `es_default`: ésa es la de vender, y el teléfono vende por pieza. Con la de vender,
+  quien escribe «10» pensando en cajas subiría diez piezas.
+- **Se guarda lo bueno y se nombra lo malo.** Un renglón con dedazo («2.5» cajas, una
+  presentación que no existe) no tumba a los demás: se guardan y el mensaje dice cuál
+  no entró y por qué. Todo o nada haría recapturar veinte cantidades por un error en
+  una.
+- **Cada renglón pasa por las mismas validaciones** que la captura de uno en uno:
+  bultos enteros y conversión con `cantidad_base`, la misma función del teléfono.
+- **Agregar dos veces suma.** El mismo producto sin lote se acumula en su renglón
+  (`ON CONFLICT … cantidad + excluded.cantidad`), igual que en la captura por SKU.
+- Un filtro por nombre, SKU o código de barras acota la tabla cuando la bodega es
+  grande; la tabla muestra a lo más 500 productos.
+
+No cambia nada de lo que viaja al teléfono: la carga sigue publicando su delta al
+confirmarse, como en la Fase 2.

@@ -763,6 +763,8 @@ async def test_la_pantalla_de_inventario_dice_como_arreglar_un_negativo(
     )
     assert "salida por conteo" in texto
     assert "entrada con motivo" in texto
+    # Y el ajuste de un renglón, que desde octubre de 2026 también aplica a bodegas.
+    assert "Ajustar" in texto
 
     # En un camión, la respuesta es la liquidación y NO estas pantallas.
     await _sembrar(sesion, semilla["camion"], producto, "-3")
