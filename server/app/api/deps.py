@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import fijar_alcance, obtener_sesion
 from app.core.registro import ampliar_contexto
 from app.core.seguridad import TokenInvalido, decodificar_token
-from app.infra.models import Dispositivo, Usuario
+from app.infra.models import Dispositivo, Usuario, UsuarioRuta
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -115,12 +115,30 @@ async def _resolver_actor(
                 f"dispositivo {dispositivo.estado if dispositivo else 'no registrado'}",
             )
 
+    # El rol, los permisos, las rutas y el camión se leen de la base en CADA
+    # petición, no del token, por la misma razón que la revocación de arriba. El
+    # token es una foto de hasta 30 minutos, y con la foto pasaba esto: la oficina
+    # le da la ruta R04 a Pedro, el pull de su teléfono sigue filtrando con las
+    # rutas viejas, los deltas de R04 de esa media hora se quedan atrás del cursor
+    # que avanza... y no le llegan nunca. Con el camión, igual: ventas descontadas
+    # del camión que ya no maneja. Con un permiso quitado, media hora más de
+    # usarlo. Son consultas por llave; la foto salía más cara. Es lo mismo que ya
+    # hacía la sesión del panel (`sesion_web.py`): los dos guardias, una regla.
+    permisos = frozenset(await cargar_permisos(sesion, usuario))
+    rutas = frozenset(
+        (
+            await sesion.execute(
+                select(UsuarioRuta.ruta_id).where(UsuarioRuta.usuario_id == usuario_id)
+            )
+        ).scalars()
+    )
+
     actor = Actor(
         usuario_id=usuario_id,
-        rol=claims["rol"],
-        permisos=frozenset(claims.get("permisos") or []),
-        rutas=frozenset(uuid.UUID(r) for r in (claims.get("rutas") or [])),
-        almacen_id=uuid.UUID(claims["almacen_id"]) if claims.get("almacen_id") else None,
+        rol=usuario.rol_codigo,
+        permisos=permisos,
+        rutas=rutas,
+        almacen_id=usuario.almacen_id,
         dispositivo_id=uuid.UUID(dispositivo_id) if dispositivo_id else None,
     )
 

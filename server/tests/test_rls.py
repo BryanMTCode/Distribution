@@ -803,3 +803,74 @@ async def test_el_rol_restringido_sigue_sin_poder_escribir_el_libro_de_cambios(a
         "la API puede escribir directamente en change_log: alguien le agregó una "
         f"política de INSERT. Error recibido: {e.value}"
     )
+
+
+@pytest.mark.asyncio
+async def test_el_rol_restringido_puede_cambiar_el_credito_de_un_cliente(alcance, sesion, semilla):
+    """El mismo fallo de la 0029, en la función que esa migración no alcanzó.
+
+    `fn_cartera_por_condiciones` (migración 0011) publica la cartera cuando cambia
+    el límite, el permiso de crédito o el bloqueo de un cliente. No era
+    `SECURITY DEFINER`, así que en producción —con RLS de verdad— subirle el
+    límite a un cliente desde el panel terminaba en 500. La encontró la auditoría
+    panel → teléfono de octubre de 2026; la corrige la 0042.
+    """
+    cliente_id = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes (id, nombre_comercial, ruta_id, creado_en, actualizado_en) "
+            "VALUES (:c, 'Abarrotes Lupita', :r, now(), now())"
+        ),
+        {"c": cliente_id, "r": semilla["ruta"]},
+    )
+    await sesion.commit()
+
+    con = await alcance("admin", usuario=semilla["admin"])
+    await con.execute(
+        text(
+            "UPDATE clientes SET permite_credito = true, limite_credito = 5000 "
+            " WHERE id = :c"
+        ),
+        {"c": cliente_id},
+    )
+    await con.commit()
+
+    cartera = (
+        await sesion.execute(
+            text(
+                "SELECT count(*) FROM change_log "
+                " WHERE entidad = 'cartera' AND entidad_id = :c"
+            ),
+            {"c": cliente_id},
+        )
+    ).scalar_one()
+    assert cartera == 1
+
+
+@pytest.mark.asyncio
+async def test_toda_funcion_que_escribe_el_libro_de_cambios_corre_como_su_dueno(sesion, esquema):  # noqa: ARG001
+    """La guardia general, para que el próximo disparador no repita la historia.
+
+    Dos veces el mismo fallo —la 0029 y la 0042— en funciones que alguien escribió
+    sin `SECURITY DEFINER`. Las pruebas de arriba lo detectan solo para las
+    escrituras que alguien se acordó de probar con el rol restringido; esta lo
+    detecta para TODAS, leyendo el catálogo de PostgreSQL.
+    """
+    sin_dueno = (
+        await sesion.execute(
+            text(
+                """
+                SELECT p.proname
+                  FROM pg_proc p
+                  JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'public'
+                   AND p.prosrc ILIKE '%INSERT INTO change_log%'
+                   AND NOT p.prosecdef
+                 ORDER BY 1
+                """
+            )
+        )
+    ).scalars().all()
+    assert sin_dueno == [], (
+        f"publican al teléfono sin SECURITY DEFINER (en producción darían 500): {sin_dueno}"
+    )

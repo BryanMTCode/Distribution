@@ -6,6 +6,44 @@
   Lo que necesita atención hoy. Cada número lleva a su pantalla.
 </p>
 
+{% if faltan_para_operar %}
+<div class="aviso-caja aviso" id="aviso_arranque">
+  <strong>Faltan {{ faltan_para_operar }} paso{{ '' if faltan_para_operar == 1 else 's' }}
+  para empezar a operar.</strong>
+  <a href="/panel/arranque">Ver qué falta y dónde se arregla</a>.
+</div>
+{% endif %}
+
+{#
+  Los pendientes van ANTES que las cifras: son lo que alguien tiene que hacer, y
+  solo aparecen los que tienen algo. En el orden del día —lo de la mañana arriba—
+  para que la lista se lea de corrido, no se busque.
+#}
+<h2 id="pendientes">Pendientes de hoy</h2>
+{% if pendientes %}
+<div class="tabla-marco">
+  <table id="lista_pendientes">
+    <tbody>
+      {% for p in pendientes %}
+        {% if loop.first or p.momento != pendientes[loop.index0 - 1].momento %}
+        <tr><th colspan="2" style="text-align:left">{{ p.momento }}</th></tr>
+        {% endif %}
+        <tr>
+          <td class="numero" style="width:64px;font-weight:700{% if p.urgente %};color:var(--alerta){% endif %}">
+            {{ p.cuantos }}
+          </td>
+          <td><a href="{{ p.enlace }}">{{ p.texto }}</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="aviso-caja bien" id="sin_pendientes">Nada pendiente. Todo lo que llegó está registrado y cuadrado.</div>
+{% endif %}
+
+<h2>El día en números</h2>
+
 {#
   El orden NO es alfabético ni por tamaño: es por urgencia operativa.
   La cuarentena va primero porque un sobre rechazado es una venta que la oficina

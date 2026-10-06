@@ -434,6 +434,8 @@ final almacenDelVendedorProvider = Provider<String?>((ref) {
   final filas = db.select(
     "SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'",
   );
-  final asignado = filas.isEmpty ? null : filas.single['valor'] as String?;
-  return asignado ?? sesion.credencial.almacenId;
+  // Con fila, manda la fila aunque diga «ninguno»: es la oficina quitándole el
+  // camión, y volver a la credencial lo dejaría vendiendo del camión de otro.
+  if (filas.isNotEmpty) return filas.single['valor'] as String?;
+  return sesion.credencial.almacenId;
 });

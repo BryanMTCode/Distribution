@@ -164,26 +164,49 @@ void main() {
     expect(r.fallidos, equals(0));
   });
 
-  test('un payload sin almacén no hace nada', () {
-    // Un servidor que algún día publique la identidad sin camión —un usuario de
-    // oficina— no debe vaciarle el camión a nadie.
+  Delta sinCamion() => Delta(
+        cursor: 2,
+        entidad: 'identidad',
+        entidadId: 'u-vendedor',
+        operacion: 'upsert',
+        payload: {'usuario_id': 'u-vendedor', 'almacen_id': null},
+      );
+
+  test('QUITARLE EL CAMIÓN LO DEJA SIN CAMIÓN, no con el de antes', () {
+    // La oficina le pasó el camión a otro vendedor, o lo dio de baja. El delta
+    // llega con `almacen_id` nulo, solo a ESTE teléfono (el servidor lo acota a
+    // su dueño). Antes se ignoraba, y el teléfono seguía ofreciendo la mercancía
+    // de un camión que ya manejaba otro.
     aplicar(identidad(_camionViejo));
     conCamionCargado();
 
-    aplicador.aplicar(
-      [
-        Delta(
-          cursor: 2,
-          entidad: 'identidad',
-          entidadId: 'u-vendedor',
-          operacion: 'upsert',
-          payload: {'usuario_id': 'u-vendedor', 'almacen_id': null},
-        ),
-      ],
-      recibidoEn: '2026-10-06T10:00:00.000Z',
-    );
+    aplicar(sinCamion());
 
-    expect(almacenGuardado(), equals(_camionViejo));
+    expect(
+      db.select("SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'"),
+      hasLength(1),
+      reason: 'la fila con valor nulo es «sin camión»; sin fila, el teléfono '
+          'volvería al camión de la credencial',
+    );
+    expect(almacenGuardado(), isNull);
+    expect(cuantos('existencias_camion'), equals(0));
+    expect(cuantos('cargas_aplicadas'), equals(0));
+  });
+
+  test('sin camión y luego uno nuevo: queda el nuevo, sin vaciar lo que ya trae', () {
+    aplicar(identidad(_camionViejo));
+    aplicar(sinCamion());
+    conCamionCargado();
+
+    aplicar(identidad(_camionNuevo));
+
+    expect(almacenGuardado(), equals(_camionNuevo));
+    expect(cuantos('existencias_camion'), equals(1));
+  });
+
+  test('un teléfono recién vinculado que recibe «sin camión» no pierde nada', () {
+    conCamionCargado();
+    aplicar(sinCamion());
     expect(cuantos('existencias_camion'), equals(1));
   });
 }

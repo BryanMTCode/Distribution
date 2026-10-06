@@ -18,7 +18,7 @@ la bodega sube cuando alguien la cuenta.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0041) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0042) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -87,6 +87,9 @@ la bodega sube cuando alguien la cuenta.
 | **Cambio físico** — fresco por caducado o dañado: sale del camión con documento, sin cobro ni faltante | ✅ 8 pruebas + 2 de Dart y 5 de widget |
 | **Editar y eliminar la estructura** — usuarios, rutas, almacenes, listas, proveedores y motivos; la base decide si se borra o se da de baja | ✅ 24 pruebas |
 | **Plan de visita** — «hoy te tocan» en el teléfono, y Efectividad cuenta lo que tocaba y nadie visitó | ✅ 18 pruebas + 11 de Dart y 5 de widget |
+| **¿Listo para operar?** — los once pasos del arranque, y los **pendientes de hoy** arriba del tablero | ✅ 10 pruebas |
+| **Panel → teléfono, acción por acción** — la ruta viaja con su titular, la cartera con el cliente, el alcance se lee en vivo ([§8](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 10 pruebas + 3 de Dart |
+| **Guardia entre lenguajes** — lo que publica el servidor, el teléfono lo sabe aplicar (y al revés) | ✅ 3 pruebas |
 | **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
 | **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
@@ -118,7 +121,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1258 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **595 de Dart** y **281 de widget**, todas en verde.
+**1280 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **597 de Dart** y **281 de widget**, todas en verde.
 
 ## Stack
 
@@ -174,7 +177,8 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 server/
   app/
     api/admin/       PANEL DE OPERACIÓN: sesión con cookie, CSRF, plantillas
-                     comun.py         navegación y lectura de números escritos a mano
+                     comun.py         navegación (filtrada por permisos) y números escritos a mano
+                     arranque.py      ¿listo para operar? y los pendientes de hoy
                      desempeno.py     el día de cada vendedor contra sus mismos días de la semana
                      productos.py     catálogo y precios (los 4 decimales)
                      clientes.py      confirmar prospectos y decidir el crédito
@@ -221,7 +225,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            595 pruebas que corren en segundos
+    test/            597 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -249,8 +253,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1258 pruebas de Python
-make movil                          # 595 de Dart + 281 de widget
+make pruebas                        # 1280 pruebas de Python
+make movil                          # 597 de Dart + 281 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

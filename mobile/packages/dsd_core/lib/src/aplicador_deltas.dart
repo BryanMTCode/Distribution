@@ -676,11 +676,13 @@ class AplicadorDeltas {
   /// LO QUE ESTO SÍ ARREGLA, Y LO QUE NO HACÍA FALTA ARREGLAR
   /// ───────────────────────────────────────────────────────────────────────
   /// El teléfono manda `almacen_id` en el payload de cada venta, pero **el
-  /// servidor lo ignora**: lo toma del token, con este comentario en el manejador
-  /// —«del token, nunca del payload: si el dispositivo pudiera declarar a nombre de
-  /// quién vende, un equipo comprometido escribiría en la ruta de cualquier otro»—.
-  /// Así que una venta NUNCA queda estampada con el camión equivocado, aunque la
-  /// credencial del teléfono esté vieja. Eso ya estaba bien.
+  /// servidor lo ignora**: lo toma de quién se autenticó, con este comentario en
+  /// el manejador —«del token, nunca del payload: si el dispositivo pudiera
+  /// declarar a nombre de quién vende, un equipo comprometido escribiría en la ruta
+  /// de cualquier otro»—. Desde la migración 0042 ni siquiera de la foto del
+  /// token: del usuario en la base, en cada petición. Así que una venta NUNCA
+  /// queda estampada con el camión equivocado, aunque la credencial del teléfono
+  /// esté vieja.
   ///
   /// Lo que sí se rompe al reasignar un camión es el inventario LOCAL.
   /// `existencias_camion` no tiene columna de almacén —es «mi camión», implícito— y
@@ -694,11 +696,15 @@ class AplicadorDeltas {
   /// lo que el servidor firmó en el último login —con su hash y su vigencia— y
   /// reescribirla por un delta la volvería un documento de dos dueños. Esto es otra
   /// cosa: el último valor que el servidor publicó.
+  ///
+  /// Un `almacen_id` NULO también se guarda —como fila con valor nulo, que no es
+  /// lo mismo que no tener fila— y vacía el camión. Es la oficina quitándole el
+  /// camión: se lo pasó a otro vendedor o lo dio de baja. Antes se ignoraba, y el
+  /// teléfono seguía ofreciendo la mercancía de un camión que ya manejaba otro.
   bool _identidad(Delta delta) {
     final i = delta.payload;
     if (i == null) return true;
     final almacen = i['almacen_id'] as String?;
-    if (almacen == null) return true;
 
     final previo = _db.select(
       "SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'",
@@ -712,7 +718,8 @@ class AplicadorDeltas {
     );
 
     // Solo cuando CAMBIA, y solo si ya había uno: el primer delta que llega a un
-    // teléfono recién vinculado no tiene que vaciarle nada.
+    // teléfono recién vinculado no tiene que vaciarle nada. De un camión a
+    // ninguno también es un cambio.
     if (anterior != null && anterior != almacen) {
       _reiniciarElCamion();
     }

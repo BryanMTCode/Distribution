@@ -19,7 +19,8 @@ que queda pendiente de una decisión tuya.
 Catorce fuentes publican al teléfono, y el teléfono sabe aplicar las catorce. **No
 hay entidades huérfanas en ninguna de las dos direcciones**, que es lo primero que se
 revisó. (Eran trece al escribir esto; la decimocuarta —`traspasos`— nació al cerrar
-el §6.2, con el mismo criterio.)
+el §6.2, con el mismo criterio.) Desde la segunda vuelta (§8) esto ya no depende de
+revisarlo a mano: `test_guardia_servidor_telefono.py` lo compara en cada corrida.
 
 | Tabla del servidor | Entidad del delta | El teléfono la aplica en | Cómo se vuelve idempotente |
 |---|---|---|---|
@@ -32,7 +33,8 @@ el §6.2, con el mismo criterio.)
 | `cargas` | `carga` | `existencias_camion` | **suma**, marcada en `cargas_aplicadas` |
 | `ventas` | `venta` | `ventas`, `venta_partidas`, `existencias_camion` | **compara** contra lo local |
 | `ajustes_camion` | `ajuste_camion` | `existencias_camion` | **suma**, marcada en `ajustes_camion_aplicados` |
-| `usuarios` (solo el camión) | `identidad` | `sync_estado` | upsert; si el camión cambia, reinicia el inventario local |
+| `usuarios` (solo el camión) | `identidad` | `sync_estado` | upsert; si el camión cambia —o se lo quitan—, reinicia el inventario local |
+| `usuarios_rutas` (0042) | `cliente`, `cartera` | `clientes` | republica la ruta al que la recibe; `delete` al que la pierde |
 | `motivos_merma` | `motivo_merma` | `motivos_merma` | upsert |
 | `motivos_no_drop` | `motivo_no_drop` | `motivos_no_drop` | upsert |
 | `traspasos` | `traspaso` | `traspasos`, `traspaso_detalle` | upsert; **no toca ninguna existencia** |
@@ -435,3 +437,120 @@ una prueba de rutas fallando por un motivo que no tenía nada que ver con rutas.
 el mismo tropiezo que con `roles_permisos` la semana pasada, y la regla que queda es:
 **una tabla que guarda estado de la instalación se vacía entre pruebas; una que
 guarda datos de referencia, no.**
+
+---
+
+## 8. Segunda vuelta · el panel → el teléfono, acción por acción (ADR 0002 §57)
+
+La primera vuelta recorrió la superficie de sincronización. Esta recorre **el panel**:
+cada cosa que la oficina puede cambiar, y por dónde le llega al teléfono. Se hizo
+antes de salir a operar, con la pregunta «si la oficina hace esto a las diez de la
+mañana, ¿qué ve el vendedor a las diez y cinco?».
+
+### 8.1 El recorrido
+
+| Lo que hace la oficina | Cómo le llega al teléfono | Estado |
+|---|---|---|
+| Alta / edición / baja de producto, presentación, precio, lista | `producto`, `producto_unidad`, `precio`, `lista_precios` | ✅ la baja **da de baja**, nunca borra |
+| Cambiar la lista por omisión | dos deltas de `lista_precios`; el cliente sin lista se cotiza con la nueva | ✅ |
+| Alta / edición / baja de cliente, crédito, bloqueo | `cliente` + `cartera` | ✅ |
+| Pasar un cliente a otra ruta | `delete` a la ruta vieja, `cliente` a la nueva… **y la cartera no** | 🔧 §8.2 hallazgo 6 |
+| Subirle el límite de crédito a un cliente | `cartera`… **o un 500 en producción** | 🔧 §8.2 hallazgo 7 |
+| Plan de visita | dentro del delta del `cliente` (0041) | ✅ |
+| Confirmar / rechazar una transferencia | `cartera` con `por_confirmar` (0038) | ✅ |
+| Motivos de merma y de no-venta | `motivo_merma`, `motivo_no_drop`; el panel solo **desactiva** | ✅ |
+| Confirmar / cancelar una carga; el corte | `carga` (con su detalle y su ajuste) | ✅ |
+| Cancelar / corregir una venta | `venta` | ✅ |
+| Ajustar el inventario de un camión | `ajuste_camion` | ✅ |
+| Recibir una devolución de camión | `traspaso` | ✅ |
+| Asignar o cambiar el camión de un vendedor | `identidad` | ✅ |
+| **Quitarle** el camión (a otro vendedor, o de baja) | `identidad` con camión nulo… **ignorado** | 🔧 hallazgo 8 |
+| Crear una ruta con titular / cambiar el titular | **nada** | 🔧 hallazgo 4 |
+| Cualquier cambio de ruta, camión, rol o permiso, en los 30 min del token | **la foto vieja** | 🔧 hallazgo 5 |
+| Quitarle un permiso a un usuario | el panel al instante; la API a los 30 min | 🔧 hallazgo 5 |
+| Desactivar un usuario o revocar un teléfono | 401 en la siguiente petición | ✅ |
+| Promociones | no hay pantalla; el teléfono las acepta y descarta (§5.3) | ✅ |
+| Cambiar la contraseña o `dias_max_offline` | en la credencial local, con el siguiente login **en línea** | ⚠️ §8.3 |
+
+### 8.2 Los hallazgos, y qué se hizo
+
+**Hallazgo 4 · El titular nuevo recibía la ruta vacía.** Cambiar el titular escribía
+`usuarios_rutas` y nadie publicaba nada. El cursor del teléfono nuevo ya estaba más
+allá de los deltas de esos clientes, así que solo veía a uno cuando alguien lo
+editaba; el anterior se quedaba con todos y le vendía a cada uno —directo a
+cuarentena—. *Migración 0042*: un disparador en `usuarios_rutas` republica los
+clientes de la ruta y su cartera solo al vendedor que la recibe, y manda la baja de
+cada uno solo al que la pierde.
+
+**Hallazgo 5 · El token congelaba media hora el alcance.** El pull filtraba con las
+rutas del token. Durante 30 minutos después de un cambio, los deltas de la ruta nueva
+se quedaban atrás del cursor **para siempre**, y las ventas se descontaban del camión
+anterior. *Corrección*: `deps._resolver_actor` lee las rutas, el camión, el rol y los
+permisos de la base en cada petición, como ya lo hacía la sesión del panel.
+
+**Hallazgo 6 · El cliente con deuda llegaba a su ruta nueva con saldo cero.** El saldo
+viaja en `cartera`, que solo se publicaba al cambiar el crédito. El vendedor nuevo le
+veía toda la línea libre y le vendía a crédito por encima de su límite. *Migración
+0042*: la cartera se publica también al cambiar la ruta o el estatus, y llega después
+del cliente (los disparadores AFTER corren en orden alfabético).
+
+**Hallazgo 7 · Subirle el crédito a un cliente daba 500 en producción.**
+`fn_cartera_por_condiciones` (0011) no era `SECURITY DEFINER` y la 0029 no la incluyó.
+En desarrollo no se ve: la API usa el rol dueño. *Migración 0042*, y una guardia en
+`test_rls.py` que revisa en el catálogo **todas** las funciones que escriben el
+`change_log`.
+
+**Hallazgo 8 · Sin camión, el teléfono seguía con el de antes.** El aplicador ignoraba
+la identidad con camión nulo. *Corrección en el teléfono*: el nulo se guarda como «sin
+camión» y vacía el inventario local; `almacenDelVendedorProvider` ya no vuelve al
+camión de la credencial cuando el servidor dijo que no hay ninguno.
+
+### 8.3 Lo que se revisó y se queda así
+
+- **La contraseña y `dias_max_offline` viajan en la credencial**, que se reescribe con
+  cada login en línea. Un cambio desde el panel vale para el teléfono al siguiente
+  login con señal. Es el diseño del modo sin conexión: el teléfono tiene que poder
+  entrar sin red con lo que sabía.
+- **Los precios no se acotan por ruta**: cada teléfono recibe todas las listas. Es lo
+  que permite cotizar al cliente que no tiene lista, o al que la oficina le cambia de
+  lista, sin esperar a nadie.
+- **`deltas_de_ejemplo.json` no trae `venta`, `traspaso`, `ajuste_camion` ni
+  `promocion`.** La guardia nueva comprueba que el teléfono sabe el *nombre* de cada
+  entidad; la *forma* de esas cuatro la cubren sus pruebas de Dart propias, no el
+  contrato compartido. Ampliar el contrato es trabajo pendiente, no urgente.
+
+### 8.4 Para qué sirve cada pantalla, y cuándo se abre
+
+No se quitó ninguna: cada una tiene un dueño y un momento. Lo que faltaba era quién
+dijera por dónde empezar, y para eso quedaron **Arranque** y **Pendientes de hoy**.
+
+| Módulo | Pantalla | Quién | Cuándo |
+|---|---|---|---|
+| Hoy | Tablero (con Pendientes de hoy) | todos | al llegar, y cada vez que algo truene |
+| Hoy | Desempeño | gerencia | durante el día |
+| Hoy | Arranque | quien da de alta | antes de operar; con cada vendedor nuevo |
+| Operación de rutas | Plan de visita | supervisor | al armar o cambiar rutas |
+| Operación de rutas | Cargas | almacén | antes de que salgan los camiones |
+| Operación de rutas | Ventas, Cobranza | oficina | durante el día y al cierre |
+| Operación de rutas | Corte del día, Cuenta de vendedores | caja | al regreso de cada camión |
+| Catálogos | Clientes, Productos | oficina | cuando cambian; los prospectos, diario |
+| Almacén | Inventario, Entradas, Salidas, Compras | almacén | con cada movimiento de bodega |
+| Administración | Efectividad, Objetivos | gerencia | por semana |
+| Administración | Usuarios y rutas, Teléfonos | administración | altas y bajas |
+| Administración | Cuarentena | soporte | cuando el tablero la marque |
+| Administración | Piloto | dirección | las dos semanas del piloto |
+
+### 8.5 Las pruebas que lo dejan cerrado
+
+- `test_alcance_de_ruta.py` — cambio de titular con tokens viejos (los dos teléfonos),
+  lo editado después llega al nuevo y no al anterior, cliente con deuda que cambia de
+  ruta, alcance/camión/permisos en vivo, y el borrado en cascada de un usuario.
+- `test_rls.py` — el crédito con el rol restringido, y la guardia del catálogo.
+- `test_guardia_servidor_telefono.py` — entidades publicadas ⊆ casos del aplicador;
+  tipos que manda el teléfono ⊆ manejadores del servidor.
+- `identidad_delta_test.dart` — quitarle el camión lo deja sin camión.
+- `test_panel_arranque.py` — los pasos se encienden y se apagan, los pendientes salen
+  en orden y solo con algo, y el menú no ofrece callejones.
+
+Cada una se comprobó rompiendo a propósito el código que defiende: con el arreglo
+quitado, falla.

@@ -69,6 +69,9 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         [
             ("/panel", "Tablero"),
             ("/panel/desempeno", "Desempeño"),
+            # La lista de «¿qué falta para operar?». Se queda después del arranque:
+            # dar de alta un vendedor nuevo es arrancar otra vez, en chiquito.
+            ("/panel/arranque", "Arranque"),
         ],
     ),
     (
@@ -115,6 +118,68 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         ],
     ),
 ]
+
+
+# El permiso que pide cada pantalla para abrirse; `None` si basta con entrar al
+# panel. El menú solo muestra lo que la persona puede abrir: un enlace que
+# responde 403 es un callejón sin salida, y en la primera semana de operación
+# cada callejón es una llamada a la oficina.
+#
+# Tiene que decir lo mismo que el `actor.exigir(...)` de cada pantalla. No se
+# confía en que alguien se acuerde: `test_panel_arranque.py` entra con cada rol
+# y revisa que nada de lo que ve responda 403 y que lo que no ve, sí. Una pantalla
+# nueva en el menú sin renglón aquí truena al dibujar cualquier página.
+PERMISO_DEL_MENU: dict[str, str | None] = {
+    "/panel": None,
+    "/panel/desempeno": "tablero.ver",
+    "/panel/arranque": None,
+    "/panel/plan-visita": "clientes.ver",
+    "/panel/cargas": "inventario.ver",
+    "/panel/ventas": None,
+    "/panel/cobranza": "cobranza.ver",
+    "/panel/liquidaciones": "inventario.ver",
+    "/panel/vendedores/cuenta": "vendedores.cuenta_ver",
+    "/panel/clientes": "clientes.ver",
+    "/panel/productos": "catalogo.ver",
+    "/panel/inventario": "inventario.ver",
+    "/panel/entradas": "inventario.ver",
+    "/panel/salidas": "inventario.ver",
+    "/panel/compras": "inventario.ver",
+    "/panel/efectividad": "ventas.ver_todas",
+    "/panel/objetivos": "tablero.ver",
+    "/panel/equipo": None,
+    "/panel/equipos": "inventario.ver",
+    "/panel/cuarentena": None,
+    "/panel/piloto": "piloto.administrar",
+}
+
+
+def permiso_de_la_pantalla(enlace: str) -> str | None:
+    """El permiso de la pantalla a la que lleva un enlace, aunque traiga
+    subruta, `?filtro=` o `#ancla`: manda la entrada del menú más larga que
+    le quede de prefijo."""
+    ruta = enlace.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/panel"
+    candidatas = [
+        r for r in PERMISO_DEL_MENU if ruta == r or ruta.startswith(r + "/")
+    ]
+    return PERMISO_DEL_MENU[max(candidatas, key=len)] if candidatas else None
+
+
+def menu_para(actor) -> list[tuple[str, list[tuple[str, str]]]]:
+    """El menú de esta persona: sin las pantallas que no puede abrir, y sin los
+    módulos que se quedan vacíos."""
+    if actor is None:
+        return []
+    menu = []
+    for titulo, enlaces in NAVEGACION:
+        visibles = [
+            (ruta, etiqueta)
+            for ruta, etiqueta in enlaces
+            if (permiso := PERMISO_DEL_MENU[ruta]) is None or actor.puede(permiso)
+        ]
+        if visibles:
+            menu.append((titulo, visibles))
+    return menu
 
 
 def modulo_de(seccion: str) -> str | None:
@@ -348,7 +413,7 @@ def render(
             **contexto,
             "actor": actor,
             "seccion": seccion,
-            "navegacion": NAVEGACION,
+            "navegacion": menu_para(actor),
             "modulo_activo": modulo_de(seccion),
             "csrf": token_csrf(peticion),
         },

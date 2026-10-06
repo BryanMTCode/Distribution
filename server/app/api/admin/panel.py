@@ -32,6 +32,7 @@ from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
+from app.api.admin.arranque import faltan_para_operar, pendientes_de_hoy, revisar_arranque
 from app.api.admin.comun import SesionDep, dinero, render
 from app.api.admin.sesion_web import (
     ActorWeb,
@@ -230,7 +231,11 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
     return render(
         peticion,
         "tablero.html",
-        {"indicadores": indicadores},
+        {
+            "indicadores": indicadores,
+            "pendientes": await pendientes_de_hoy(sesion, actor),
+            "faltan_para_operar": faltan_para_operar(await revisar_arranque(sesion)),
+        },
         actor=actor,
         seccion="Tablero",
     )

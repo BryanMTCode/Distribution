@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}¿Listo para operar?{% endblock %}
+{% block contenido %}
+<h1>¿Listo para operar?</h1>
+<p class="subtitulo">
+  Lo que tiene que estar en su lugar antes de que un camión salga con la app. En el
+  orden en que se hace: sin bodega no hay entrada, sin entrada no hay carga.
+</p>
+
+{% if faltan %}
+<div class="aviso-caja aviso" id="veredicto">
+  <strong>Faltan {{ faltan }} paso{{ '' if faltan == 1 else 's' }} para operar.</strong>
+  Cada uno dice dónde se arregla.
+</div>
+{% else %}
+<div class="aviso-caja bien" id="veredicto">
+  <strong>Listo para operar.</strong>
+  {% if listos < pasos|length %}
+    Quedan recomendaciones abajo: se puede trabajar sin ellas, pero algo queda cojo.
+  {% else %}
+    Todo en su lugar.
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="tabla-marco">
+  <table id="pasos_arranque">
+    <thead>
+      <tr>
+        <th style="width:44px"></th>
+        <th>Paso</th>
+        <th>Cómo está</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pasos %}
+      <tr class="{{ 'listo' if p.listo else ('falta' if p.bloqueante else 'recomendado') }}">
+        <td style="text-align:center;font-size:18px;font-weight:700;color:var({{ '--acento' if p.listo else ('--alerta' if p.bloqueante else '--aviso') }})"
+            aria-hidden="true">
+          {% if p.listo %}✓{% elif p.bloqueante %}✗{% else %}!{% endif %}
+        </td>
+        <td>
+          <strong>{{ loop.index }}. {{ p.titulo }}</strong>
+          <div class="sutil">
+            {% if p.listo %}Listo{% elif p.bloqueante %}Falta: sin esto no se opera{% else %}Recomendado{% endif %}
+          </div>
+        </td>
+        <td>{{ p.detalle }}</td>
+        <td>
+          {% if not p.listo %}
+            <a class="boton-chico" href="{{ p.enlace }}">{{ p.accion }}</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="sutil" style="margin-top:14px">
+  Esta lista se queda en el menú después del arranque: dar de alta un vendedor
+  nuevo es arrancar otra vez, en chiquito, y aquí se ve si le falta el camión, la
+  ruta o el teléfono.
+</p>
+{% endblock %}

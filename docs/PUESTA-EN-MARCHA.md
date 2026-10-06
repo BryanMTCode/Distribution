@@ -680,6 +680,27 @@ Vuelve al paso 9.
 > registrado, activo y de ese vendedor. Sin el paso 13 no hay login posible en un
 > APK de producción, y el síntoma parece un problema de red.
 
+## Paso 14-bis · 🚦 PUERTA: «¿Listo para operar?» sin una sola ✗
+
+**DÓNDE:** en el **panel**, menú **Hoy → Arranque**.
+
+La pantalla revisa los once pasos que tienen que estar en su lugar antes de que un
+camión salga con la app —bodega, lista por omisión, productos con precio, existencia
+inicial, costo, cada vendedor con camión, ruta y teléfono, rutas con titular,
+clientes con ruta, plan de visita y motivos— y junto a cada uno que falte pone el
+botón a la pantalla donde se arregla.
+
+**✅ Debes ver** arriba «**Listo para operar.**» Las marcas **!** (el costo y el plan de
+visita) son recomendaciones: se puede salir sin ellas, pero sin costo un faltante en el
+corte se le cobra al vendedor en $0, y sin plan Efectividad no puede contar a quién no
+se visitó.
+
+**⚠️ Mientras falte un paso bloqueante,** el tablero lo avisa arriba con un enlace a
+esta lista. No se apaga hasta que el último queda en ✓.
+
+> Úsala también después: dar de alta un vendedor nuevo es arrancar otra vez, en
+> chiquito, y aquí se ve si le falta el camión, la ruta o el teléfono.
+
 ---
 
 # Parte 5 · El simulacro completo
@@ -789,6 +810,7 @@ errores se va llenando. Lo que se tacha es el camino:
 | ☐ | 12 · Alta del vendedor | Panel |
 | ☐ | 13 · Vincular el teléfono | Panel |
 | ☐ | 14 · 🚦 El teléfono entra | Teléfono |
+| ☐ | 14-bis · 🚦 «¿Listo para operar?» sin ✗ | Panel → Arranque |
 | ☐ | 15 · 🚦 Simulacro completo | SIMULACRO.md |
 | ☐ | 16–18 · Día −1 del piloto | Servidor y panel |
 

@@ -4107,3 +4107,90 @@ y nadie visitó**, por ruta, y los clientes que más se saltan.
   cinco.
 - **Solo desde que el plan existe** (`clientes_frecuencia.desde`): capturar el plan
   hoy no convierte el mes pasado en un mes de visitas perdidas.
+
+## 57. El panel listo para operar: la auditoría panel → teléfono y lo que se simplificó
+
+**Decisión (octubre 2026).** Antes de salir a la calle se revisó el panel completo con
+dos preguntas: ¿todo lo que la oficina cambia le llega al teléfono?, y ¿la oficina
+sabe por dónde empezar? La primera encontró cinco huecos reales, todos cerrados con
+pruebas que fallan sin el arreglo; la segunda dejó tres piezas nuevas y ninguna
+pantalla quitada. El detalle de cada hallazgo está en
+`docs/AUDITORIA-SINCRONIZACION.md` §8.
+
+### Quién eres se lee de la base en cada petición, no del token
+
+El token de acceso dura 30 minutos y traía las rutas, el camión, el rol y los
+permisos. Con esa foto, la oficina le daba la ruta R04 a Pedro y durante media hora
+su pull seguía filtrando con las rutas viejas: los deltas de R04 de ese rato quedaban
+atrás del cursor que avanzaba y **no le llegaban nunca**. Con el camión, peor: las
+ventas se descontaban del camión que ya manejaba otro.
+
+Ahora el guardia de la API lee todo eso del usuario en la base, igual que ya lo hacía
+la sesión del panel y que la revocación del teléfono. El token conserva quién eres
+(`sub`) y para qué equipo; lo demás es una consulta por llave por petición, que es
+más barato que cualquiera de los dos descuadres.
+
+### Cuando una ruta cambia de manos, sus clientes viajan con ella (migración 0042)
+
+Cambiar el titular escribía `usuarios_rutas` y el `change_log` no se enteraba. El
+teléfono nuevo tenía el cursor más allá de los deltas de esos clientes —publicados
+cuando se dieron de alta— y **recibía la ruta vacía**; el anterior se quedaba con
+todos y le podía vender a cada uno, directo a cuarentena.
+
+Un disparador en `usuarios_rutas` republica, al dar la ruta, sus clientes y su
+cartera **solo al vendedor que la recibe** (`vendedor_id`), con `ruta_id` nulo a
+propósito para que le llegue sin depender de nada más; y al quitarla, un `delete` de
+cada cliente solo al que la pierde. El payload es el mismo de siempre: el teléfono no
+distingue un delta republicado de uno ordinario.
+
+### La cartera viaja con el cliente
+
+Un cliente con deuda que cambiaba de ruta llegaba al teléfono nuevo **con saldo cero
+y toda su línea libre**: el saldo vive en el delta de `cartera`, que solo se
+publicaba al cambiar el crédito. Ahora también al cambiar la ruta o el estatus.
+
+Esa misma función no era `SECURITY DEFINER` —la 0029 corrigió las demás y no la
+alcanzó—, así que en producción, con RLS de verdad, **subirle el límite a un cliente
+desde el panel daba 500**. Se corrigió, y `test_rls.py` revisa ahora en el catálogo de
+PostgreSQL que toda función que escribe el `change_log` corra como su dueño: la
+tercera no va a pasar.
+
+### Quitarle el camión al vendedor también es un cambio
+
+El teléfono ignoraba el delta de identidad con camión nulo («por si algún día el
+servidor lo manda»). El panel ya lo manda: al pasar un camión a otro vendedor o darlo
+de baja. El teléfono seguía ofreciendo la mercancía de un camión que manejaba otro.
+Ahora el nulo se guarda como «sin camión» —una fila con valor nulo, que no es lo mismo
+que no tener fila— y vacía el inventario local; la app ya sabía decir «este equipo no
+tiene camión asignado».
+
+### La guardia entre los dos lenguajes
+
+`test_guardia_servidor_telefono.py` lee los disparadores instalados en PostgreSQL y el
+`switch` de `_aplicarUno` en Dart, y falla si el servidor publica una entidad que el
+teléfono no sabe aplicar (caería en `deltas_desconocidos` y el vendedor nunca vería
+el cambio). En el otro sentido, lee los `OperacionLocal(tipo: …)` del código Dart y
+falla si alguno no tiene manejador en el servidor (iría a cuarentena con la mercancía
+ya entregada). Hoy cuadran 14 de 14 y 6 de 6; la prueba es para el día que no.
+
+### Lo que se simplificó para operar
+
+- **¿Listo para operar?** (Hoy → Arranque): once pasos en el orden en que se hacen
+  —bodega, lista por omisión, productos con precio, existencia inicial, costo,
+  vendedores con camión y ruta, teléfono vinculado, rutas con titular, clientes con
+  ruta, plan de visita, motivos—, cada uno con lo que falta en números y el botón a la
+  pantalla donde se arregla. Ocho son bloqueantes; el costo y el plan de visita son
+  recomendaciones. Mientras falte un bloqueante, el tablero lo avisa arriba. Se queda
+  en el menú: dar de alta un vendedor nuevo es arrancar otra vez, en chiquito.
+- **Pendientes de hoy**, arriba del tablero: lo que espera a alguien, en el orden del
+  día —antes de que salgan los camiones, durante el día, al cierre— y **solo lo que
+  tiene algo**. Una lista que siempre muestra diez renglones en cero se deja de leer
+  el día tres. Las cifras del día siguen abajo, como estaban.
+- **El menú solo ofrece lo que la persona puede abrir.** `PERMISO_DEL_MENU` dice qué
+  pide cada pantalla, y una prueba entra con cada rol y revisa que lo visible se abra y
+  lo escondido responda 403. Con los roles de hoy, gerente y supervisor ven todo; la
+  diferencia aparece con las excepciones por usuario.
+
+No se quitó ninguna pantalla: cada una tiene un dueño y un momento en la operación
+(la tabla está en `docs/AUDITORIA-SINCRONIZACION.md` §8.4). Lo que faltaba no eran
+menos pantallas sino quién dijera por dónde empezar.

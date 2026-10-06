@@ -10,6 +10,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 
+from app.api.admin import arranque as panel_arranque
 from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import cobranza as panel_cobranza
@@ -124,6 +125,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_desempeno.router)
     app.include_router(panel_efectividad.router)
     app.include_router(panel_motivos.router)
+    app.include_router(panel_arranque.router)
     app.include_router(panel_objetivos.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)
