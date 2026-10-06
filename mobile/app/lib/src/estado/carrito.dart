@@ -230,13 +230,19 @@ final identidadDeVentaProvider = Provider<IdentidadDeVenta?>((ref) {
   }
 
   final dispositivoId = valorDe('dispositivo_id');
-  if (dispositivoId == null || c.almacenId == null) return null;
+  // El camión sale de `almacenDelVendedorProvider`, que prefiere lo que el
+  // servidor publicó por delta sobre lo que trae la credencial. La credencial se
+  // reescribe solo con un login en línea, así que es el dato más viejo: si la
+  // oficina reasignó el camión mientras el vendedor trabajaba offline, estampar
+  // las ventas con el de la credencial las descuenta del camión equivocado.
+  final almacen = ref.watch(almacenDelVendedorProvider);
+  if (dispositivoId == null || almacen == null) return null;
 
   return IdentidadDeVenta(
     vendedorId: c.usuarioId,
     codigoVendedor: c.codigo,
     dispositivoId: dispositivoId,
-    almacenId: c.almacenId!,
+    almacenId: almacen,
     cargaId: valorDe('carga_id_activa'),
   );
 });

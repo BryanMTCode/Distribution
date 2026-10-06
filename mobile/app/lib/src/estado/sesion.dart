@@ -382,3 +382,29 @@ final clientesProvider = Provider<List<ClienteEnRuta>>((ref) {
 final resumenColaProvider = Provider<ResumenCola>(
   (ref) => ref.watch(outboxProvider).resumen(),
 );
+
+/// El camión del vendedor: lo que el servidor publicó, o lo que trae la credencial.
+///
+/// ───────────────────────────────────────────────────────────────────────────
+/// EL ORDEN IMPORTA, Y ES EL CONTRARIO DEL OBVIO
+/// ───────────────────────────────────────────────────────────────────────────
+/// La credencial se reescribe solo cuando el vendedor entra **con señal**, así que
+/// es el dato más VIEJO de los dos: si la oficina le reasignó el camión mientras
+/// trabajaba offline, la credencial sigue diciendo el anterior y el delta ya trae
+/// el nuevo. Preferir el delta es preferir lo que el servidor sabe hoy.
+///
+/// La credencial queda como respaldo para el teléfono que todavía no ha recibido
+/// ningún delta de identidad —el recién vinculado—, y porque el día que el
+/// servidor no publique nada, un camión viejo es mejor que ninguno: sin
+/// `almacen_id` el vendedor no puede ni vender ni mermar.
+final almacenDelVendedorProvider = Provider<String?>((ref) {
+  final sesion = ref.watch(sesionProvider);
+  if (sesion is! SesionAbierta) return null;
+
+  final db = ref.watch(baseLocalProvider).db;
+  final filas = db.select(
+    "SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'",
+  );
+  final asignado = filas.isEmpty ? null : filas.single['valor'] as String?;
+  return asignado ?? sesion.credencial.almacenId;
+});

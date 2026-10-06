@@ -112,6 +112,7 @@ class AplicadorDeltas {
         'carga' => _carga(delta, recibidoEn),
         'venta' => _venta(delta, recibidoEn),
         'ajuste_camion' => _ajusteCamion(delta, recibidoEn),
+        'identidad' => _identidad(delta),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
         // Las promociones todavía no se aplican: se aceptan para no llenar
@@ -584,6 +585,77 @@ class AplicadorDeltas {
         final num n => n.toStringAsFixed(3),
         _ => '0.000',
       };
+
+  // -------------------------------------------------------------------------
+  // La identidad del equipo
+  // -------------------------------------------------------------------------
+
+  /// El camión que la oficina le asignó a este vendedor.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LO QUE ESTO SÍ ARREGLA, Y LO QUE NO HACÍA FALTA ARREGLAR
+  /// ───────────────────────────────────────────────────────────────────────
+  /// El teléfono manda `almacen_id` en el payload de cada venta, pero **el
+  /// servidor lo ignora**: lo toma del token, con este comentario en el manejador
+  /// —«del token, nunca del payload: si el dispositivo pudiera declarar a nombre de
+  /// quién vende, un equipo comprometido escribiría en la ruta de cualquier otro»—.
+  /// Así que una venta NUNCA queda estampada con el camión equivocado, aunque la
+  /// credencial del teléfono esté vieja. Eso ya estaba bien.
+  ///
+  /// Lo que sí se rompe al reasignar un camión es el inventario LOCAL.
+  /// `existencias_camion` no tiene columna de almacén —es «mi camión», implícito— y
+  /// nada la reinicia, por diseño: el camión es un almacén rodante y su saldo se
+  /// arrastra de un día al siguiente. Un cambio de camión es justo el único evento
+  /// que tiene que reiniciarlo, o el teléfono mezclaría el sobrante del camión
+  /// viejo con las cargas del nuevo y le ofrecería al cliente mercancía que está en
+  /// otro vehículo.
+  ///
+  /// Se guarda en `sync_estado` y no en la credencial a propósito: la credencial es
+  /// lo que el servidor firmó en el último login —con su hash y su vigencia— y
+  /// reescribirla por un delta la volvería un documento de dos dueños. Esto es otra
+  /// cosa: el último valor que el servidor publicó.
+  bool _identidad(Delta delta) {
+    final i = delta.payload;
+    if (i == null) return true;
+    final almacen = i['almacen_id'] as String?;
+    if (almacen == null) return true;
+
+    final previo = _db.select(
+      "SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'",
+    );
+    final anterior = previo.isEmpty ? null : previo.single['valor'] as String?;
+
+    _db.execute(
+      "INSERT INTO sync_estado (clave, valor) VALUES ('almacen_asignado', ?) "
+      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      [almacen],
+    );
+
+    // Solo cuando CAMBIA, y solo si ya había uno: el primer delta que llega a un
+    // teléfono recién vinculado no tiene que vaciarle nada.
+    if (anterior != null && anterior != almacen) {
+      _reiniciarElCamion();
+    }
+    return true;
+  }
+
+  /// Vacía el inventario local del camión porque ya es otro camión.
+  ///
+  /// Se borran también las marcas de cargas aplicadas: las del camión anterior no
+  /// dicen nada del nuevo, y conservarlas impediría aplicar una carga del camión
+  /// nuevo si por casualidad compartieran identificador — que no puede pasar, pero
+  /// dejar basura que solo es inofensiva por casualidad es cómo se construye el
+  /// siguiente defecto.
+  ///
+  /// Lo que NO se toca son los documentos del vendedor: sus ventas, cobros y mermas
+  /// sin subir siguen en la cola y se suben igual. Describen lo que pasó en la
+  /// calle, y lo que pasó no cambia porque la oficina le haya cambiado el camión.
+  void _reiniciarElCamion() {
+    _db.execute('DELETE FROM existencias_camion');
+    _db.execute('DELETE FROM cargas_aplicadas');
+    _db.execute('DELETE FROM ajustes_camion_aplicados');
+    _db.execute("DELETE FROM sync_estado WHERE clave = 'carga_id_activa'");
+  }
 
   // -------------------------------------------------------------------------
   // El ajuste que la oficina hizo al camión

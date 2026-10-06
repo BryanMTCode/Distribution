@@ -16,7 +16,7 @@ que queda pendiente de una decisión tuya.
 
 ## 1. El inventario: qué viaja y quién lo aplica
 
-Doce fuentes publican al teléfono, y el teléfono sabe aplicar las doce. **No hay
+Trece fuentes publican al teléfono, y el teléfono sabe aplicar las trece. **No hay
 entidades huérfanas en ninguna de las dos direcciones**, que es lo primero que se
 revisó.
 
@@ -31,6 +31,7 @@ revisó.
 | `cargas` | `carga` | `existencias_camion` | **suma**, marcada en `cargas_aplicadas` |
 | `ventas` | `venta` | `ventas`, `venta_partidas`, `existencias_camion` | **compara** contra lo local |
 | `ajustes_camion` | `ajuste_camion` | `existencias_camion` | **suma**, marcada en `ajustes_camion_aplicados` |
+| `usuarios` (solo el camión) | `identidad` | `sync_estado` | upsert; si el camión cambia, reinicia el inventario local |
 | `motivos_merma` | `motivo_merma` | `motivos_merma` | upsert |
 | `motivos_no_drop` | `motivo_no_drop` | `motivos_no_drop` | upsert |
 | `promociones` | `promocion` | — | se acepta y se descarta (ver §5.3) |
@@ -226,20 +227,55 @@ bloqueado también cuando se cayó la red a media entrega.
 Cuatro cosas. Las dos primeras necesitan una decisión tuya; las dos últimas son
 trabajo que no corresponde a una auditoría.
 
-### 6.1 La credencial del teléfono solo se refresca con un login en línea
+### 6.1 ~~La credencial solo se refresca con un login en línea~~ · CERRADO, y con una corrección a esta auditoría
 
-`almacen_id` (su camión) y sus permisos viven en la credencial guardada, y se
-reescriben únicamente cuando el vendedor entra **con señal**. Mientras no lo haga:
+**Lo que esta sección decía estaba mal en su parte más alarmante.** Decía que una
+credencial vieja dejaría ventas «estampadas con el camión anterior, descontando del
+inventario equivocado». No puede pasar: el manejador de sincronización toma el
+almacén **del token, nunca del payload**, con este comentario al lado —«si el
+dispositivo pudiera declarar a nombre de quién vende, un equipo comprometido
+escribiría en la ruta de cualquier otro»—. El servidor ya se defendía solo, y lo
+mismo con `vendedor_id`.
 
-- si la oficina le cambia el camión, sus ventas siguen saliendo estampadas con el
-  camión anterior, y descuentan del inventario equivocado;
-- si le revoca un permiso, lo conserva.
+Lo encontré al ir a arreglarlo, leyendo el manejador en vez de suponerlo. Queda
+fijado con una prueba que documenta de dónde sale ese dato, para que la próxima
+auditoría no vuelva a sospecharlo.
 
-Lo acota `valida_hasta`, que lo obliga a reconectarse cada tantos días. **Decisión
-pendiente:** si quieres que un cambio de camión llegue como delta —no es difícil,
-es una entidad `identidad` más— o si el límite de días es suficiente. Yo dejaría los
-permisos como están y mandaría el camión por delta: cambiar de camión es raro, y
-cuando pasa, las ventas mal estampadas son caras de desenredar.
+**El hueco real era más chico y estaba en el teléfono.** `existencias_camion` no
+tiene columna de almacén —es «mi camión», implícito— y nada la reinicia, **por
+diseño**: el camión es un almacén rodante y su saldo se arrastra de un día al
+siguiente (ADR 0002 §17). Reasignar el camión es el único evento que tiene que
+reiniciarla; sin eso, el teléfono mezclaría el sobrante del camión viejo con las
+cargas del nuevo y le ofrecería al cliente mercancía que está en otro vehículo.
+
+Qué se hizo (migración 0035):
+
+- Entidad de delta nueva, `identidad`, acotada al propio vendedor, con el camión
+  que la oficina le tiene asignado.
+- El payload se arma **a mano, campo por campo**, y no con `to_jsonb(NEW)`:
+  `usuarios` guarda el `password_hash` y el `change_log` es una tabla que el
+  dispositivo **descarga**. Un disparador genérico aquí habría mandado el hash de la
+  contraseña de un empleado por la red, a quedarse en el SQLite de un teléfono. Hay
+  una prueba que afirma que el payload tiene exactamente dos campos.
+- Cuando el camión **cambia**, el teléfono reinicia su inventario local, sus marcas
+  de cargas aplicadas y su carga activa. Sus documentos sin subir **no se tocan**:
+  describen lo que pasó en la calle, y eso no cambia porque la oficina le haya
+  cambiado el vehículo.
+- Cuando llega el **mismo** camión —un `pull` repetido— no se vacía nada, y el
+  primer delta que recibe un teléfono recién vinculado tampoco.
+
+**Lo que deliberadamente NO viaja:** los permisos siguen en la credencial, acotados
+por `valida_hasta` —mandarlos por delta permitiría que un teléfono offline *ganara*
+permisos sin volver a autenticarse, que es al revés de lo que se quiere— y el
+`codigo` del vendedor tampoco, porque es el prefijo del folio impreso y cambiarlo a
+media ruta haría que dos rangos compartieran prefijo en papel.
+
+> **Nota de severidad, para que el registro sea honesto:** hoy el camión se asigna
+> solo al **crear** al vendedor y no hay pantalla para reasignarlo, así que el único
+> camino era un UPDATE a mano contra la base. Era un hueco latente, no un defecto
+> que estuviera ocurriendo. Se cerró ahora porque la lista de capacidades de edición
+> para gerencia sigue creciendo y «reasignar el camión» es la clase de botón que se
+> pide.
 
 ### 6.2 El traspaso camión → bodega no existe
 
@@ -271,7 +307,7 @@ Córrelo a mano la primera vez, mira cuánto borra, y después lo programamos.
 
 ## 7. Las pruebas que dejan esto cerrado
 
-20 pruebas nuevas, todas sobre el modo de falla y no sobre el camino feliz:
+31 pruebas nuevas, todas sobre el modo de falla y no sobre el camino feliz:
 
 | Qué defiende | Dónde |
 |---|---|
@@ -286,6 +322,12 @@ Córrelo a mano la primera vez, mira cuánto borra, y después lo programamos.
 | Un cursor exactamente EN el piso no resincroniza | `test_blindaje_sync.py` |
 | La poda escribe el piso en la misma transacción | `test_blindaje_sync.py` |
 | La poda no se lleva lo reciente | `test_blindaje_sync.py` |
+| El payload de identidad NO lleva el hash de la contraseña | `test_blindaje_sync.py` |
+| Un cambio que no toca el almacén no publica nada | `test_blindaje_sync.py` |
+| El servidor ya ignoraba el almacén del payload | `test_blindaje_sync.py` |
+| Un camión distinto reinicia el inventario local | `identidad_delta_test.dart` |
+| El mismo camión, o el primer delta, no vacían nada | `identidad_delta_test.dart` |
+| Cambiar de camión no se lleva los documentos sin subir | `identidad_delta_test.dart` |
 
 Las dos defensas del hallazgo 1 están verificadas con **mutación**: sin el SAVEPOINT
 por delta, las pruebas se ponen rojas.

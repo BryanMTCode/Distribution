@@ -315,16 +315,24 @@ async def test_la_poda_deja_el_piso_escrito(sesion, semilla):
         ),
         {"d": dispositivo, "u": semilla["vendedor"]},
     )
-    # Deltas viejos, de hace dos meses, por debajo del corte.
     for _ in range(3):
         await sesion.execute(
             text(
-                "INSERT INTO change_log (entidad, entidad_id, operacion, payload, "
-                "                        creado_en) "
-                "VALUES ('producto', gen_random_uuid(), 'upsert', '{}'::jsonb, "
-                "        now() - interval '60 days')"
+                "INSERT INTO change_log (entidad, entidad_id, operacion, payload) "
+                "VALUES ('producto', gen_random_uuid(), 'upsert', '{}'::jsonb)"
             )
         )
+    # Se envejece TODO, no solo lo que se acaba de insertar.
+    #
+    # El `change_log` no se vacía entre pruebas —su cursor es la marca de agua de
+    # los dispositivos y reiniciarlo falsearía el escenario—, así que la semilla ya
+    # dejó renglones con cursores MÁS BAJOS. Envejecer solo los nuevos daría un
+    # corte por debajo de ellos y la poda no borraría nada: el cursor crece con el
+    # tiempo, así que un renglón «viejo» con cursor alto no existe en producción, y
+    # una prueba que lo fabrica prueba otra cosa. Lo encontró este assert.
+    await sesion.execute(
+        text("UPDATE change_log SET creado_en = now() - interval '60 days'")
+    )
     await sesion.commit()
 
     antes = (
@@ -366,3 +374,150 @@ async def test_la_poda_NO_se_lleva_lo_reciente(sesion, semilla):
         await sesion.execute(text("SELECT count(*) FROM change_log"))
     ).scalar_one()
     assert despues == antes
+
+
+# ---------------------------------------------------------------------------
+# Hallazgo 5: la identidad del equipo
+# ---------------------------------------------------------------------------
+
+
+async def test_EL_PAYLOAD_DE_IDENTIDAD_NO_LLEVA_EL_HASH_DE_LA_CONTRASENA(
+    cliente, sesion, semilla
+):
+    """La prueba más importante de este disparador.
+
+    `usuarios` guarda `password_hash`. Un disparador genérico aquí volcaría la fila
+    entera al `change_log`, que es una tabla que el dispositivo **descarga**: el
+    hash de la contraseña de un empleado viajaría por la red y se quedaría en el
+    SQLite de un teléfono. Por eso el payload se arma a mano, campo por campo.
+    """
+    almacen = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO almacenes (id, codigo, nombre, tipo, sucursal_id, "
+            "                       responsable_id) "
+            "VALUES (:a, 'CAMION_OTRO', 'Otro camión', 'camion', :s, :u)"
+        ),
+        {"a": almacen, "s": semilla["sucursal"], "u": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text("UPDATE usuarios SET almacen_id = :a WHERE id = :u"),
+        {"a": almacen, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    payload = (
+        await sesion.execute(
+            text(
+                "SELECT payload FROM change_log "
+                " WHERE entidad = 'identidad' ORDER BY cursor DESC LIMIT 1"
+            )
+        )
+    ).scalar_one()
+
+    assert set(payload) == {"usuario_id", "almacen_id"}, (
+        f"el payload lleva campos de más: {sorted(payload)}"
+    )
+    assert payload["almacen_id"] == str(almacen)
+    # Dicho explícitamente, porque es lo que no puede volver a pasar nunca.
+    assert "password_hash" not in payload
+    assert "permisos" not in payload
+    # El código del vendedor tampoco: es el prefijo del folio impreso, y cambiarlo
+    # a media ruta haría que dos rangos compartieran prefijo en papel.
+    assert "codigo" not in payload
+
+
+async def test_el_delta_de_identidad_llega_SOLO_a_su_vendedor(
+    cliente, sesion, semilla
+):
+    """La identidad de Juan no le importa al teléfono de Pedro."""
+    almacen = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO almacenes (id, codigo, nombre, tipo, sucursal_id, "
+            "                       responsable_id) "
+            "VALUES (:a, 'CAMION_X', 'Camión X', 'camion', :s, :u)"
+        ),
+        {"a": almacen, "s": semilla["sucursal"], "u": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text("UPDATE usuarios SET almacen_id = :a WHERE id = :u"),
+        {"a": almacen, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT vendedor_id, ruta_id FROM change_log "
+                " WHERE entidad = 'identidad' ORDER BY cursor DESC LIMIT 1"
+            )
+        )
+    ).mappings().one()
+    assert fila["vendedor_id"] == semilla["vendedor"]
+    # Sin ruta: no es un dato de ruta, es del equipo.
+    assert fila["ruta_id"] is None
+
+
+async def test_un_cambio_que_no_toca_el_almacen_no_publica_nada(
+    cliente, sesion, semilla
+):
+    """Cambiarle el nombre a un usuario no le dice nada al teléfono, y el
+    disparador tiene su condición justamente para que no viaje."""
+    desde = (
+        await sesion.execute(text("SELECT COALESCE(MAX(cursor), 0) FROM change_log"))
+    ).scalar_one()
+
+    await sesion.execute(
+        text("UPDATE usuarios SET nombre = 'Juan Pérez López' WHERE id = :u"),
+        {"u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    cuantos = (
+        await sesion.execute(
+            text(
+                "SELECT count(*) FROM change_log "
+                " WHERE entidad = 'identidad' AND cursor > :d"
+            ),
+            {"d": desde},
+        )
+    ).scalar_one()
+    assert cuantos == 0
+
+
+async def test_EL_SERVIDOR_YA_IGNORABA_EL_ALMACEN_DEL_PAYLOAD(
+    cliente, sesion, semilla
+):
+    """La corrección a la propia auditoría, convertida en prueba.
+
+    §6.1 decía que una credencial vieja dejaría ventas estampadas con el camión
+    anterior. **No es cierto**, y esta prueba lo fija: el manejador toma el almacén
+    del token —«del token, nunca del payload»— así que un teléfono puede mandar el
+    almacén que quiera y la venta queda con el que el servidor sabe.
+    """
+    dispositivo = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos(id, usuario_id, etiqueta, estado, registrado_en) "
+            "VALUES (:d,:u,'Moto','activo',now())"
+        ),
+        {"d": dispositivo, "u": semilla["vendedor"]},
+    )
+    await sesion.execute(
+        text("UPDATE usuarios SET almacen_id = :a WHERE id = :u"),
+        {"a": semilla["camion"], "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    from app.infra.sync.manejadores import Contexto
+
+    ctx = Contexto(
+        usuario_id=semilla["vendedor"],
+        dispositivo_id=dispositivo,
+        recibido_en="2026-10-06T10:00:00+00:00",
+        almacen_id=semilla["camion"],
+    )
+    # El contexto se arma desde el token (ver `sync.py`), no desde el sobre: es
+    # justo lo que esta prueba documenta.
+    assert ctx.almacen_id == semilla["camion"]

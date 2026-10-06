@@ -34,11 +34,6 @@ import 'sesion.dart';
 /// Sale de la credencial, no de la pantalla: dejar que el dispositivo lo declare
 /// permitiría mermar el inventario de otro camión. El servidor además lo ignora y
 /// usa el del contexto, así que esto es conveniencia, no autoridad.
-final almacenDelVendedorProvider = Provider<String?>((ref) {
-  final sesion = ref.watch(sesionProvider);
-  if (sesion is! SesionAbierta) return null;
-  return sesion.credencial.almacenId;
-});
 
 final registroDeMermaProvider = Provider<RegistroDeMerma?>((ref) {
   final sesion = ref.watch(sesionProvider);
