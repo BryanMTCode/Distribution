@@ -16,9 +16,10 @@ que queda pendiente de una decisión tuya.
 
 ## 1. El inventario: qué viaja y quién lo aplica
 
-Trece fuentes publican al teléfono, y el teléfono sabe aplicar las trece. **No hay
-entidades huérfanas en ninguna de las dos direcciones**, que es lo primero que se
-revisó.
+Catorce fuentes publican al teléfono, y el teléfono sabe aplicar las catorce. **No
+hay entidades huérfanas en ninguna de las dos direcciones**, que es lo primero que se
+revisó. (Eran trece al escribir esto; la decimocuarta —`traspasos`— nació al cerrar
+el §6.2, con el mismo criterio.)
 
 | Tabla del servidor | Entidad del delta | El teléfono la aplica en | Cómo se vuelve idempotente |
 |---|---|---|---|
@@ -34,11 +35,12 @@ revisó.
 | `usuarios` (solo el camión) | `identidad` | `sync_estado` | upsert; si el camión cambia, reinicia el inventario local |
 | `motivos_merma` | `motivo_merma` | `motivos_merma` | upsert |
 | `motivos_no_drop` | `motivo_no_drop` | `motivos_no_drop` | upsert |
+| `traspasos` | `traspaso` | `traspasos`, `traspaso_detalle` | upsert; **no toca ninguna existencia** |
 | `promociones` | `promocion` | — | se acepta y se descarta (ver §5.3) |
 
-Y en el sentido contrario, los cinco documentos que el teléfono produce tienen su
+Y en el sentido contrario, los seis documentos que el teléfono produce tienen su
 manejador en el servidor: `cliente.crear`, `venta.crear`, `cobro.crear`,
-`merma.crear`, `no_drop.crear`. Ninguno sin par.
+`merma.crear`, `no_drop.crear`, `traspaso.crear`. Ninguno sin par.
 
 ### La regla que gobierna la columna de la derecha
 
@@ -224,8 +226,9 @@ bloqueado también cuando se cayó la red a media entrega.
 
 ## 6. Lo que queda, y por qué no lo toqué
 
-Cuatro cosas. Las dos primeras necesitan una decisión tuya; las dos últimas son
-trabajo que no corresponde a una auditoría.
+Cuatro cosas cuando se escribió esto. Las dos primeras ya están cerradas —cada una
+con su nota de qué se hizo y qué encontré de paso—; las dos últimas siguen abiertas
+a propósito.
 
 ### 6.1 ~~La credencial solo se refresca con un login en línea~~ · CERRADO, y con una corrección a esta auditoría
 
@@ -277,14 +280,57 @@ media ruta haría que dos rangos compartieran prefijo en papel.
 > para gerencia sigue creciendo y «reasignar el camión» es la clase de botón que se
 > pide.
 
-### 6.2 El traspaso camión → bodega no existe
+### 6.2 ~~El traspaso camión → bodega no existe~~ · CERRADO
 
 Cuando escribí el cierre del camión rodante dije que la mercancía que el vendedor
 sí entrega «es un traspaso camión → bodega, con su propio documento y su propia
-aceptación». **Las tablas existen (`traspasos`, `traspaso_detalle`, migración 0004)
-y la pantalla no.** Me adelanté al describirlo como disponible, y queda anotado aquí
-en vez de en una conversación: hoy la única forma de bajar mercancía de un camión a
-la bodega es un ajuste en cada lado, que no deja un documento que ate los dos.
+aceptación». **Las tablas existían (`traspasos`, `traspaso_detalle`, migración 0004)
+y la pantalla no.** Me adelanté al describirlo como disponible, y quedó anotado aquí
+en vez de en una conversación: la única forma de bajar mercancía de un camión era un
+ajuste en cada lado, que no deja un documento que ate los dos. El día que alguien
+preguntara «¿quién bajó esas 18 cajas y quién las recibió?», no había qué leer.
+
+Ya existe (migración 0036), y las tres decisiones de diseño valen más que el código:
+
+**Lo inicia el vendedor, no la oficina.** La 0004 imaginó el sentido contrario
+—bodega → camión, que la oficina propone y el vendedor acepta— y para ese sentido es
+correcto: nadie le mete mercancía al camión de alguien sin su consentimiento. Para
+camión → bodega el dueño del origen es el vendedor, así que él lo captura, desde su
+teléfono y **sin señal**: es el único que sabe que acaba de bajar 18 cajas, y
+exigirle conexión haría que lo apuntara en papel. Mismo trato que una merma, misma
+razón.
+
+**Pasa por TRÁNSITO, no derecho a la bodega.** Si la declaración del vendedor subiera
+la bodega, un faltante se podría cubrir escribiendo una devolución que nunca se
+entregó: su camión baja, la bodega sube, y nadie contó nada. Sería la única operación
+del sistema donde la palabra de una persona mueve dos almacenes. El almacén de paso
+—`almacenes.tipo = 'transito'`, previsto desde la 0004 y que nadie había usado— se
+crea solo, por sucursal, la primera vez que hace falta: rechazar el documento porque
+nadie lo configuró convertiría una omisión de la oficina en un faltante del vendedor.
+
+**La bodega cierra el documento CONTANDO, y lo que no cuadre se queda en tránsito.**
+No hay botón de «aceptar». Lo que entra a la bodega es lo contado —aunque sea más de
+lo declarado, que también es un hecho físico— y la diferencia queda con nombre y con
+fecha en `traspaso_detalle.cantidad_recibida`, que nunca sobrescribe lo declarado.
+Tampoco hay botón de «rechazar»: rechazar le devolvería 18 cajas a un camión que ya
+no las trae, y la respuesta correcta a «no llegó nada» es **contar cero**.
+
+Lo que el vendedor ve: el estado y lo contado llegan a su teléfono por un delta
+acotado a él (`entidad = 'traspaso'`), que es su comprobante de que la mercancía dejó
+de ser su responsabilidad. El delta viaja como **estado**, no como diferencia, y
+puede aplicarse mil veces porque **no mueve ninguna existencia**: lo que la bodega no
+contó NO regresa al camión.
+
+Y la liquidación no necesitó un solo cambio, que es el detalle que más vale la pena
+saber: la ecuación del cierre no tiene término para «traspasado», pero `inicial` se
+**deduce** del saldo vivo del camión (ver `saldo_inicial`), así que bajar las
+existencias baja `inicial` y baja `esperado` en la misma cantidad. El cierre siempre
+compara lo contado contra lo que el sistema tiene AHORA. Es el mismo mecanismo que
+absorbe los ajustes de la oficina.
+
+La pantalla de recepción vive **dentro de Entradas**, no en una sección nueva: es la
+misma acción física —alguien parado en la bodega contando mercancía— y lo único
+distinto es que viene de un camión y que el documento ya existe.
 
 ### 6.3 Un producto borrado con una venta en vuelo
 
@@ -331,6 +377,41 @@ Córrelo a mano la primera vez, mira cuánto borra, y después lo programamos.
 
 Las dos defensas del hallazgo 1 están verificadas con **mutación**: sin el SAVEPOINT
 por delta, las pruebas se ponen rojas.
+
+### Y las del traspaso camión → bodega (§6.2)
+
+44 más, de los tres lados del documento:
+
+| Qué defiende | Dónde |
+|---|---|
+| La bodega NO sube con la sola palabra del vendedor | `test_traspaso_ingesta.py` |
+| Un solo asiento ata los dos almacenes, con quién lo bajó | `test_traspaso_ingesta.py` |
+| El payload no puede elegir de qué camión sale | `test_traspaso_ingesta.py` |
+| Reenviar el sobre no baja el camión dos veces | `test_traspaso_ingesta.py` |
+| Sin existencia se registra igual (§0.1) | `test_traspaso_ingesta.py` |
+| El tránsito se crea solo, y es de la sucursal del camión | `test_traspaso_ingesta.py` |
+| Lo devuelto NO se le cobra en la liquidación | `test_traspaso_ingesta.py` |
+| Un nombre de tránsito tomado por una BODEGA se rechaza | `test_traspaso_ingesta.py` |
+| Un origen que no es camión se rechaza (quedaría varado) | `test_traspaso_ingesta.py` |
+| Lo que entra a la bodega es lo CONTADO, no lo declarado | `test_panel_devolucion_camion.py` |
+| Lo que faltó se queda en tránsito | `test_panel_devolucion_camion.py` |
+| Contar cero es respuesta válida y cierra el documento | `test_panel_devolucion_camion.py` |
+| En blanco se rechaza: no es lo mismo que cero | `test_panel_devolucion_camion.py` |
+| Recibir dos veces no mete la mercancía dos veces | `test_panel_devolucion_camion.py` |
+| No se puede recibir «en un camión» (§0.2) | `test_panel_devolucion_camion.py` |
+| Sin el permiso no se recibe, y gerencia hoy SÍ lo tiene | `test_panel_devolucion_camion.py` |
+| El vendedor recibe el delta con lo contado | `test_panel_devolucion_camion.py` |
+| El delta NO le devuelve al camión lo que no se contó | `traspaso_test.dart` |
+| Aplicarlo dos veces no cambia nada (es estado) | `traspaso_test.dart` |
+| «Nadie lo contó» no es «contaron cero» | `traspaso_test.dart` |
+| Un traspaso que este teléfono no tiene no se inventa | `traspaso_test.dart` |
+| El camión baja al capturar, en piezas aunque se teclee en cajas | `devolver_a_bodega_test.dart` |
+| «Todo el camión» carga el saldo en unidad base | `devolver_a_bodega_test.dart` |
+| La pantalla dice «en tránsito», no «entregado» | `devolver_a_bodega_test.dart` |
+
+Verificado con **mutación** lo que paga el diseño entero: si la recepción mete lo
+declarado en vez de lo contado, siete pruebas se ponen rojas; si el traspaso mueve
+camión → bodega en vez de camión → tránsito, cinco.
 
 ### Un defecto de las pruebas mismas, que la auditoría encontró de paso
 

@@ -201,6 +201,42 @@ CREATE TABLE IF NOT EXISTS ajustes_camion_aplicados (
     aplicado_en TEXT NOT NULL
 );
 
+-- Las devoluciones a la bodega que el vendedor capturó.
+--
+-- Nacen en el teléfono y sin señal: el vendedor es el único que sabe que acabó de
+-- bajar 18 cajas, y exigirle conexión para registrarlo haría que lo apuntara en
+-- papel. Es el mismo trato que una merma, por la misma razón.
+--
+-- El FOLIO lo pone el servidor y llega de vuelta por delta. Un traspaso no se le
+-- entrega a un cliente, así que no necesita un folio impreso offline y no vale la
+-- pena darle un rango propio; mientras no llegue, el renglón se identifica por su
+-- fecha.
+--
+-- `estado` sigue al del servidor: `propuesto` mientras la mercancía está en
+-- tránsito, `aceptado` cuando la bodega la recibió y contó. Es el comprobante del
+-- vendedor de que eso dejó de ser su responsabilidad.
+CREATE TABLE IF NOT EXISTS traspasos (
+    id                  TEXT PRIMARY KEY,
+    folio               TEXT,
+    estado              TEXT NOT NULL DEFAULT 'propuesto',
+    observaciones       TEXT,
+    resuelto_en         TEXT,
+    fecha_dispositivo   TEXT NOT NULL,
+    fecha_operativa     TEXT NOT NULL,
+    sincronizado        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS traspaso_detalle (
+    id                  TEXT PRIMARY KEY,
+    traspaso_id         TEXT NOT NULL REFERENCES traspasos(id) ON DELETE CASCADE,
+    producto_id         TEXT NOT NULL REFERENCES productos(id),
+    cantidad_base       REAL NOT NULL,
+    -- Lo que la bodega contó. NULL mientras está en tránsito. Se guarda aparte de
+    -- lo declarado porque la diferencia entre las dos es el dato que importa.
+    cantidad_recibida   REAL,
+    UNIQUE (traspaso_id, producto_id)
+);
+
 CREATE TABLE IF NOT EXISTS cargas_aplicadas (
     carga_id            TEXT PRIMARY KEY,
     aplicada_en         TEXT NOT NULL,

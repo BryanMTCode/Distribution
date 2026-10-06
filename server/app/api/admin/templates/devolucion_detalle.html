@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block titulo %}{{ traspaso.folio }}{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/entradas">← Entradas</a></p>
+<h1>{{ traspaso.folio }} · Devolución de camión</h1>
+<p class="subtitulo">
+  De {{ traspaso.camion }} ({{ traspaso.camion_nombre }}){% if traspaso.vendedor %},
+  que bajó {{ traspaso.vendedor }}{% endif %} ·
+  {{ (traspaso.fecha_operativa or traspaso.creado_en).strftime('%d/%m/%Y') }}
+  {% if traspaso.observaciones %} · {{ traspaso.observaciones }}{% endif %}
+</p>
+
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{% if por_recibir %}
+  <div class="aviso-caja aviso">
+    <strong>La mercancía está en tránsito ({{ traspaso.transito }}).</strong>
+    Salió del camión cuando el vendedor lo capturó —eso ya pasó— y
+    <strong>no suma a ninguna bodega hasta que se cuente aquí</strong>. Lo que se
+    capture es lo que <em>contaste</em>, no lo que él declaró: la diferencia es el
+    dato que esta pantalla existe para producir.
+  </div>
+{% else %}
+  <div class="aviso-caja bien">
+    Recibida{% if traspaso.recibio %} por {{ traspaso.recibio }}{% endif %}
+    {% if traspaso.resuelto_en %}
+      el {{ traspaso.resuelto_en.strftime('%d/%m/%Y a las %H:%M') }}
+    {% endif %}.
+    Declaró {{ declarado | entero }} piezas y se contaron {{ contado | entero }}.
+  </div>
+  {% if diferencias %}
+    <div class="aviso-caja error">
+      <strong>{{ diferencias|length }} renglón(es) no cuadraron.</strong>
+      Lo que no se contó <strong>sigue en tránsito</strong>: no se ajustó solo. Si
+      la mercancía aparece después, se recibe con una entrada por conteo; si no
+      apareció, se saca con una salida que diga qué pasó.
+    </div>
+  {% endif %}
+{% endif %}
+
+<form method="post" action="/panel/entradas/devolucion/{{ traspaso.id }}/recibir">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+
+{% if por_recibir and puede_editar %}
+<div style="background:var(--papel); border:1px solid var(--linea);
+            border-radius:10px; padding:16px; margin-bottom:18px">
+  <div class="campo" style="max-width:420px">
+    <label for="almacen_destino_id">A qué bodega entra</label>
+    <select id="almacen_destino_id" name="almacen_destino_id" required>
+      <option value="">—</option>
+      {% for b in bodegas %}
+        <option value="{{ b.id }}">{{ b.codigo }} · {{ b.nombre }}</option>
+      {% endfor %}
+    </select>
+    <div class="ayuda">
+      Donde de verdad se bajó la mercancía. Una ruta puede acabar su día en otra
+      plaza, así que no se elige por el organigrama.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>SKU</th>
+      <th>Producto</th>
+      <th class="numero">Declaró</th>
+      <th class="numero">{% if por_recibir %}Cuántas contaste{% else %}Contado{% endif %}</th>
+      <th class="numero">Diferencia</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in renglones %}
+    <tr>
+      <td class="mono">{{ r.sku }}</td>
+      <td>{{ r.nombre }}</td>
+      <td class="numero">{{ r.cantidad | entero }} {{ r.unidad_base }}</td>
+      <td class="numero">
+        {% if por_recibir and puede_editar %}
+          <input type="text" name="contado_{{ r.id }}" inputmode="decimal"
+                 value="{{ r.cantidad | entero }}" style="width:7em; text-align:right"
+                 required>
+        {% elif r.cantidad_recibida is not none %}
+          {{ r.cantidad_recibida | entero }}
+        {% else %}
+          <span class="sutil">sin contar</span>
+        {% endif %}
+      </td>
+      <td class="numero">
+        {% if r.cantidad_recibida is not none %}
+          {% set brecha = r.cantidad_recibida - r.cantidad %}
+          {% if brecha == 0 %}
+            <span class="sutil">—</span>
+          {% else %}
+            <span style="color:var(--alerta)">{{ brecha | entero }}</span>
+          {% endif %}
+        {% else %}
+          <span class="sutil">—</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th colspan="2">Total</th>
+      <th class="numero">{{ declarado | entero }}</th>
+      <th class="numero">{% if not por_recibir %}{{ contado | entero }}{% endif %}</th>
+      <th></th>
+    </tr>
+  </tfoot>
+</table>
+</div>
+
+{% if por_recibir %}
+  {% if puede_editar %}
+    <p class="sutil" style="margin-top:14px">
+      Un renglón que no llegó se captura en <strong>0</strong>, no se deja en
+      blanco: cero es un dato y en blanco no se sabe si alguien contó. No hay botón
+      de rechazar, y es a propósito — rechazar le devolvería la mercancía a un
+      camión que ya no la trae.
+    </p>
+    <button type="submit" style="margin-top:8px">Recibir lo contado</button>
+  {% else %}
+    <div class="aviso-caja neutro" style="margin-top:14px">
+      Puedes ver esta devolución y no recibirla: eso necesita el permiso
+      <span class="mono">inventario.ajustar</span>. Recibir mercancía crea
+      inventario desde el punto de vista del sistema, y a esta cuenta se le quitó
+      ese permiso a propósito.
+    </div>
+  {% endif %}
+{% endif %}
+</form>
+{% endblock %}

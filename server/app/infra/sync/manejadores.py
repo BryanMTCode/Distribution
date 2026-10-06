@@ -8,6 +8,7 @@ de operación lo dice su manejador, y cada fase registra los suyos:
     Fase 3  venta.crear
     Fase 5  cobro.crear
     Fase 6  merma.crear, no_drop.crear
+    Fase 7  traspaso.crear
 
 Esa separación es lo que permitió probar el motor a fondo antes de que
 existiera la primera pantalla de venta.
@@ -1392,6 +1393,295 @@ async def crear_no_drop(
         },
     )
     await sesion.flush()
+
+
+# ---------------------------------------------------------------------------
+# Fase 7 · el vendedor devuelve mercancía a la bodega
+# ---------------------------------------------------------------------------
+#
+# Hasta hoy la única forma de bajar mercancía de un camión eran dos ajustes
+# independientes, uno en cada almacén. Las dos cifras acaban bien y no queda
+# ningún documento que ate los dos lados: el día que alguien pregunte «¿quién
+# bajó esas 18 cajas y quién las recibió?», no hay qué leer.
+
+CODIGO_TRANSITO_SIN_SUCURSAL = "TRANSITO"
+
+
+@manejador_de("traspaso.crear")
+async def crear_traspaso(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """El vendedor declara mercancía que bajó del camión.
+
+    ────────────────────────────────────────────────────────────────────────
+    MUEVE CAMIÓN → TRÁNSITO, NUNCA CAMIÓN → BODEGA
+    ────────────────────────────────────────────────────────────────────────
+    Si la declaración del vendedor subiera la bodega, un faltante se podría cubrir
+    escribiendo una devolución que nunca se entregó: su camión baja, la bodega
+    sube, y nadie contó nada. Sería la única operación del sistema donde la palabra
+    de una persona mueve dos almacenes.
+
+    La bodega sube cuando alguien recibe y dice cuánto contó, desde el panel. Lo
+    que no cuadre se queda en tránsito, con nombre y con fecha.
+
+    ────────────────────────────────────────────────────────────────────────
+    SIN GUARDA DE EXISTENCIA, COMO LA MERMA
+    ────────────────────────────────────────────────────────────────────────
+    Si el vendedor dice que bajó 18 cajas, bajó 18 cajas (§0.1). Que el sistema
+    crea que traía 12 no cambia el hecho físico: el camión queda en −6, que es una
+    señal honesta y visible, y rechazar el documento no devolvería la mercancía.
+
+    ────────────────────────────────────────────────────────────────────────
+    LA LIQUIDACIÓN NO NECESITÓ NINGÚN CAMBIO, Y VALE LA PENA SABER POR QUÉ
+    ────────────────────────────────────────────────────────────────────────
+    La ecuación del cierre no tiene término para «traspasado», y aun así un
+    traspaso no se le cobra al vendedor: `inicial` se **deduce** del saldo vivo del
+    camión (ver `saldo_inicial`), así que bajar las existencias baja `inicial` y
+    baja `esperado` en la misma cantidad. El cierre siempre compara lo contado
+    contra lo que el sistema tiene AHORA. Es el mismo mecanismo que absorbe los
+    ajustes de la oficina, y es la razón por la que esta operación no toca
+    `liquidacion_detalle`.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM traspasos WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    # Del token, nunca del payload: dejar que el dispositivo declare el origen
+    # permitiría vaciar el camión de otro vendedor.
+    origen_id = ctx.almacen_id or _uuid_opcional(datos, "almacen_origen_id")
+    if origen_id is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "no se sabe de qué almacén sale la mercancía",
+        )
+
+    detalle = datos.get("detalle")
+    if not isinstance(detalle, list) or not detalle:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO,
+            "un traspaso sin renglones no devuelve nada",
+        )
+
+    origen = (
+        await sesion.execute(
+            text("SELECT tipo, codigo, sucursal_id FROM almacenes WHERE id = :a"),
+            {"a": origen_id},
+        )
+    ).mappings().first()
+    if origen is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "el almacén de origen no existe",
+        )
+    # Este documento describe UNA cosa: mercancía que baja de un camión. Si el
+    # almacén del token fuera una bodega, el traspaso quedaría parado en tránsito
+    # **sin pantalla que lo reciba** —la lista de recepción solo mira orígenes de
+    # tipo camión— y la mercancía desaparecería de los dos almacenes sin que nadie
+    # lo notara. Lo que sale de una bodega tiene su propio documento: una salida.
+    #
+    # Se rechaza y no se marca, aunque §0.1 diga lo contrario para los documentos de
+    # campo: aquí no se está negando un hecho físico, se está rechazando un equipo
+    # mal configurado. Un sobre en cuarentena se ve; un traspaso varado, no.
+    if origen["tipo"] != "camion":
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"{origen['codigo']} no es un camión (es {origen['tipo']!r}): lo que sale "
+            "de una bodega se registra con una salida, no con una devolución",
+        )
+
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    transito_id = await _almacen_de_transito(sesion, origen["sucursal_id"])
+
+    folio = (
+        await sesion.execute(text("SELECT nextval('seq_folio_traspaso')"))
+    ).scalar_one()
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO traspasos (id, folio, almacen_origen_id, almacen_destino_id,
+                                   estado, solicitado_por, dispositivo_id,
+                                   observaciones, fecha_dispositivo, fecha_operativa)
+            VALUES (:id, :folio, :origen, :destino, 'propuesto', :quien, :equipo,
+                    :observaciones, :fecha_dispositivo, :fecha_operativa)
+            """
+        ),
+        {
+            "id": entidad_id,
+            "folio": f"TR-{folio:06d}",
+            "origen": origen_id,
+            "destino": transito_id,
+            "quien": ctx.usuario_id,
+            "equipo": ctx.dispositivo_id,
+            "observaciones": _texto(datos, "observaciones"),
+            "fecha_dispositivo": fecha_dispositivo,
+            "fecha_operativa": _texto(datos, "fecha_operativa")
+            or fecha_dispositivo.date().isoformat(),
+        },
+    )
+
+    for cruda in detalle:
+        if not isinstance(cruda, dict):
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "renglón mal formado")
+
+        producto_id = _uuid_obligatorio(cruda, "producto_id")
+        cantidad = _decimal_obligatorio(cruda, "cantidad")
+        if cantidad <= 0:
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO,
+                f"un renglón de {cantidad} no devuelve nada",
+            )
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO traspaso_detalle (id, traspaso_id, producto_id, cantidad)
+                VALUES (:id, :traspaso, :p, :cantidad)
+                ON CONFLICT (traspaso_id, producto_id) DO UPDATE
+                   SET cantidad = traspaso_detalle.cantidad + excluded.cantidad
+                """
+            ),
+            {
+                "id": _uuid_opcional(cruda, "id") or uuid.uuid4(),
+                "traspaso": entidad_id,
+                "p": producto_id,
+                "cantidad": cantidad,
+            },
+        )
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO movimientos_inventario
+                  (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
+                   documento_tipo, documento_id, usuario_id, dispositivo_id,
+                   fecha_dispositivo, fecha_servidor)
+                VALUES ('traspaso', :origen, :destino, :p, :cantidad, 'traspaso', :doc,
+                        :quien, :equipo, :fecha_dispositivo, :ahora)
+                """
+            ),
+            {
+                "origen": origen_id,
+                "destino": transito_id,
+                "p": producto_id,
+                "cantidad": cantidad,
+                "doc": entidad_id,
+                "quien": ctx.usuario_id,
+                "equipo": ctx.dispositivo_id,
+                "fecha_dispositivo": fecha_dispositivo,
+                "ahora": ctx.recibido_en,
+            },
+        )
+
+        for almacen, delta in ((origen_id, -cantidad), (transito_id, cantidad)):
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO existencias (almacen_id, producto_id, cantidad,
+                                             actualizado_en)
+                    VALUES (:a, :p, :delta, :ahora)
+                    ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                       SET cantidad = existencias.cantidad + :delta,
+                           actualizado_en = :ahora
+                    """
+                ),
+                {
+                    "a": almacen,
+                    "p": producto_id,
+                    "delta": delta,
+                    "ahora": ctx.recibido_en,
+                },
+            )
+
+    await sesion.flush()
+
+
+async def _almacen_de_transito(
+    sesion: AsyncSession, sucursal_id: uuid.UUID | None
+) -> uuid.UUID:
+    """El almacén de tránsito de la sucursal del camión, creándolo si falta.
+
+    Se crea solo si no existe, y la razón es §0.1: la mercancía ya bajó del camión.
+    Rechazar el documento porque nadie configuró un almacén de paso dejaría esas 18
+    cajas en el camión de un vendedor que ya no las trae, y lo convertiría en un
+    faltante suyo por una omisión de la oficina.
+
+    Uno por sucursal: la mercancía en tránsito de la sucursal de Querétaro no tiene
+    nada que ver con la de Guadalajara, y juntarlas haría imposible leer qué falta
+    por recibir en cada bodega. Un camión sin sucursal cae a un tránsito general.
+    """
+    if sucursal_id is not None:
+        existente = (
+            await sesion.execute(
+                text(
+                    "SELECT id FROM almacenes "
+                    " WHERE tipo = 'transito' AND sucursal_id = :s AND activo "
+                    " ORDER BY codigo LIMIT 1"
+                ),
+                {"s": sucursal_id},
+            )
+        ).scalar_one_or_none()
+    else:
+        existente = (
+            await sesion.execute(
+                text(
+                    "SELECT id FROM almacenes "
+                    " WHERE tipo = 'transito' AND sucursal_id IS NULL AND activo "
+                    " ORDER BY codigo LIMIT 1"
+                )
+            )
+        ).scalar_one_or_none()
+    if existente is not None:
+        return existente
+
+    codigo = CODIGO_TRANSITO_SIN_SUCURSAL
+    nombre = "Tránsito"
+    if sucursal_id is not None:
+        sucursal = (
+            await sesion.execute(
+                text("SELECT codigo, nombre FROM sucursales WHERE id = :s"),
+                {"s": sucursal_id},
+            )
+        ).mappings().first()
+        if sucursal is not None:
+            codigo = f"TRANSITO_{sucursal['codigo']}"
+            nombre = f"Tránsito · {sucursal['nombre']}"
+
+    # `ON CONFLICT (codigo)` y no un INSERT a secas: dos sobres del mismo lote (o de
+    # dos vendedores de la misma sucursal) pueden llegar a crearlo a la vez, y el
+    # segundo no debe reventar por una carrera que no es suya. `DO UPDATE SET
+    # activo = true` porque un tránsito desactivado a mano tiene que volver: la
+    # mercancía necesita dónde estar.
+    fila = (
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO almacenes (codigo, nombre, tipo, sucursal_id, activo)
+                VALUES (:codigo, :nombre, 'transito', :sucursal, true)
+                ON CONFLICT (codigo) DO UPDATE SET activo = true
+                RETURNING id, tipo
+                """
+            ),
+            {"codigo": codigo, "nombre": nombre, "sucursal": sucursal_id},
+        )
+    ).mappings().one()
+
+    # Se revisa el TIPO de lo que devolvió el conflicto, y esto no es paranoia de
+    # más: `codigo` es único en toda la tabla, así que si alguien ya bautizó una
+    # BODEGA con este nombre, el `ON CONFLICT` devolvería esa bodega y la mercancía
+    # del camión entraría derecho a ella —sin que nadie contara nada—, que es
+    # exactamente el agujero que el almacén de tránsito existe para cerrar. Antes de
+    # eso, el sobre se va a cuarentena con un mensaje que dice qué renombrar.
+    if fila["tipo"] != "transito":
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"el almacén {codigo!r} existe y no es de tránsito (es {fila['tipo']!r}): "
+            "renómbralo, porque si no la mercancía del camión entraría a él sin que "
+            "nadie la cuente",
+        )
+    return fila["id"]
 
 
 def _entero_de_fila(fila: Any, clave: str, *, por_omision: int = 0) -> int:

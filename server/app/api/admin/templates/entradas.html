@@ -120,6 +120,48 @@
   </div>
 {% endif %}
 
+{% if devoluciones %}
+  <div class="aviso-caja aviso">
+    <strong>{{ devoluciones|length }} devolución(es) de camión por recibir.</strong>
+    La mercancía ya bajó del camión y está en <strong>tránsito</strong>: no suma a
+    ninguna bodega hasta que alguien la cuente. Una carga hecha con esa cifra deja
+    el almacén en negativo.
+  </div>
+  <div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Bajó</th>
+        <th>Vendedor</th>
+        <th>Camión</th>
+        <th class="numero">Renglones</th>
+        <th class="numero">Declaró</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for d in devoluciones %}
+      <tr>
+        <td><a href="/panel/entradas/devolucion/{{ d.id }}" class="mono">{{ d.folio }}</a></td>
+        <td>{{ (d.fecha_operativa or d.creado_en).strftime('%d/%m/%Y') }}</td>
+        <td>
+          {{ d.vendedor or '—' }}
+          {% if d.observaciones %}<div class="sutil">{{ d.observaciones }}</div>{% endif %}
+        </td>
+        <td>{{ d.camion }}</td>
+        <td class="numero">{{ d.renglones }}</td>
+        <td class="numero">{{ d.piezas | entero }}</td>
+        <td>
+          <a href="/panel/entradas/devolucion/{{ d.id }}">Contar y recibir</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+
 {% if borradores %}
   <div class="aviso-caja aviso">
     <strong>{{ borradores }} borrador(es) sin confirmar.</strong>

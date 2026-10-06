@@ -22,14 +22,14 @@ demuestran que el modelo cumple lo que promete.
 | `mobile/db/schema.sql` | Esquema SQLite/SQLCipher del dispositivo |
 | `server/db/tests/smoke_invariantes.sql` | Prueba de las 6 invariantes del diseño |
 
-**Estado de verificación:** las 20 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
-Alembic), y las 6 invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45 (21 tablas,
-1 vista, 9 índices).
+**Estado de verificación:** las 36 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
+Alembic), y las 6 invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45.
 
 > La tabla de arriba lista las migraciones **fundacionales** (0001–0008). Las posteriores —triggers del
 > `change_log`, delta de cartera, importes rígidos, código de cliente, delta de carga, folio de
 > liquidación, catálogos de motivos, motivos de revisión, la cola que el teléfono reporta y el esquema
-> estrella del laboratorio— se agregaron por fase y cada una explica su
+> estrella del laboratorio, el camión rodante, las ediciones de gerencia, el blindaje de la
+> sincronización y la devolución del camión a la bodega— se agregaron por fase y cada una explica su
 > por qué en su propio encabezado. `server/db/migrations/` es la fuente de verdad; Alembic las aplica,
 > no las genera.
 
@@ -142,8 +142,9 @@ folio ya impreso.
 ```
 
 - El almacén `CAMION_01` tiene `responsable_id` obligatorio: **un solo dueño, cero concurrencia**.
-- La oficina no hace `UPDATE` sobre el stock de un camión. Propone un `traspaso` que el vendedor acepta
-  en la app.
+- La oficina no hace `UPDATE` sobre el stock de un camión. Para BAJAR mercancía, el
+  vendedor captura un `traspaso` camión → **tránsito** y la bodega lo cierra contando
+  (ADR 0002 §50). Para subirla, una `carga`, que el vendedor confirma en la app.
 - **Una venta offline nunca toca `BODEGA_PRINCIPAL`.** La bodega solo se mueve por carga y retorno,
   procesados por el servidor.
 - `existencias` **admite negativos a propósito** (no hay `CHECK (cantidad >= 0)`). Una venta que llega

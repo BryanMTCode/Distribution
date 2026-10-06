@@ -669,8 +669,10 @@ Lo que cambió (migración 0030):
 
 Cuando el vendedor sí entrega mercancía —cambia de ruta, se descontinúa un
 producto— eso es un **traspaso** camión → bodega, que es un documento con su propia
-huella y su propia aceptación en el teléfono (§14). No es un efecto secundario del
-cierre del día.
+huella. No es un efecto secundario del cierre del día. Cuando se escribió este
+párrafo ese documento no existía todavía, aunque aquí se describiera como
+disponible; existe desde la migración 0036, y el §50 explica por qué lo inicia el
+vendedor y por qué pasa por un almacén de tránsito.
 
 ### El saldo inicial se deduce, no se fotografía
 
@@ -2142,8 +2144,9 @@ algo no cuadra. Sin nota, ese día no hay nada que leer.
 
 No es una limitación de la pantalla: es **§0.2**, el almacén del camión tiene un
 único dueño exclusivo. La oficina nunca escribe existencias de un camión — para
-eso existe `traspasos` desde la migración 0004: la oficina propone y el vendedor
-acepta en la app.
+eso existe `traspasos`, que para bajar mercancía lo inicia el vendedor y la bodega
+cierra contando (§50), y que para el sentido contrario sigue sin construirse porque
+el documento correcto para subirle mercancía a un camión es una **carga**.
 
 Una entrada directa a un camión le cambiaría el inventario bajo los pies a
 alguien que está vendiendo offline con otra cifra en el teléfono, y el descuadre
@@ -3540,3 +3543,104 @@ teléfono usó ya no existía en ninguna lista.
 
 Lo arregla la migración 0033 con un disparador propio para `precios` que, al borrar,
 emite los tres campos que identifican el renglón.
+
+---
+
+## 50. La devolución a la bodega pasa por tránsito, porque una palabra no mueve dos almacenes
+
+Hasta la migración 0036, bajar mercancía de un camión a la bodega eran **dos ajustes
+independientes**, uno en cada almacén. Las dos cifras acaban bien y no queda nada que
+ate los dos lados: el día que alguien pregunte «¿quién bajó esas 18 cajas y quién las
+recibió?», no hay qué leer.
+
+Las tablas estaban desde la 0004 y nada las escribía. Y en §17, al documentar el
+camión rodante, yo describí este traspaso como si existiera. No existía; queda dicho
+aquí.
+
+### Quién lo inicia
+
+**El vendedor, desde su teléfono y sin señal.** La 0004 imaginó el sentido contrario
+—bodega → camión, que la oficina propone y el vendedor acepta— y para ese sentido es
+correcto: nadie le mete mercancía al camión de alguien sin su consentimiento (§0.2).
+
+Para camión → bodega el dueño del origen es el vendedor. Es el único que sabe que
+acaba de bajar 18 cajas, y exigirle conexión para registrarlo haría que lo apuntara
+en papel, que es exactamente cómo se pierde un sistema. Mismo trato que una merma
+(§10), misma razón.
+
+### Por qué no llega derecho a la bodega
+
+Si la declaración del vendedor subiera la bodega, **un faltante se podría cubrir
+escribiendo una devolución que nunca se entregó**: su camión baja, la bodega sube, y
+nadie contó nada. Sería la única operación del sistema donde la palabra de una
+persona mueve dos almacenes.
+
+Así que la declaración mueve **camión → TRÁNSITO**, el tipo de almacén que el esquema
+preveía desde la 0004 y que nadie había usado. La bodega sube cuando alguien recibe y
+dice cuánto contó. **Lo que no cuadre se queda en tránsito**, con nombre y con fecha:
+una diferencia visible en vez de una confianza invisible.
+
+El tránsito se crea solo, uno por sucursal, la primera vez que hace falta. Rechazar
+el documento porque nadie configuró un almacén de paso convertiría una omisión de la
+oficina en un faltante del vendedor.
+
+### Recibir es contar, y contar es la única respuesta
+
+La pantalla de recepción **no tiene botón de «aceptar»**. Lo que entra a la bodega es
+lo contado, renglón por renglón, y `cantidad_recibida` se guarda **al lado** de lo
+declarado sin sobrescribirlo: la diferencia entre las dos es el dato que este
+documento existe para producir.
+
+Contar **más** de lo declarado también entra: el vendedor bajó una caja que no anotó,
+y eso es un hecho físico (§0.1), no un error de captura.
+
+Y **no tiene botón de «rechazar»**, aunque el estado exista en la tabla desde la
+0004. Si el vendedor declaró 18 cajas y no llegó ninguna, rechazar le devolvería 18
+cajas a un camión que ya no las trae. La respuesta correcta es **contar cero**: el
+documento se cierra, la mercancía se queda en tránsito, y hay un nombre y una fecha
+de quien fue a contar.
+
+### Lo que ve el vendedor
+
+El estado y lo contado le llegan por un delta acotado a él (`entidad = 'traspaso'`).
+Es su comprobante de que la mercancía dejó de ser su responsabilidad, y la razón por
+la que no se entera en la liquidación de que contaron 16 de las 18 que dejó.
+
+El delta viaja como **estado** y no como diferencia, y puede aplicarse mil veces
+porque **no mueve ninguna existencia**. En particular: lo que la bodega no contó
+**no regresa al camión**. No está ahí.
+
+### La liquidación no necesitó un solo cambio
+
+La ecuación del cierre no tiene término para «traspasado» y aun así cuadra, porque
+`inicial` se **deduce** del saldo vivo del camión (§17): bajar las existencias baja
+`inicial` y baja `esperado` en la misma cantidad. El cierre siempre compara lo
+contado contra lo que el sistema tiene AHORA. Es el mismo mecanismo que absorbe los
+ajustes de la oficina, y la razón por la que esta operación no toca
+`liquidacion_detalle`.
+
+### Dónde vive la pantalla
+
+**Dentro de Entradas**, no en una sección nueva. Es la misma acción física —alguien
+parado en la bodega con mercancía enfrente, contándola— y lo único distinto es que
+viene de un camión y que el documento ya existe. Una devolución sin recibir se avisa
+arriba y con número, igual que un borrador sin confirmar: es mercancía que está en la
+bodega física y no en el inventario, y una carga hecha con esa cifra deja el almacén
+en negativo.
+
+### Y una corrección a lo que este documento decía de los permisos
+
+El comentario de la pantalla de Entradas afirmaba que gerencia **no** tiene
+`inventario.ajustar`, «porque quien mide no es quien ajusta» (§0). Dejó de ser verdad
+con la migración 0031, que se lo concedió por decisión de la dirección: en un negocio
+de una sola plaza, la gerencia ES quien corrige el descuadre. Hoy lo tienen
+supervisor, gerente y admin, y la separación sigue viva donde más importa —el cierre
+de la liquidación, que gerencia no puede firmar—. Si un día esa concentración
+estorba, se revoca por persona en `usuarios_permisos` con `otorgado = false`, sin
+tocar el rol.
+
+### El sentido bodega → camión sigue sin construirse
+
+A propósito. La bodega carga el camión con una **carga**, que es el documento
+correcto para eso y el que el teléfono ya sabe recibir. Un traspaso bodega → camión
+solo haría falta para una resurtida a media ruta, que nadie ha pedido.

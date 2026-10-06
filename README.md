@@ -12,11 +12,13 @@ y efectividad de visita por causa. Reglas de negocio
 cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
 en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes, y el **camión como
 almacén rodante** — la mercancía que no se vende se queda arriba y se acumula con la carga del día
-siguiente, así que no se le cobra como faltante al vendedor.
+siguiente, así que no se le cobra como faltante al vendedor. Y lo que sí entrega baja
+con un **traspaso que pasa por tránsito**: su palabra saca la mercancía del camión, pero
+la bodega sube cuando alguien la cuenta.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0020) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0036) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -95,6 +97,7 @@ siguiente, así que no se le cobra como faltante al vendedor.
 | **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
 | **Entradas de mercancía** — compra, inventario inicial y ajuste, con documento | ✅ 32 pruebas |
 | **Salidas de bodega** — conteo físico y merma, y nunca dejan negativo | ✅ 37 pruebas |
+| **Devolver del camión a la bodega** — el vendedor declara, la bodega **cuenta** | ✅ 35 + 25 de Dart |
 | **Compras** — proveedores, **costo promedio ponderado** y cuentas por pagar | ✅ 35 pruebas |
 | **§2.3: no se carga con operaciones pendientes** — forzable, con constancia | ✅ 11 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
@@ -107,7 +110,7 @@ siguiente, así que no se le cobra como faltante al vendedor.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1068 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **556 de Dart** y **252 de widget**, todas en verde.
+**1103 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **572 de Dart** y **261 de widget**, todas en verde.
 
 ## Stack
 
@@ -201,16 +204,17 @@ mobile/
                      borrador, VENTA, COBRO, MERMA, NO-DROP, TICKET ESC/POS +
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
-                     deltas, esquema, TABLERO, login en línea
-    test/            556 pruebas que corren en segundos
+                     deltas, esquema, TABLERO, TRASPASO, login en línea
+    test/            572 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
                      merma y devolución, no-drop, lienzo espacial, MI DÍA,
-                     MI CAMIÓN, gerencia/ (tablero, mapa del día)
-    test/            252 pruebas de widget, sin emulador
+                     MI CAMIÓN, DEVOLVER A LA BODEGA,
+                     gerencia/ (tablero, mapa del día)
+    test/            261 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -229,8 +233,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1068 pruebas de Python
-make movil                          # 556 de Dart + 252 de widget
+make pruebas                        # 1103 pruebas de Python
+make movil                          # 572 de Dart + 261 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

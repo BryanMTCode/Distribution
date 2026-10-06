@@ -112,6 +112,7 @@ class AplicadorDeltas {
         'carga' => _carga(delta, recibidoEn),
         'venta' => _venta(delta, recibidoEn),
         'ajuste_camion' => _ajusteCamion(delta, recibidoEn),
+        'traspaso' => _traspaso(delta),
         'identidad' => _identidad(delta),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
@@ -585,6 +586,85 @@ class AplicadorDeltas {
         final num n => n.toStringAsFixed(3),
         _ => '0.000',
       };
+
+
+  // -------------------------------------------------------------------------
+  // La devolución que la bodega recibió
+  // -------------------------------------------------------------------------
+
+  /// La devolución a la bodega, ya contada por quien la recibió.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// NO TOCA EL CAMIÓN, Y ESO ES LO IMPORTANTE
+  /// ───────────────────────────────────────────────────────────────────────
+  /// La mercancía salió del camión cuando el vendedor capturó el documento, no
+  /// cuando la bodega la contó. Volver a bajarla aquí la restaría dos veces.
+  ///
+  /// Y al revés tampoco: si la bodega contó 16 de las 18 declaradas, las 2
+  /// faltantes **no regresan al camión**. No están ahí; están en tránsito, que es
+  /// justo el punto de que exista ese almacén. Lo que este delta trae es la
+  /// respuesta a «¿ya la recibieron, y cuánto contaron?», que es el comprobante del
+  /// vendedor y no un movimiento de inventario.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// ES ESTADO, NO DIFERENCIA, Y POR ESO SE PUEDE APLICAR MIL VECES
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Llega el documento como quedó —folio, estado, lo contado por renglón— y se
+  /// escribe encima. Un `pull` repetido escribe lo mismo (ADR 0002: «lo que viaja
+  /// como diferencia se marca; lo que viaja como estado se compara»), y aquí no hay
+  /// nada que comparar porque nada de esto mueve una existencia.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// UN TRASPASO QUE ESTE TELÉFONO NO TIENE NO SE INVENTA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Pasa después de reinstalar la app. El payload no trae `fecha_dispositivo` ni
+  /// `fecha_operativa` —son del teléfono, no del servidor— así que ni se podría
+  /// crear el renglón. Se ignora: el saldo del camión que este teléfono bajó ya
+  /// viene del servidor con esa devolución dentro, y el historial viejo se consulta
+  /// en el panel.
+  bool _traspaso(Delta delta) {
+    final t = delta.payload;
+    if (t == null) return true;
+
+    final local = _db.select('SELECT 1 FROM traspasos WHERE id = ?', [delta.entidadId]);
+    if (local.isEmpty) return true;
+
+    _db.execute(
+      '''
+      UPDATE traspasos
+         SET folio        = COALESCE(?, folio),
+             estado       = COALESCE(?, estado),
+             resuelto_en  = ?,
+             sincronizado = 1
+       WHERE id = ?
+      ''',
+      [
+        t['folio'] as String?,
+        t['estado'] as String?,
+        t['resuelto_en'] as String?,
+        delta.entidadId,
+      ],
+    );
+
+    for (final fila in (t['detalle'] as List?) ?? const []) {
+      if (fila is! Map<String, Object?>) continue;
+      final producto = fila['producto_id'] as String?;
+      if (producto == null) continue;
+
+      // `null` se conserva como `null`: significa «nadie lo ha contado», que es
+      // distinto de «contaron cero». La pantalla lo dice con esas palabras.
+      final crudo = fila['cantidad_recibida'];
+      final recibida =
+          crudo == null ? null : Cantidad.deTexto(_aTextoCantidad(crudo)).milesimos / 1000;
+
+      _db.execute(
+        'UPDATE traspaso_detalle SET cantidad_recibida = ? '
+        ' WHERE traspaso_id = ? AND producto_id = ?',
+        [recibida, delta.entidadId, producto],
+      );
+    }
+    return true;
+  }
 
   // -------------------------------------------------------------------------
   // La identidad del equipo

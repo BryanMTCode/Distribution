@@ -31,6 +31,7 @@ export 'src/sobre.dart';
 export 'src/sync_cliente.dart';
 export 'src/tablero.dart';
 export 'src/tablero_cliente.dart';
+export 'src/traspaso.dart';
 export 'src/ticket.dart';
 export 'src/transporte.dart';
 export 'src/ubicacion.dart';

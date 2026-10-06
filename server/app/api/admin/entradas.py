@@ -60,6 +60,7 @@ vigente sin moverlo.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -102,8 +103,15 @@ router = APIRouter(prefix="/panel/entradas", tags=["panel"], include_in_schema=F
 # nuevo —una entrada de mercancía ES el ajuste de inventario autorizado— y la
 # migración 0025 se lo otorga al supervisor, que es quien está en la bodega.
 #
-# Y gerencia no lo tiene, a propósito: es la operación con la que se puede tapar
-# un faltante, y quien mide no es quien ajusta (ADR 0002 §0).
+# Durante meses gerencia NO lo tuvo, a propósito: es la operación con la que se
+# puede tapar un faltante, y quien mide no es quien ajusta (ADR 0002 §0). La
+# migración 0031 se lo concedió por decisión de la dirección —en un negocio de una
+# sola plaza, la gerencia ES quien corrige el descuadre—, así que hoy lo tienen
+# supervisor, gerente y admin. La separación sigue viva donde más importa: el
+# cierre de la liquidación, que gerencia no puede firmar.
+#
+# Si un día esa concentración estorba, se revoca por persona en
+# `usuarios_permisos` sin tocar el rol: `otorgado = false`.
 PERMISO = "inventario.ajustar"
 
 # Lo único editable es el borrador. Lo ya confirmado se corrige con otro
@@ -281,6 +289,7 @@ async def listar(
             "hoy": date.today().isoformat(),
             "puede_editar": actor.puede(PERMISO),
             "borradores": sum(1 for e in entradas if e["estado"] == "borrador"),
+            "devoluciones": await _devoluciones_por_recibir(sesion),
             "error": error,
             "guardado": guardado,
         },
@@ -1104,3 +1113,392 @@ async def cancelar(
     )
     await sesion.commit()
     return _a_lista(guardado="Entrada cancelada.")
+
+
+# ---------------------------------------------------------------------------
+# Las devoluciones que bajan de un camión
+# ---------------------------------------------------------------------------
+#
+# Viven en esta pantalla y no en una sección propia porque es la misma acción
+# física: alguien está parado en la bodega con mercancía enfrente y la cuenta.
+# Lo único distinto es de dónde viene —un camión en vez de un proveedor— y que el
+# documento ya existe: lo abrió el vendedor desde su teléfono.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# POR QUÉ ESTA PANTALLA NO TIENE BOTÓN DE «RECHAZAR»
+# ─────────────────────────────────────────────────────────────────────────────
+# `traspasos` admite el estado 'rechazado' desde la 0004, y para el sentido
+# bodega → camión tiene sentido: el vendedor se niega a recibir. Aquí no.
+#
+# Si el vendedor declaró 18 cajas y no llegó ninguna, la respuesta correcta no es
+# rechazar el documento —eso le devolvería 18 cajas a un camión que ya no las
+# trae— sino **contar cero**. La mercancía se queda en tránsito, con el nombre de
+# quien contó y la fecha, y es una diferencia que alguien tiene que explicar.
+# Contar es la única respuesta que esta pantalla necesita.
+
+
+def _a_devolucion(traspaso_id, *, error: str = "", guardado: str = "") -> RedirectResponse:
+    cola = []
+    if error:
+        cola.append(f"error={quote(error)}")
+    if guardado:
+        cola.append(f"guardado={quote(guardado)}")
+    destino = f"/panel/entradas/devolucion/{traspaso_id}" + (
+        f"?{'&'.join(cola)}" if cola else ""
+    )
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _leer_contado(texto: str | None, *, producto: str) -> Decimal:
+    """Cuántas piezas se contaron de un renglón.
+
+    **El cero es un dato, no un campo vacío.** Es la respuesta a «el vendedor dijo
+    18 y no llegó nada», y por eso se acepta; lo que no se acepta es dejarlo en
+    blanco, porque entonces no se sabría si nadie contó ese renglón o si contó cero.
+
+    Se permite contar MÁS de lo declarado: el vendedor pudo bajar una caja que no
+    anotó, y eso es un hecho físico (§0.1). Queda como diferencia, igual que si
+    faltara.
+    """
+    crudo = (texto or "").strip().replace(",", "")
+    if not crudo:
+        raise CapturaInvalida(
+            f"Falta cuántas piezas se contaron de {producto}. Si no llegó ninguna, "
+            "escribe 0: no es lo mismo que dejarlo en blanco."
+        )
+    try:
+        valor = Decimal(crudo)
+    except ArithmeticError as e:
+        raise CapturaInvalida(f"«{texto}» no es una cantidad.") from e
+    if not valor.is_finite():
+        raise CapturaInvalida(f"«{texto}» no es una cantidad.")
+    if valor < 0:
+        raise CapturaInvalida("No se pueden contar piezas negativas.")
+    if valor > MAXIMO_BULTOS:
+        raise CapturaInvalida(
+            f"{sin_decimales(valor)} piezas de {producto} parece un cero de más."
+        )
+    return valor.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
+async def _devoluciones_por_recibir(sesion) -> list[dict]:
+    """Lo que bajó de los camiones y nadie ha contado todavía.
+
+    Es lo primero que esta pantalla tiene que decir, arriba y con número: una
+    devolución sin recibir es mercancía que está en la bodega física y no en el
+    inventario de la bodega, y una carga hecha con esa cifra deja el almacén en
+    negativo. El mismo defecto que un borrador sin confirmar, con otra cara.
+    """
+    return [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text(
+                    """
+                    SELECT t.id, t.folio, t.fecha_operativa, t.observaciones,
+                           t.creado_en,
+                           u.nombre AS vendedor, u.codigo AS vendedor_codigo,
+                           o.codigo AS camion, o.nombre AS camion_nombre,
+                           COALESCE(d.renglones, 0) AS renglones,
+                           COALESCE(d.piezas, 0)    AS piezas
+                      FROM traspasos t
+                      JOIN almacenes o ON o.id = t.almacen_origen_id
+                      LEFT JOIN usuarios u ON u.id = t.solicitado_por
+                      LEFT JOIN LATERAL (
+                            SELECT count(*) AS renglones, sum(cantidad) AS piezas
+                              FROM traspaso_detalle WHERE traspaso_id = t.id
+                      ) d ON true
+                     WHERE t.estado = 'propuesto' AND o.tipo = 'camion'
+                     ORDER BY t.creado_en
+                    """
+                )
+            )
+        ).mappings().all()
+    ]
+
+
+@router.get("/devolucion/{traspaso_id}", response_class=HTMLResponse)
+async def devolucion(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    traspaso_id: uuid.UUID,
+    error: str = "",
+    guardado: str = "",
+) -> HTMLResponse:
+    """Lo que el vendedor declaró, para contarlo renglón por renglón."""
+    actor.exigir("inventario.ver")
+
+    traspaso = (
+        await sesion.execute(
+            text(
+                """
+                SELECT t.*, u.nombre AS vendedor, u.codigo AS vendedor_codigo,
+                       o.codigo AS camion, o.nombre AS camion_nombre,
+                       o.sucursal_id,
+                       tr.codigo AS transito, tr.nombre AS transito_nombre,
+                       q.nombre AS recibio
+                  FROM traspasos t
+                  JOIN almacenes o ON o.id = t.almacen_origen_id
+                  JOIN almacenes tr ON tr.id = t.almacen_destino_id
+                  LEFT JOIN usuarios u ON u.id = t.solicitado_por
+                  LEFT JOIN usuarios q ON q.id = t.resuelto_por
+                 WHERE t.id = :id
+                """
+            ),
+            {"id": traspaso_id},
+        )
+    ).mappings().first()
+    if traspaso is None:
+        return _a_lista(error="Esa devolución no existe.")
+
+    renglones = (
+        await sesion.execute(
+            text(
+                """
+                SELECT d.id, d.producto_id, d.cantidad, d.cantidad_recibida,
+                       p.sku, p.nombre, p.unidad_base,
+                       COALESCE(x.cantidad, 0) AS en_transito
+                  FROM traspaso_detalle d
+                  JOIN productos p ON p.id = d.producto_id
+                  LEFT JOIN existencias x ON x.producto_id = d.producto_id
+                                         AND x.almacen_id = :transito
+                 WHERE d.traspaso_id = :t
+                 ORDER BY p.nombre
+                """
+            ),
+            {"t": traspaso_id, "transito": traspaso["almacen_destino_id"]},
+        )
+    ).mappings().all()
+
+    # Las bodegas de la sucursal del camión primero, pero sin esconder las demás:
+    # una ruta puede acabar su día en otra plaza, y la mercancía se baja donde se
+    # bajó, no donde el organigrama dice.
+    bodegas = await _bodegas(sesion)
+
+    return render(
+        peticion,
+        "devolucion_detalle.html",
+        {
+            "traspaso": traspaso,
+            "renglones": renglones,
+            "bodegas": bodegas,
+            "por_recibir": traspaso["estado"] == "propuesto",
+            "puede_editar": actor.puede(PERMISO),
+            "declarado": sum(Decimal(r["cantidad"]) for r in renglones),
+            "contado": sum(
+                Decimal(r["cantidad_recibida"])
+                for r in renglones
+                if r["cantidad_recibida"] is not None
+            ),
+            "diferencias": [
+                r
+                for r in renglones
+                if r["cantidad_recibida"] is not None
+                and Decimal(r["cantidad_recibida"]) != Decimal(r["cantidad"])
+            ],
+            "error": error,
+            "guardado": guardado,
+        },
+        actor=actor,
+        seccion="Entradas",
+    )
+
+
+@router.post("/devolucion/{traspaso_id}/recibir")
+async def recibir_devolucion(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    traspaso_id: uuid.UUID,
+    almacen_destino_id: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Mueve TRÁNSITO → bodega por lo que se contó, y cierra el documento.
+
+    Lo que se contó es lo que entra, no lo que el vendedor declaró. Si declaró 18 y
+    llegaron 16, entran 16 y **las otras 2 se quedan en tránsito**: son una
+    diferencia con nombre y con fecha, no una cifra que alguien ajustó.
+
+    Idempotente por estado y con `FOR UPDATE`: un doble clic en una pantalla lenta
+    no puede meter la mercancía dos veces.
+    """
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+
+    traspaso = (
+        await sesion.execute(
+            text(
+                "SELECT id, folio, estado, almacen_origen_id, almacen_destino_id "
+                "  FROM traspasos WHERE id = :id FOR UPDATE"
+            ),
+            {"id": traspaso_id},
+        )
+    ).mappings().first()
+    if traspaso is None:
+        return _a_lista(error="Esa devolución no existe.")
+    if traspaso["estado"] != "propuesto":
+        return _a_devolucion(
+            traspaso_id, error=f"Esta devolución ya está {traspaso['estado']}."
+        )
+
+    try:
+        bodega = uuid.UUID(almacen_destino_id)
+    except ValueError:
+        return _a_devolucion(traspaso_id, error="Elige a qué bodega entra.")
+
+    destino = (
+        await sesion.execute(
+            text("SELECT tipo, activo, codigo FROM almacenes WHERE id = :a"),
+            {"a": bodega},
+        )
+    ).mappings().first()
+    if destino is None or not destino["activo"]:
+        return _a_devolucion(traspaso_id, error="Esa bodega no existe o está inactiva.")
+    # §0.2: un camión tiene un dueño exclusivo y la oficina no le escribe el
+    # inventario. Recibir «en un camión» desde el panel rompería eso por la puerta
+    # de atrás, con un documento que sí es legítimo.
+    if destino["tipo"] not in TIPOS_DE_DESTINO:
+        return _a_devolucion(
+            traspaso_id,
+            error=f"{destino['codigo']} no es una bodega. La mercancía de un camión "
+            "se mueve con una carga, nunca escribiéndole el inventario desde aquí.",
+        )
+
+    renglones = (
+        await sesion.execute(
+            text(
+                "SELECT d.id, d.producto_id, d.cantidad, p.nombre "
+                "  FROM traspaso_detalle d "
+                "  JOIN productos p ON p.id = d.producto_id "
+                " WHERE d.traspaso_id = :t ORDER BY p.nombre"
+            ),
+            {"t": traspaso_id},
+        )
+    ).mappings().all()
+    if not renglones:
+        return _a_devolucion(traspaso_id, error="Esta devolución no trae renglones.")
+
+    formulario = await peticion.form()
+    try:
+        contados = {
+            r["id"]: _leer_contado(
+                formulario.get(f"contado_{r['id']}"), producto=r["nombre"]
+            )
+            for r in renglones
+        }
+    except CapturaInvalida as e:
+        return _a_devolucion(traspaso_id, error=str(e))
+
+    ahora = datetime.now(UTC)
+    for r in renglones:
+        contado = contados[r["id"]]
+        await sesion.execute(
+            text(
+                "UPDATE traspaso_detalle SET cantidad_recibida = :c WHERE id = :id"
+            ),
+            {"c": contado, "id": r["id"]},
+        )
+        # Un renglón contado en cero no deja asiento: no se movió nada. La
+        # diferencia queda registrada en `cantidad_recibida` y la mercancía sigue
+        # en tránsito, que es exactamente lo que pasó.
+        if contado == 0:
+            continue
+
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO movimientos_inventario
+                  (tipo, almacen_origen_id, almacen_destino_id, producto_id,
+                   cantidad, documento_tipo, documento_id, usuario_id, fecha_servidor)
+                VALUES ('traspaso', :transito, :bodega, :p, :cant,
+                        'traspaso', :doc, :quien, :ahora)
+                """
+            ),
+            {
+                "transito": traspaso["almacen_destino_id"],
+                "bodega": bodega,
+                "p": r["producto_id"],
+                "cant": contado,
+                "doc": traspaso_id,
+                "quien": actor.usuario_id,
+                "ahora": ahora,
+            },
+        )
+        for almacen, delta in (
+            (traspaso["almacen_destino_id"], -contado),
+            (bodega, contado),
+        ):
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO existencias (almacen_id, producto_id, cantidad,
+                                             actualizado_en)
+                    VALUES (:a, :p, :delta, :ahora)
+                    ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                       SET cantidad = existencias.cantidad + :delta,
+                           actualizado_en = :ahora
+                    """
+                ),
+                {"a": almacen, "p": r["producto_id"], "delta": delta, "ahora": ahora},
+            )
+
+    # El UPDATE del estado es lo que dispara el delta hacia el teléfono del
+    # vendedor (`trg_cambio_traspaso`): su comprobante de que la mercancía dejó de
+    # ser su responsabilidad. Va al final, cuando ya está todo escrito.
+    await sesion.execute(
+        text(
+            "UPDATE traspasos SET estado = 'aceptado', resuelto_por = :quien, "
+            "       resuelto_en = :ahora WHERE id = :id"
+        ),
+        {"id": traspaso_id, "quien": actor.usuario_id, "ahora": ahora},
+    )
+
+    declarado = sum(Decimal(r["cantidad"]) for r in renglones)
+    total = sum(contados.values(), Decimal("0.000"))
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO auditoria
+              (entidad, entidad_id, accion, usuario_id, motivo,
+               datos_antes, datos_despues, ocurrido_en)
+            VALUES ('traspaso', :id, 'recibir', :quien, :motivo,
+                    CAST(:antes AS jsonb), CAST(:despues AS jsonb), :ahora)
+            """
+        ),
+        {
+            "id": traspaso_id,
+            "quien": actor.usuario_id,
+            "motivo": f"recibida en {destino['codigo']}",
+            "antes": json.dumps({"estado": "propuesto", "declarado": str(declarado)}),
+            "despues": json.dumps(
+                {
+                    "estado": "aceptado",
+                    "contado": str(total),
+                    "almacen_recepcion": str(bodega),
+                    "renglones": {str(k): str(v) for k, v in contados.items()},
+                }
+            ),
+            "ahora": ahora,
+        },
+    )
+    await sesion.commit()
+
+    faltan = declarado - total
+    if faltan > 0:
+        aviso = (
+            f" Faltaron {sin_decimales(faltan)} piezas de lo declarado y se quedan "
+            "en tránsito: la diferencia queda registrada."
+        )
+    elif faltan < 0:
+        aviso = (
+            f" Llegaron {sin_decimales(-faltan)} piezas MÁS de lo declarado. "
+            "También queda registrado."
+        )
+    else:
+        aviso = " Cuadró con lo declarado."
+    return _a_devolucion(
+        traspaso_id,
+        guardado=f"{traspaso['folio']} recibida en {destino['codigo']}: "
+        f"{sin_decimales(total)} piezas." + aviso,
+    )
