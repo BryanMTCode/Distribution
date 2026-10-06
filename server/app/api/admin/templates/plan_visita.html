@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block titulo %}Plan de visita{% endblock %}
+{% block contenido %}
+<h1>Plan de visita</h1>
+<p class="subtitulo">
+  Qué días toca cada cliente y en qué orden. El teléfono le muestra al vendedor
+  <strong>«hoy te tocan estos»</strong>, y <a href="/panel/efectividad#plan">Efectividad</a>
+  cuenta lo que tocaba y nadie visitó.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+{% if rutas %}
+<form class="barra" method="get" action="/panel/plan-visita">
+  <select name="ruta">
+    {% for r in rutas %}
+      <option value="{{ r.id }}" {% if ruta and r.id == ruta.id %}selected{% endif %}>
+        {{ r.codigo }} · {{ r.nombre }}{% if r.vendedor %} — {{ r.vendedor }}{% endif %}
+      </option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Ver la ruta</button>
+</form>
+{% endif %}
+
+{% if ruta %}
+<div class="tarjetas" id="carga_por_dia">
+  {% for dow, corto, largo in dias %}
+  <div class="tarjeta">
+    <div class="numero">{{ por_dia[dow] }}</div>
+    <div class="etiqueta">{{ largo }}</div>
+  </div>
+  {% endfor %}
+  {% if sin_plan %}
+  <div class="tarjeta aviso">
+    <div class="numero">{{ sin_plan }}</div>
+    <div class="etiqueta">sin día de visita</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if clientes %}
+<form method="post" action="/panel/plan-visita/{{ ruta.id }}" id="forma_plan">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tabla-marco">
+    <table>
+      <thead>
+        <tr>
+          <th class="numero" style="width:70px">Orden</th>
+          <th>Cliente</th>
+          {% for dow, corto, largo in dias %}<th style="text-align:center">{{ corto }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clientes %}
+        <tr>
+          <td class="numero">
+            <input type="text" name="orden_{{ c.id }}" value="{{ c.secuencia or '' }}"
+                   inputmode="numeric" style="width:56px;text-align:right"
+                   aria-label="Orden de {{ c.nombre_comercial }}" {% if not puede_editar %}disabled{% endif %}>
+          </td>
+          <td>
+            <a href="/panel/clientes/{{ c.id }}#visita">{{ c.nombre_comercial }}</a>
+            <div class="sutil">
+              {{ c.codigo or '' }}{% if c.colonia %} · {{ c.colonia }}{% endif %}
+              {% if c.personalizado %}
+                · <span class="etiqueta-motivo">por semanas del mes: se edita en su ficha</span>
+              {% endif %}
+            </div>
+          </td>
+          {% for dow, corto, largo in dias %}
+          <td style="text-align:center">
+            <input type="checkbox" name="dia_{{ c.id }}_{{ dow }}" value="1"
+                   {% if dow in c.dias %}checked{% endif %}
+                   {% if c.personalizado or not puede_editar %}disabled{% endif %}
+                   aria-label="{{ c.nombre_comercial }} el {{ largo }}">
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if puede_editar %}
+  <button type="submit" id="boton_guardar_plan" style="margin-top:12px">Guardar el plan</button>
+  <span class="sutil" style="margin-left:8px">
+    Un día que ya estaba no se reescribe: sigue contando desde cuando se puso.
+  </span>
+  {% endif %}
+</form>
+{% else %}
+<div class="vacio">Esta ruta no tiene clientes.</div>
+{% endif %}
+{% else %}
+<div class="vacio">No hay rutas activas. Da de alta una en <a href="/panel/equipo">Equipo</a>.</div>
+{% endif %}
+{% endblock %}

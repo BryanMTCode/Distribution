@@ -51,6 +51,8 @@ from sqlalchemy import text
 from app.api.admin.comun import (
     CapturaInvalida,
     SesionDep,
+    auditar,
+    borrar_si_nadie_lo_usa,
     leer_dinero,
     leer_entero,
     render,
@@ -294,6 +296,99 @@ async def guardar_proveedor(
             f"{datos['nombre']} dado de alta"
             + (f" con {dias} días de crédito." if dias else " de contado.")
         )
+    )
+
+
+@router.get("/proveedor/{proveedor_id}", response_class=HTMLResponse)
+async def ficha_proveedor(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    proveedor_id: uuid.UUID,
+    error: str = "",
+) -> HTMLResponse:
+    """Los datos del proveedor para corregirlos, y el botón de eliminar."""
+    actor.exigir(PERMISO)
+    proveedor = (
+        await sesion.execute(
+            text(
+                """
+                SELECT p.*,
+                       (SELECT count(*) FROM entradas e WHERE e.proveedor_id = p.id)
+                         AS compras,
+                       (SELECT COALESCE(sum(c.saldo), 0) FROM cuentas_por_pagar c
+                         WHERE c.proveedor_id = p.id) AS saldo
+                  FROM proveedores p WHERE p.id = :p
+                """
+            ),
+            {"p": proveedor_id},
+        )
+    ).mappings().first()
+    if proveedor is None:
+        return _a_lista(error="Ese proveedor no existe.")
+    return render(
+        peticion,
+        "compras_proveedor.html",
+        {"p": proveedor, "error": error},
+        actor=actor,
+        seccion="Compras",
+    )
+
+
+@router.post("/proveedor/{proveedor_id}/eliminar")
+async def eliminar_proveedor(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    proveedor_id: uuid.UUID,
+    confirmo: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Sin compras se borra; con compras se da de baja.
+
+    Las entradas de hace dos años apuntan a él, y borrarlo dejaría una compra sin
+    saber de quién fue. Dado de baja deja de ofrecerse al capturar, y sus cuentas
+    por pagar siguen vivas: se le puede dejar de comprar y seguirle debiendo.
+    """
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    if not confirmo:
+        return RedirectResponse(
+            f"/panel/compras/proveedor/{proveedor_id}?error="
+            + quote("Marca la casilla para confirmar."),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    proveedor = (
+        await sesion.execute(
+            text("SELECT codigo, nombre FROM proveedores WHERE id = :p FOR UPDATE"),
+            {"p": proveedor_id},
+        )
+    ).mappings().first()
+    if proveedor is None:
+        return _a_lista(error="Ese proveedor no existe.")
+
+    borrado = await borrar_si_nadie_lo_usa(
+        sesion, "DELETE FROM proveedores WHERE id = :p", {"p": proveedor_id}
+    )
+    if not borrado:
+        await sesion.execute(
+            text("UPDATE proveedores SET activo = false, actualizado_en = now() WHERE id = :p"),
+            {"p": proveedor_id},
+        )
+    await auditar(
+        sesion,
+        entidad="proveedor",
+        entidad_id=proveedor_id,
+        accion="eliminar" if borrado else "dar_de_baja",
+        quien=actor.usuario_id,
+        antes=dict(proveedor),
+    )
+    await sesion.commit()
+    if borrado:
+        return _a_lista(guardado=f"{proveedor['nombre']} se eliminó.")
+    return _a_lista(
+        guardado=f"{proveedor['nombre']} tiene compras registradas, así que se dio de baja "
+        "en vez de borrarse: ya no se ofrece al capturar y sus cuentas siguen vivas."
     )
 
 

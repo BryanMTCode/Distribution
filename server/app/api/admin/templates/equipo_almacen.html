@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Almacén {{ a.codigo }}{% endblock %}
+{% block contenido %}
+<h1>Almacén <span class="mono">{{ a.codigo }}</span> · {{ a.nombre }}</h1>
+<p class="subtitulo">
+  {{ a.tipo }}{% if a.responsable %} · responsable {{ a.responsable_codigo }} · {{ a.responsable }}{% endif %}
+  · {% if existencia.productos %}{{ existencia.productos }} producto(s) con existencia{% else %}vacío{% endif %}
+  {% if not a.activo %} · <strong>inactivo</strong>{% endif %}
+  · <a href="/panel/equipo">← Equipo</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+<h2 id="editar">Datos</h2>
+<form method="post" action="/panel/equipo/almacenes/{{ a.id }}/datos" style="max-width:720px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="rejilla">
+    <div class="campo">
+      <label for="codigo">Código</label>
+      <input type="text" id="codigo" name="codigo" value="{{ a.codigo }}" required style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="nombre">Nombre</label>
+      <input type="text" id="nombre" name="nombre" value="{{ a.nombre }}" required style="width:100%">
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="tipo">Tipo</label>
+      <select id="tipo" name="tipo" style="width:100%">
+        {% for t in tipos %}<option value="{{ t }}" {% if t == a.tipo %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+      <div class="ayuda">
+        {% if con_movimientos or existencia.productos %}No se puede cambiar: ya tiene movimientos.
+        {% else %}Solo se cambia mientras nunca se haya movido.{% endif %}
+      </div>
+    </div>
+    <div class="campo">
+      <label for="responsable">Responsable</label>
+      <select id="responsable" name="responsable_id" style="width:100%">
+        <option value="">— sin responsable —</option>
+        {% for u in usuarios %}
+          <option value="{{ u.id }}" {% if u.id == a.responsable_id %}selected{% endif %}>
+            {{ u.codigo }} · {{ u.nombre }}{% if u.su_camion and u.su_camion != a.codigo %} (ya tiene {{ u.su_camion }}){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      {% if a.tipo == 'camion' %}
+      <div class="ayuda">
+        Un camión es de un solo vendedor. Cambiarlo solo se puede <strong>vacío</strong>:
+        el teléfono del nuevo responsable empieza su camión en cero.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="campo">
+    <label><input type="checkbox" name="activo" value="1" {% if a.activo %}checked{% endif %}> Activo</label>
+    <div class="ayuda">Inactivo sale de los selectores. Con mercancía no se desactiva.</div>
+  </div>
+  <button type="submit" id="boton_guardar">Guardar</button>
+</form>
+<p style="margin-top:12px"><a href="/panel/inventario?almacen={{ a.id }}">Ver su inventario →</a></p>
+
+<h2 id="eliminar">Eliminar</h2>
+{% if existencia.productos %}
+  <p class="sutil">Tiene mercancía: pásala a otro almacén o ajústala a cero desde el inventario antes de eliminarlo.</p>
+{% else %}
+<p class="sutil">Vacío y sin movimientos, se borra. Si ya tiene movimientos en el libro mayor, <strong>se da de baja</strong>: sale de los selectores y su historia queda.</p>
+<form method="post" action="/panel/equipo/almacenes/{{ a.id }}/eliminar" id="forma_eliminar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label><input type="checkbox" name="confirmo" value="1"> Sí, eliminar {{ a.codigo }}</label>
+  <div style="margin-top:8px"><button type="submit" class="peligro">Eliminar almacén</button></div>
+</form>
+{% endif %}
+{% endblock %}

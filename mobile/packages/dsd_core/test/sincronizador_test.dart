@@ -374,6 +374,37 @@ void main() {
     expect(fila['por_confirmar'], equals(0.0));
   });
 
+  test('EL PLAN DE VISITA LLEGA DENTRO DEL DELTA DEL CLIENTE', () async {
+    // Sin entidad nueva en la sincronización: el disparador de la 0041 copia el
+    // plan a `clientes.plan_visita` y viaja con el cliente.
+    final delta = deltaCliente(1, 'c1');
+    (delta['payload']! as Map<String, Object?>)['plan_visita'] = [
+      {'dia': 1, 'semana': null},
+      {'dia': 4, 'semana': 2},
+    ];
+    await armarSincronizador(db, TransporteFalso([
+      Responde.pull(cambios: [delta]),
+    ])).sincronizar(cursorActual: 0);
+
+    final guardado = db
+        .select("SELECT plan_visita FROM clientes WHERE id = 'c1'")
+        .single['plan_visita'] as String?;
+    expect(
+      leerPlanDeVisita(guardado),
+      equals(const [DiaDeVisita(1), DiaDeVisita(4, 2)]),
+    );
+  });
+
+  test('un cliente de un servidor viejo, sin plan, queda sin plan', () async {
+    await armarSincronizador(db, TransporteFalso([
+      Responde.pull(cambios: [deltaCliente(1, 'c1')]),
+    ])).sincronizar(cursorActual: 0);
+    final guardado = db
+        .select("SELECT plan_visita FROM clientes WHERE id = 'c1'")
+        .single['plan_visita'];
+    expect(guardado, isNull);
+  });
+
   test('el delta de cliente no pisa el saldo con cero', () async {
     // El payload de `clientes` no trae saldo. Escribirlo desde ahí lo pondría
     // en cero justo después de que la cartera lo actualizó.

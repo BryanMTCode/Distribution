@@ -51,6 +51,8 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
     'por_confirmar',
     'ALTER TABLE clientes ADD COLUMN por_confirmar REAL NOT NULL DEFAULT 0',
   ),
+  // Los días de visita del cliente (octubre 2026, migración 0041 del servidor).
+  ('clientes', 'plan_visita', 'ALTER TABLE clientes ADD COLUMN plan_visita TEXT'),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

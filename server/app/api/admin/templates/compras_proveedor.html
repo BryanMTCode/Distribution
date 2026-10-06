@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}{{ p.nombre }}{% endblock %}
+{% block contenido %}
+<h1>{{ p.nombre }}</h1>
+<p class="subtitulo">
+  <span class="mono">{{ p.codigo }}</span> · {{ p.compras }} compra(s)
+  {% if p.saldo %} · se le deben ${{ '{:,.2f}'.format(p.saldo) }}{% endif %}
+  {% if not p.activo %} · <strong>inactivo</strong>{% endif %}
+  · <a href="/panel/compras">← Compras</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+<h2 id="editar">Datos</h2>
+<form method="post" action="/panel/compras/proveedor" style="max-width:760px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="proveedor_id" value="{{ p.id }}">
+  <div class="rejilla">
+    <div class="campo">
+      <label for="codigo">Código</label>
+      <input type="text" id="codigo" name="codigo" value="{{ p.codigo }}" required style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="nombre">Nombre o razón social</label>
+      <input type="text" id="nombre" name="nombre" value="{{ p.nombre }}" required style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="dias_credito">Días de crédito</label>
+      <input type="text" id="dias_credito" name="dias_credito" value="{{ p.dias_credito }}"
+             inputmode="numeric" style="width:100%">
+      <div class="ayuda">Cuenta para las compras que se capturen desde hoy; las ya registradas conservan su vencimiento.</div>
+    </div>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="rfc">RFC</label>
+      <input type="text" id="rfc" name="rfc" value="{{ p.rfc or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="contacto">Contacto</label>
+      <input type="text" id="contacto" name="contacto" value="{{ p.contacto or '' }}" style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="telefono">Teléfono</label>
+      <input type="text" id="telefono" name="telefono" value="{{ p.telefono or '' }}" style="width:100%">
+    </div>
+  </div>
+  <div class="campo">
+    <label for="notas">Notas</label>
+    <input type="text" id="notas" name="notas" value="{{ p.notas or '' }}" style="width:100%">
+  </div>
+  <button type="submit" id="boton_guardar">Guardar</button>
+</form>
+
+<h2 id="eliminar">Eliminar</h2>
+<p class="sutil">
+  Sin compras, se borra. Con compras, <strong>se da de baja</strong>: deja de
+  ofrecerse al capturar, y sus cuentas por pagar siguen vivas —se le puede dejar de
+  comprar y seguirle debiendo—.
+</p>
+<form method="post" action="/panel/compras/proveedor/{{ p.id }}/eliminar" id="forma_eliminar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label><input type="checkbox" name="confirmo" value="1"> Sí, eliminar a {{ p.nombre }}</label>
+  <div style="margin-top:8px"><button type="submit" class="peligro">Eliminar proveedor</button></div>
+</form>
+{% endblock %}

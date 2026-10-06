@@ -123,6 +123,7 @@
         "secuencia": 3,
         "creado_por": null,
         "origen_alta": "oficina",
+        "plan_visita": [],
         "referencias": null,
         "canal_codigo": null,
         "dias_credito": 15,

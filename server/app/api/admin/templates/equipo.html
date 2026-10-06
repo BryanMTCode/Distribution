@@ -78,7 +78,9 @@
         </td>
         <td class="numero sutil">{{ u.equipos or '—' }}</td>
         {% if puede_editar %}
-        <td>
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/equipo/usuarios/{{ u.id }}#editar">Editar</a>
+          <a class="boton-chico peligro" href="/panel/equipo/usuarios/{{ u.id }}#eliminar">Eliminar</a>
           <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password"
                 style="display:flex;gap:6px;margin-bottom:6px">
             <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -105,9 +107,10 @@
   </table>
 </div>
 <p class="sutil">
-  Un usuario <strong>no se borra</strong>: tiene ventas, cobros y movimientos de
-  inventario firmados con su clave. Al desactivarlo sus sesiones del panel mueren
-  en la siguiente petición y su equipo deja de poder sincronizar.
+  Eliminar a un usuario que ya firmó documentos —ventas, cobros, movimientos— lo
+  <strong>desactiva</strong> en vez de borrarlo: sus sesiones mueren en la siguiente
+  petición, su equipo deja de sincronizar, y su firma sigue en sus papeles. El que
+  nunca hizo nada se borra.
 </p>
 
 {% if puede_editar %}
@@ -214,7 +217,9 @@
         </td>
         <td class="numero">{{ r.clientes }}</td>
         {% if puede_editar %}
-        <td>
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/equipo/rutas/{{ r.id }}#editar">Editar</a>
+          <a class="boton-chico peligro" href="/panel/equipo/rutas/{{ r.id }}#eliminar">Eliminar</a>
           <form method="post" action="/panel/equipo/rutas/{{ r.id }}/titular"
                 style="display:flex;gap:6px">
             <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -280,6 +285,7 @@
         <th>Tipo</th>
         <th>Responsable</th>
         <th class="numero">Con existencia</th>
+        {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -297,6 +303,12 @@
             </div>
           {% endif %}
         </td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/equipo/almacenes/{{ a.id }}#editar">Editar</a>
+          <a class="boton-chico peligro" href="/panel/equipo/almacenes/{{ a.id }}#eliminar">Eliminar</a>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -350,6 +362,7 @@
         <th>Nombre</th>
         <th class="numero">Productos con precio</th>
         <th class="numero">Clientes</th>
+        {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -367,6 +380,12 @@
           {% endif %}
         </td>
         <td class="numero">{{ l.clientes }}</td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/equipo/listas/{{ l.id }}#editar">Editar</a>
+          <a class="boton-chico peligro" href="/panel/equipo/listas/{{ l.id }}#eliminar">Eliminar</a>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -374,8 +393,9 @@
 </div>
 <p class="sutil">
   La lista <strong>por omisión</strong> es la que se le cotiza a un cliente dado de
-  alta en la calle, que nace sin lista asignada. Cambiar cuál es movería el precio
-  de todos esos clientes de golpe, así que no se hace desde aquí.
+  alta en la calle, que nace sin lista asignada. Cambiar cuál es mueve el precio de
+  todos esos clientes de golpe, así que se hace desde la ficha de la lista, con la
+  cuenta de cuántos son y una casilla de confirmación.
 </p>
 
 {% if puede_editar %}

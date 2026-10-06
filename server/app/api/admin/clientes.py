@@ -51,12 +51,14 @@ from sqlalchemy import text
 from app.api.admin.comun import (
     CapturaInvalida,
     SesionDep,
+    auditar,
     dinero,
     leer_dinero,
     leer_entero,
     render,
     texto_o_nulo,
 )
+from app.api.admin.plan_visita import DIAS, plan_de, reemplazar_plan
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 
 router = APIRouter(prefix="/panel/clientes", tags=["panel"], include_in_schema=False)
@@ -254,6 +256,8 @@ async def detalle(
             "puede_editar": actor.puede(PERMISO),
             "saldo_texto": dinero(cartera["saldo"] if cartera else 0),
             "disponible_texto": dinero(cartera["disponible"] if cartera else 0),
+            "dias_de_visita": DIAS,
+            "plan": (await plan_de(sesion, [cliente_id]))[cliente_id],
         },
         actor=actor,
         seccion="Clientes",
@@ -743,6 +747,52 @@ def _a_lista(*, guardado: str = "") -> RedirectResponse:
     return RedirectResponse(
         f"/panel/clientes?filtro=todos&guardado={quote(guardado)}",
         status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/{cliente_id}/visita")
+async def guardar_visita(peticion: Request, actor: ActorWeb, sesion: SesionDep,
+                         cliente_id: uuid.UUID):
+    """Los días de visita del cliente, con semanas del mes si las tiene.
+
+    Sin semanas marcadas, cada día es «todas las semanas». Con semanas, cada día
+    marcado vale solo en esas semanas: lunes de las semanas 1 y 3 es la ruta
+    quincenal. La pantalla de la ruta muestra estos clientes como personalizados,
+    porque siete casillas no pueden mostrar este plan sin aplanarlo.
+    """
+    actor.exigir(PERMISO)
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+    existe = (
+        await sesion.execute(text("SELECT 1 FROM clientes WHERE id = :c"), {"c": cliente_id})
+    ).first()
+    if existe is None:
+        return RedirectResponse("/panel/clientes", status_code=status.HTTP_303_SEE_OTHER)
+
+    dias = [dow for dow, _, _ in DIAS if formulario.get(f"dia_{dow}")]
+    semanas = [n for n in (1, 2, 3, 4) if formulario.get(f"semana_{n}")]
+    deseado = {(d, s) for d in dias for s in (semanas or [None])}
+    agregados, quitados = await reemplazar_plan(sesion, cliente_id, deseado)
+    await auditar(
+        sesion,
+        entidad="cliente",
+        entidad_id=cliente_id,
+        accion="plan_de_visita",
+        quien=actor.usuario_id,
+        despues={"dias": dias, "semanas": semanas},
+    )
+    await sesion.commit()
+    if not (agregados or quitados):
+        return _volver(cliente_id, guardado="Los días de visita no cambiaron.")
+    if not dias:
+        return _volver(
+            cliente_id,
+            guardado="Se quitó del plan: ya no aparece en «hoy te tocan» de ningún día.",
+        )
+    return _volver(
+        cliente_id,
+        guardado="Días de visita guardados. El teléfono de la ruta los recibe en su "
+        "siguiente sincronización.",
     )
 
 

@@ -23,6 +23,7 @@ Las tres reglas que siguen:
 
 from __future__ import annotations
 
+import json
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
@@ -30,6 +31,8 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.sesion_web import token_csrf
@@ -71,6 +74,7 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "Operación de rutas",
         [
+            ("/panel/plan-visita", "Plan de visita"),
             ("/panel/cargas", "Cargas"),
             ("/panel/ventas", "Ventas"),
             ("/panel/cobranza", "Cobranza"),
@@ -235,6 +239,64 @@ def texto_o_nulo(valor: str | None, *, maximo: int = 200) -> str | None:
     if not limpio:
         return None
     return limpio[:maximo]
+
+
+async def borrar_si_nadie_lo_usa(sesion: AsyncSession, sql: str, parametros: dict) -> bool:
+    """Intenta el DELETE en un punto de guardado. `False` si algo lo referencia.
+
+    ───────────────────────────────────────────────────────────────────────
+    POR QUÉ ASÍ, Y NO PREGUNTANDO TABLA POR TABLA
+    ───────────────────────────────────────────────────────────────────────
+    «¿Tiene historia?» es la pregunta que decide entre borrar y dar de baja (ADR
+    0002 §52). Contestarla con una lista de tablas a revisar se desactualiza en
+    silencio: la siguiente migración agrega una tabla que apunta a `usuarios`, la
+    lista no se entera, y el DELETE revienta con un error de llave foránea frente
+    a quien usa el panel. Aquí contesta la base, que conoce TODAS sus llaves
+    foráneas: si el DELETE pasa, nadie lo usaba; si no, se deshace solo el punto
+    de guardado y quien llama da de baja.
+
+    Las llaves con `ON DELETE CASCADE` (sesiones, alcance de rutas, objetivos) se
+    van con el renglón: son del renglón, no historia.
+    """
+    try:
+        async with sesion.begin_nested():
+            await sesion.execute(text(sql), parametros)
+        return True
+    except IntegrityError:
+        return False
+
+
+async def auditar(
+    sesion: AsyncSession,
+    *,
+    entidad: str,
+    entidad_id,
+    accion: str,
+    quien,
+    antes: dict | None = None,
+    despues: dict | None = None,
+    motivo: str | None = None,
+) -> None:
+    """Deja constancia de una edición o un borrado hecho desde el panel."""
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO auditoria (entidad, entidad_id, accion, usuario_id,
+                                   datos_antes, datos_despues, motivo, ocurrido_en)
+            VALUES (:entidad, :id, :accion, :quien, CAST(:antes AS jsonb),
+                    CAST(:despues AS jsonb), :motivo, now())
+            """
+        ),
+        {
+            "entidad": entidad,
+            "id": entidad_id,
+            "accion": accion,
+            "quien": quien,
+            "antes": json.dumps(antes, default=str) if antes is not None else None,
+            "despues": json.dumps(despues, default=str) if despues is not None else None,
+            "motivo": motivo,
+        },
+    )
 
 
 def dinero(valor) -> str:

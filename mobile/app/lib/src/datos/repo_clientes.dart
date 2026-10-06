@@ -21,6 +21,9 @@ class ClienteEnRuta {
     this.saldoCacheEn,
     this.esLocal = false,
     this.porConfirmar = Dinero.cero,
+    this.plan = const [],
+    this.tocaHoy = false,
+    this.visitadoHoy = false,
   });
 
   final String id;
@@ -49,6 +52,17 @@ class ClienteEnRuta {
   /// no le vuelva a cobrar al cliente lo que ya le pagó.
   final Dinero porConfirmar;
 
+  /// Qué días le toca visita, del plan que capturó la oficina.
+  final List<DiaDeVisita> plan;
+
+  /// Si hoy le toca, según su plan. Sin plan, nunca.
+  final bool tocaHoy;
+
+  /// Si hoy ya hay un papel suyo en este teléfono: venta, no-drop, cobro o
+  /// devolución. Es la misma definición de «visita» que usa Efectividad en el
+  /// servidor para contar lo que tocaba y nadie hizo.
+  final bool visitadoHoy;
+
   /// Lo que se pinta como distintivo en la lista.
   ResultadoCredito evaluar(Dinero total, {required bool aCredito}) =>
       evaluarVenta(credito, total, aCredito: aCredito);
@@ -71,9 +85,16 @@ class RepoClientes {
   ///
   /// Una transferencia o un cheque encolado NO resta: no libera crédito hasta que
   /// la oficina lo confirme. Se suma aparte, a `por_confirmar`.
-  List<ClienteEnRuta> deLaRuta({String? busqueda, int limite = 200}) {
+  List<ClienteEnRuta> deLaRuta({
+    String? busqueda,
+    int limite = 200,
+    DateTime? hoy,
+  }) {
     final filtro = (busqueda ?? '').trim();
     final tieneFiltro = filtro.isNotEmpty;
+    // El día LOCAL: «hoy te tocan» es el lunes de la ruta, no el de Greenwich.
+    final ahora = (hoy ?? DateTime.now()).toLocal();
+    final fechaOperativa = diaOperativoDe(ahora);
 
     final filas = _db.select(
       '''
@@ -109,7 +130,17 @@ class RepoClientes {
                   AND k.estado = 'confirmado'
                   AND k.forma_pago <> 'efectivo'
                   AND k.sincronizado = 0
-             ), 0) AS por_confirmar
+             ), 0) AS por_confirmar,
+             c.plan_visita,
+             (EXISTS (SELECT 1 FROM ventas v
+                       WHERE v.cliente_id = c.id AND v.fecha_operativa = ?4)
+              OR EXISTS (SELECT 1 FROM no_drops n
+                          WHERE n.cliente_id = c.id AND n.fecha_operativa = ?4)
+              OR EXISTS (SELECT 1 FROM cobros k
+                          WHERE k.cliente_id = c.id AND k.fecha_operativa = ?4)
+              OR EXISTS (SELECT 1 FROM mermas m
+                          WHERE m.cliente_id = c.id AND m.fecha_operativa = ?4)
+             ) AS visitado_hoy
         FROM clientes c
        WHERE c.activo = 1
          AND (?1 = 0 OR c.nombre_comercial LIKE ?2 OR c.codigo LIKE ?2
@@ -117,10 +148,10 @@ class RepoClientes {
        ORDER BY c.secuencia IS NULL, c.secuencia, c.nombre_comercial
        LIMIT ?3
       ''',
-      [tieneFiltro ? 1 : 0, '%$filtro%', limite],
+      [tieneFiltro ? 1 : 0, '%$filtro%', limite, fechaOperativa],
     );
 
-    return filas.map(_aCliente).toList();
+    return filas.map((f) => _aCliente(f, ahora)).toList();
   }
 
   ClienteEnRuta? porId(String id) {
@@ -131,13 +162,14 @@ class RepoClientes {
     return null;
   }
 
-  static ClienteEnRuta _aCliente(Row f) {
+  static ClienteEnRuta _aCliente(Row f, DateTime hoy) {
     // Los importes viven en la base local como REAL por compatibilidad con el
     // esquema, y se convierten a centavos exactos al entrar al dominio. La
     // aritmética de dinero nunca ocurre en double.
     Dinero desdeBase(Object? valor) =>
         Dinero.deTexto(((valor as num?) ?? 0).toDouble().toStringAsFixed(2));
 
+    final plan = leerPlanDeVisita(f['plan_visita'] as String?);
     return ClienteEnRuta(
       id: f['id'] as String,
       codigo: f['codigo'] as String?,
@@ -148,6 +180,9 @@ class RepoClientes {
       saldoCacheEn: f['saldo_cache_en'] as String?,
       esLocal: (f['es_local'] as int) == 1,
       porConfirmar: desdeBase(f['por_confirmar']),
+      plan: plan,
+      tocaHoy: tocaVisita(plan, hoy),
+      visitadoHoy: (f['visitado_hoy'] as int? ?? 0) == 1,
       credito: EstadoCredito(
         limite: desdeBase(f['limite_credito']),
         saldoConfirmado: desdeBase(f['saldo_cache']),

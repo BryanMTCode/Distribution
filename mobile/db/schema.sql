@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS clientes (
     -- no le vuelva a cobrar lo que ya le pagaron.
     por_confirmar           REAL NOT NULL DEFAULT 0,
 
+    -- Qué días le toca visita, como JSON: [{"dia":1,"semana":null}, ...]. La
+    -- oficina lo captura en el plan de visita (migración 0041 del servidor) y
+    -- llega dentro del delta del cliente. Ver `plan_visita.dart`.
+    plan_visita             TEXT,
+
     -- 1 cuando el cliente nació en este teléfono y aún no lo confirma el
     -- servidor. Es zona PROPIA hasta que llega su confirmación.
     es_local                INTEGER NOT NULL DEFAULT 0,

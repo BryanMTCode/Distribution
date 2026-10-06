@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}Ruta {{ r.codigo }}{% endblock %}
+{% block contenido %}
+<h1>Ruta <span class="mono">{{ r.codigo }}</span> · {{ r.nombre }}</h1>
+<p class="subtitulo">
+  {% if r.vendedor %}Titular {{ r.vendedor_codigo }} · {{ r.vendedor }}{% else %}<span style="color:var(--alerta)">sin titular</span>{% endif %}
+  · {{ r.clientes }} cliente(s){% if not r.activo %} · <strong>inactiva</strong>{% endif %}
+  · <a href="/panel/equipo">← Equipo</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+<h2 id="editar">Datos</h2>
+<form method="post" action="/panel/equipo/rutas/{{ r.id }}/datos" style="max-width:620px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="rejilla">
+    <div class="campo">
+      <label for="codigo">Código</label>
+      <input type="text" id="codigo" name="codigo" value="{{ r.codigo }}" required style="width:100%">
+    </div>
+    <div class="campo">
+      <label for="nombre">Nombre</label>
+      <input type="text" id="nombre" name="nombre" value="{{ r.nombre }}" required style="width:100%">
+    </div>
+  </div>
+  <div class="campo">
+    <label><input type="checkbox" name="activo" value="1" {% if r.activo %}checked{% endif %}> Activa</label>
+    <div class="ayuda">Una ruta inactiva sale de los selectores. Con clientes no se desactiva: muévelos primero.</div>
+  </div>
+  <button type="submit" id="boton_guardar">Guardar</button>
+</form>
+
+<h2>Titular</h2>
+<form method="post" action="/panel/equipo/rutas/{{ r.id }}/titular" class="barra">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <select name="vendedor_id">
+    <option value="">— sin titular —</option>
+    {% for v in vendedores %}
+      <option value="{{ v.id }}" {% if v.id == r.vendedor_id %}selected{% endif %}>{{ v.codigo }} · {{ v.nombre }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Asignar</button>
+</form>
+<p class="sutil">El alcance se mueve con el titular: al anterior se le quita, o su teléfono seguiría recibiendo los clientes de esta ruta.</p>
+
+{% if r.clientes and otras %}
+<h2 id="mover">Mover sus clientes a otra ruta</h2>
+<form method="post" action="/panel/equipo/rutas/{{ r.id }}/mover-clientes" class="barra" id="forma_mover">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <span>Los {{ r.clientes }} cliente(s) pasan a</span>
+  <select name="destino_id" required>
+    {% for o in otras %}<option value="{{ o.id }}">{{ o.codigo }} · {{ o.nombre }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="secundario">Mover</button>
+</form>
+<p class="sutil">Salen del teléfono de esta ruta y llegan al de la otra en su siguiente sincronización, con su orden y sus días de visita.</p>
+{% endif %}
+
+<h2 id="eliminar">Eliminar</h2>
+{% if r.clientes %}
+  <p class="sutil">Tiene {{ r.clientes }} cliente(s): muévelos a otra ruta primero. Borrarla los dejaría sin ruta y fuera de todos los teléfonos.</p>
+{% else %}
+<p class="sutil">Si nunca operó, se borra. Si ya tiene ventas o cargas, <strong>se da de baja</strong>: sale de los selectores, se queda sin titular y su historia sigue en los reportes.</p>
+<form method="post" action="/panel/equipo/rutas/{{ r.id }}/eliminar" id="forma_eliminar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label><input type="checkbox" name="confirmo" value="1"> Sí, eliminar la ruta {{ r.codigo }}</label>
+  <div style="margin-top:8px"><button type="submit" class="peligro">Eliminar ruta</button></div>
+</form>
+{% endif %}
+{% endblock %}

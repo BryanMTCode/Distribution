@@ -24,6 +24,7 @@ export 'src/merma.dart';
 export 'src/mi_dia.dart';
 export 'src/no_drop.dart';
 export 'src/ordenes.dart';
+export 'src/plan_visita.dart';
 export 'src/outbox.dart';
 export 'src/precio.dart';
 export 'src/sincronizador.dart';

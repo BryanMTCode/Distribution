@@ -151,12 +151,81 @@
 {% endif %}
 
 {# ----------------------------------------------------------------------- #}
+{# El plan de visita: lo que tocaba y nadie visitó.                        #}
+{# ----------------------------------------------------------------------- #}
+<h2 id="plan">Cumplimiento del plan de visita</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  Las visitas de arriba son las que dejaron papel. Ésta es la que no deja nada: el
+  cliente que tocaba según el <a href="/panel/plan-visita">plan de visita</a> y nadie
+  visitó. Cuenta como visita cualquier venta, no-drop, cobro o devolución de ese
+  cliente ese día. Solo días completos —hoy no cuenta hasta que termine— y solo
+  desde que el plan existe.
+</p>
+{% if plan_por_ruta %}
+<div class="tarjetas">
+  <div class="tarjeta {% if plan_planeadas and plan_cumplidas < plan_planeadas %}aviso{% endif %}">
+    <div class="numero">{{ plan_cumplidas }} de {{ plan_planeadas }}</div>
+    <div class="etiqueta">visitas del plan hechas</div>
+  </div>
+  <div class="tarjeta {% if plan_planeadas - plan_cumplidas %}alerta{% endif %}">
+    <div class="numero">{{ plan_planeadas - plan_cumplidas }}</div>
+    <div class="etiqueta">tocaban y nadie fue</div>
+  </div>
+</div>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr><th>Ruta</th><th>Titular</th><th class="numero">Planeadas</th><th class="numero">Hechas</th><th class="numero">Sin visitar</th><th class="numero">Cumplimiento</th></tr>
+    </thead>
+    <tbody>
+      {% for f in plan_por_ruta %}
+      <tr>
+        <td><span class="mono">{{ f.ruta }}</span> {{ f.nombre }}</td>
+        <td class="sutil">{{ f.vendedor or '—' }}</td>
+        <td class="numero">{{ f.planeadas }}</td>
+        <td class="numero">{{ f.cumplidas }}</td>
+        <td class="numero">{% if f.sin_visitar %}<strong style="color:var(--alerta)">{{ f.sin_visitar }}</strong>{% else %}0{% endif %}</td>
+        <td class="numero"><strong>{{ f.cumplimiento }}%</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if mas_saltados %}
+<h3 style="margin-top:18px">Los que más se saltan</h3>
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Cliente</th><th>Ruta</th><th class="numero">Tocaban</th><th class="numero">Sin visitar</th><th>Última vez que faltó</th></tr></thead>
+    <tbody>
+      {% for c in mas_saltados %}
+      <tr>
+        <td><a href="/panel/clientes/{{ c.id }}">{{ c.cliente }}</a> <span class="sutil">{{ c.codigo or '' }}</span></td>
+        <td class="mono">{{ c.ruta }}</td>
+        <td class="numero">{{ c.planeadas }}</td>
+        <td class="numero"><strong>{{ c.sin_visitar }}</strong></td>
+        <td class="sutil">{{ c.ultima_falta.strftime('%d/%m/%Y') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% else %}
+<div class="vacio">
+  Ningún cliente tenía visita planeada en estos días. Captura el
+  <a href="/panel/plan-visita">plan de visita</a> de cada ruta para ver aquí a quién
+  no se visitó.
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------------- #}
 {# Las mermas viven aquí por la misma razón que los no-drops.              #}
 {# ----------------------------------------------------------------------- #}
 {# El vendedor captura el motivo y hasta ahora nadie lo sumaba. Y el dato  #}
 {# que de verdad importa no es cuánto se perdió, sino cuánto se le está    #}
 {# cobrando a alguien.                                                     #}
 <h2>Pérdidas por motivo</h2>
+<p style="margin:-6px 0 8px"><a href="/panel/motivos" id="enlace_motivos">Editar los catálogos de motivos →</a></p>
 {% if mermas %}
 <p class="sutil" style="margin:-6px 0 12px">
   De {{ unidades_mermadas|entero }} unidades mermadas,

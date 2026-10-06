@@ -968,8 +968,9 @@ class AplicadorDeltas {
       INSERT INTO clientes (id, codigo, nombre_comercial, telefono, direccion,
                             referencias, lat, lng, ubicacion_origen, secuencia,
                             lista_precios_id, permite_credito, limite_credito,
-                            bloqueado, es_local, sincronizado, activo)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
+                            bloqueado, es_local, sincronizado, activo,
+                            plan_visita)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         codigo = excluded.codigo,
         nombre_comercial = excluded.nombre_comercial,
@@ -987,7 +988,8 @@ class AplicadorDeltas {
         -- El servidor ya lo conoce: deja de ser un alta local pendiente.
         es_local = 0,
         sincronizado = 1,
-        activo = excluded.activo
+        activo = excluded.activo,
+        plan_visita = excluded.plan_visita
       ''',
       [
         c['id'],
@@ -1015,6 +1017,9 @@ class AplicadorDeltas {
         // nunca: seguía mandando al vendedor a la puerta de un cliente que la
         // empresa había dado por perdido.
         _clienteVaEnLaRuta(c['estatus']) ? 1 : 0,
+        // El plan de visita viaja como lista JSON y se guarda como texto. Un
+        // servidor anterior a la 0041 no lo manda: nulo es «sin plan».
+        c['plan_visita'] == null ? null : jsonEncode(c['plan_visita']),
       ],
     );
     return true;

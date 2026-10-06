@@ -4006,3 +4006,104 @@ pregunta que importa es a quién le estamos cambiando seguido, y qué.
 Un cambio es **del mismo producto, uno por uno**. Cambiar una caja de atún por una de
 sardina es otra operación —una venta y una devolución— porque los dos productos no
 valen lo mismo, y meterla aquí escondería esa diferencia.
+
+## 55. Editar y eliminar la estructura: usuarios, rutas, almacenes, listas, proveedores y motivos
+
+**Decisión (octubre 2026).** La dirección pidió poder editar y eliminar todo lo que
+el panel muestra. Las pantallas de clientes, productos, ventas e inventario ya lo
+hacían (§49, §52); la estructura no: cambiar el nombre de una ruta o el responsable
+de un almacén exigía SQL. Cada renglón de Equipo y de Proveedores lleva ahora a su
+ficha, y los motivos tienen su pantalla (Efectividad → Editar los catálogos).
+
+### La misma regla de §52, decidida por la base
+
+Eliminar funciona siempre y decide qué es seguro: **se borra** si nada lo usa, **se
+da de baja** si tiene historia, y **se niega** cuando borrarlo dejaría algo roto en
+la calle. Quién contesta «¿tiene historia?» es la base y no una lista de tablas en el
+código: el DELETE se intenta en un punto de guardado (`borrar_si_nadie_lo_usa`), y si
+alguna llave foránea lo impide se deshace solo ese punto y se da de baja. Una lista
+de tablas se desactualiza en silencio con la siguiente migración; la base conoce
+todas sus llaves.
+
+| Qué | Se niega cuando | Se da de baja cuando | Se borra cuando |
+|---|---|---|---|
+| Usuario | es uno mismo, o el último administrador | firmó cualquier documento | nunca hizo nada |
+| Ruta | tiene clientes (se ofrece moverlos ahí mismo) | ya tuvo ventas o cargas | nunca operó |
+| Almacén | tiene mercancía | tiene movimientos | vacío y sin movimientos |
+| Lista de precios | es la de omisión, o la usan clientes (se ofrece moverlos) | ya se vendió con ella | sin ventas (con sus precios) |
+| Proveedor | — | tiene compras (sus cuentas siguen vivas) | sin compras |
+| Motivo | — | **siempre** | nunca |
+
+### Lo que no se edita, y por qué
+
+- **El código de un usuario**: es el prefijo del folio impreso; hay tickets en la
+  calle con él.
+- **El responsable de un camión con mercancía**: el teléfono del nuevo vendedor
+  reinicia su inventario local al cambiar de camión (delta `identidad`) y vería el
+  camión en cero. Se devuelve o se ajusta la mercancía primero.
+- **El tipo de un almacén que ya se movió**: una bodega que se vuelve camión
+  reescribiría la historia del libro mayor y del Corte.
+- **Un motivo nunca se borra**: viaja a todos los teléfonos y el teléfono no sabe
+  borrarlo, solo dejar de ofrecerlo; además cada merma guarda su código. Eliminar es
+  desactivar. Y `afecta_vendedor` —que desde §54 mueve dinero— se edita aquí, detrás
+  de `catalogo.administrar`: lo decide la oficina, nunca el vendedor al capturar.
+
+### Lo que sigue sin borrarse, a propósito
+
+Los documentos ya confirmados —cargas, entradas, salidas, Cortes cerrados, la cuenta
+del vendedor— no tienen botón de eliminar: se corrigen con un documento que compensa
+(un ajuste, un traspaso, una condonación), y los dos quedan a la vista. Un borrador sí
+se cancela.
+
+## 56. El plan de visita: qué clientes tocan cada día
+
+**Decisión (octubre 2026).** `clientes_frecuencia` existía desde la migración 0003 y
+ningún código la usaba. Sin plan, una visita perdida solo podía contarse si dejaba
+papel —una venta o un no-drop—; el cliente al que nadie fue no dejaba rastro, y un
+vendedor que se saltaba ocho tiendas de treinta salía con efectividad perfecta.
+
+### Dónde se captura
+
+- **Operación de rutas → Plan de visita**: la ruta entera en una pantalla, siete
+  casillas por cliente, el orden de visita y la cuenta por día arriba —para que el
+  lunes no tenga cuarenta tiendas y el martes ocho—, y un solo botón.
+- **La ficha del cliente → Días de visita**: lo mismo para un cliente, más las
+  semanas del mes. Lunes de la 1ª y 3ª semana es una ruta quincenal. Esos clientes
+  aparecen en la pantalla de la ruta como personalizados y no se aplanan desde ahí.
+
+Guardar **no reescribe** un día que sigue igual: conserva su `desde`. Si se borrara y
+se volviera a insertar, cada guardado movería la fecha desde la que el plan cuenta.
+
+### Cómo llega al teléfono
+
+Sin entidad nueva en la sincronización. Un disparador **por sentencia** (con tabla de
+transición) copia el plan a `clientes.plan_visita`, y ese UPDATE publica el delta del
+cliente que el teléfono ya aplica. Por sentencia porque planear una ruta escribe
+cientos de renglones, y por renglón cada uno publicaría un delta. Es una vez por
+cliente y por guardado, y solo si su plan cambió.
+
+### Qué ve el vendedor
+
+La lista abre en **«Hoy · N»**: los que tocan hoy, en su orden, con una palomita en
+los que ya visitó y «Visitados 7 de 15». «Todos» sigue a un toque, y al buscar se
+busca en todos —el cliente que llama pidiendo mercancía no tiene por qué tocar hoy—.
+Sin plan en ningún cliente, la pantalla es la de siempre.
+
+### La regla, una vez en cada lado
+
+`toca_visita()` en SQL y `tocaVisita()` en Dart, con las mismas pruebas de borde:
+domingo es 0 (`extract(dow)`, y en Dart `weekday % 7`), y la semana del mes es
+`(día − 1) / 7 + 1`, así que del 29 en adelante es la 5ª, que ningún plan «solo la
+semana N» pide.
+
+### Qué cuenta Efectividad
+
+En «Cumplimiento del plan de visita»: lo que tocaba, lo que se hizo y **lo que tocaba
+y nadie visitó**, por ruta, y los clientes que más se saltan.
+
+- Cuenta como visita **cualquier papel** de ese cliente ese día: venta (aunque después
+  se cancelara), no-drop, cobro o devolución. El vendedor estuvo ahí.
+- **Solo días completos**: hoy no se le reclama a las once lo que va a visitar a las
+  cinco.
+- **Solo desde que el plan existe** (`clientes_frecuencia.desde`): capturar el plan
+  hoy no convierte el mes pasado en un mes de visitas perdidas.

@@ -160,4 +160,74 @@ void main() {
     });
     expect(find.byIcon(Icons.cloud_upload_outlined), findsWidgets);
   });
+
+  // -------------------------------------------------------------------------
+  // El plan de visita (migración 0041 del servidor)
+  // -------------------------------------------------------------------------
+  // El reloj de prueba es el jueves 24 de septiembre de 2026: jueves es 4.
+  void conPlan(dynamic base, String id, String plan) => base.db.execute(
+        'UPDATE clientes SET plan_visita = ? WHERE id = ?',
+        [plan, id],
+      );
+
+  void sembrarRutaConPlan(dynamic base) {
+    sembrarCliente(base, id: 'c1', nombre: 'Toca el jueves', secuencia: 1);
+    sembrarCliente(base, id: 'c2', nombre: 'Toca el lunes', secuencia: 2);
+    sembrarCliente(base, id: 'c3', nombre: 'Sin plan', secuencia: 3);
+    conPlan(base, 'c1', '[{"dia":4,"semana":null}]');
+    conPlan(base, 'c2', '[{"dia":1,"semana":null}]');
+  }
+
+  testWidgets('ABRE EN «HOY» CON LOS QUE TOCAN HOY', (tester) async {
+    await entrar(tester, sembrarRutaConPlan);
+
+    expect(find.text('Hoy · 1'), findsOneWidget);
+    expect(find.text('Toca el jueves'), findsOneWidget);
+    expect(find.text('Toca el lunes'), findsNothing);
+    expect(find.text('Sin plan'), findsNothing);
+
+    await tester.tap(find.text('Todos'));
+    await tester.pumpAndSettle();
+    expect(find.text('Toca el lunes'), findsOneWidget);
+    expect(find.text('Sin plan'), findsOneWidget);
+  });
+
+  testWidgets('al buscar se busca en todos, toque o no hoy', (tester) async {
+    // El cliente que llama pidiendo mercancía no tiene por qué tocar hoy.
+    await entrar(tester, sembrarRutaConPlan);
+    await tester.enterText(find.byKey(const Key('campo_busqueda')), 'lunes');
+    await tester.pumpAndSettle();
+    expect(find.text('Toca el lunes'), findsOneWidget);
+  });
+
+  testWidgets('el visitado lleva palomita y cuenta en el avance', (tester) async {
+    await entrar(tester, (base) {
+      sembrarRutaConPlan(base);
+      // Una devolución de hoy: estuvo ahí, aunque no vendiera.
+      base.db.execute(
+        "INSERT INTO mermas (id, folio_consecutivo, tipo, cliente_id, motivo_codigo, "
+        "fecha_dispositivo, fecha_operativa) "
+        "VALUES ('m1', 1, 'devolucion_cliente', 'c1', 'CADUCADO', "
+        "'2026-09-24T07:00:00.000Z', '2026-09-24')",
+      );
+    });
+    expect(find.byKey(const Key('visitado_c1')), findsOneWidget);
+    expect(find.text('Visitados 1 de 1'), findsOneWidget);
+  });
+
+  testWidgets('sin plan en ningún cliente, la lista es la de siempre', (tester) async {
+    await entrar(tester, (base) {
+      sembrarCliente(base, id: 'c1', nombre: 'Primera', secuencia: 1);
+    });
+    expect(find.byKey(const Key('filtro_hoy')), findsNothing);
+    expect(find.text('Primera'), findsOneWidget);
+  });
+
+  testWidgets('si hoy no toca nadie, lo dice y manda a «Todos»', (tester) async {
+    await entrar(tester, (base) {
+      sembrarCliente(base, id: 'c2', nombre: 'Toca el lunes', secuencia: 1);
+      conPlan(base, 'c2', '[{"dia":1,"semana":null}]');
+    });
+    expect(find.textContaining('Hoy no te toca nadie'), findsOneWidget);
+  });
 }

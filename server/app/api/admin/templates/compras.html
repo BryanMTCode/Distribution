@@ -273,7 +273,9 @@
         {% else %}<span class="sutil">—</span>{% endif %}
       </td>
       {% if puede_editar %}
-      <td>
+      <td class="acciones">
+        <a class="boton-chico" href="/panel/compras/proveedor/{{ p.id }}#editar">Editar</a>
+        <a class="boton-chico peligro" href="/panel/compras/proveedor/{{ p.id }}#eliminar">Eliminar</a>
         <form method="post" action="/panel/compras/proveedor/{{ p.id }}/estado">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <button type="submit" class="secundario">
@@ -288,10 +290,10 @@
 </table>
 </div>
 <p class="sutil" style="margin-top:8px">
-  Un proveedor no se borra: las entradas de hace dos años apuntan a él, y
-  borrarlo dejaría una compra sin saber de quién fue. Desactivado deja de
-  ofrecerse al capturar, y sus cuentas por pagar siguen vivas — se le puede
-  dejar de comprar y seguirle debiendo.
+  Eliminar un proveedor con compras lo <strong>da de baja</strong> en vez de
+  borrarlo: las entradas de hace dos años apuntan a él, y borrarlo dejaría una
+  compra sin saber de quién fue. Dado de baja deja de ofrecerse al capturar, y sus
+  cuentas por pagar siguen vivas — se le puede dejar de comprar y seguirle debiendo.
 </p>
 {% else %}
   <div class="vacio">

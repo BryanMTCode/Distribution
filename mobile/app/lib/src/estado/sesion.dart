@@ -395,8 +395,16 @@ final busquedaClientesProvider = StateProvider<String>((_) => '');
 
 final clientesProvider = Provider<List<ClienteEnRuta>>((ref) {
   final busqueda = ref.watch(busquedaClientesProvider);
-  return ref.watch(repoClientesProvider).deLaRuta(busqueda: busqueda);
+  // El reloj del provider, no `DateTime.now()`: «hoy te tocan» depende del día, y
+  // las pruebas tienen que poder decir qué día es.
+  return ref
+      .watch(repoClientesProvider)
+      .deLaRuta(busqueda: busqueda, hoy: ref.watch(relojProvider)());
 });
+
+/// Si la lista muestra solo los que tocan hoy o todos. Abre en «hoy»: es la
+/// pregunta con la que el vendedor la abre en la mañana.
+final verSoloHoyProvider = StateProvider<bool>((_) => true);
 
 /// Lo que hay sin sincronizar. Alimenta el indicador que el vendedor ve
 /// siempre: un número de pendientes que crece es la señal de que algo va mal.

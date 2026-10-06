@@ -203,6 +203,8 @@ class ControladorMerma extends Notifier<EstadoMerma> {
       // mercancía que acaba de tirar.
       elCamionCambio(ref);
       ref.invalidate(resumenColaProvider);
+      // Una devolución o un cambio son una visita: la palomita de «hoy».
+      ref.invalidate(clientesProvider);
       state = MermaRegistrada(merma);
     } on MermaRechazada catch (e) {
       state = MermaFallida(e.motivo, e.detalle);
@@ -290,6 +292,8 @@ class ControladorNoDrop extends Notifier<EstadoNoDrop> {
         nota: nota,
       );
       ref.invalidate(resumenColaProvider);
+      // Pasó y no le compraron: también es una visita hecha del plan.
+      ref.invalidate(clientesProvider);
       state = NoDropRegistrado(noDrop);
     } on NoDropRechazado catch (e) {
       state = NoDropFallido(e.motivo, e.detalle);

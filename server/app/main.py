@@ -19,12 +19,15 @@ from app.api.admin import desempeno as panel_desempeno
 from app.api.admin import efectividad as panel_efectividad
 from app.api.admin import entradas as panel_entradas
 from app.api.admin import equipo as panel_equipo
+from app.api.admin import equipo_fichas as panel_equipo_fichas
 from app.api.admin import equipos as panel_equipos
 from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
+from app.api.admin import motivos as panel_motivos
 from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import panel
 from app.api.admin import piloto as panel_piloto
+from app.api.admin import plan_visita as panel_plan_visita
 from app.api.admin import productos as panel_productos
 from app.api.admin import salidas as panel_salidas
 from app.api.admin import ventas as panel_ventas
@@ -108,16 +111,19 @@ def crear_app() -> FastAPI:
     app.include_router(panel_clientes.router)
     app.include_router(panel_cargas.router)
     app.include_router(panel_equipo.router)
+    app.include_router(panel_equipo_fichas.router)
     app.include_router(panel_entradas.router)
     app.include_router(panel_compras.router)
     app.include_router(panel_salidas.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_ventas.router)
     app.include_router(panel_liquidaciones.router)
+    app.include_router(panel_plan_visita.router)
     app.include_router(panel_cobranza.router)
     app.include_router(panel_cuenta_vendedores.router)
     app.include_router(panel_desempeno.router)
     app.include_router(panel_efectividad.router)
+    app.include_router(panel_motivos.router)
     app.include_router(panel_objetivos.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)

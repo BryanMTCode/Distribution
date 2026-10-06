@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block titulo %}{{ u.codigo }} · {{ u.nombre }}{% endblock %}
+{% block contenido %}
+<h1><span class="mono">{{ u.codigo }}</span> · {{ u.nombre }}</h1>
+<p class="subtitulo">
+  {{ u.rol_codigo }}{% if not u.activo %} · <strong>desactivado</strong>{% endif %}
+  · <a href="/panel/equipo">← Equipo</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+<h2 id="editar">Datos</h2>
+<form method="post" action="/panel/equipo/usuarios/{{ u.id }}/datos" style="max-width:720px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label>Código</label>
+    <div class="mono">{{ u.codigo }}</div>
+    <div class="ayuda">
+      No se cambia: es el prefijo del folio impreso (<span class="mono">{{ u.codigo }}-000077</span>),
+      y hay tickets en la calle con él.
+    </div>
+  </div>
+  <div class="campo">
+    <label for="nombre">Nombre completo</label>
+    <input type="text" id="nombre" name="nombre" value="{{ u.nombre }}" required style="width:100%">
+  </div>
+  <div class="campo">
+    <label for="rol">Rol</label>
+    <select id="rol" name="rol_codigo" style="width:100%">
+      {% for codigo, nombre, que_hace in roles %}
+        <option value="{{ codigo }}" {% if codigo == u.rol_codigo %}selected{% endif %}>{{ nombre }} — {{ que_hace }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="rejilla">
+    <div class="campo">
+      <label for="dias">Días sin sincronizar</label>
+      <input type="text" id="dias" name="dias_max_offline" value="{{ u.dias_max_offline }}"
+             inputmode="numeric" style="width:100%">
+    </div>
+    {% if sucursales %}
+    <div class="campo">
+      <label for="sucursal">Sucursal</label>
+      <select id="sucursal" name="sucursal_id" style="width:100%">
+        {% for s in sucursales %}
+          <option value="{{ s.id }}" {% if s.id == u.sucursal_id %}selected{% endif %}>{{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+  </div>
+  <button type="submit" id="boton_guardar">Guardar</button>
+</form>
+
+<h2>Camión y rutas</h2>
+<p>
+  {% if u.camion_id %}
+    Camión: <a href="/panel/equipo/almacenes/{{ u.camion_id }}">{{ u.camion_codigo }} · {{ u.camion }}</a>.
+    El responsable de un camión se cambia desde la ficha del camión.
+  {% elif u.rol_codigo == 'vendedor' %}
+    <span style="color:var(--alerta)">Sin camión.</span> Asígnale uno desde la ficha de un
+    camión, o créaselo en <a href="/panel/equipo">Equipo</a>.
+  {% else %}
+    <span class="sutil">Sin camión: no sale a ruta.</span>
+  {% endif %}
+</p>
+{% if rutas %}
+<ul>
+  {% for r in rutas %}
+    <li><a href="/panel/equipo/rutas/{{ r.id }}">{{ r.codigo }} · {{ r.nombre }}</a>{% if r.titular %} (titular){% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Contraseña y acceso</h2>
+<form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password" class="barra">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="password" name="password" placeholder="contraseña nueva" style="width:220px">
+  <button type="submit" class="secundario">Cambiar contraseña</button>
+</form>
+{% if not es_uno_mismo %}
+<form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo" style="margin-top:8px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if u.activo %}
+    <button type="submit" class="secundario">Desactivar</button>
+  {% else %}
+    <button type="submit" name="activo" value="1" class="secundario">Activar</button>
+  {% endif %}
+</form>
+
+<h2 id="eliminar">Eliminar</h2>
+<p class="sutil">
+  Si nunca hizo nada, se borra. Si tiene ventas, cobros, movimientos o cualquier
+  documento firmado, <strong>se desactiva</strong>: deja de entrar al panel y a la app,
+  y su firma sigue en sus papeles.
+</p>
+<form method="post" action="/panel/equipo/usuarios/{{ u.id }}/eliminar" id="forma_eliminar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label><input type="checkbox" name="confirmo" value="1"> Sí, eliminar a {{ u.codigo }}</label>
+  <div style="margin-top:8px"><button type="submit" class="peligro">Eliminar usuario</button></div>
+</form>
+{% endif %}
+{% endblock %}

@@ -69,6 +69,16 @@ void main() {
     expect(fila['saldo_cache'], equals(1200.0), reason: 'no se pierde la fila');
   });
 
+  test('UNA BASE VIEJA RECIBE clientes.plan_visita', () {
+    // El aplicador de clientes la escribe en cada delta de cliente: sin ella, el
+    // primer pull después de actualizar la app reventaría.
+    aplicarEsquemaLocal(db);
+    db.execute('ALTER TABLE clientes DROP COLUMN plan_visita');
+    expect(columnasDe('clientes'), isNot(contains('plan_visita')));
+    aplicarEsquemaLocal(db);
+    expect(columnasDe('clientes'), contains('plan_visita'));
+  });
+
   test('aplicarlo dos veces no truena', () {
     // Es lo que pasa en cada arranque de la app.
     aplicarEsquemaLocal(db);

@@ -144,11 +144,19 @@
                  aria-label="Objetivo de visitas de {{ f.codigo }}">
           <button type="submit">Guardar</button>
         </form>
-        <span class="sutil">
-          {# Vacío borra, no guarda cero: "sin objetivo" y "objetivo $0" son dos
-             cosas distintas, y la segunda daría 100% con la primera venta. #}
-          Déjalo vacío para quitar el objetivo.
-        </span>
+        {% if objetivo %}
+        {# Quitar = mandar el objetivo vacío: "sin objetivo" y "objetivo $0" son dos
+           cosas distintas, y la segunda daría 100% con la primera venta. #}
+        <form method="post" action="/panel/objetivos/fijar" style="margin-top:4px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="mes" value="{{ periodo }}">
+          <input type="hidden" name="ruta_id" value="{{ f.ruta_id }}">
+          <input type="hidden" name="objetivo_venta" value="">
+          <button type="submit" class="boton-chico peligro" id="quitar_{{ f.codigo }}">Quitar objetivo</button>
+        </form>
+        {% else %}
+        <span class="sutil">Sin objetivo este mes.</span>
+        {% endif %}
       </td>
       {% endif %}
     </tr>

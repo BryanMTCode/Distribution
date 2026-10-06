@@ -267,6 +267,8 @@ async def listar(
         )
     ).mappings().all()
 
+    plan_por_ruta, mas_saltados = await _cumplimiento_del_plan(sesion, parametros)
+
     visitas = sum(f["visitas"] for f in por_vendedor)
     ventas = sum(f["ventas"] for f in por_vendedor)
     nuestras = sum(f["cuantas"] for f in motivos if f["categoria"] in NUESTRA_CULPA)
@@ -305,6 +307,10 @@ async def listar(
             "motivos": motivos,
             "mermas": mermas,
             "cambios": cambios,
+            "plan_por_ruta": plan_por_ruta,
+            "mas_saltados": mas_saltados,
+            "plan_planeadas": sum(f["planeadas"] for f in plan_por_ruta),
+            "plan_cumplidas": sum(f["cumplidas"] for f in plan_por_ruta),
             "visitas": visitas,
             "ventas": ventas,
             "perdidas": perdidas,
@@ -325,3 +331,99 @@ async def listar(
         actor=actor,
         seccion="Efectividad",
     )
+
+
+# ---------------------------------------------------------------------------
+# El cumplimiento del plan de visita (migración 0041)
+# ---------------------------------------------------------------------------
+# Lo que el resto de esta pantalla NO puede ver: el cliente al que nadie fue. Una
+# venta o un no-drop dejan papel; la visita que no se hizo no deja nada, y sin el
+# plan un vendedor que se salta ocho tiendas sale con efectividad perfecta.
+#
+# Tres decisiones:
+#   · Solo días COMPLETOS: hasta ayer. Hoy a las once no se le reclama al
+#     vendedor lo que va a visitar a las cinco.
+#   · Solo desde que el plan existe (`clientes_frecuencia.desde`): capturar el plan
+#     hoy no convierte el mes pasado en un mes de visitas perdidas.
+#   · Cuenta como visita CUALQUIER papel de ese cliente ese día: venta (aunque
+#     después se cancelara), no-drop, cobro o devolución. El vendedor estuvo ahí.
+SQL_PLAN = """
+WITH dias AS (
+    SELECT generate_series(CAST(:desde AS date),
+                           LEAST(CAST(:hasta AS date), CURRENT_DATE - 1),
+                           interval '1 day')::date AS fecha
+),
+plan AS (
+    SELECT DISTINCT d.fecha, f.cliente_id, c.ruta_id
+      FROM dias d
+      JOIN clientes_frecuencia f
+        ON toca_visita(d.fecha, f.dia_semana, f.semana_del_mes) AND d.fecha >= f.desde
+      JOIN clientes c ON c.id = f.cliente_id AND c.estatus <> 'baja'
+),
+hechas AS (
+    SELECT fecha_operativa AS fecha, cliente_id FROM ventas
+     WHERE fecha_operativa BETWEEN :desde AND :hasta
+    UNION
+    SELECT fecha_operativa, cliente_id FROM no_drops
+     WHERE fecha_operativa BETWEEN :desde AND :hasta
+    UNION
+    SELECT fecha_operativa, cliente_id FROM cobros
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado <> 'cancelado'
+    UNION
+    SELECT fecha_operativa, cliente_id FROM mermas
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND cliente_id IS NOT NULL
+),
+cruzado AS (
+    SELECT p.fecha, p.cliente_id, p.ruta_id, h.cliente_id IS NOT NULL AS hecha
+      FROM plan p
+      LEFT JOIN hechas h ON h.fecha = p.fecha AND h.cliente_id = p.cliente_id
+      JOIN rutas r ON r.id = p.ruta_id
+     WHERE (:ruta = '' OR r.codigo = :ruta)
+)
+"""
+
+
+async def _cumplimiento_del_plan(sesion, parametros) -> tuple[list, list]:
+    por_ruta = (
+        await sesion.execute(
+            text(
+                SQL_PLAN
+                + """
+                SELECT r.codigo AS ruta, r.nombre, u.nombre AS vendedor,
+                       count(*) AS planeadas,
+                       count(*) FILTER (WHERE x.hecha) AS cumplidas,
+                       count(*) FILTER (WHERE NOT x.hecha) AS sin_visitar
+                  FROM cruzado x
+                  JOIN rutas r ON r.id = x.ruta_id
+                  LEFT JOIN usuarios u ON u.id = r.vendedor_id
+                 GROUP BY r.id, r.codigo, r.nombre, u.nombre
+                 ORDER BY r.codigo
+                """
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    saltados = (
+        await sesion.execute(
+            text(
+                SQL_PLAN
+                + """
+                SELECT c.id, c.nombre_comercial AS cliente, c.codigo, r.codigo AS ruta,
+                       count(*) AS planeadas,
+                       count(*) FILTER (WHERE NOT x.hecha) AS sin_visitar,
+                       max(x.fecha) FILTER (WHERE NOT x.hecha) AS ultima_falta
+                  FROM cruzado x
+                  JOIN clientes c ON c.id = x.cliente_id
+                  JOIN rutas r ON r.id = x.ruta_id
+                 GROUP BY c.id, c.nombre_comercial, c.codigo, r.codigo
+                HAVING count(*) FILTER (WHERE NOT x.hecha) > 0
+                 ORDER BY sin_visitar DESC, cliente
+                 LIMIT 15
+                """
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    return [
+        dict(f, cumplimiento=_porcentaje(f["cumplidas"], f["planeadas"])) for f in por_ruta
+    ], saltados

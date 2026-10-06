@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block titulo %}Motivos{% endblock %}
+{% block contenido %}
+<h1>Catálogos de motivos</h1>
+<p class="subtitulo">
+  Por qué se perdió algo y por qué no se vendió. Lo que se cambia aquí llega a los
+  teléfonos en su siguiente sincronización. <a href="/panel/efectividad">← Efectividad</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+<h2>Mermas</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  <strong>«Se le cobra»</strong> decide si una merma con ese motivo se le carga al
+  vendedor a costo en el Corte del día. Lo decide la oficina aquí, nunca el vendedor
+  al capturar. Un cambio físico nunca se cobra, sea cual sea el motivo.
+</p>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr><th>Código</th><th>Nombre</th><th>¿Se le cobra al vendedor?</th><th>Activo</th><th class="numero">Usos</th>{% if puede_editar %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+      {% for m in merma %}
+      <tr{% if not m.activo %} style="opacity:.55"{% endif %}>
+        {% if puede_editar %}
+        <td class="mono">{{ m.codigo }}</td>
+        <td colspan="3">
+          <form method="post" action="/panel/motivos/merma" class="barra" style="margin:0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="codigo" value="{{ m.codigo }}">
+            <input type="text" name="nombre" value="{{ m.nombre }}" required style="min-width:200px"
+                   aria-label="Nombre de {{ m.codigo }}">
+            <label><input type="checkbox" name="afecta_vendedor" value="1" {% if m.afecta_vendedor %}checked{% endif %}> se le cobra</label>
+            <label><input type="checkbox" name="activo" value="1" {% if m.activo %}checked{% endif %}> activo</label>
+            <button type="submit" class="boton-chico" id="guardar_merma_{{ m.codigo }}">Guardar</button>
+          </form>
+        </td>
+        <td class="numero sutil">{{ m.usos }}</td>
+        <td>
+          {% if m.activo %}
+          <form method="post" action="/panel/motivos/merma/{{ m.codigo }}/eliminar" style="margin:0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="boton-chico peligro">Eliminar</button>
+          </form>
+          {% endif %}
+        </td>
+        {% else %}
+        <td class="mono">{{ m.codigo }}</td><td>{{ m.nombre }}</td>
+        <td>{% if m.afecta_vendedor %}Sí{% else %}No{% endif %}</td>
+        <td>{% if m.activo %}Sí{% else %}No{% endif %}</td>
+        <td class="numero sutil">{{ m.usos }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if puede_editar %}
+<form method="post" action="/panel/motivos/merma" class="barra" style="margin-top:12px" id="forma_nueva_merma">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="nuevo" value="1">
+  <input type="text" name="codigo" placeholder="CODIGO" required style="width:160px">
+  <input type="text" name="nombre" placeholder="Nombre del motivo" required style="min-width:220px">
+  <label><input type="checkbox" name="afecta_vendedor" value="1"> se le cobra al vendedor</label>
+  <button type="submit" class="secundario">Agregar motivo de merma</button>
+</form>
+{% endif %}
+
+<h2>Visitas sin venta</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  La categoría es la que permite separar en Efectividad las visitas perdidas que
+  podemos arreglar nosotros. El orden es el de la lista en el teléfono: lo más común
+  arriba, que en la calle no hay tiempo de leer diez opciones.
+</p>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr><th>Código</th><th>Nombre, categoría y orden</th><th class="numero">Usos</th>{% if puede_editar %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+      {% for m in no_drop %}
+      <tr{% if not m.activo %} style="opacity:.55"{% endif %}>
+        <td class="mono">{{ m.codigo }}</td>
+        <td>
+          {% if puede_editar %}
+          <form method="post" action="/panel/motivos/no-drop" class="barra" style="margin:0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="codigo" value="{{ m.codigo }}">
+            <input type="text" name="nombre" value="{{ m.nombre }}" required style="min-width:180px"
+                   aria-label="Nombre de {{ m.codigo }}">
+            <select name="categoria" aria-label="Categoría de {{ m.codigo }}">
+              {% for c, etiqueta in categorias %}<option value="{{ c }}" {% if c == m.categoria %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+            <input type="text" name="orden" value="{{ m.orden }}" inputmode="numeric" style="width:60px"
+                   aria-label="Orden de {{ m.codigo }}">
+            <label><input type="checkbox" name="requiere_nota" value="1" {% if m.requiere_nota %}checked{% endif %}> pide nota</label>
+            <label><input type="checkbox" name="activo" value="1" {% if m.activo %}checked{% endif %}> activo</label>
+            <button type="submit" class="boton-chico" id="guardar_no_drop_{{ m.codigo }}">Guardar</button>
+          </form>
+          {% else %}
+            {{ m.nombre }} <span class="sutil">· {{ m.categoria }} · orden {{ m.orden }}</span>
+          {% endif %}
+        </td>
+        <td class="numero sutil">{{ m.usos }}</td>
+        {% if puede_editar %}
+        <td>
+          {% if m.activo %}
+          <form method="post" action="/panel/motivos/no-drop/{{ m.codigo }}/eliminar" style="margin:0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="boton-chico peligro">Eliminar</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if puede_editar %}
+<form method="post" action="/panel/motivos/no-drop" class="barra" style="margin-top:12px" id="forma_nuevo_no_drop">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="nuevo" value="1">
+  <input type="text" name="codigo" placeholder="CODIGO" required style="width:160px">
+  <input type="text" name="nombre" placeholder="Nombre del motivo" required style="min-width:200px">
+  <select name="categoria">{% for c, etiqueta in categorias %}<option value="{{ c }}">{{ etiqueta }}</option>{% endfor %}</select>
+  <input type="text" name="orden" value="50" inputmode="numeric" style="width:60px" aria-label="Orden">
+  <label><input type="checkbox" name="requiere_nota" value="1"> pide nota</label>
+  <button type="submit" class="secundario">Agregar motivo</button>
+</form>
+{% endif %}
+
+<p class="sutil" style="margin-top:20px">
+  <strong>Eliminar un motivo lo desactiva</strong>: los teléfonos lo dejan de ofrecer,
+  y lo que ya se registró con él conserva su motivo. Un borrado de verdad dejaría el
+  motivo en cada teléfono sin forma de quitarlo.
+</p>
+{% endblock %}

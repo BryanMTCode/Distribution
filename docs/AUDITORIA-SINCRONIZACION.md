@@ -27,7 +27,7 @@ el §6.2, con el mismo criterio.)
 | `producto_unidades` | `producto_unidad` | `producto_unidades` | upsert |
 | `precios` | `precio` | `precios` | upsert; el borrado quita el renglón |
 | `listas_precios` | `lista_precios` | `listas_precios` | upsert; el borrado **da de baja** |
-| `clientes` | `cliente` | `clientes` | upsert; el borrado **da de baja** |
+| `clientes` (con su `plan_visita`) | `cliente` | `clientes` | upsert; el borrado **da de baja** |
 | `cuentas_por_cobrar`, `cobros` (por confirmar) | `cartera` | `clientes.saldo_cache`, `clientes.por_confirmar` | el saldo agregado, recalculado |
 | `cargas` | `carga` | `existencias_camion` | **suma**, marcada en `cargas_aplicadas` |
 | `ventas` | `venta` | `ventas`, `venta_partidas`, `existencias_camion` | **compara** contra lo local |
@@ -50,6 +50,11 @@ manejador en el servidor: `cliente.crear`, `venta.crear`, `cobro.crear`,
 > confirmar uno publica la cartera aunque no toque ninguna factura (disparadores de la
 > migración 0038). El cambio físico viaja como `merma.crear` con `tipo: cambio`: el
 > teléfono no estrena tipo de sobre ni tabla.
+>
+> **El plan de visita (§56)** tampoco estrena entidad: un disparador por sentencia
+> copia `clientes_frecuencia` a `clientes.plan_visita`, y viaja dentro del delta del
+> cliente —una vez por guardado, aunque se escriban diez días—. El teléfono lo guarda
+> en una columna nueva que `esquema_al_dia.dart` agrega a los teléfonos instalados.
 
 ### La regla que gobierna la columna de la derecha
 

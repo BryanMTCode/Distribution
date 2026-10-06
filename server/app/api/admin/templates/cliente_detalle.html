@@ -348,6 +348,37 @@
   <button type="submit">Guardar datos</button>
 </form>
 
+<h2 id="visita">Días de visita</h2>
+{% set semanas_del_plan = plan | map(attribute=1) | select | list %}
+<p class="sutil" style="margin:-6px 0 10px">
+  Qué días le toca. El teléfono se lo muestra al vendedor en «hoy te tocan», y
+  Efectividad cuenta la visita que tocaba y nadie hizo. Para planear toda la ruta
+  de una vez, usa <a href="/panel/plan-visita?ruta={{ cliente.ruta_id or '' }}">Plan de visita</a>.
+</p>
+<form method="post" action="/panel/clientes/{{ cliente.id }}/visita" id="forma_visita">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="barra" style="margin-bottom:8px">
+    {% for dow, corto, largo in dias_de_visita %}
+      <label><input type="checkbox" name="dia_{{ dow }}" value="1"
+             {% if plan | selectattr(0, 'equalto', dow) | list %}checked{% endif %}
+             {% if not puede_editar %}disabled{% endif %}> {{ largo }}</label>
+    {% endfor %}
+  </div>
+  <div class="barra">
+    <span class="sutil">Solo en las semanas del mes:</span>
+    {% for n in (1, 2, 3, 4) %}
+      <label><input type="checkbox" name="semana_{{ n }}" value="1"
+             {% if n in semanas_del_plan %}checked{% endif %}
+             {% if not puede_editar %}disabled{% endif %}> {{ n }}ª</label>
+    {% endfor %}
+  </div>
+  <div class="ayuda" style="margin:6px 0 10px">
+    Sin semanas marcadas es <strong>todas las semanas</strong>. La 1ª va del día 1 al
+    7, la 2ª del 8 al 14, y así; marcando 1ª y 3ª queda quincenal.
+  </div>
+  {% if puede_editar %}<button type="submit" class="secundario">Guardar días de visita</button>{% endif %}
+</form>
+
 <h2 id="eliminar">Eliminar el cliente</h2>
 <form method="post" action="/panel/clientes/{{ cliente.id }}/eliminar"
       style="background:var(--papel); border:1px solid var(--linea);

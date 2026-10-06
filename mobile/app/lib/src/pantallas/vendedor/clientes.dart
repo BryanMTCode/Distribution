@@ -25,7 +25,20 @@ class PantallaClientes extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final clientes = ref.watch(clientesProvider);
+    final todos = ref.watch(clientesProvider);
+    final soloHoy = ref.watch(verSoloHoyProvider);
+    final buscando = ref.watch(busquedaClientesProvider).trim().isNotEmpty;
+
+    // El plan de visita (migración 0041 del servidor). Sin plan en ningún
+    // cliente, la pantalla es la de siempre: no hay «hoy» que mostrar. Y al
+    // buscar se busca en TODOS: el cliente que llama por teléfono pidiendo
+    // mercancía no tiene por qué tocar hoy.
+    final hayPlan = todos.any((c) => c.plan.isNotEmpty);
+    final deHoy = todos.where((c) => c.tocaHoy).toList();
+    final filtrando = hayPlan && soloHoy && !buscando;
+    final clientes = filtrando ? deHoy : todos;
+    final visitadosHoy = deHoy.where((c) => c.visitadoHoy).length;
+
     final cola = ref.watch(resumenColaProvider);
     final sync = ref.watch(syncProvider);
 
@@ -182,11 +195,47 @@ class PantallaClientes extends ConsumerWidget {
               ),
             ),
           ),
+          if (hayPlan)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  SegmentedButton<bool>(
+                    key: const Key('filtro_hoy'),
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(
+                        value: true,
+                        label: Text('Hoy · ${deHoy.length}'),
+                      ),
+                      const ButtonSegment(value: false, label: Text('Todos')),
+                    ],
+                    selected: {soloHoy},
+                    onSelectionChanged: (s) =>
+                        ref.read(verSoloHoyProvider.notifier).state = s.first,
+                  ),
+                  const SizedBox(width: 12),
+                  if (deHoy.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        key: const Key('avance_de_hoy'),
+                        'Visitados $visitadosHoy de ${deHoy.length}',
+                        textAlign: TextAlign.end,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           Expanded(
             child: clientes.isEmpty
-                ? const Center(
-                    key: Key('lista_vacia'),
-                    child: Text('No hay clientes que coincidan'),
+                ? Center(
+                    key: const Key('lista_vacia'),
+                    child: Text(
+                      filtrando
+                          ? 'Hoy no te toca nadie según el plan. Mira «Todos».'
+                          : 'No hay clientes que coincidan',
+                    ),
                   )
                 : ListView.separated(
                     key: const Key('lista_clientes'),
@@ -356,12 +405,20 @@ class _Renglon extends StatelessWidget {
 
     return ListTile(
       key: Key('cliente_${cliente.id}'),
-      leading: CircleAvatar(
-        child: Text(
-          cliente.secuencia?.toString() ?? '—',
-          style: const TextStyle(fontSize: 13),
-        ),
-      ),
+      // Visitado hoy: la palomita en lugar del número de orden. Es lo que el
+      // vendedor busca con la vista al recorrer la lista a media ruta.
+      leading: cliente.visitadoHoy
+          ? CircleAvatar(
+              key: Key('visitado_${cliente.id}'),
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              child: const Icon(Icons.check, size: 20),
+            )
+          : CircleAvatar(
+              child: Text(
+                cliente.secuencia?.toString() ?? '—',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
       title: Row(
         children: [
           Expanded(child: Text(cliente.nombreComercial)),
