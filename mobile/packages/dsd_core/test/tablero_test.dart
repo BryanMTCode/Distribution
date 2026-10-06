@@ -225,6 +225,110 @@ void main() {
     });
   });
 
+  // =========================================================================
+  // El desempeño del día: la referencia y el teléfono de cada persona
+  // =========================================================================
+  group('desempeño del día', () {
+    Map<String, Object?> conDesempeno() {
+      final json = tableroDeEjemplo();
+      json['venta'] = Map<String, Object?>.from(json['venta']! as Map);
+      (json['venta']! as Map<String, Object?>)['referencia'] = {
+        'promedio': '38000.00',
+        'dias': 4,
+        'suficiente': true,
+        'variacion': '11.0',
+        'lectura': 'arriba',
+      };
+      // Copias con valores anulables: los mapas literales del ejemplo se infieren
+      // como `Map<String, Object>` y no aceptan un `null` agregado después.
+      final vendedores = [
+        for (final v in json['vendedores']! as List)
+          Map<String, Object?>.from(v as Map),
+      ];
+      json['vendedores'] = vendedores;
+      vendedores[0].addAll({
+        'referencia': {
+          'promedio': '25000.00',
+          'dias': 3,
+          'suficiente': true,
+          'variacion': '-11.3',
+          'lectura': 'abajo',
+        },
+        'ultimo_push': '2026-10-01T17:55:00Z',
+        'cola_reportada': 0,
+        'sin_sincronizar': false,
+      });
+      vendedores[1].addAll({
+        'referencia': {
+          'promedio': '0.00',
+          'dias': 1,
+          'suficiente': false,
+          'variacion': null,
+          'lectura': 'sin_referencia',
+        },
+        'ultimo_push': '2026-09-30T21:40:00Z',
+        'cola_reportada': 7,
+        'sin_sincronizar': true,
+      });
+      return json;
+    }
+
+    test('la referencia del día llega con su dinero exacto', () {
+      final venta = Tablero.deJson(conDesempeno()).venta;
+      expect(venta.referencia.promedio, Dinero.deTexto('38000.00'));
+      expect(venta.referencia.dias, 4);
+      expect(venta.referencia.lectura, LecturaDeReferencia.arriba);
+      expect(venta.referencia.variacion, 11.0);
+    });
+
+    test('sin historia bastante no hay variación que pintar', () {
+      // Un promedio de un solo día es una anécdota: la app no dibuja flecha.
+      final luis = Tablero.deJson(conDesempeno()).vendedores[1];
+      expect(luis.referencia.suficiente, isFalse);
+      expect(luis.referencia.variacion, isNull);
+      expect(luis.referencia.lectura, LecturaDeReferencia.sinReferencia);
+    });
+
+    test('«no sincronizó» se distingue de «no vendió»', () {
+      // Los dos renglones de Luis se ven igual en cifras —todo en cero— y NO
+      // significan lo mismo: su teléfono no ha enviado nada hoy, así que su cero
+      // es una ausencia de información, no un día sin vender.
+      final luis = Tablero.deJson(conDesempeno()).vendedores[1];
+      expect(luis.sinActividad, isTrue);
+      expect(luis.sinSincronizar, isTrue);
+      expect(luis.colaReportada, 7);
+      expect(luis.ultimoPush, isNotNull);
+    });
+
+    test('un servidor anterior a esta función no rompe el tablero', () {
+      // La app nueva puede hablar con un servidor que todavía no se actualiza.
+      // Lo honesto es leer «sin referencia» y «no sé si sincronizó» —lo que la
+      // app ya mostraba antes—, no inventar un cero ni reventar el parseo.
+      final tablero = Tablero.deJson(tableroDeEjemplo());
+      expect(tablero.venta.referencia.lectura, LecturaDeReferencia.sinReferencia);
+      expect(tablero.venta.referencia.suficiente, isFalse);
+      expect(tablero.vendedores[1].sinSincronizar, isFalse);
+      expect(tablero.vendedores[1].ultimoPush, isNull);
+      expect(tablero.vendedores[1].colaReportada, 0);
+    });
+
+    test('«incompleta» llega como tal: es un piso, no una caída', () {
+      // A quien no ha sincronizado no se le lee «abajo» aunque su cifra de hoy
+      // esté en cero: su día sigue en su teléfono.
+      expect(
+        LecturaDeReferencia.deTexto('incompleta'),
+        LecturaDeReferencia.incompleta,
+      );
+    });
+
+    test('una lectura desconocida cae a «sin referencia», no a una flecha', () {
+      expect(
+        LecturaDeReferencia.deTexto('rarísimo'),
+        LecturaDeReferencia.sinReferencia,
+      );
+    });
+  });
+
   group('MapaDelDia.deJson', () {
     Map<String, Object?> mapaCrudo({bool recortados = false}) => {
           'fecha': '2026-10-01',

@@ -124,6 +124,9 @@
       border-radius: 8px; padding: 12px 14px; margin: 0 0 18px; font-size: 14px;
     }
     .aviso-caja.error { background: var(--alerta-suave); color: var(--alerta); }
+    /* Siete pantallas usaban «aviso-caja aviso» y la regla no existía: el aviso
+       ámbar salía como texto plano, sin fondo, y se perdía entre los párrafos. */
+    .aviso-caja.aviso { background: var(--aviso-suave); color: var(--aviso); }
     .aviso-caja.bien { background: var(--acento-suave); color: var(--acento); }
     .aviso-caja.neutro { background: var(--papel); border: 1px solid var(--linea); }
     .etiqueta-motivo {

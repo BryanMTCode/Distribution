@@ -48,10 +48,15 @@ from app.domain.tablero import (
     SQL_DIA_POR_VENDEDOR,
     SQL_ESTADO_DEL_MUNDO,
     SQL_MAPA_DEL_DIA,
+    SQL_REFERENCIA_DEL_DIA,
+    SQL_REFERENCIA_POR_VENDEDOR,
     SQL_RESUMEN_DIA,
+    SQL_SINCRONIA_POR_VENDEDOR,
     SQL_VENTA_MES_SIN_RUTA,
     Avance,
     Frescura,
+    Referencia,
+    dias_de_referencia,
     inicio_de_mes,
     porcentaje,
 )
@@ -76,6 +81,32 @@ class FrescuraSalida(BaseModel):
     advertencia: str | None
 
 
+class ReferenciaSalida(BaseModel):
+    """Contra qué se compara el día, y qué tan en serio tomarlo.
+
+    El promedio es de los MISMOS DÍAS DE LA SEMANA anteriores, no de los días
+    anteriores: la ruta visita a los mismos clientes cada martes, así que comparar
+    el martes contra el lunes mide qué clientes tocaban y no cómo se trabajó.
+
+    `suficiente` en `false` significa que no hay historia bastante y que la app
+    **no debe dibujar una flecha**: un promedio de un solo día es una anécdota, y
+    poner una flecha roja sobre eso es inventarle un argumento a alguien.
+    """
+
+    promedio: Dinero
+    dias: int
+    suficiente: bool
+    variacion: Decimal | None
+    # 'arriba' | 'parejo' | 'abajo' | 'sin_referencia' | 'incompleta'.
+    #
+    # 'incompleta' es que a la cifra de hoy se SABE que le falta información —el
+    # teléfono de esa persona, o de alguna para el total, no ha enviado nada—. La
+    # variación sigue viniendo, pero es la de un piso: la app no la pinta de rojo.
+    # Una app anterior que no conozca la palabra la lee como 'sin_referencia' y no
+    # dibuja flecha, que es la degradación correcta.
+    lectura: str
+
+
 class VentaDelDia(BaseModel):
     fecha: date
     total: Dinero
@@ -86,6 +117,7 @@ class VentaDelDia(BaseModel):
     # que el gerente compara con la de ayer. El drop size "de verdad" —por
     # visita que vendió— vive en el bloque de visitas, con ese nombre.
     ticket_promedio: Dinero
+    referencia: ReferenciaSalida
     calculado_en: datetime | None
 
 
@@ -129,6 +161,17 @@ class RenglonVendedor(BaseModel):
     no_drops: int
     cobrado: Dinero
     efectividad: Decimal
+    # Su propio mismo día de la semana. Mismo trato que el total: sin historia
+    # bastante, no hay flecha.
+    referencia: ReferenciaSalida
+    # Lo que convierte el renglón en una llamada telefónica.
+    #
+    # El cero de un vendedor cuyo día entero está en su teléfono NO es un cero (§0.3),
+    # y antes de esto la app decía «sin movimiento todavía hoy» en los dos casos — que
+    # en el segundo es falso: no es que no haya vendido, es que no sabemos.
+    ultimo_push: datetime | None
+    cola_reportada: int
+    sin_sincronizar: bool
 
 
 class RenglonRuta(BaseModel):
@@ -283,6 +326,26 @@ async def ver_tablero(
     por_vendedor = (
         await sesion.execute(text(SQL_DIA_POR_VENDEDOR), {"fecha": dia})
     ).mappings().all()
+    # La referencia y el estado de los teléfonos: tres consultas cortas sobre
+    # `tablero_dia` y `dispositivos`, en el mismo viaje. El tablero es una foto.
+    referencias = dias_de_referencia(dia)
+    ref_dia = (
+        await sesion.execute(text(SQL_REFERENCIA_DEL_DIA), {"dias": referencias})
+    ).mappings().one()
+    ref_vendedor = {
+        f["vendedor_id"]: f
+        for f in (
+            await sesion.execute(
+                text(SQL_REFERENCIA_POR_VENDEDOR), {"dias": referencias}
+            )
+        ).mappings().all()
+    }
+    sincronia = {
+        f["usuario_id"]: f
+        for f in (
+            await sesion.execute(text(SQL_SINCRONIA_POR_VENDEDOR))
+        ).mappings().all()
+    }
     rutas = (
         await sesion.execute(text(SQL_AVANCE_POR_RUTA), {"periodo": periodo})
     ).mappings().all()
@@ -307,6 +370,17 @@ async def ver_tablero(
     dias_del_mes = calendar.monthrange(periodo.year, periodo.month)[1]
     dia_del_mes = hoy.day if periodo == inicio_de_mes(hoy) else dias_del_mes
 
+    vendedores = [
+        _renglon_vendedor(
+            f,
+            ref_vendedor.get(f["vendedor_id"]),
+            sincronia.get(f["vendedor_id"]),
+            dia=dia,
+            es_hoy=dia == hoy,
+        )
+        for f in por_vendedor
+    ]
+
     return Tablero(
         frescura=_frescura(calculado_en, mundo),
         venta=VentaDelDia(
@@ -319,6 +393,14 @@ async def ver_tablero(
                 (venta_total / documentos).quantize(Decimal("0.01"))
                 if documentos
                 else Decimal("0.00")
+            ),
+            # Un piso si a alguien le falta el día: leerlo como «abajo» pintaría
+            # una caída que puede no existir.
+            referencia=_referencia(
+                Decimal(ref_dia["venta_promedio"]),
+                int(ref_dia["dias"]),
+                venta_total,
+                incompleta=any(v.sin_sincronizar for v in vendedores),
             ),
             calculado_en=resumen["calculado_en"],
         ),
@@ -353,21 +435,7 @@ async def ver_tablero(
             unidades=Decimal(resumen["mermas_unidades"]),
             calculado_en=resumen["calculado_en"],
         ),
-        vendedores=[
-            RenglonVendedor(
-                vendedor_id=f["vendedor_id"],
-                codigo=f["codigo"],
-                nombre=f["nombre"],
-                venta=Decimal(f["venta_total"]),
-                documentos=int(f["documentos_venta"]),
-                visitas=int(f["visitas"]),
-                con_venta=int(f["visitas_con_venta"]),
-                no_drops=int(f["no_drops"]),
-                cobrado=Decimal(f["cobrado_total"]),
-                efectividad=porcentaje(f["visitas_con_venta"], f["visitas"]),
-            )
-            for f in por_vendedor
-        ],
+        vendedores=vendedores,
         avance=AvanceDelMes(
             periodo=periodo,
             dia_del_mes=dia_del_mes,
@@ -376,6 +444,58 @@ async def ver_tablero(
             venta_sin_ruta=Decimal(sin_ruta["venta"]),
             documentos_sin_ruta=int(sin_ruta["documentos"]),
         ),
+    )
+
+
+def _referencia(
+    promedio: Decimal, dias: int, hoy: Decimal, *, incompleta: bool = False
+) -> ReferenciaSalida:
+    """Arma la salida desde el dataclass del dominio, que es quien decide.
+
+    La aritmética vive en `Referencia` y no aquí a propósito: el panel web usa el
+    mismo objeto, y el día que el margen de «parejo» cambie tiene que cambiar en
+    los dos lados o el gerente vería dos verdades según la pantalla que abriera.
+    """
+    referencia = Referencia(promedio=promedio, dias=dias)
+    return ReferenciaSalida(
+        promedio=referencia.promedio,
+        dias=referencia.dias,
+        suficiente=referencia.suficiente,
+        variacion=referencia.variacion(hoy),
+        lectura=referencia.lectura(hoy, incompleta=incompleta),
+    )
+
+
+def _renglon_vendedor(fila, ref, equipo, *, dia: date, es_hoy: bool) -> RenglonVendedor:
+    """El renglón de una persona, con su referencia y el estado de su teléfono.
+
+    `sin_sincronizar` solo puede ser verdad de HOY: para un día cerrado, «no ha
+    hecho push hoy» no dice nada de lo que pasó ese martes, y pintarlo de rojo
+    sugeriría que las cifras de ese día están incompletas por una razón que no es.
+    """
+    venta = Decimal(fila["venta_total"])
+    ultimo_push = equipo["ultimo_push"] if equipo else None
+    sin_sincronizar = es_hoy and (ultimo_push is None or ultimo_push.date() < dia)
+    return RenglonVendedor(
+        vendedor_id=fila["vendedor_id"],
+        codigo=fila["codigo"],
+        nombre=fila["nombre"],
+        venta=venta,
+        documentos=int(fila["documentos_venta"]),
+        visitas=int(fila["visitas"]),
+        con_venta=int(fila["visitas_con_venta"]),
+        no_drops=int(fila["no_drops"]),
+        cobrado=Decimal(fila["cobrado_total"]),
+        efectividad=porcentaje(fila["visitas_con_venta"], fila["visitas"]),
+        referencia=_referencia(
+            Decimal(ref["venta_promedio"]) if ref else Decimal("0"),
+            int(ref["dias"]) if ref else 0,
+            venta,
+            incompleta=sin_sincronizar,
+        ),
+        ultimo_push=ultimo_push,
+        cola_reportada=int(equipo["cola_reportada"]) if equipo else 0,
+        sin_sincronizar=sin_sincronizar,
     )
 
 

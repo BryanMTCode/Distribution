@@ -53,6 +53,39 @@ String pesos(Dinero monto, {bool conCentavos = true}) {
   return conCentavos ? '$signo\$$conMiles.$resto' : '$signo\$$conMiles';
 }
 
+/// El día de la semana en plural: «martes», «sábados».
+///
+/// Es el nombre de la referencia. «+11% contra sus martes» se entiende sin
+/// explicación; «+11% contra la referencia» obliga a preguntar cuál.
+String mismosDias(DateTime fecha) => const [
+      'lunes',
+      'martes',
+      'miércoles',
+      'jueves',
+      'viernes',
+      'sábados',
+      'domingos',
+    ][fecha.weekday - 1];
+
+/// La comparación en una frase, o `null` cuando no hay contra qué comparar.
+///
+/// `null` y no «sin referencia» a propósito: la pantalla decide si lo dice o se
+/// calla, y en el renglón de un vendedor callarse es lo correcto — un «—» por
+/// cada persona nueva sería ruido.
+String? textoDeReferencia(ReferenciaDelDia referencia, DateTime fecha) {
+  final variacion = referencia.variacion;
+  if (!referencia.suficiente || variacion == null) return null;
+  final signo = variacion > 0 ? '+' : '';
+  final comparacion =
+      '$signo${variacion.toStringAsFixed(0)}% vs. sus ${mismosDias(fecha)}';
+  // La cifra se dice, y se dice qué es: un piso. Callarla escondería un dato
+  // verdadero; dejarla sola lo haría pasar por una caída.
+  if (referencia.lectura == LecturaDeReferencia.incompleta) {
+    return '$comparacion — es un piso: falta quien no ha sincronizado';
+  }
+  return comparacion;
+}
+
 /// La línea de antigüedad y advertencia que acompaña a las cifras.
 ///
 /// Las dos cosas juntas son la advertencia: "hace 2 min" suena perfecto, y si

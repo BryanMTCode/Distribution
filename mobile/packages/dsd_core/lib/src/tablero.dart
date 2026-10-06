@@ -84,6 +84,86 @@ class Frescura {
   bool get nuncaCalculado => calculadoEn == null;
 }
 
+/// Qué dice la comparación contra los mismos días de la semana.
+enum LecturaDeReferencia {
+  /// Más de 10% arriba de su promedio.
+  arriba,
+
+  /// Dentro del margen: la venta de un día depende de quién tenía dinero ese
+  /// día, y pintar de rojo un 6% abajo enseña a ignorar el rojo.
+  parejo,
+
+  /// Más de 10% abajo.
+  abajo,
+
+  /// No hay historia bastante para comparar. **No se dibuja flecha.**
+  sinReferencia,
+
+  /// Se SABE que a la cifra de hoy le falta información: el teléfono de esa
+  /// persona —o, para el total, el de alguna— no ha enviado nada hoy. La
+  /// variación es verdad pero es la de un piso, y pintarla de rojo diría «se
+  /// cayó» de alguien cuyo día sigue en su bolsillo.
+  incompleta;
+
+  static LecturaDeReferencia deTexto(Object? valor) => switch (valor) {
+        'arriba' => arriba,
+        'parejo' => parejo,
+        'abajo' => abajo,
+        'incompleta' => incompleta,
+        _ => sinReferencia,
+      };
+}
+
+/// Contra qué se compara el día: el promedio de sus MISMOS DÍAS DE LA SEMANA.
+///
+/// No contra ayer. La ruta visita a los mismos clientes cada martes, así que
+/// comparar el martes contra el lunes mide qué clientes tocaban y no cómo se
+/// trabajó. La aritmética la hace el servidor (`domain/tablero.Referencia`), la
+/// misma que usa el panel web: si cada pantalla calculara la suya, el gerente
+/// vería dos verdades según cuál abriera.
+class ReferenciaDelDia {
+  const ReferenciaDelDia({
+    required this.promedio,
+    required this.dias,
+    required this.suficiente,
+    required this.variacion,
+    required this.lectura,
+  });
+
+  /// Lo que se lee cuando el servidor no la manda — uno anterior a esta función.
+  ///
+  /// «Sin referencia» es lo honesto: no hay con qué comparar, así que no hay
+  /// flecha. Lo deshonesto sería inventar un cero y pintar al vendedor de verde.
+  static const sinDatos = ReferenciaDelDia(
+    promedio: Dinero.cero,
+    dias: 0,
+    suficiente: false,
+    variacion: null,
+    lectura: LecturaDeReferencia.sinReferencia,
+  );
+
+  factory ReferenciaDelDia.deJson(Object? json) {
+    if (json is! Map<String, Object?>) return sinDatos;
+    return ReferenciaDelDia(
+      promedio: _dinero(json['promedio']),
+      dias: json['dias']! as int,
+      suficiente: json['suficiente']! as bool,
+      variacion: _porcentajeOpcional(json['variacion']),
+      lectura: LecturaDeReferencia.deTexto(json['lectura']),
+    );
+  }
+
+  final Dinero promedio;
+
+  /// Cuántos de esos días entraron al promedio. Los que no trabajó no cuentan.
+  final int dias;
+  final bool suficiente;
+
+  /// Por ciento arriba (positivo) o abajo (negativo). `null` sin referencia.
+  final double? variacion;
+  final LecturaDeReferencia lectura;
+}
+
 class VentaDelDia {
   const VentaDelDia({
     required this.fecha,
@@ -93,6 +173,7 @@ class VentaDelDia {
     required this.documentos,
     required this.ticketPromedio,
     required this.calculadoEn,
+    this.referencia = ReferenciaDelDia.sinDatos,
   });
 
   factory VentaDelDia.deJson(Map<String, Object?> json) => VentaDelDia(
@@ -103,6 +184,7 @@ class VentaDelDia {
         documentos: json['documentos']! as int,
         ticketPromedio: _dinero(json['ticket_promedio']),
         calculadoEn: _momentoOpcional(json['calculado_en']),
+        referencia: ReferenciaDelDia.deJson(json['referencia']),
       );
 
   final DateTime fecha;
@@ -112,6 +194,9 @@ class VentaDelDia {
   final int documentos;
   final Dinero ticketPromedio;
   final DateTime? calculadoEn;
+
+  /// El promedio de los mismos días de la semana anteriores.
+  final ReferenciaDelDia referencia;
 }
 
 class VisitasDelDia {
@@ -216,6 +301,10 @@ class RenglonVendedor {
     required this.noDrops,
     required this.cobrado,
     required this.efectividad,
+    this.referencia = ReferenciaDelDia.sinDatos,
+    this.ultimoPush,
+    this.colaReportada = 0,
+    this.sinSincronizar = false,
   });
 
   factory RenglonVendedor.deJson(Map<String, Object?> json) => RenglonVendedor(
@@ -229,6 +318,12 @@ class RenglonVendedor {
         noDrops: json['no_drops']! as int,
         cobrado: _dinero(json['cobrado']),
         efectividad: _porcentaje(json['efectividad']),
+        referencia: ReferenciaDelDia.deJson(json['referencia']),
+        ultimoPush: _momentoOpcional(json['ultimo_push']),
+        colaReportada: (json['cola_reportada'] as int?) ?? 0,
+        // Un servidor anterior no lo manda. `false` es lo que la app ya mostraba
+        // antes de saberlo, así que no empeora nada: solo deja de mejorar.
+        sinSincronizar: (json['sin_sincronizar'] as bool?) ?? false,
       );
 
   final String vendedorId;
@@ -242,8 +337,26 @@ class RenglonVendedor {
   final Dinero cobrado;
   final double efectividad;
 
+  /// Su propio mismo día de la semana.
+  final ReferenciaDelDia referencia;
+
+  /// El envío más reciente de cualquiera de sus teléfonos activos.
+  final DateTime? ultimoPush;
+
+  /// Lo que sus teléfonos dijeron tener pendiente hoy.
+  final int colaReportada;
+
+  /// Su teléfono no ha enviado nada hoy: **su cero no es un cero**.
+  ///
+  /// Solo puede ser verdad del día de hoy; para un día cerrado el servidor lo
+  /// manda en `false`, porque «no ha enviado hoy» no dice nada del martes pasado.
+  final bool sinSincronizar;
+
   /// Un vendedor que no ha hecho nada. Es el renglón más urgente del tablero:
   /// a media mañana significa que algo pasó con el camión o con el teléfono.
+  ///
+  /// Ojo: un vendedor `sinSincronizar` también se ve sin actividad, y NO es lo
+  /// mismo. La pantalla pregunta primero por la sincronía.
   bool get sinActividad => visitas == 0 && cobrado.esCero;
 }
 

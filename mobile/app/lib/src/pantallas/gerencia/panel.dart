@@ -184,8 +184,17 @@ class _Cuerpo extends StatelessWidget {
             Tarjeta(
               cifra: pesos(t.venta.total, conCentavos: false),
               etiqueta: 'vendido hoy',
-              detalle: '${t.venta.documentos} remisiones · ticket promedio '
-                  '${pesos(t.venta.ticketPromedio)}',
+              // La referencia va en la tarjeta y no en un renglón aparte: la
+              // cifra sola no dice si es buena. Contra los MISMOS días de la
+              // semana, porque la ruta visita a los mismos clientes cada martes.
+              detalle: [
+                textoDeReferencia(t.venta.referencia, t.venta.fecha) ??
+                    'Sin referencia todavía: hacen falta dos '
+                        '${mismosDias(t.venta.fecha)} con operación',
+                '${t.venta.documentos} remisiones · ticket promedio '
+                    '${pesos(t.venta.ticketPromedio)}',
+              ].join('\n'),
+              alerta: t.venta.referencia.lectura == LecturaDeReferencia.abajo,
             ),
             Tarjeta(
               cifra: pesos(t.cobranza.cobradoHoy, conCentavos: false),
@@ -253,7 +262,9 @@ class _Cuerpo extends StatelessWidget {
             child: Text('Todavía no hay movimiento de ningún vendedor hoy.'),
           )
         else
-          ...t.vendedores.map((v) => _RenglonVendedorWidget(renglon: v)),
+          ...t.vendedores.map(
+            (v) => _RenglonVendedorWidget(renglon: v, fecha: t.venta.fecha),
+          ),
 
         if (t.mermas.documentos > 0) ...[
           _Titulo('Mermas'),
@@ -449,32 +460,65 @@ class _RenglonRutaWidget extends StatelessWidget {
 }
 
 class _RenglonVendedorWidget extends StatelessWidget {
-  const _RenglonVendedorWidget({required this.renglon});
+  const _RenglonVendedorWidget({required this.renglon, required this.fecha});
 
   final RenglonVendedor renglon;
+  final DateTime fecha;
+
+  /// Lo que se dice de la persona, en el orden en que importa.
+  ///
+  /// La sincronía va PRIMERO, antes que la actividad. Un vendedor cuyo teléfono
+  /// no ha enviado nada se ve en cifras igual que uno que no ha vendido —todo en
+  /// cero— y antes de esto la app decía «sin movimiento» en los dos casos. En el
+  /// primero era falso: no es que no haya vendido, es que no sabemos. Piden dos
+  /// llamadas distintas.
+  String _subtitulo() {
+    if (renglon.sinSincronizar) {
+      final partes = [
+        'Su teléfono no ha enviado nada hoy',
+        renglon.ultimoPush == null
+            ? 'nunca ha sincronizado'
+            : 'último envío ${antiguedadEnPalabras(renglon.ultimoPush)}',
+        if (renglon.colaReportada > 0) '${renglon.colaReportada} en cola',
+      ];
+      return partes.join(' · ');
+    }
+    if (renglon.sinActividad) {
+      // Es el renglón más urgente del tablero: a media mañana significa que
+      // algo pasó con el camión, y es justo el vendedor que un orden por venta
+      // pondría al final y nadie vería.
+      return 'Sincronizó y no trae movimiento todavía hoy';
+    }
+    return [
+      '${renglon.visitas} visitas · ${renglon.conVenta} con venta · '
+          '${renglon.efectividad.toStringAsFixed(0)}% · '
+          'cobró ${pesos(renglon.cobrado, conCentavos: false)}',
+      ?textoDeReferencia(renglon.referencia, fecha),
+    ].join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
     final esquema = Theme.of(context).colorScheme;
+    final urgente = renglon.sinSincronizar || renglon.sinActividad;
     return ListTile(
       key: Key('vendedor_${renglon.codigo ?? renglon.vendedorId}'),
       contentPadding: EdgeInsets.zero,
       leading: Icon(
-        renglon.sinActividad
-            ? Icons.error_outline
-            : Icons.person_outline,
-        color: renglon.sinActividad ? esquema.error : null,
+        renglon.sinSincronizar
+            ? Icons.sync_problem
+            : renglon.sinActividad
+                ? Icons.error_outline
+                : Icons.person_outline,
+        color: urgente ? esquema.error : null,
       ),
       title: Text(renglon.nombre),
       subtitle: Text(
-        renglon.sinActividad
-            // Es el renglón más urgente del tablero: a media mañana significa
-            // que algo pasó con el camión o con el teléfono, y es justo el
-            // vendedor que un orden por venta pondría al final y nadie vería.
-            ? 'Sin movimiento todavía hoy'
-            : '${renglon.visitas} visitas · ${renglon.conVenta} con venta · '
-                '${renglon.efectividad.toStringAsFixed(0)}% · '
-                'cobró ${pesos(renglon.cobrado, conCentavos: false)}',
+        _subtitulo(),
+        style: renglon.referencia.lectura == LecturaDeReferencia.abajo &&
+                !urgente
+            ? TextStyle(color: esquema.error)
+            : null,
       ),
       trailing: Text(
         pesos(renglon.venta, conCentavos: false),

@@ -453,3 +453,200 @@ async def test_el_mapa_tambien_exige_el_permiso(cliente, sesion, semilla):
     })
     cab = {"Authorization": f"Bearer {r.json()['access_token']}"}
     assert (await cliente.get("/v1/tablero/mapa", headers=cab)).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# La referencia y el estado del teléfono de cada persona (Fase 7, desempeño)
+# ---------------------------------------------------------------------------
+async def _historia(sesion, vendedor, dias, venta):
+    for dia in dias:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO tablero_dia (fecha, vendedor_id, venta_total,
+                                         venta_contado, documentos_venta, visitas,
+                                         visitas_con_venta, calculado_en)
+                VALUES (:f, :v, :venta, :venta, 1, 1, 1, now())
+                ON CONFLICT (fecha, vendedor_id) DO UPDATE
+                   SET venta_total = excluded.venta_total
+                """
+            ),
+            {"f": dia, "v": vendedor, "venta": venta},
+        )
+    await sesion.commit()
+
+
+async def test_la_venta_del_dia_trae_su_referencia(
+    cliente, sesion, semilla, dia_con_operacion
+):
+    """Contra los mismos días de la semana, no contra ayer.
+
+    La ruta visita a los mismos clientes cada martes: comparar el martes contra el
+    lunes mide qué clientes tocaban, no cómo se trabajó.
+    """
+    from app.domain.tablero import dias_de_referencia
+
+    hoy = dia_con_operacion["dia"]
+    await _historia(
+        sesion, semilla["vendedor"], dias_de_referencia(hoy), Decimal("1000.00")
+    )
+
+    r = await cliente.get("/v1/tablero", headers=await _cab(cliente))
+    referencia = r.json()["venta"]["referencia"]
+
+    assert referencia["suficiente"] is True
+    assert referencia["dias"] == 4
+    # Dinero como STRING, igual que el resto del tablero (contracts §1.4).
+    assert referencia["promedio"] == "1000.00"
+    # 1234.56 contra 1000 son +23.5%.
+    assert Decimal(referencia["variacion"]) == Decimal("23.5")
+    assert referencia["lectura"] == "arriba"
+
+
+async def test_sin_historia_bastante_la_referencia_lo_dice(
+    cliente, sesion, semilla, dia_con_operacion
+):
+    """La app no debe dibujar una flecha sobre un promedio de un solo día."""
+    from app.domain.tablero import dias_de_referencia
+
+    await _historia(
+        sesion,
+        semilla["vendedor"],
+        dias_de_referencia(dia_con_operacion["dia"])[:1],
+        Decimal("1000.00"),
+    )
+
+    r = await cliente.get("/v1/tablero", headers=await _cab(cliente))
+    referencia = r.json()["venta"]["referencia"]
+
+    assert referencia["suficiente"] is False
+    assert referencia["variacion"] is None
+    assert referencia["lectura"] == "sin_referencia"
+
+
+async def test_el_renglon_del_vendedor_dice_si_su_telefono_sincronizo(
+    cliente, sesion, semilla, dia_con_operacion
+):
+    """Antes de esto, la app decía «sin movimiento todavía hoy» en dos casos muy
+    distintos, y en uno era falso: no es que no haya vendido, es que no sabemos.
+
+    El vendedor de la semilla sí sincronizó; se agrega uno que no, para que el
+    teléfono del gerente pueda distinguirlos.
+    """
+    from app.core.seguridad import hashear_password
+    from app.workers.tablero import recalcular_dia
+
+    callado = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO usuarios (id, sucursal_id, codigo, nombre, password_hash, "
+            "                      rol_codigo, creado_en, actualizado_en) "
+            "VALUES (:u, :s, 'VEND09', 'Pedro Sin Señal', :h, 'vendedor', now(), now())"
+        ),
+        {
+            "u": callado,
+            "s": semilla["sucursal"],
+            "h": hashear_password(PASSWORD_VENDEDOR),
+        },
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, registrado_en, "
+            "                          ultima_sync_push_en, cola_pendiente, "
+            "                          cola_reportada_en) "
+            "VALUES (:d, :u, 'Moto E', 'activo', now(), :ayer, 7, now())"
+        ),
+        {
+            "d": uuid.uuid4(),
+            "u": callado,
+            "ayer": datetime.now(UTC) - timedelta(days=1),
+        },
+    )
+    await sesion.commit()
+    await recalcular_dia(sesion, dia_con_operacion["dia"])
+    await sesion.commit()
+
+    r = await cliente.get("/v1/tablero", headers=await _cab(cliente))
+    por_codigo = {v["codigo"]: v for v in r.json()["vendedores"]}
+
+    assert por_codigo["VEND01"]["sin_sincronizar"] is False
+    assert por_codigo["VEND01"]["ultimo_push"] is not None
+
+    pedro = por_codigo["VEND09"]
+    assert pedro["sin_sincronizar"] is True
+    assert pedro["cola_reportada"] == 7
+    assert Decimal(pedro["venta"]) == 0, "su cero es una ausencia, no un cero"
+
+
+async def test_a_quien_le_falta_el_dia_no_se_le_lee_como_caida(
+    cliente, sesion, semilla, dia_con_operacion
+):
+    """Lo encontró la primera captura del panel: un vendedor sin sincronizar salía
+    «-100% por debajo de sus martes». El servidor lo resuelve UNA vez, para las dos
+    pantallas: su lectura es `incompleta`, y la del total también, porque a la
+    suma de hoy le falta su día.
+    """
+    from app.core.seguridad import hashear_password
+    from app.domain.tablero import dias_de_referencia
+    from app.workers.tablero import recalcular_dia
+
+    callado = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO usuarios (id, sucursal_id, codigo, nombre, password_hash, "
+            "                      rol_codigo, creado_en, actualizado_en) "
+            "VALUES (:u, :s, 'VEND09', 'Pedro Sin Señal', :h, 'vendedor', now(), now())"
+        ),
+        {
+            "u": callado,
+            "s": semilla["sucursal"],
+            "h": hashear_password(PASSWORD_VENDEDOR),
+        },
+    )
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, registrado_en, "
+            "                          ultima_sync_push_en) "
+            "VALUES (:d, :u, 'Moto E', 'activo', now(), :ayer)"
+        ),
+        {"d": uuid.uuid4(), "u": callado, "ayer": datetime.now(UTC) - timedelta(days=1)},
+    )
+    await sesion.commit()
+    await recalcular_dia(sesion, dia_con_operacion["dia"])
+    await sesion.commit()
+    dias = dias_de_referencia(dia_con_operacion["dia"])
+    await _historia(sesion, callado, dias, Decimal("1800.00"))
+    await _historia(sesion, semilla["vendedor"], dias, Decimal("5000.00"))
+
+    r = await cliente.get("/v1/tablero", headers=await _cab(cliente))
+    cuerpo = r.json()
+    pedro = next(v for v in cuerpo["vendedores"] if v["codigo"] == "VEND09")
+
+    assert pedro["referencia"]["lectura"] == "incompleta"
+    # La variación sigue viajando: es verdad, es la de un piso.
+    assert pedro["referencia"]["variacion"] is not None
+    assert cuerpo["venta"]["referencia"]["lectura"] == "incompleta"
+    # Y quien sí sincronizó conserva su lectura de siempre.
+    juan = next(v for v in cuerpo["vendedores"] if v["codigo"] == "VEND01")
+    assert juan["referencia"]["lectura"] == "abajo"
+
+
+async def test_un_dia_cerrado_no_marca_a_nadie_sin_sincronizar(
+    cliente, sesion, semilla, dia_con_operacion
+):
+    """«No ha hecho push hoy» no dice nada de lo que pasó el martes pasado.
+
+    Pintarlo de rojo en un día cerrado sugeriría que esas cifras están incompletas
+    por una razón que no es.
+    """
+    from app.domain.tablero import dias_de_referencia
+
+    pasado = dias_de_referencia(dia_con_operacion["dia"])[0]
+    await _historia(sesion, semilla["vendedor"], [pasado], Decimal("900.00"))
+
+    r = await cliente.get(
+        f"/v1/tablero?fecha={pasado.isoformat()}", headers=await _cab(cliente)
+    )
+    vendedores = r.json()["vendedores"]
+    assert vendedores, "el día pasado trae su renglón"
+    assert all(v["sin_sincronizar"] is False for v in vendedores)

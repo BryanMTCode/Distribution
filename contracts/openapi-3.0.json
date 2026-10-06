@@ -1837,6 +1837,12 @@
             },
             "type": "array",
             "title": "Cambios"
+          },
+          "resincronizar": {
+            "type": "boolean",
+            "title": "Resincronizar",
+            "description": "True cuando el cursor del dispositivo quedó por debajo de lo que el change_log todavía conserva. El dispositivo tiene que volver a empezar desde el cursor 0: lo que falta ya no se puede entregar.",
+            "default": false
           }
         },
         "type": "object",
@@ -2130,6 +2136,12 @@
           "app_version": {
             "type": "string",
             "title": "App Version",
+            "nullable": true
+          },
+          "enviado_en": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Enviado En",
             "nullable": true
           },
           "cola_pendiente": {
@@ -2841,6 +2853,43 @@
         ],
         "title": "RangoAsignado"
       },
+      "ReferenciaSalida": {
+        "properties": {
+          "promedio": {
+            "type": "string",
+            "title": "Promedio",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "dias": {
+            "type": "integer",
+            "title": "Dias"
+          },
+          "suficiente": {
+            "type": "boolean",
+            "title": "Suficiente"
+          },
+          "variacion": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Variacion",
+            "nullable": true
+          },
+          "lectura": {
+            "type": "string",
+            "title": "Lectura"
+          }
+        },
+        "type": "object",
+        "required": [
+          "promedio",
+          "dias",
+          "suficiente",
+          "variacion",
+          "lectura"
+        ],
+        "title": "ReferenciaSalida",
+        "description": "Contra qué se compara el día, y qué tan en serio tomarlo.\n\nEl promedio es de los MISMOS DÍAS DE LA SEMANA anteriores, no de los días\nanteriores: la ruta visita a los mismos clientes cada martes, así que comparar\nel martes contra el lunes mide qué clientes tocaban y no cómo se trabajó.\n\n`suficiente` en `false` significa que no hay historia bastante y que la app\n**no debe dibujar una flecha**: un promedio de un solo día es una anécdota, y\nponer una flecha roja sobre eso es inventarle un argumento a alguien."
+      },
       "RenglonRuta": {
         "properties": {
           "ruta_id": {
@@ -2964,6 +3013,23 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Efectividad"
+          },
+          "referencia": {
+            "$ref": "#/components/schemas/ReferenciaSalida"
+          },
+          "ultimo_push": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ultimo Push",
+            "nullable": true
+          },
+          "cola_reportada": {
+            "type": "integer",
+            "title": "Cola Reportada"
+          },
+          "sin_sincronizar": {
+            "type": "boolean",
+            "title": "Sin Sincronizar"
           }
         },
         "type": "object",
@@ -2977,7 +3043,11 @@
           "con_venta",
           "no_drops",
           "cobrado",
-          "efectividad"
+          "efectividad",
+          "referencia",
+          "ultimo_push",
+          "cola_reportada",
+          "sin_sincronizar"
         ],
         "title": "RenglonVendedor"
       },
@@ -3334,6 +3404,9 @@
             "title": "Ticket Promedio",
             "description": "Importe con 2 decimales, serializado como string: '250.00'"
           },
+          "referencia": {
+            "$ref": "#/components/schemas/ReferenciaSalida"
+          },
           "calculado_en": {
             "type": "string",
             "format": "date-time",
@@ -3349,6 +3422,7 @@
           "credito",
           "documentos",
           "ticket_promedio",
+          "referencia",
           "calculado_en"
         ],
         "title": "VentaDelDia"

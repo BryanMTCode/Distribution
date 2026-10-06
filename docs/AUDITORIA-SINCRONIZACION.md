@@ -380,7 +380,7 @@ por delta, las pruebas se ponen rojas.
 
 ### Y las del traspaso camión → bodega (§6.2)
 
-44 más, de los tres lados del documento:
+59 más, de los tres lados del documento:
 
 | Qué defiende | Dónde |
 |---|---|

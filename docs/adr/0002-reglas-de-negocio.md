@@ -3644,3 +3644,138 @@ tocar el rol.
 A propósito. La bodega carga el camión con una **carga**, que es el documento
 correcto para eso y el que el teléfono ya sabe recibir. Un traspaso bodega → camión
 solo haría falta para una resurtida a media ruta, que nadie ha pedido.
+
+---
+
+## 51. El desempeño del día se compara contra el mismo día de la semana, y dice de quién falta información
+
+**Decisión.** Una pantalla del panel, «Desempeño» (`/panel/desempeno`), pegada al
+Tablero en la navegación, que contesta la pregunta de la junta de las once: **qué
+lleva cada vendedor hoy, contra qué, y a quién hay que llamar.** Y la misma lectura en
+el tablero del teléfono del gerente, para que las dos pantallas digan lo mismo.
+
+Ya existían tres mitades del problema y ninguna entera: el Tablero del panel cuenta
+lo que necesita atención pero es global; Efectividad abre en siete días a propósito,
+porque un porcentaje sobre veinte visitas es ruido; y el tablero del teléfono tenía
+las cifras del día y un ranking, sin referencia y sin la columna que convierte una
+cifra en una llamada.
+
+### Contra el mismo día de la semana, no contra ayer
+
+La ruta visita a los mismos clientes cada martes. «Hoy vendiste menos que ayer» mide
+qué clientes tocaban; «hoy vendiste menos que tus últimos martes» mide cómo
+trabajaste. La referencia es el promedio de los **cuatro** mismos días anteriores:
+con cuatro, un cambio de precios o la pérdida de un cliente grande ya se refleja; con
+doce, la referencia se defiende de la realidad y el tablero dice «vas bien» tres
+meses después de que dejó de ser cierto.
+
+Tres reglas la hacen honesta, y las tres tienen prueba:
+
+1. **Los días que no trabajó no entran al promedio.** Un martes de vacaciones en cero
+   bajaría su referencia y el tablero diría que hoy va de maravilla. La línea la da el
+   propio modelo: un día trabajado deja rastro aunque no haya venta —visitas,
+   no-drops, cobros—, así que «sin ninguna de las tres» es «no trabajó».
+2. **Un día trabajado y malo SÍ entra.** Si se excluyera por tener venta en cero, la
+   referencia se defendería de los días malos y nunca habría una flecha roja.
+3. **Con menos de dos días de historia no hay flecha.** Un promedio de uno es una
+   anécdota, y poner una flecha roja enfrente de alguien por eso es inventarle un
+   argumento.
+
+Y un margen de **±10%** en el que hoy y la referencia «van parejo»: la venta de un día
+depende de quién tenía dinero ese día, y un tablero que pinta de rojo un 6% abajo
+enseña a ignorar el rojo.
+
+La aritmética vive en un solo lugar —`domain/tablero.Referencia`— y la usan el panel y
+el endpoint del teléfono. Si cada pantalla calculara la suya, el gerente vería dos
+verdades según cuál abriera.
+
+### «No sincronizó» no es «no vendió»
+
+Es lo más importante de la pantalla, y es §0.3 llevado hasta su consecuencia: si las
+cifras del día son un piso y no un total, lo que importa no es solo cuánto falta,
+sino **de quién** falta.
+
+El tablero del teléfono decía «2 equipos sin sincronizar», y con eso no se puede hacer
+nada: no se sabe a quién llamar. Y el renglón de un vendedor en cero decía «sin
+movimiento todavía hoy» en dos casos muy distintos —uno que sincronizó y no trae nada,
+y uno cuyo día entero sigue en su teléfono—. En el segundo **era falso**: no es que
+no haya vendido, es que no sabemos. Ahora cada renglón lleva el último envío de su
+teléfono y lo que reportó tener en cola, y la pantalla separa los dos casos en dos
+avisos con nombres, porque piden dos llamadas distintas.
+
+«Sin sincronizar» solo puede ser verdad de **hoy**. Para un día cerrado, «no ha
+enviado hoy» no dice nada del martes pasado.
+
+### El silencio se señala a partir de las once
+
+Un vendedor que sincronizó y no trae una sola operación se lista arriba —pero solo
+después de las 11:00—. Antes de esa hora todos los renglones están en cero, y un aviso
+que sale todos los días a las siete de la mañana enseña a ignorar los avisos. No es la
+hora en que debería haber vendido: es la hora a partir de la cual el silencio ya no se
+explica solo.
+
+### Todo sale de `tablero_dia`
+
+Ninguna consulta agrega sobre `ventas`: es la regla de la migración 0021. La pantalla
+se recarga toda la mañana, y si barriera las tablas de operación, tres gerentes con
+ella abierta harían lenta la sincronización de los camiones. El precio es que muestra
+lo que el worker ya recalculó, y por eso la frescura va **arriba de la primera
+cifra**. Un día sin ningún renglón se dice con esas palabras —«el worker no está
+corriendo»— y no se pinta como un día sin ventas: el primero es una falla del
+sistema, el segundo es información, y confundirlos haría que una falla del sistema se
+leyera como un problema de la gente.
+
+### Dos definiciones que no se reinventaron
+
+- **Drop size** es venta entre visitas *con venta*, no entre documentos: la misma de
+  `analitica.SQL_DROP_SIZE`. Dividir entre remisiones premiaría al vendedor que parte
+  un pedido en dos, y el panel y el laboratorio dirían dos números con el mismo
+  nombre.
+- **Efectivo a entregar** es contado más cobros en efectivo: la misma cuenta que el
+  arqueo de la liquidación, con una prueba que las compara. Si no coincidieran, la
+  pantalla prometería un número y la liquidación cobraría otro.
+
+### Lo que encontró la primera captura de pantalla, con dieciocho pruebas en verde
+
+Vale la pena dejarlo escrito, porque es una clase de defecto y no un accidente. La
+pantalla pasó todas sus pruebas y la primera vez que se MIRÓ con datos decía cuatro
+cosas falsas. Todas las pruebas buscaban las palabras correctas; ninguna buscaba las
+incorrectas.
+
+1. **«3 por debajo de sus tuesdays».** `strftime('%A')` usa el locale del proceso, y
+   en el contenedor es el C. Los días se nombran ahora desde una tabla propia.
+2. **«Pedro: -100% por debajo de sus martes»**, siendo Pedro el que no había
+   sincronizado. Era exactamente la mentira que la pantalla existe para no decir. De
+   ahí la lectura `incompleta` en `Referencia.lectura`: la variación sigue siendo un
+   número verdadero, pero es la de un piso, y no se pinta. Vive en el dominio porque
+   las dos pantallas tienen que aplicarla igual, y una app anterior que no conozca la
+   palabra la lee como «sin referencia» — no dibuja flecha, que es la degradación
+   correcta.
+3. **El total de hoy pintado de ámbar, «-67%»**, cuando lo que faltaba era el día de
+   un vendedor. Mismo arreglo: con alguien sin sincronizar, el total se dice como
+   piso.
+4. **Lupe en dos avisos**: «sin una sola operación» y «-100% por debajo». Las dos son
+   verdad y la segunda no agrega nada; cada persona aparece ahora en UNO.
+
+Y uno que no era de esta pantalla: **la regla `.aviso-caja.aviso` nunca existió.**
+Siete pantallas del panel usaban el aviso ámbar y salía como un párrafo más, sin
+fondo — «un borrador no mueve inventario», «la mercancía está en tránsito»—. Las dos
+clases sueltas sí tenían estilo, así que una revisión clase por clase no lo veía. La
+prueba nueva (`test_panel_estilos.py`) revisa **combinaciones**, y tiene a su vez una
+prueba que demuestra que habría atrapado este caso.
+
+Cada una de las cuatro correcciones tiene su prueba, y cada prueba se verificó
+rompiendo su corrección.
+
+### Lo que no se hizo
+
+**El panel en un teléfono.** A 390 px de ancho la navegación y las tablas se cortan
+por la derecha — en todas las pantallas, no solo en ésta: `base.html` no se pensó
+para eso. El panel es la herramienta de la oficina, y para el gerente en la calle
+está el tablero de la app, que ahora dice lo mismo.
+
+**«Visitas planeadas».** La tabla `clientes_frecuencia` existe desde la migración 0003
+y **nada la llena**: ninguna pantalla captura qué clientes tocan qué día. Una cifra de
+«18 de 25 visitas planeadas» tendría siempre cero en el denominador. Cuando exista la
+captura de la frecuencia, ése es el siguiente número de esta pantalla — y hasta
+entonces, no se dibuja.

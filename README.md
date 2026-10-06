@@ -86,6 +86,7 @@ la bodega sube cuando alguien la cuenta.
 | **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
 | **Laboratorio analítico (Streamlit)** — drop size, rotación, clientes en riesgo | ✅ 8 pruebas con `AppTest` |
 | **Tablero de Gerencia en el teléfono** — seis cifras, cada una con su antigüedad | ✅ 26 pruebas de widget |
+| **Desempeño del día** — cada vendedor contra sus mismos días de la semana, y **de quién** falta información | ✅ 28 + 6 de Dart y 5 de widget |
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
 | **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
@@ -97,7 +98,7 @@ la bodega sube cuando alguien la cuenta.
 | **Panel de teléfonos** — rezago, accesos por caducar, suspender y borrar | ✅ en esas 25 |
 | **Entradas de mercancía** — compra, inventario inicial y ajuste, con documento | ✅ 32 pruebas |
 | **Salidas de bodega** — conteo físico y merma, y nunca dejan negativo | ✅ 37 pruebas |
-| **Devolver del camión a la bodega** — el vendedor declara, la bodega **cuenta** | ✅ 35 + 25 de Dart |
+| **Devolver del camión a la bodega** — el vendedor declara, la bodega **cuenta** | ✅ 34 + 25 de Dart |
 | **Compras** — proveedores, **costo promedio ponderado** y cuentas por pagar | ✅ 35 pruebas |
 | **§2.3: no se carga con operaciones pendientes** — forzable, con constancia | ✅ 11 pruebas |
 | **Respaldo y simulacro de restauración** que verifica las invariantes | ✅ `make simulacro` |
@@ -110,7 +111,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1103 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **572 de Dart** y **261 de widget**, todas en verde.
+**1132 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **266 de widget**, todas en verde.
 
 ## Stack
 
@@ -167,6 +168,7 @@ server/
   app/
     api/admin/       PANEL DE OPERACIÓN: sesión con cookie, CSRF, plantillas
                      comun.py         navegación y lectura de números escritos a mano
+                     desempeno.py     el día de cada vendedor contra sus mismos días de la semana
                      productos.py     catálogo y precios (los 4 decimales)
                      clientes.py      confirmar prospectos y decidir el crédito
                      cargas.py        la carga del camión (bodega → camión)
@@ -186,6 +188,7 @@ server/
                      liquidacion.py   la ecuación del cierre del día
                      analitica.py     las métricas del laboratorio, escritas UNA vez
                      tablero.py       las cifras del tablero de Gerencia, con su frescura
+                                      y la referencia del mismo día de la semana
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
@@ -205,7 +208,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            572 pruebas que corren en segundos
+    test/            578 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -214,7 +217,7 @@ mobile/
                      merma y devolución, no-drop, lienzo espacial, MI DÍA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
                      gerencia/ (tablero, mapa del día)
-    test/            261 pruebas de widget, sin emulador
+    test/            266 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -233,8 +236,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1103 pruebas de Python
-make movil                          # 572 de Dart + 261 de widget
+make pruebas                        # 1132 pruebas de Python
+make movil                          # 578 de Dart + 266 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

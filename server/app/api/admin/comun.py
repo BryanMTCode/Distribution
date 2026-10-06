@@ -41,6 +41,11 @@ plantillas = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # quien usa el panel, por más que su ruta responda.
 NAVEGACION = [
     ("/panel", "Tablero"),
+    # «Desempeño» va pegado al Tablero y antes de todo lo demás porque son las
+    # dos caras de la misma pregunta de la mañana: el Tablero dice QUÉ necesita
+    # atención y Desempeño dice A QUIÉN hay que llamar. Separarlas con seis
+    # pantallas de captura en medio haría que la segunda no se abriera nunca.
+    ("/panel/desempeno", "Desempeño"),
     ("/panel/productos", "Productos"),
     ("/panel/clientes", "Clientes"),
     ("/panel/cargas", "Cargas"),

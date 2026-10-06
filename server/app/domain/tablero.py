@@ -52,7 +52,7 @@ porque es la clase de dependencia que no se ve en el código.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 # Categorías de no-drop que la empresa puede arreglar. Misma lista que la
@@ -625,3 +625,206 @@ class Avance:
         if diferencia >= -10:
             return "cerca"
         return "atras"
+
+
+# ---------------------------------------------------------------------------
+# El desempeño del día: contra qué se compara «cómo va hoy»
+# ---------------------------------------------------------------------------
+# DEFINICIÓN: la referencia de un día es el promedio de los MISMOS DÍAS DE LA
+# SEMANA anteriores, no de los días anteriores.
+#
+# Es la decisión que hace que el número signifique algo, y es propia de un DSD:
+# la ruta visita a los mismos clientes cada martes. Comparar el martes contra el
+# lunes mide qué clientes tocaban, no cómo se trabajó. Contra los martes
+# anteriores, lo que queda es el desempeño.
+#
+# Cuatro semanas y no doce: con cuatro, un cambio de precios o la pérdida de un
+# cliente grande ya se refleja en la referencia. Con doce, la referencia se
+# defiende de la realidad y el tablero dice «vas bien» tres meses después de que
+# dejó de ser cierto.
+DIAS_DE_REFERENCIA = 4
+
+# Con un solo día de historia no hay referencia, hay una anécdota. Dos ya
+# promedian algo, y es el mínimo con el que vale la pena poner una flecha
+# enfrente de alguien y pedirle explicaciones.
+MINIMO_DIAS_DE_REFERENCIA = 2
+
+# Dentro de este margen, hoy y la referencia son lo mismo.
+#
+# Diez puntos no son un redondeo: la venta de un día depende de qué clientes
+# tocaban y de quién tenía dinero ese día. Un tablero que pinta de rojo un día 6%
+# abajo enseña a ignorar el rojo, que es la única forma de que un semáforo deje de
+# servir para siempre.
+TOLERANCIA_PAREJO = Decimal("10")
+
+# A partir de esta hora, un vendedor sin una sola operación registrada es una
+# llamada telefónica, no un dato.
+#
+# Antes de eso el aviso saldría todos los días a las siete de la mañana y la
+# pantalla enseñaría a ignorarlo. No es la hora en que debería haber vendido: es
+# la hora a partir de la cual el silencio ya no se explica solo.
+HORA_EN_QUE_EL_SILENCIO_YA_NO_SE_EXPLICA = 11
+
+
+def dias_de_referencia(dia: date, cuantos: int = DIAS_DE_REFERENCIA) -> list[date]:
+    """Los `cuantos` mismos días de la semana anteriores a `dia`.
+
+    Para un martes devuelve los cuatro martes previos. No incluye `dia`: la
+    referencia no se compara consigo misma.
+    """
+    return [dia - timedelta(days=7 * (n + 1)) for n in range(cuantos)]
+
+
+# El promedio por vendedor de esos días, **solo de los días que trabajó**.
+#
+# El filtro de actividad es lo más delicado de esta consulta y hay que decir por
+# qué: incluir un día en cero por vacaciones o por incapacidad bajaría su
+# referencia y el tablero diría que hoy va de maravilla. Y al revés, excluir
+# demasiado también miente: un día en que SÍ trabajó y no vendió nada tiene que
+# contar, porque fue un mal día real.
+#
+# La línea entre los dos casos la da el propio modelo: un día trabajado deja
+# rastro aunque no haya venta —visitas, no-drops, cobros—, así que «sin ninguna de
+# las tres» es «no trabajó» y no «trabajó mal».
+SQL_REFERENCIA_POR_VENDEDOR = """
+SELECT vendedor_id,
+       avg(venta_total)::numeric(14,2)         AS venta_promedio,
+       avg(visitas)::numeric(10,1)             AS visitas_promedio,
+       avg(cobrado_efectivo)::numeric(14,2)    AS efectivo_promedio,
+       count(*)                                AS dias
+  FROM tablero_dia
+ WHERE fecha = ANY(:dias)
+   AND (venta_total > 0 OR visitas > 0 OR cobrado_total > 0)
+ GROUP BY vendedor_id
+"""
+
+# La referencia de TODA la operación, que es el promedio de los días —no el
+# promedio de los renglones—.
+#
+# Si se promediaran los renglones, un martes con dos vendedores de vacaciones
+# daría un promedio por vendedor más alto y la cifra del día se leería como una
+# caída. Lo que se compara es «el martes de la empresa» contra «los martes de la
+# empresa».
+SQL_REFERENCIA_DEL_DIA = """
+WITH por_dia AS (
+    SELECT fecha,
+           sum(venta_total)      AS venta,
+           sum(visitas)          AS visitas,
+           sum(cobrado_efectivo) AS efectivo
+      FROM tablero_dia
+     WHERE fecha = ANY(:dias)
+     GROUP BY fecha
+    HAVING sum(venta_total) > 0 OR sum(visitas) > 0 OR sum(cobrado_total) > 0
+)
+SELECT COALESCE(avg(venta), 0)::numeric(14,2)    AS venta_promedio,
+       COALESCE(avg(visitas), 0)::numeric(10,1)  AS visitas_promedio,
+       COALESCE(avg(efectivo), 0)::numeric(14,2) AS efectivo_promedio,
+       count(*)                                  AS dias
+  FROM por_dia
+"""
+
+# El estado de sincronización POR VENDEDOR, que es lo que vuelve accionable al
+# tablero.
+#
+# El tablero del teléfono dice «2 equipos sin sincronizar» y con eso no se puede
+# hacer nada: no se sabe a quién llamar. Aquí el renglón de cada persona trae su
+# último push y lo que su teléfono dijo tener pendiente, así que el cero de un
+# vendedor se lee junto a la razón del cero.
+#
+# `max` y `sum` porque un vendedor puede tener más de un equipo activo: vale el
+# más reciente de sus pushes, y la cola es la de todos juntos.
+SQL_SINCRONIA_POR_VENDEDOR = """
+SELECT d.usuario_id,
+       max(d.ultima_sync_push_en) AS ultimo_push,
+       COALESCE(sum(d.cola_pendiente) FILTER (
+           WHERE d.cola_reportada_en >= CURRENT_DATE
+       ), 0)                      AS cola_reportada,
+       count(*)                   AS equipos
+  FROM dispositivos d
+ WHERE d.estado = 'activo'
+ GROUP BY d.usuario_id
+"""
+
+# Las rutas de cada vendedor, para poder leer el renglón sin buscar en otra
+# pantalla a quién pertenece.
+#
+# `string_agg` y no un JOIN simple: `usuarios_rutas` admite varias rutas por
+# persona, y un JOIN duplicaría el renglón del vendedor que cubre dos — su venta
+# del día aparecería dos veces y el total de la tabla no cuadraría con la cifra de
+# arriba.
+SQL_RUTAS_POR_VENDEDOR = """
+SELECT ur.usuario_id,
+       string_agg(r.codigo, ', ' ORDER BY r.codigo) AS rutas
+  FROM usuarios_rutas ur
+  JOIN rutas r ON r.id = ur.ruta_id AND r.activo
+ GROUP BY ur.usuario_id
+"""
+
+
+@dataclass(frozen=True)
+class Referencia:
+    """Con qué se compara el día de alguien, y qué tan en serio tomarlo."""
+
+    promedio: Decimal
+    dias: int
+
+    @property
+    def suficiente(self) -> bool:
+        """`False` cuando no hay historia bastante para comparar nada.
+
+        Se expone como propiedad y no se resuelve en la consulta porque la
+        pantalla tiene que poder decir «sin referencia todavía» en vez de dibujar
+        una flecha sobre un solo día.
+        """
+        return self.dias >= MINIMO_DIAS_DE_REFERENCIA and self.promedio > 0
+
+    def variacion(self, hoy: Decimal) -> Decimal | None:
+        """Cuánto por ciento arriba (positivo) o abajo (negativo) va `hoy`."""
+        if not self.suficiente:
+            return None
+        return ((Decimal(hoy) - self.promedio) * 100 / self.promedio).quantize(
+            Decimal("0.1")
+        )
+
+    def lectura(self, hoy: Decimal, *, incompleta: bool = False) -> str:
+        """'sin_referencia' | 'incompleta' | 'arriba' | 'parejo' | 'abajo'.
+
+        `incompleta` es para cuando se SABE que a la cifra de hoy le falta
+        información: el teléfono de ese vendedor no ha enviado nada hoy, o —para
+        el total— el de alguno de ellos. Entonces la variación sigue siendo un
+        número verdadero, pero es la de un piso, y leerla como «abajo» pintaría de
+        rojo a alguien cuyo día entero está todavía en su bolsillo.
+
+        Lo encontró la primera revisión de la pantalla con datos: un vendedor sin
+        sincronizar aparecía «-100% por debajo de sus martes», que es exactamente
+        la mentira que la pantalla existe para no decir.
+
+        Va aquí y no en cada pantalla porque las dos —el panel y el teléfono— la
+        tienen que aplicar igual. Y un teléfono viejo que no conozca la palabra
+        `incompleta` la lee como «sin referencia» y no dibuja flecha, que es la
+        degradación correcta.
+        """
+        variacion = self.variacion(hoy)
+        if variacion is None:
+            return "sin_referencia"
+        if incompleta:
+            return "incompleta"
+        if variacion > TOLERANCIA_PAREJO:
+            return "arriba"
+        if variacion < -TOLERANCIA_PAREJO:
+            return "abajo"
+        return "parejo"
+
+
+def drop_size(importe: Decimal, visitas_con_venta: int) -> Decimal | None:
+    """Lo que deja una visita EN LA QUE SÍ SE VENDIÓ. `None` si no hubo ninguna.
+
+    El denominador son las visitas con venta y no los documentos, que es la
+    definición de `analitica.SQL_DROP_SIZE`. Dividir entre documentos desinflaría
+    la cifra del vendedor que parte un pedido en dos remisiones, y entonces el
+    panel y el laboratorio dirían dos números distintos con el mismo nombre —que
+    es la forma más rápida de que los dos queden inservibles.
+    """
+    if not visitas_con_venta:
+        return None
+    return (Decimal(importe) / visitas_con_venta).quantize(Decimal("0.01"))

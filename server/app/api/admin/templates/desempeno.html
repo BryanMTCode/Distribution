@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+{% block titulo %}Desempeño del día{% endblock %}
+{% block contenido %}
+<h1>Desempeño del día</h1>
+<p class="subtitulo">
+  Cómo va la operación {% if es_hoy %}ahora mismo{% else %}el
+  {{ dia.strftime('%d/%m/%Y') }}{% endif %}, persona por persona, contra
+  <strong>sus mismos días de la semana</strong>. No contra ayer: la ruta visita a
+  los mismos clientes cada {{ nombre_dia }}, así que comparar contra
+  ayer mide qué clientes tocaban, no cómo se trabajó.
+</p>
+
+<form method="get" action="/panel/desempeno" class="rejilla"
+      style="margin-bottom:18px; align-items:end">
+  <div class="campo" style="max-width:220px">
+    <label for="fecha">Qué día</label>
+    <input type="date" id="fecha" name="fecha" value="{{ dia.isoformat() }}"
+           max="{{ hoy.isoformat() }}">
+  </div>
+  <div class="campo" style="max-width:200px">
+    <button type="submit">Ver</button>
+    <div class="ayuda">
+      <a href="/panel/desempeno?fecha={{ ayer.isoformat() }}">← {{ ayer.strftime('%d/%m') }}</a>
+      {% if manana %}
+        · <a href="/panel/desempeno?fecha={{ manana.isoformat() }}">{{ manana.strftime('%d/%m') }} →</a>
+      {% endif %}
+      {% if not es_hoy %} · <a href="/panel/desempeno">hoy</a>{% endif %}
+    </div>
+  </div>
+</form>
+
+{# ------------------------------------------------------------------ #}
+{# La frescura va ARRIBA de la primera cifra, no en una nota al pie.  #}
+{# §0.3: lo único que el servidor puede sumar es lo que ha            #}
+{# sincronizado, así que estas cifras son un PISO.                    #}
+{# ------------------------------------------------------------------ #}
+{% if sin_calcular %}
+  <div class="aviso-caja error">
+    <strong>Este día no tiene ningún renglón calculado.</strong>
+    No es «nadie vendió»: el modelo de lectura se sella con un renglón en cero por
+    cada vendedor activo en cuanto el worker corre. Si estás viendo esto para hoy,
+    el worker del tablero no está corriendo — las cifras de abajo son ceros, no
+    datos.
+  </div>
+{% elif frescura and frescura.advertencia %}
+  <div class="aviso-caja aviso">
+    <strong>Calculado {% if frescura.minutos == 0 %}hace un momento{% else %}hace
+    {{ frescura.minutos }} min{% endif %}.</strong>
+    {{ frescura.advertencia }}
+  </div>
+{% elif frescura %}
+  <div class="aviso-caja bien">
+    Calculado {% if frescura.minutos == 0 %}hace un momento{% else %}hace
+    {{ frescura.minutos }} min{% endif %}, con todos los equipos sincronizados y
+    nada en cuarentena.
+  </div>
+{% else %}
+  <div class="aviso-caja neutro">
+    Día cerrado. Se recalcula solo si llega un documento nuevo de esa fecha —una
+    venta que un teléfono subió tarde deja el día rancio y el worker lo vuelve a
+    calcular completo.
+  </div>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{# Lo que hay que mover. Tres listas, tres acciones distintas.        #}
+{# ------------------------------------------------------------------ #}
+{% if sin_sincronizar_lista %}
+  <div class="aviso-caja error">
+    <strong>{{ sin_sincronizar_lista|length }} vendedor(es) sin sincronizar hoy.</strong>
+    Su día entero está en su teléfono: el cero de su renglón no dice que no haya
+    vendido, dice que no sabemos.
+    <div style="margin-top:6px">
+      {% for r in sin_sincronizar_lista %}
+        <span class="etiqueta-motivo">{{ r.codigo }} · {{ r.nombre }}
+          {% if r.ultimo_push %}
+            (último envío {{ r.ultimo_push.strftime('%d/%m %H:%M') }})
+          {% else %}
+            (nunca ha enviado)
+          {% endif %}
+          {% if r.cola_reportada %} · {{ r.cola_reportada }} operación(es) en cola{% endif %}
+        </span>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% if sin_arrancar %}
+  <div class="aviso-caja aviso">
+    <strong>{{ sin_arrancar|length }} vendedor(es) sin una sola operación.</strong>
+    Sincronizaron, y no traen venta, ni visita, ni cobro. Es una llamada, no una
+    cifra.
+    <div style="margin-top:6px">
+      {% for r in sin_arrancar %}
+        <span class="etiqueta-motivo">{{ r.codigo }} · {{ r.nombre }}{% if r.rutas != '—' %} · {{ r.rutas }}{% endif %}</span>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% if por_debajo %}
+  <div class="aviso-caja aviso">
+    <strong>{{ por_debajo|length }} por debajo de {% if por_debajo|length == 1 %}su
+    promedio{% else %}sus promedios{% endif %} de los {{ nombre_dias }}.</strong>
+    Más de un 10% abajo de su propio promedio. El margen existe para que el rojo
+    signifique algo: la venta de un día depende de quién tenía dinero ese día.
+    <div style="margin-top:6px">
+      {% for r in por_debajo %}
+        <span class="etiqueta-motivo">{{ r.codigo }} · {{ r.variacion }}%</span>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{# Las cifras del día, con su referencia al lado.                     #}
+{# ------------------------------------------------------------------ #}
+<h2>El día</h2>
+<div class="tarjetas">
+  <div class="tarjeta {% if referencia.lectura == 'abajo' %}aviso{% endif %}">
+    <div class="numero">{{ resumen.venta_total }}</div>
+    <div class="etiqueta">vendido</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ resumen.venta_contado }} contado · {{ resumen.venta_credito }} crédito
+      <div style="margin-top:4px">
+        {% if referencia.lectura == 'incompleta' %}
+          {{ referencia.variacion }}% contra {{ referencia.promedio }}, pero
+          <strong>falta el día de {{ referencia.faltan }} vendedor(es)</strong>: es un
+          piso, no una caída.
+        {% elif referencia.suficiente %}
+          {% if referencia.lectura == 'arriba' %}
+            <strong style="color:var(--acento)">+{{ referencia.variacion }}%</strong>
+          {% elif referencia.lectura == 'abajo' %}
+            <strong style="color:var(--alerta)">{{ referencia.variacion }}%</strong>
+          {% else %}
+            <strong>{{ referencia.variacion }}%</strong>
+          {% endif %}
+          contra {{ referencia.promedio }}, promedio de
+          {% if referencia.dias == 1 %}1 {{ nombre_dia }}{% else %}{{ referencia.dias }} {{ nombre_dias }}{% endif %}
+        {% else %}
+          Sin referencia todavía: hacen falta al menos dos
+          {{ nombre_dias }} con operación.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="numero">{{ resumen.documentos_venta }}</div>
+    <div class="etiqueta">remisiones</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if resumen.drop_size %}
+        Drop size ${{ '{:,.2f}'.format(resumen.drop_size) }} — lo que deja una
+        visita en la que SÍ se vendió.
+      {% else %}
+        Todavía no hay ninguna visita con venta.
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="numero">{{ resumen.visitas }}</div>
+    <div class="etiqueta">visitas</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ resumen.visitas_con_venta }} con venta · {{ resumen.efectividad }}% de
+      efectividad.
+      {% if resumen.no_drops_nuestros %}
+        <div style="margin-top:4px">
+          <strong>{{ resumen.no_drops_nuestros }}</strong> de
+          {{ resumen.no_drops }} visitas perdidas son
+          <a href="/panel/efectividad">nuestras</a>.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="numero">{{ resumen.efectivo_a_entregar }}</div>
+    <div class="etiqueta">efectivo a entregar</div>
+    <div class="sutil" style="margin-top:6px">
+      Ventas de contado más cobros en efectivo. Es la misma cuenta que el arqueo
+      de la <a href="/panel/liquidaciones">liquidación</a>.
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="numero">{{ resumen.cobrado_total }}</div>
+    <div class="etiqueta">cobrado</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ resumen.cobrado_efectivo }} en efectivo; el resto no entra a la bolsa.
+    </div>
+  </div>
+
+  <div class="tarjeta {% if resumen.mermas_documentos %}aviso{% endif %}">
+    <div class="numero">{{ resumen.mermas_documentos }}</div>
+    <div class="etiqueta">mermas</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if resumen.mermas_documentos %}
+        {{ resumen.mermas_unidades | entero }} unidades. No incluye las
+        devoluciones de cliente: esa mercancía vuelve buena al camión.
+      {% else %}
+        Ninguna pérdida registrada.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# El detalle: un renglón por persona.                               #}
+{# ------------------------------------------------------------------ #}
+<h2>Por vendedor</h2>
+{% if renglones %}
+<div class="tabla-marco">
+<table>
+  <thead>
+    <tr>
+      <th>Vendedor</th>
+      <th>Ruta</th>
+      <th class="numero">Vendido</th>
+      <th class="numero">vs. sus {{ nombre_dias }}</th>
+      <th class="numero">Rem.</th>
+      <th class="numero">Drop</th>
+      <th class="numero">Visitas</th>
+      <th class="numero">Efect.</th>
+      <th class="numero">Efectivo</th>
+      <th class="numero">Mermas</th>
+      <th>Su teléfono</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in renglones %}
+    <tr>
+      <td>
+        <span class="mono">{{ r.codigo }}</span><br>{{ r.nombre }}
+      </td>
+      <td class="sutil">{{ r.rutas }}</td>
+      <td class="numero">{{ r.venta }}</td>
+      <td class="numero">
+        {% if r.lectura == 'arriba' %}
+          <span style="color:var(--acento)">+{{ r.variacion }}%</span>
+        {% elif r.lectura == 'abajo' %}
+          <span style="color:var(--alerta)">{{ r.variacion }}%</span>
+        {% elif r.lectura == 'parejo' %}
+          {{ r.variacion }}%
+        {% elif r.lectura == 'incompleta' %}
+          <span class="sutil" title="Su teléfono no ha enviado nada hoy">sin datos de hoy</span>
+        {% else %}
+          <span class="sutil" title="Hacen falta al menos dos días de la semana con operación">—</span>
+        {% endif %}
+        {% if r.promedio %}
+          <div class="sutil">{{ r.promedio }}</div>
+        {% endif %}
+      </td>
+      <td class="numero">{{ r.documentos }}</td>
+      <td class="numero">
+        {% if r.drop_size %}${{ '{:,.2f}'.format(r.drop_size) }}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="numero">
+        {{ r.visitas }}
+        {% if r.no_drops %}<div class="sutil">{{ r.no_drops }} perdidas</div>{% endif %}
+      </td>
+      <td class="numero">{% if r.visitas %}{{ r.efectividad }}%{% else %}<span class="sutil">—</span>{% endif %}</td>
+      <td class="numero">{{ r.efectivo }}</td>
+      <td class="numero">
+        {% if r.mermas_documentos %}{{ r.mermas_documentos }}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td>
+        {% if r.sin_sincronizar %}
+          <span style="color:var(--alerta)">
+            {% if r.ultimo_push %}
+              sin enviar hoy<div class="sutil">último {{ r.ultimo_push.strftime('%d/%m %H:%M') }}</div>
+            {% else %}
+              nunca ha enviado
+            {% endif %}
+          </span>
+        {% elif r.ultimo_push %}
+          <span class="sutil">{{ r.ultimo_push.strftime('%H:%M') }}</span>
+        {% elif r.equipos == 0 %}
+          <span class="sutil" title="No tiene ningún equipo activo vinculado">sin equipo</span>
+        {% else %}
+          <span class="sutil">—</span>
+        {% endif %}
+        {% if r.cola_reportada %}
+          <div style="color:var(--aviso)">{{ r.cola_reportada }} en cola</div>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil" style="margin-top:10px">
+  Ordenado por lo vendido, así que quien no ha hecho nada queda al final con sus
+  ceros en vez de desaparecer: a media mañana es el renglón más urgente de la
+  pantalla. Un «—» en la comparación no es un cero, es que todavía no hay historia
+  bastante para comparar.
+</p>
+{% else %}
+  <div class="vacio">
+    No hay renglones para este día.
+    {% if es_hoy %}
+      Si ya hay vendedores activos, el worker del tablero no ha corrido todavía.
+    {% else %}
+      Puede que ese día nadie trabajara, o que sea anterior a la primera corrida
+      del tablero.
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

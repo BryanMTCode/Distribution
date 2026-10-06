@@ -44,6 +44,8 @@ Map<String, Object?> tableroDelServidor({
   String? objetivo = '100000.00',
   String? logrado = '42.5',
   bool vendedorSinMovimiento = true,
+  Map<String, Object?>? referencia,
+  bool luisSinSincronizar = false,
 }) =>
     {
       'frescura': {
@@ -63,6 +65,7 @@ Map<String, Object?> tableroDelServidor({
         'documentos': 34,
         'ticket_promedio': '1240.59',
         'calculado_en': calculadoEn,
+        if (referencia != null) 'referencia': referencia,
       },
       'visitas': {
         'visitas': 58,
@@ -112,6 +115,11 @@ Map<String, Object?> tableroDelServidor({
             'no_drops': 0,
             'cobrado': '0.00',
             'efectividad': '0.0',
+            if (luisSinSincronizar) ...{
+              'ultimo_push': '2026-09-23T21:40:00.000Z',
+              'cola_reportada': 7,
+              'sin_sincronizar': true,
+            },
           },
       ],
       'avance': {
@@ -499,6 +507,81 @@ void main() {
     });
   });
 
+  group('la venta contra sus mismos días de la semana', () {
+    testWidgets('dice contra qué compara, con el nombre del día', (tester) async {
+      // «+11% vs. sus jueves» se entiende sin explicación. El 24 de septiembre
+      // de 2026, la fecha del ejemplo, es jueves.
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(
+            referencia: {
+              'promedio': '38000.00',
+              'dias': 4,
+              'suficiente': true,
+              'variacion': '11.0',
+              'lectura': 'arriba',
+            },
+          ),
+        ),
+      );
+      expect(find.textContaining('+11% vs. sus jueves'), findsOneWidget);
+    });
+
+    testWidgets('sin historia bastante no inventa una flecha', (tester) async {
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(
+            referencia: {
+              'promedio': '0.00',
+              'dias': 1,
+              'suficiente': false,
+              'variacion': null,
+              'lectura': 'sin_referencia',
+            },
+          ),
+        ),
+      );
+      expect(find.textContaining('Sin referencia todavía'), findsOneWidget);
+      expect(find.textContaining('% vs. sus'), findsNothing);
+    });
+
+    testWidgets('con alguien sin sincronizar, la cifra se dice como un piso',
+        (tester) async {
+      // La primera captura del panel web lo encontró: el total de hoy contra sus
+      // jueves salía como caída, cuando lo que pasaba es que faltaba el día de un
+      // vendedor. La cifra se conserva —es verdad— y se dice qué es.
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(
+            referencia: {
+              'promedio': '60000.00',
+              'dias': 4,
+              'suficiente': true,
+              'variacion': '-29.7',
+              'lectura': 'incompleta',
+            },
+          ),
+        ),
+      );
+      expect(find.textContaining('-30% vs. sus jueves'), findsOneWidget);
+      expect(find.textContaining('es un piso'), findsOneWidget);
+    });
+
+    testWidgets('un servidor que todavía no la manda no rompe la pantalla',
+        (tester) async {
+      // La app nueva contra un servidor viejo: «sin referencia», no un error.
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(tablero: tableroDelServidor()),
+      );
+      expect(find.text('vendido hoy'), findsOneWidget);
+      expect(find.textContaining('Sin referencia todavía'), findsOneWidget);
+    });
+  });
+
   group('por vendedor', () {
     testWidgets('el que no ha hecho nada se marca', (tester) async {
       await montarTablero(
@@ -509,7 +592,36 @@ void main() {
         find.byKey(const Key('vendedor_VEND02')),
         200,
       );
-      expect(find.text('Sin movimiento todavía hoy'), findsOneWidget);
+      // «Sincronizó y…» y no solo «sin movimiento»: la frase dice por qué su cero
+      // ES un cero. La otra causa de un renglón en cero tiene su propio texto.
+      expect(
+        find.text('Sincronizó y no trae movimiento todavía hoy'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('el que no sincronizó NO se lee como el que no vendió',
+        (tester) async {
+      // El defecto que esta función corrige. Antes, los dos casos decían «sin
+      // movimiento todavía hoy», y en éste era falso: no es que Luis no haya
+      // vendido, es que su día entero está en su teléfono y no sabemos.
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(luisSinSincronizar: true),
+        ),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('vendedor_VEND02')),
+        200,
+      );
+      expect(
+        find.textContaining('Su teléfono no ha enviado nada hoy'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('7 en cola'), findsOneWidget);
+      expect(find.textContaining('no trae movimiento'), findsNothing);
+      expect(find.byIcon(Icons.sync_problem), findsOneWidget);
     });
 
     testWidgets('el que sí trabajó muestra su efectividad', (tester) async {
@@ -539,6 +651,8 @@ void main() {
         ),
       );
       await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
 
@@ -562,6 +676,8 @@ void main() {
         ),
       );
       await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
       expect(find.textContaining('dejó puntos fuera'), findsOneWidget);
@@ -581,6 +697,8 @@ void main() {
         ),
       );
       await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('mapa_vacio')), findsOneWidget);
