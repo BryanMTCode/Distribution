@@ -76,6 +76,7 @@
         <th class="numero">Existencia</th>
         <th>Equivale a</th>
         <th class="numero">Actualizado</th>
+        {% if puede_ajustar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -111,6 +112,11 @@
         <td class="numero sutil">
           {{ f.actualizado_en.strftime('%d/%m %H:%M') }}
         </td>
+        {% if puede_ajustar %}
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/inventario/{{ elegido.id }}/{{ f.id }}#ajustar">Ajustar</a>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -118,7 +124,7 @@
       <tr>
         <td><strong>Total</strong></td>
         <td class="numero"><strong>{{ total_piezas|entero }}</strong> unidades base</td>
-        <td colspan="2"></td>
+        <td colspan="{% if puede_ajustar %}3{% else %}2{% endif %}"></td>
       </tr>
     </tbody>
   </table>
@@ -134,9 +140,10 @@
     <a href="/panel/liquidaciones">liquidación</a>, que compara lo cargado contra
     lo retornado.
   {% else %}
-    En una bodega se arregla contando el anaquel: si hay más de lo que dice el
-    sistema, una <a href="/panel/entradas">entrada con motivo «ajuste»</a>; si hay
-    menos, una <a href="/panel/salidas">salida por conteo</a>.
+    En una bodega se arregla contando el anaquel y usando <strong>Ajustar</strong>
+    en el renglón: queda con folio, nota y asiento en el libro, y no viaja a ningún
+    teléfono. Para mercancía de un proveedor usa una
+    <a href="/panel/entradas">entrada</a>, que lleva su remisión y su costo.
   {% endif %}
 </p>
 {% else %}

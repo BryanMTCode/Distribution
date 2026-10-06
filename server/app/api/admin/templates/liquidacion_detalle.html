@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block titulo %}Liquidación {{ c.folio }}{% endblock %}
+{% block titulo %}Corte {{ c.folio }}{% endblock %}
 {% block contenido %}
-<h1>Liquidación {{ c.folio }}</h1>
+<h1>Corte del día · {{ c.folio }}</h1>
 <p class="subtitulo">
   {{ c.vendedor }} · {{ c.camion }} · {{ c.fecha_operativa.strftime('%d/%m/%Y') }}
   · carga <span class="mono">{{ c.carga_folio }}</span>

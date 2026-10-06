@@ -3779,3 +3779,95 @@ y **nada la llena**: ninguna pantalla captura qué clientes tocan qué día. Una
 «18 de 25 visitas planeadas» tendría siempre cero en el denominador. Cuando exista la
 captura de la frecuencia, ése es el siguiente número de esta pantalla — y hasta
 entonces, no se dibuja.
+
+---
+
+## 52. El panel en cinco módulos, y «modo dios» sin pantallas nuevas
+
+**Decisión (octubre 2026).** El menú del panel pasó de dieciocho enlaces planos a
+**cinco módulos expandibles** en un lateral, y las tablas que ya existían ganaron
+botones de Editar, Eliminar y Ajustar. No se creó ninguna pantalla nueva.
+
+### Los módulos, y por qué ésos
+
+Se agrupan por **quién** usa la pantalla y **cuándo**, que es la pregunta con la que
+alguien llega al panel:
+
+| Módulo | Pantallas |
+|---|---|
+| Hoy | Tablero, Desempeño |
+| Operación de rutas | Cargas, Ventas, Cobranza, Corte del día |
+| Catálogos | Clientes, Productos |
+| Almacén | Inventario, Entradas, Salidas, Compras |
+| Administración | Efectividad, Objetivos, Usuarios y rutas, Teléfonos, Cuarentena, Piloto |
+
+Los módulos son `<details>` de HTML: se abren y se cierran sin JavaScript, que es la
+regla de la plantilla base. El del módulo de la pantalla actual se abre solo.
+
+**«Liquidación» se llama ahora «Corte del día».** Es lo que la oficina dice en voz
+alta. La URL no cambió (`/panel/liquidaciones`) para no romper enlaces guardados. Una
+prueba revisa que toda pantalla declare una sección que exista en el menú: un
+renombre que olvide una pantalla la deja huérfana —sin enlace marcado ni módulo
+abierto— y nada más lo avisaría.
+
+### Los botones llevan al formulario, no actúan de un clic
+
+Editar, Cancelar y Eliminar en una tabla llevan a la sección correspondiente del
+detalle, donde está el motivo, la nota o la casilla de confirmación. Una cancelación
+de un clic en una tabla de doscientos renglones es como se cancela la venta de al
+lado.
+
+### «Eliminar» funciona siempre, y decide qué es seguro
+
+La dirección pidió que el botón simplemente funcione. Para clientes y productos:
+
+- **Sin ningún documento** se borra de verdad. El disparador publica un `delete`, y el
+  teléfono lo aplica como baja local sin tocar sus documentos.
+- **Con historia** se **da de baja** (`estatus = 'baja'` / `activo = false`). Para
+  quien usa el panel el efecto es el que buscaba —sale de las listas y de los
+  teléfonos en el siguiente pull— y sus ventas siguen en pie, porque borrarlo de
+  verdad obligaría a borrar esos papeles. Se reactiva editando sus datos.
+- Un **cliente que todavía debe** no se elimina: ocultarlo del teléfono dejaría al
+  vendedor sin poder cobrarle.
+- Un **producto con existencia** no se elimina: ocultarlo del catálogo del teléfono
+  dejaría al vendedor sin poder vender lo que trae en el camión.
+
+Antes, eliminar un producto con ventas se negaba y mandaba a quitar la casilla
+«activo» a mano: la misma operación, con un paso de más.
+
+### Ajustar la bodega, y el defecto que habría corrompido diez camiones
+
+El ajuste manual de inventario (§49, migración 0032) era solo para camiones. Ahora
+también ajusta bodegas, con el mismo documento y folio propio (`AB-` en vez de
+`AC-`). El documento servía tal cual; **el disparador no**:
+
+```sql
+SELECT responsable_id INTO v_responsable FROM almacenes WHERE id = NEW.almacen_id;
+INSERT INTO change_log (..., vendedor_id, ...) VALUES (..., v_responsable, ...);
+```
+
+Una bodega no tiene responsable, así que `vendedor_id` quedaba nulo, y en el pull un
+`vendedor_id` nulo significa «para todos». Cada teléfono de la empresa habría recibido
+el ajuste de la bodega y lo habría **sumado a su camión**. La migración 0037 hace que
+el disparador solo publique cuando el almacén es un camión con dueño. La defensa vive
+en la base y no en la pantalla, para que se cumpla también si otro camino inserta un
+ajuste. Hay una prueba que lo inserta a mano, y se verificó restaurando el
+disparador viejo.
+
+### Lo que viaja al teléfono, y cómo no rompe su SQLite
+
+Ninguna de estas ediciones necesitó un tipo de delta nuevo. Viajan por los que ya
+existían y que la auditoría de sincronización dejó blindados:
+
+| Edición | Delta | Qué hace el teléfono |
+|---|---|---|
+| Corregir o cancelar una venta | `venta` | compara partidas y devuelve la diferencia al camión |
+| Editar un cliente | `cliente` (upsert) | actualiza sus datos |
+| Eliminar un cliente | `cliente` (delete o baja) | lo da de baja **sin borrar** sus ventas sin subir |
+| Editar o dar de baja un producto | `producto` | lo actualiza o lo desactiva; nunca lo borra |
+| Ajustar un camión | `ajuste_camion` | suma el delta una sola vez |
+| Ajustar una bodega | — | nada: la bodega no está en la calle |
+
+El teléfono nunca hace un `DELETE` local de algo que una venta sin subir pueda
+referenciar: lo desactiva. Un `DELETE` contra la llave foránea de `venta_partidas`
+abortaría la tanda y el teléfono no volvería a sincronizar (ver la auditoría, §2).

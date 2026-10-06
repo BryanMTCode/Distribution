@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block titulo %}Liquidación{% endblock %}
+{% block titulo %}Corte del día{% endblock %}
 {% block contenido %}
-<h1>Liquidación del día</h1>
+<h1>Corte del día</h1>
 <p class="subtitulo">
   El cierre: se cuenta lo que regresó en el camión y se compara contra lo que el
   sistema dice que debía regresar.
@@ -13,8 +13,12 @@
 {% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
 
 <div class="aviso-caja neutro">
-  <span class="mono">esperado = cargado − vendido − merma + devuelto</span><br>
-  <span class="mono">diferencia = retornado − esperado</span>
+  <span class="mono">esperado = inicial + cargado − vendido − merma + devuelto</span><br>
+  <span class="mono">diferencia = contado − esperado</span>
+  <div class="sutil" style="margin-top:6px">
+    <strong>Inicial</strong> es lo que el camión ya traía arriba de días anteriores:
+    lo que no se vende se queda a dormir en el camión y no es un faltante.
+  </div>
   <div class="sutil" style="margin-top:6px">
     Negativo es <strong>faltante</strong>: salió mercancía sin documento.
     Positivo es <strong>sobrante</strong>, y casi siempre es una venta que el
@@ -86,7 +90,7 @@
 </div>
 {% endif %}
 
-<h2>Liquidaciones</h2>
+<h2>Cortes</h2>
 {% if liquidaciones %}
 <div class="tabla-marco">
   <table>

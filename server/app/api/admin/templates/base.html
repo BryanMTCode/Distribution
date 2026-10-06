@@ -46,6 +46,7 @@
       background: var(--fondo);
     }
     a { color: var(--acento); }
+    /* ── El armazón: barra arriba, menú a la izquierda, contenido al centro ── */
     header.principal {
       background: var(--acento);
       color: #fff;
@@ -53,19 +54,48 @@
       display: flex;
       align-items: center;
       gap: 20px;
-      flex-wrap: wrap;
     }
     header.principal .marca { font-weight: 700; letter-spacing: .3px; }
-    header.principal nav { display: flex; gap: 16px; flex-wrap: wrap; }
-    header.principal nav a {
-      color: #fff; text-decoration: none; opacity: .85; padding: 4px 0;
-    }
-    header.principal nav a:hover { opacity: 1; }
-    header.principal nav a.activo {
-      opacity: 1; border-bottom: 2px solid #fff; font-weight: 600;
-    }
     header.principal .quien { margin-left: auto; font-size: 13px; opacity: .9; }
-    main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+    .armazon { display: flex; align-items: flex-start; }
+    /* El menú lateral: cinco módulos que se abren. `<details>` es nativo —se
+       abre y se cierra sin una línea de JavaScript—, que es la regla de esta
+       plantilla. */
+    nav.lateral {
+      width: 220px; flex: 0 0 220px; min-height: calc(100vh - 44px);
+      background: var(--papel); border-right: 1px solid var(--linea);
+      padding: 12px 0 40px; position: sticky; top: 0;
+    }
+    nav.lateral details { border-bottom: 1px solid var(--linea); }
+    nav.lateral summary {
+      cursor: pointer; list-style: none; padding: 10px 18px;
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: var(--suave);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    nav.lateral summary::-webkit-details-marker { display: none; }
+    nav.lateral summary::after { content: "▸"; font-size: 11px; }
+    nav.lateral details[open] summary::after { content: "▾"; }
+    nav.lateral details.activo summary { color: var(--acento); }
+    nav.lateral a {
+      display: block; padding: 7px 18px 7px 26px;
+      color: var(--tinta); text-decoration: none; font-size: 14px;
+    }
+    nav.lateral a:hover { background: var(--acento-suave); }
+    nav.lateral a.activo {
+      background: var(--acento-suave); color: var(--acento); font-weight: 600;
+      border-left: 3px solid var(--acento); padding-left: 23px;
+    }
+    main { flex: 1; min-width: 0; max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+    /* En pantalla angosta el menú va arriba, a todo lo ancho, con los módulos
+       cerrados salvo el de la pantalla actual. */
+    @media (max-width: 860px) {
+      .armazon { display: block; }
+      nav.lateral {
+        width: auto; min-height: 0; position: static;
+        border-right: 0; border-bottom: 1px solid var(--linea); padding: 0;
+      }
+    }
     h1 { font-size: 22px; margin: 0 0 4px; }
     h2 { font-size: 17px; margin: 28px 0 10px; }
     .subtitulo { color: var(--suave); margin: 0 0 20px; }
@@ -128,6 +158,19 @@
        ámbar salía como texto plano, sin fondo, y se perdía entre los párrafos. */
     .aviso-caja.aviso { background: var(--aviso-suave); color: var(--aviso); }
     .aviso-caja.bien { background: var(--acento-suave); color: var(--acento); }
+    /* Botones dentro de una tabla: Editar, Eliminar, Ajustar. Chicos y en
+       renglón, para que la columna de acciones no se coma la tabla. */
+    td.acciones { white-space: nowrap; text-align: right; }
+    a.boton-chico, button.boton-chico {
+      display: inline-block; font-size: 12px; padding: 3px 9px; margin-left: 4px;
+      border: 1px solid var(--linea); border-radius: 6px; background: var(--papel);
+      color: var(--acento); text-decoration: none; cursor: pointer; font-weight: 600;
+    }
+    a.boton-chico:hover, button.boton-chico:hover { background: var(--acento-suave); }
+    a.boton-chico.peligro, button.boton-chico.peligro { color: var(--alerta); }
+    a.boton-chico.peligro:hover, button.boton-chico.peligro:hover {
+      background: var(--alerta-suave);
+    }
     .aviso-caja.neutro { background: var(--papel); border: 1px solid var(--linea); }
     .etiqueta-motivo {
       display: inline-block; background: var(--aviso-suave); color: var(--aviso);
@@ -149,19 +192,27 @@
 {% if actor %}
 <header class="principal">
   <span class="marca">DSD · Operación</span>
-  <nav>
-    {% for ruta, etiqueta in navegacion %}
-      <a href="{{ ruta }}" {% if seccion == etiqueta %}class="activo"{% endif %}>{{ etiqueta }}</a>
-    {% endfor %}
-  </nav>
   <span class="quien">
     {{ actor.rol }}
     · <a href="/panel/salir" style="color:#fff">Salir</a>
   </span>
 </header>
+<div class="armazon">
+<nav class="lateral" aria-label="Menú del panel">
+  {% for titulo, enlaces in navegacion %}
+    <details {% if titulo == modulo_activo or (modulo_activo is none and loop.first) %}open{% endif %}
+             class="{% if titulo == modulo_activo %}activo{% endif %}">
+      <summary>{{ titulo }}</summary>
+      {% for ruta, etiqueta in enlaces %}
+        <a href="{{ ruta }}" {% if seccion == etiqueta %}class="activo" aria-current="page"{% endif %}>{{ etiqueta }}</a>
+      {% endfor %}
+    </details>
+  {% endfor %}
+</nav>
 {% endif %}
 <main>
   {% block contenido %}{% endblock %}
 </main>
+{% if actor %}</div>{% endif %}
 </body>
 </html>

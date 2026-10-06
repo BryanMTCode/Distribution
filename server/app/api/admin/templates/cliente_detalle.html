@@ -208,7 +208,7 @@
 {# ------------------------------------------------------------------------ #}
 {# Domicilio y datos                                                        #}
 {# ------------------------------------------------------------------------ #}
-<h2>Domicilio y datos</h2>
+<h2 id="datos">Domicilio y datos</h2>
 {% if cliente.lat is not none %}
 <p class="sutil">
   Ubicación capturada en ruta: {{ cliente.lat }}, {{ cliente.lng }}
@@ -346,6 +346,25 @@
   </div>
 
   <button type="submit">Guardar datos</button>
+</form>
+
+<h2 id="eliminar">Eliminar el cliente</h2>
+<form method="post" action="/panel/clientes/{{ cliente.id }}/eliminar"
+      style="background:var(--papel); border:1px solid var(--linea);
+             border-radius:10px; padding:16px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="sutil" style="margin-top:0">
+    Sale de la ruta, de las listas y de <strong>todos los teléfonos</strong> en su
+    siguiente sincronización. Si nunca tuvo una venta, un cobro ni una visita, se
+    borra. Si tiene historia, se da de <strong>baja</strong>: sus ventas y cobros se
+    conservan, porque borrarlo rompería esos documentos, y se reactiva cambiando
+    su estatus. Si todavía debe, no se elimina: nadie podría cobrarle.
+  </p>
+  <label style="display:block; margin-bottom:10px">
+    <input type="checkbox" name="confirmo" value="1" id="confirmo_eliminar">
+    Sí, quitar a «{{ cliente.nombre_comercial }}» de la operación
+  </label>
+  <button type="submit" class="peligro" id="boton_eliminar_cliente">Eliminar</button>
 </form>
 {% endif %}
 {% endblock %}

@@ -25,6 +25,7 @@
         <th>Vendedor</th>
         <th class="numero">Total</th>
         <th>Qué revisar</th>
+        {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -66,6 +67,19 @@
             <span class="sutil">—</span>
           {% endif %}
         </td>
+        {% if puede_editar %}
+        <td class="acciones">
+          {# Llevan al formulario del detalle, no actúan desde aquí: corregir y   #}
+          {# cancelar piden el motivo, y una cancelación de un clic desde una     #}
+          {# tabla de 200 renglones es la forma de cancelar la venta de al lado.  #}
+          {% if f.estado == 'confirmada' %}
+            <a class="boton-chico" href="/panel/ventas/{{ f.id }}#corregir">Editar</a>
+            <a class="boton-chico peligro" href="/panel/ventas/{{ f.id }}#cancelar">Cancelar</a>
+          {% else %}
+            <span class="sutil">—</span>
+          {% endif %}
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

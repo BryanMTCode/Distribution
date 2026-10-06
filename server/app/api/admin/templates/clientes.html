@@ -9,6 +9,8 @@
   o cada venta a ese cliente entra marcada.
 </p>
 
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
 <form class="barra" method="get" action="/panel/clientes">
   <input type="search" name="q" value="{{ q }}" placeholder="Nombre, código o teléfono"
          style="min-width:260px">
@@ -44,6 +46,7 @@
         <th>Crédito</th>
         <th class="numero">Saldo</th>
         <th>Estado</th>
+        {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -95,6 +98,12 @@
             <div class="sutil">alta en ruta · {{ f.creado_en.strftime('%d/%m/%Y') }}</div>
           {% endif %}
         </td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/clientes/{{ f.id }}#datos">Editar</a>
+          <a class="boton-chico peligro" href="/panel/clientes/{{ f.id }}#eliminar">Eliminar</a>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

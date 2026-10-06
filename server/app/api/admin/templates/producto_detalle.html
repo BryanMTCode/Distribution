@@ -172,7 +172,7 @@
 {# Datos                                                                    #}
 {# ------------------------------------------------------------------------ #}
 {% if puede_editar %}
-<h2>Datos</h2>
+<h2 id="datos">Datos</h2>
 <form method="post" action="/panel/productos/{{ producto.id }}"
       style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
              border-radius:10px;padding:20px">
@@ -254,7 +254,7 @@
 {# la gente llama «eliminar» son distintas y solo una se puede: dar de    #}
 {# baja es la casilla de arriba y es reversible; borrar de verdad solo    #}
 {# existe para el producto que se capturó por error y nunca se usó.       #}
-<h2>Eliminar del catálogo</h2>
+<h2 id="eliminar">Eliminar del catálogo</h2>
 <form method="post" action="/panel/productos/{{ producto.id }}/eliminar"
       style="max-width:640px;background:var(--papel);border:1px solid var(--linea);
              border-radius:10px;padding:20px">

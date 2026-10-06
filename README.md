@@ -18,7 +18,7 @@ la bodega sube cuando alguien la cuenta.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0036) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0037) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -87,6 +87,7 @@ la bodega sube cuando alguien la cuenta.
 | **Laboratorio analítico (Streamlit)** — drop size, rotación, clientes en riesgo | ✅ 8 pruebas con `AppTest` |
 | **Tablero de Gerencia en el teléfono** — seis cifras, cada una con su antigüedad | ✅ 26 pruebas de widget |
 | **Desempeño del día** — cada vendedor contra sus mismos días de la semana, y **de quién** falta información | ✅ 28 + 6 de Dart y 5 de widget |
+| **Panel en cinco módulos** y Editar / Eliminar / Ajustar en las tablas, con delta al teléfono | ✅ 19 pruebas |
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
 | **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
@@ -111,7 +112,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1136 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **267 de widget**, todas en verde.
+**1155 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **267 de widget**, todas en verde.
 
 ## Stack
 
@@ -174,7 +175,7 @@ server/
                      cargas.py        la carga del camión (bodega → camión)
                      equipo.py        usuarios, rutas, almacenes y listas de precios
                      inventario.py    existencias y libro mayor por almacén
-                     liquidaciones.py el cierre del día (Fase 7)
+                     liquidaciones.py el corte del día (Fase 7)
                      cobranza.py      arqueo del día, cobros marcados y antigüedad
                      efectividad.py   visitas, no-drops por categoría y mermas por motivo
                      objetivos.py     la meta mensual de cada ruta (sin ella el tablero no compara)
@@ -236,7 +237,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1136 pruebas de Python
+make pruebas                        # 1155 pruebas de Python
 make movil                          # 578 de Dart + 267 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

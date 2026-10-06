@@ -43,6 +43,9 @@ from sqlalchemy import text
 from app.api.admin.comun import CapturaInvalida, SesionDep, render
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 
+# Los almacenes que se pueden ajustar a mano desde el panel.
+TIPOS_AJUSTABLES = ("camion", "bodega")
+
 router = APIRouter(prefix="/panel/inventario", tags=["panel"], include_in_schema=False)
 
 
@@ -187,6 +190,10 @@ async def listar(
             "q": busqueda,
             "filtro": filtro,
             "total_piezas": sum((Decimal(f["cantidad"]) for f in filas), Decimal(0)),
+            "puede_ajustar": (
+                elegido["tipo"] in TIPOS_AJUSTABLES
+                and actor.puede("inventario.ajustar")
+            ),
         },
         actor=actor,
         seccion="Inventario",
@@ -301,12 +308,14 @@ async def movimientos(
                     )
                 )
             ).mappings().all(),
-            # El formulario solo aparece en un camión y con el permiso. Para una
-            # bodega existen las entradas y salidas, que llevan más control.
+            # Camiones y bodegas (desde la 0037). Tránsito y merma no: lo que está
+            # en tránsito se resuelve recibiendo la devolución, y el almacén de
+            # merma es un destino, no algo que se cuente.
             "puede_ajustar": (
-                cabecera["almacen_tipo"] == "camion"
+                cabecera["almacen_tipo"] in TIPOS_AJUSTABLES
                 and actor.puede("inventario.ajustar")
             ),
+            "es_camion": cabecera["almacen_tipo"] == "camion",
             "error": error,
             "guardado": guardado,
         },
@@ -321,8 +330,11 @@ async def movimientos(
 # Excepción documentada a §0.2. El razonamiento completo está en el encabezado de
 # la migración 0032; lo que importa aquí es lo que la pantalla impide:
 #
-#   · solo almacenes de tipo `camion` — para una bodega existen las entradas y
-#     salidas, que llevan folio, tipo y más control;
+#   · camiones y bodegas. El de una bodega no viaja a ningún teléfono, y eso lo
+#     garantiza el disparador (migración 0037), no esta pantalla: publicaba con el
+#     responsable del almacén, una bodega no tiene, y un `vendedor_id` nulo en el
+#     pull significa «a todos los teléfonos» — cada vendedor habría sumado el
+#     ajuste de la bodega a su camión;
 #   · el ajuste no puede EMPUJAR el camión a negativo. Que un camión esté negativo
 #     es legítimo (§0.1: una venta offline entró con el conteo en cero), pero eso
 #     es un hecho que llegó tarde. Esto es alguien capturando ahora, y a lo que se
@@ -345,7 +357,11 @@ async def ajustar(
     nota: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Corrige el inventario de un camión, con documento y con delta al teléfono."""
+    """Corrige el inventario de un camión o de una bodega, con documento.
+
+    El de un camión viaja al teléfono de su dueño; el de una bodega no viaja a
+    ninguno (migración 0037).
+    """
     actor.exigir("inventario.ajustar")
     exigir_csrf(peticion, csrf)
 
@@ -358,9 +374,9 @@ async def ajustar(
     if len(limpia) < 10:
         return _a(
             volver,
-            error="Escribe la nota del ajuste, con al menos 10 caracteres: estás "
-            "cambiando el inventario del camión de alguien que va a tener que "
-            "explicarlo en su liquidación.",
+            error="Escribe la nota del ajuste, con al menos 10 caracteres: es lo "
+            "único que va a explicar, meses después, por qué el inventario cambió "
+            "sin una venta ni una carga.",
         )
 
     cabecera = (
@@ -376,12 +392,14 @@ async def ajustar(
     ).mappings().first()
     if cabecera is None:
         return RedirectResponse("/panel/inventario", status_code=303)
-    if cabecera["tipo"] != "camion":
+    if cabecera["tipo"] not in TIPOS_AJUSTABLES:
         return _a(
             volver,
-            error="Esta pantalla ajusta camiones. El inventario de una bodega se "
-            "corrige con una entrada o una salida, que llevan folio y motivo.",
+            error=f"«{cabecera['nombre']}» es un almacén de {cabecera['tipo']}: no "
+            "se ajusta a mano. Lo que está en tránsito se resuelve recibiendo la "
+            "devolución en Entradas.",
         )
+    es_camion = cabecera["tipo"] == "camion"
 
     # La existencia se lee DENTRO de la transacción y con candado: entre leerla para
     # pintar la pantalla y guardar el ajuste pudo entrar una venta del teléfono, y
@@ -424,10 +442,11 @@ async def ajustar(
     if delta < 0 and actual + delta < 0:
         return _a(
             volver,
-            error=f"El camión tiene {actual} y eso lo dejaría en {actual + delta}. "
-            "Un camión sí puede quedar negativo —una venta que entra tarde con el "
-            "conteo en cero—, pero eso es un hecho que llegó solo; un ajuste "
-            "capturado a mano que lo empuja a negativo es un dedazo.",
+            error=f"{'El camión' if es_camion else 'La bodega'} tiene {actual} y "
+            f"eso lo dejaría en {actual + delta}. Un almacén sí puede quedar "
+            "negativo —una venta que entra tarde con el conteo en cero—, pero eso "
+            "es un hecho que llegó solo; un ajuste capturado a mano que lo empuja a "
+            "negativo es un dedazo.",
         )
 
     ahora = datetime.now(UTC)
@@ -448,7 +467,9 @@ async def ajustar(
         ),
         {
             "id": ajuste_id,
-            "folio": f"AC-{consecutivo:06d}",
+            # AC para camión, AB para bodega: el folio dice de dónde es sin abrir
+            # el documento. La serie es una sola.
+            "folio": f"{'AC' if es_camion else 'AB'}-{consecutivo:06d}",
             "a": almacen_id,
             "p": producto_id,
             "tipo": tipo,

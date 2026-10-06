@@ -270,13 +270,14 @@ async def test_UN_AJUSTE_NO_EMPUJA_EL_CAMION_A_NEGATIVO(
     ).scalar_one() == 0
 
 
-async def test_esta_pantalla_NO_ajusta_bodegas(
+async def test_LA_BODEGA_TAMBIEN_SE_AJUSTA_desde_octubre(
     cliente, semilla, camion_con_sopa, sesion
 ):
-    """Para una bodega existen las entradas y las salidas, que llevan folio, tipo,
-    motivo y la regla de que un conteo no puede dejar negativo."""
+    """Antes esta pantalla solo ajustaba camiones y mandaba la bodega a Entradas y
+    Salidas. La dirección pidió ajustar todo desde la tabla de inventario (migración
+    0037). Mismo documento, folio propio: AB para bodega, AC para camión."""
     await _entrar(cliente)
-    r = await _ajustar(
+    await _ajustar(
         cliente,
         semilla,
         camion_con_sopa,
@@ -285,9 +286,69 @@ async def test_esta_pantalla_NO_ajusta_bodegas(
         contado="80",
     )
 
-    assert "con una entrada o una salida" in solo_texto(r)
     en_bodega = await _saldo(sesion, semilla["bodega"], camion_con_sopa["producto"])
-    assert en_bodega == Decimal("100.000")
+    assert en_bodega == Decimal("80.000")
+    folio = (
+        await sesion.execute(
+            text("SELECT folio FROM ajustes_camion WHERE almacen_id = :a"),
+            {"a": semilla["bodega"]},
+        )
+    ).scalar_one()
+    assert folio.startswith("AB-")
+
+
+async def test_EL_AJUSTE_DE_BODEGA_NO_LLEGA_A_NINGUN_TELEFONO(
+    cliente, semilla, camion_con_sopa, sesion
+):
+    """La razón de la migración 0037.
+
+    El disparador publicaba con el responsable del almacén. Una bodega no tiene, y
+    un `vendedor_id` nulo en el pull significa «a todos los teléfonos»: cada
+    vendedor habría sumado el ajuste de la bodega a su camión.
+    """
+    await _entrar(cliente)
+    await _ajustar(
+        cliente,
+        semilla,
+        camion_con_sopa,
+        almacen=semilla["bodega"],
+        tipo="conteo",
+        contado="80",
+    )
+
+    publicados = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE entidad = 'ajuste_camion'")
+        )
+    ).scalar_one()
+    assert publicados == 0
+
+
+async def test_LA_GUARDA_VIVE_EN_LA_BASE_no_en_la_pantalla(
+    semilla, camion_con_sopa, sesion
+):
+    """Un ajuste de bodega insertado por cualquier otro camino —un script, otra
+    pantalla futura— tampoco se publica. La pantalla valida; la base garantiza."""
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ajustes_camion
+              (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
+               contado, delta, nota, usuario_id, creado_en)
+            VALUES (gen_random_uuid(), 'AB-999999', :a, :p, 'conteo', 100, 80, -20,
+                    'insertado a mano en la prueba', :u, now())
+            """
+        ),
+        {"a": semilla["bodega"], "p": camion_con_sopa["producto"], "u": semilla["admin"]},
+    )
+    await sesion.commit()
+
+    publicados = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE entidad = 'ajuste_camion'")
+        )
+    ).scalar_one()
+    assert publicados == 0
 
 
 async def test_la_nota_es_obligatoria(cliente, semilla, camion_con_sopa, sesion):

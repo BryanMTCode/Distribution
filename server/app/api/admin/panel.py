@@ -430,6 +430,7 @@ async def ventas(
             "filas": filas,
             "solo_revision": bool(solo_revision),
             "explicacion": EXPLICACION_MOTIVOS,
+            "puede_editar": actor.puede("ventas.cancelar"),
         },
         actor=actor,
         seccion="Ventas",

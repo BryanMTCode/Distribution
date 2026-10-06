@@ -40,6 +40,7 @@
         <th>Producto</th>
         <th>Presentaciones y precio general</th>
         <th>IVA</th>
+        {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -75,6 +76,12 @@
         <td class="sutil">
           {% if f.tasa_iva > 0 %}{{ (f.tasa_iva * 100)|round|int }}%{% else %}Exento{% endif %}
         </td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <a class="boton-chico" href="/panel/productos/{{ f.id }}#datos">Editar</a>
+          <a class="boton-chico peligro" href="/panel/productos/{{ f.id }}#eliminar">Eliminar</a>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

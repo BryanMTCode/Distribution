@@ -239,9 +239,13 @@ async def test_UN_PRODUCTO_SIN_HISTORIA_SE_BORRA_CON_SU_CONFIGURACION(
     assert fila["datos_antes"]["sku"] == "SOPA-70"
 
 
-async def test_UN_PRODUCTO_CON_UNA_VENTA_NO_SE_BORRA(cliente, semilla, sopa, sesion):
-    """Una venta es un papel que un cliente tiene en la mano. La pantalla dice en
-    qué documento aparece y manda a darlo de baja."""
+async def test_UN_PRODUCTO_CON_UNA_VENTA_SE_DA_DE_BAJA_Y_NO_SE_BORRA(
+    cliente, semilla, sopa, sesion
+):
+    """Una venta es un papel que un cliente tiene en la mano: el producto no se
+    borra. Pero desde octubre de 2026 «Eliminar» tampoco se niega —la dirección
+    pidió que el botón funcione—: lo da de baja, que es lo que la persona buscaba,
+    y dice por qué no lo borró."""
     dispositivo = uuid.uuid4()
     cliente_id = uuid.uuid4()
     venta = uuid.uuid4()
@@ -295,11 +299,19 @@ async def test_UN_PRODUCTO_CON_UNA_VENTA_NO_SE_BORRA(cliente, semilla, sopa, ses
     r = await _eliminar(cliente, sopa["id"])
 
     plano = solo_texto(r)
+    assert "se dio de baja" in plano
     assert "aparece en 1 ventas" in plano
-    assert "DARLO DE BAJA" in plano
+    activo = (
+        await sesion.execute(
+            text("SELECT activo FROM productos WHERE id = :p"), {"p": sopa["id"]}
+        )
+    ).scalar_one_or_none()
+    assert activo is False, "sigue existiendo, inactivo"
+    # Y su venta, intacta.
     assert (
         await sesion.execute(
-            text("SELECT count(*) FROM productos WHERE id = :p"), {"p": sopa["id"]}
+            text("SELECT count(*) FROM venta_partidas WHERE producto_id = :p"),
+            {"p": sopa["id"]},
         )
     ).scalar_one() == 1
 

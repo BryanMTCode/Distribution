@@ -39,6 +39,7 @@ oficina.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Annotated
 from urllib.parse import quote
@@ -82,6 +83,7 @@ async def listar(
     sesion: SesionDep,
     q: str = "",
     filtro: str = "pendientes",
+    guardado: str = "",
 ) -> HTMLResponse:
     """Los clientes, con los prospectos de campo primero.
 
@@ -102,9 +104,11 @@ async def listar(
     elif filtro == "bloqueados":
         condiciones.append("c.bloqueado")
     elif filtro == "inactivos":
-        condiciones.append("c.estatus = 'inactivo'")
+        condiciones.append("c.estatus IN ('inactivo', 'baja')")
     else:
-        condiciones.append("c.estatus <> 'inactivo'")
+        # `baja` es lo que deja «Eliminar» cuando el cliente tiene historia: para
+        # quien usa el panel, eliminado. No se lista entre los activos.
+        condiciones.append("c.estatus NOT IN ('inactivo', 'baja')")
 
     busqueda = q.strip()
     if busqueda:
@@ -148,7 +152,7 @@ async def listar(
                   count(*) FILTER (WHERE estatus = 'prospecto' OR requiere_revision)
                     AS pendientes,
                   count(*) FILTER (WHERE bloqueado) AS bloqueados,
-                  count(*) FILTER (WHERE estatus <> 'inactivo') AS activos
+                  count(*) FILTER (WHERE estatus NOT IN ('inactivo', 'baja')) AS activos
                   FROM clientes
                 """
             )
@@ -163,6 +167,7 @@ async def listar(
             "q": busqueda,
             "filtro": filtro,
             "conteos": conteos,
+            "guardado": guardado,
             "puede_editar": actor.puede(PERMISO),
         },
         actor=actor,
@@ -586,6 +591,159 @@ async def resolver_duplicado(
 # ---------------------------------------------------------------------------
 # Auxiliares
 # ---------------------------------------------------------------------------
+
+
+# Los documentos que hacen que un cliente NO se pueda borrar de verdad. Todos
+# apuntan a `clientes` con una llave que no se borra en cascada, a propósito: una
+# venta es un papel que alguien tiene en la mano.
+_DOCUMENTOS_DEL_CLIENTE = (
+    ("ventas", "venta(s)"),
+    ("cobros", "cobro(s)"),
+    ("no_drops", "visita(s) sin venta"),
+    ("mermas", "devolución(es)"),
+    ("cuentas_por_cobrar", "cuenta(s) por cobrar"),
+)
+
+
+@router.post("/{cliente_id}/eliminar")
+async def eliminar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    cliente_id: uuid.UUID,
+    confirmo: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Quita al cliente de la operación. Siempre funciona, y decide qué es seguro.
+
+    ───────────────────────────────────────────────────────────────────────────
+    UN BOTÓN, TRES DESENLACES
+    ───────────────────────────────────────────────────────────────────────────
+    · **Sin ningún documento** —el prospecto mal capturado, el duplicado— se
+      BORRA. El disparador publica un `delete` y el teléfono lo da de baja en su
+      base local sin tocar nada más.
+    · **Con historia** se DA DE BAJA (`estatus = 'baja'`). Para quien usa el
+      panel el efecto es el mismo: desaparece de la ruta, de las listas y de
+      todos los teléfonos en el siguiente pull. Pero sus ventas y cobros siguen en
+      pie, porque borrarlo de verdad obligaría a borrar esos papeles. Se reactiva
+      cambiando el estatus en sus datos.
+    · **Si todavía debe** no se hace nada y se dice cuánto. Ocultarlo del teléfono
+      dejaría al vendedor sin poder cobrarle: la cuenta seguiría abierta en el
+      servidor, sin nadie en la calle que la pudiera cerrar.
+
+    La primera versión de «eliminar» de productos negaba el borrado y mandaba a
+    quitar la casilla «activo». Para clientes la dirección pidió que el botón
+    simplemente funcione, y la distinción se hace aquí en vez de pedírsela a la
+    persona.
+    """
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+
+    cliente = (
+        await sesion.execute(
+            text(
+                "SELECT id, codigo, nombre_comercial, estatus, ruta_id "
+                "  FROM clientes WHERE id = :id"
+            ),
+            {"id": cliente_id},
+        )
+    ).mappings().first()
+    if cliente is None:
+        return _a_lista(guardado="Ese cliente ya no existe.")
+
+    if not confirmo:
+        return _volver(
+            cliente_id,
+            error="Marca la casilla de confirmación para eliminar al cliente.",
+        )
+
+    debe = (
+        await sesion.execute(
+            text(
+                "SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar "
+                " WHERE cliente_id = :c AND estado IN ('abierta', 'parcial')"
+            ),
+            {"c": cliente_id},
+        )
+    ).scalar_one()
+    if debe and debe > 0:
+        return _volver(
+            cliente_id,
+            error=(
+                f"«{cliente['nombre_comercial']}» todavía debe ${debe:,.2f}. "
+                "Si se elimina, desaparece del teléfono del vendedor y ya nadie "
+                "puede cobrarle. Cobra o cancela esa deuda primero."
+            ),
+        )
+
+    historia: list[str] = []
+    for tabla, como_se_llama in _DOCUMENTOS_DEL_CLIENTE:
+        cuantos = (
+            await sesion.execute(
+                text(f"SELECT count(*) FROM {tabla} WHERE cliente_id = :c"),  # noqa: S608
+                {"c": cliente_id},
+            )
+        ).scalar_one()
+        if cuantos:
+            historia.append(f"{cuantos} {como_se_llama}")
+
+    antes = json.dumps(
+        {
+            "codigo": cliente["codigo"],
+            "nombre_comercial": cliente["nombre_comercial"],
+            "estatus": cliente["estatus"],
+            "ruta_id": str(cliente["ruta_id"]) if cliente["ruta_id"] else None,
+        },
+        ensure_ascii=False,
+    )
+
+    if historia:
+        await sesion.execute(
+            text(
+                "UPDATE clientes SET estatus = 'baja', actualizado_en = now() "
+                " WHERE id = :id"
+            ),
+            {"id": cliente_id},
+        )
+        accion, mensaje = (
+            "dar_de_baja",
+            f"«{cliente['nombre_comercial']}» se dio de baja: tiene "
+            + ", ".join(historia)
+            + ", y borrarlo rompería esos documentos. Ya no aparece en la ruta y "
+            "sale de los teléfonos en su siguiente sincronización. Se reactiva "
+            "cambiando su estatus.",
+        )
+    else:
+        accion, mensaje = (
+            "eliminar",
+            f"«{cliente['nombre_comercial']}» se eliminó. Sale de los teléfonos en "
+            "su siguiente sincronización.",
+        )
+
+    # El antes, ANTES del DELETE: después no hay de dónde leerlo.
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO auditoria
+              (entidad, entidad_id, accion, usuario_id, datos_antes, ocurrido_en)
+            VALUES ('cliente', :id, :accion, :quien, CAST(:antes AS jsonb), now())
+            """
+        ),
+        {"id": cliente_id, "accion": accion, "quien": actor.usuario_id, "antes": antes},
+    )
+    if not historia:
+        await sesion.execute(text("DELETE FROM clientes WHERE id = :id"), {"id": cliente_id})
+
+    await sesion.commit()
+    return _a_lista(guardado=mensaje)
+
+
+def _a_lista(*, guardado: str = "") -> RedirectResponse:
+    """A la lista completa, con el mensaje: el cliente eliminado ya no tiene ficha."""
+    return RedirectResponse(
+        f"/panel/clientes?filtro=todos&guardado={quote(guardado)}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 def _volver(cliente_id: uuid.UUID, *, error: str = "", guardado: str = ""):

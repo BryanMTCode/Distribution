@@ -571,28 +571,10 @@ async def eliminar(
             error="Marca la casilla de confirmación: un borrado no se deshace.",
         )
 
-    # Los documentos, uno por uno, para poder nombrarlos.
-    for tabla, como_se_llama in _DOCUMENTOS_QUE_IMPIDEN:
-        cuantos = (
-            await sesion.execute(
-                text(f"SELECT count(*) FROM {tabla} WHERE producto_id = :p"),  # noqa: S608
-                {"p": producto_id},
-            )
-        ).scalar_one()
-        if cuantos:
-            return _volver(
-                producto_id,
-                error=(
-                    f"«{producto['nombre']}» aparece en {cuantos} {como_se_llama}: "
-                    "no se puede borrar sin romper esos documentos. Lo que sí puedes "
-                    "es DARLO DE BAJA —quita la casilla «activo» y guarda—: "
-                    "desaparece del catálogo del teléfono y de los formularios, y su "
-                    "historia queda intacta."
-                ),
-            )
-
-    # Y la existencia. Un producto con saldo en algún almacén no es un error de
-    # captura: es mercancía que alguien tiene en un anaquel o arriba de un camión.
+    # La existencia PRIMERO. Un producto con saldo en algún almacén no es un error
+    # de captura: es mercancía que alguien tiene en un anaquel o arriba de un
+    # camión. Y darlo de baja tampoco sirve: desaparecería del catálogo del
+    # teléfono y el vendedor ya no podría vender lo que trae.
     con_saldo = (
         await sesion.execute(
             text(
@@ -609,8 +591,68 @@ async def eliminar(
             error=(
                 f"Hay {con_saldo['cantidad']} en {con_saldo['nombre']}. Un producto "
                 "con existencia no es un error de captura: es mercancía que alguien "
-                "tiene. Dale salida o ajústala primero, o dalo de baja."
+                "tiene, y si se quita del catálogo el vendedor ya no puede venderla. "
+                "Dale salida o ajústala primero."
             ),
+        )
+
+    # Los documentos, uno por uno, para poder nombrarlos.
+    historia: list[str] = []
+    for tabla, como_se_llama in _DOCUMENTOS_QUE_IMPIDEN:
+        cuantos = (
+            await sesion.execute(
+                text(f"SELECT count(*) FROM {tabla} WHERE producto_id = :p"),  # noqa: S608
+                {"p": producto_id},
+            )
+        ).scalar_one()
+        if cuantos:
+            historia.append(f"{cuantos} {como_se_llama}")
+
+    # Con historia, «eliminar» DA DE BAJA en vez de negarse (octubre 2026: la
+    # dirección pidió que el botón funcione). Para quien usa el panel el efecto es
+    # el que buscaba —sale del catálogo del teléfono y de los formularios— y sus
+    # ventas siguen en pie. Antes la pantalla se negaba y mandaba a quitar la
+    # casilla «activo» a mano: la misma operación, con un paso de más.
+    if historia:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO auditoria
+                  (entidad, entidad_id, accion, usuario_id, datos_antes, ocurrido_en)
+                VALUES ('producto', :id, 'dar_de_baja', :quien,
+                        CAST(:antes AS jsonb), now())
+                """
+            ),
+            {
+                "id": producto_id,
+                "quien": actor.usuario_id,
+                "antes": json.dumps(
+                    {
+                        "sku": producto["sku"],
+                        "nombre": producto["nombre"],
+                        "activo": producto["activo"],
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        await sesion.execute(
+            text(
+                "UPDATE productos SET activo = false, actualizado_en = now() "
+                " WHERE id = :id"
+            ),
+            {"id": producto_id},
+        )
+        await sesion.commit()
+        aviso = (
+            f"«{producto['nombre']}» se dio de baja: aparece en "
+            + ", ".join(historia)
+            + ", y borrarlo rompería esos documentos. Ya no está en el catálogo del "
+            "teléfono ni en los formularios. Se reactiva marcando «activo» en sus datos."
+        )
+        return RedirectResponse(
+            f"/panel/productos?guardado={quote(aviso)}",
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # El antes, ANTES: después del DELETE no hay de dónde leerlo.

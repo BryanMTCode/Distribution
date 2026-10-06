@@ -85,7 +85,7 @@
 {# --------------------------------------------------------------------- #}
 {# Ajustar el camión.                                                    #}
 {# --------------------------------------------------------------------- #}
-<h2>Ajustar este camión</h2>
+<h2 id="ajustar">{% if es_camion %}Ajustar este camión{% else %}Ajustar esta bodega{% endif %}</h2>
 <form method="post"
       action="/panel/inventario/{{ cabecera.almacen_id }}/{{ producto_id }}/ajustar"
       id="forma_ajuste"
@@ -93,11 +93,19 @@
              border-radius:10px;padding:20px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <p style="margin-top:0" class="sutil">
+    {% if es_camion %}
     El camión de <strong>{{ cabecera.responsable or 'sin responsable' }}</strong> dice
     <strong>{{ cabecera.cantidad|entero }} {{ cabecera.unidad_base }}</strong>. Lo que
     escribas aquí le cambia el inventario a alguien que está vendiendo con esa cifra
     en el teléfono: <strong>el ajuste le llega en su siguiente sincronización</strong>,
     no antes.
+    {% else %}
+    La bodega dice <strong>{{ cabecera.cantidad|entero }} {{ cabecera.unidad_base }}</strong>.
+    El ajuste queda con folio, nota y asiento en el libro mayor, y
+    <strong>no viaja a ningún teléfono</strong>: la bodega no está en la calle. Para
+    mercancía que llegó de un proveedor usa una <a href="/panel/entradas">entrada</a>,
+    que lleva su remisión y su costo.
+    {% endif %}
   </p>
 
   <label>

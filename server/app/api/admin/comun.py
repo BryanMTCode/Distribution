@@ -39,38 +39,85 @@ plantillas = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # La navegación se declara una vez: una pantalla que no está aquí no existe para
 # quien usa el panel, por más que su ruta responda.
-NAVEGACION = [
-    ("/panel", "Tablero"),
-    # «Desempeño» va pegado al Tablero y antes de todo lo demás porque son las
-    # dos caras de la misma pregunta de la mañana: el Tablero dice QUÉ necesita
-    # atención y Desempeño dice A QUIÉN hay que llamar. Separarlas con seis
-    # pantallas de captura en medio haría que la segunda no se abriera nunca.
-    ("/panel/desempeno", "Desempeño"),
-    ("/panel/productos", "Productos"),
-    ("/panel/clientes", "Clientes"),
-    ("/panel/cargas", "Cargas"),
-    ("/panel/liquidaciones", "Liquidación"),
-    ("/panel/cobranza", "Cobranza"),
-    # "Entradas" va pegada a "Inventario" porque son las dos pantallas de la
-    # bodega y se usan juntas: se recibe y se verifica que quedó la cifra.
-    # Y va ANTES, que es el orden en que ocurren — sin una entrada, la
-    # pantalla de inventario solo puede mostrar ceros.
-    ("/panel/compras", "Compras"),
-    ("/panel/entradas", "Entradas"),
-    ("/panel/salidas", "Salidas"),
-    ("/panel/inventario", "Inventario"),
-    ("/panel/ventas", "Ventas"),
-    ("/panel/efectividad", "Efectividad"),
-    ("/panel/objetivos", "Objetivos"),
-    ("/panel/cuarentena", "Cuarentena"),
-    ("/panel/equipos", "Teléfonos"),
-    ("/panel/equipo", "Usuarios y rutas"),
-    # Al final y no al principio: el piloto es temporal por naturaleza —dos
-    # semanas— y la pantalla misma explica qué hacer cuando no hay uno
-    # activo. Ponerlo entre las pantallas de operación diaria le daría una
-    # permanencia que no tiene.
-    ("/panel/piloto", "Piloto"),
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CINCO MÓDULOS, NO DIECIOCHO ENLACES (octubre 2026)
+# ─────────────────────────────────────────────────────────────────────────────
+# El menú creció una pantalla a la vez hasta tener dieciocho enlaces en dos
+# renglones, y la dirección lo describió con precisión: abrumador para la
+# operación diaria. Cada pantalla tenía su razón; juntas, no se encontraba
+# ninguna.
+#
+# Se agrupan por QUIÉN las usa y CUÁNDO, que es la pregunta con la que alguien
+# llega al panel:
+#
+#   Hoy               lo primero que se abre en la mañana
+#   Operación de rutas el día de los camiones, de la carga al corte
+#   Catálogos         lo que el teléfono descarga: clientes y productos
+#   Almacén           la bodega: lo que entra, lo que sale, lo que hay
+#   Administración    lo que se revisa por semana, no por hora
+#
+# «Liquidación» se llama ahora «Corte del día»: es lo que la oficina dice en voz
+# alta, y «liquidación» en México también suena a despido. La URL no cambia
+# (/panel/liquidaciones) para no romper enlaces guardados.
+NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
+    (
+        "Hoy",
+        [
+            ("/panel", "Tablero"),
+            ("/panel/desempeno", "Desempeño"),
+        ],
+    ),
+    (
+        "Operación de rutas",
+        [
+            ("/panel/cargas", "Cargas"),
+            ("/panel/ventas", "Ventas"),
+            ("/panel/cobranza", "Cobranza"),
+            ("/panel/liquidaciones", "Corte del día"),
+        ],
+    ),
+    (
+        "Catálogos",
+        [
+            ("/panel/clientes", "Clientes"),
+            ("/panel/productos", "Productos"),
+        ],
+    ),
+    (
+        "Almacén",
+        [
+            # En el orden en que ocurren: sin una entrada, el inventario solo
+            # puede mostrar ceros.
+            ("/panel/inventario", "Inventario"),
+            ("/panel/entradas", "Entradas"),
+            ("/panel/salidas", "Salidas"),
+            ("/panel/compras", "Compras"),
+        ],
+    ),
+    (
+        "Administración",
+        [
+            ("/panel/efectividad", "Efectividad"),
+            ("/panel/objetivos", "Objetivos"),
+            ("/panel/equipo", "Usuarios y rutas"),
+            ("/panel/equipos", "Teléfonos"),
+            ("/panel/cuarentena", "Cuarentena"),
+            # Al final: el piloto es temporal por naturaleza —dos semanas— y la
+            # pantalla misma explica qué hacer cuando no hay uno activo.
+            ("/panel/piloto", "Piloto"),
+        ],
+    ),
 ]
+
+
+def modulo_de(seccion: str) -> str | None:
+    """El módulo al que pertenece una pantalla, para abrirlo en el lateral."""
+    for titulo, enlaces in NAVEGACION:
+        if any(etiqueta == seccion for _, etiqueta in enlaces):
+            return titulo
+    return None
+
 
 SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]
 
@@ -238,6 +285,7 @@ def render(
             "actor": actor,
             "seccion": seccion,
             "navegacion": NAVEGACION,
+            "modulo_activo": modulo_de(seccion),
             "csrf": token_csrf(peticion),
         },
     )
