@@ -28,7 +28,7 @@ el §6.2, con el mismo criterio.)
 | `precios` | `precio` | `precios` | upsert; el borrado quita el renglón |
 | `listas_precios` | `lista_precios` | `listas_precios` | upsert; el borrado **da de baja** |
 | `clientes` | `cliente` | `clientes` | upsert; el borrado **da de baja** |
-| `cuentas_por_cobrar` | `cartera` | `clientes.saldo_cache` | el saldo agregado, recalculado |
+| `cuentas_por_cobrar`, `cobros` (por confirmar) | `cartera` | `clientes.saldo_cache`, `clientes.por_confirmar` | el saldo agregado, recalculado |
 | `cargas` | `carga` | `existencias_camion` | **suma**, marcada en `cargas_aplicadas` |
 | `ventas` | `venta` | `ventas`, `venta_partidas`, `existencias_camion` | **compara** contra lo local |
 | `ajustes_camion` | `ajuste_camion` | `existencias_camion` | **suma**, marcada en `ajustes_camion_aplicados` |
@@ -41,6 +41,15 @@ el §6.2, con el mismo criterio.)
 Y en el sentido contrario, los seis documentos que el teléfono produce tienen su
 manejador en el servidor: `cliente.crear`, `venta.crear`, `cobro.crear`,
 `merma.crear`, `no_drop.crear`, `traspaso.crear`. Ninguno sin par.
+
+> **Octubre 2026 (ADR 0002 §54).** La cartera trae una cifra más, `por_confirmar`:
+> transferencias y cheques que el cliente ya pagó y la oficina no ha confirmado en el
+> banco. No baja el saldo —no libera crédito—; el teléfono la guarda en una columna
+> nueva de `clientes`, que llega a los teléfonos ya instalados por
+> `esquema_al_dia.dart`, y un servidor anterior que no la mande deja cero. Rechazar o
+> confirmar uno publica la cartera aunque no toque ninguna factura (disparadores de la
+> migración 0038). El cambio físico viaja como `merma.crear` con `tipo: cambio`: el
+> teléfono no estrena tipo de sobre ni tabla.
 
 ### La regla que gobierna la columna de la derecha
 

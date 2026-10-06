@@ -17,6 +17,8 @@
 /// ─────────────────────────────────────────────────────────────────────────
 ///   `merma`              la mercancía SALE del camión. Se perdió.
 ///   `devolucion_cliente` la mercancía ENTRA al camión. El cliente la devolvió.
+///   `cambio`             el fresco SALE del camión a cambio del caducado del
+///                        cliente, sin dinero. El malo cuenta como merma.
 ///
 /// Es la misma tabla porque son el mismo hecho visto al revés —un producto que
 /// cambia de manos sin dinero de por medio— y porque la liquidación los necesita
@@ -55,14 +57,24 @@ enum TipoDeMerma {
   merma('merma'),
 
   /// El cliente la devolvió. Entra al camión y vuelve a la bodega al cierre.
-  devolucion('devolucion_cliente');
+  devolucion('devolucion_cliente'),
+
+  /// Cambio físico: el cliente entrega un producto caducado o dañado y se lleva
+  /// uno fresco del camión, sin dinero de por medio (octubre 2026, migración 0040
+  /// del servidor). SALE del camión —lo que se va es el fresco— y el malo cuenta
+  /// como merma. Nunca se le cobra al vendedor ni toca su arqueo.
+  cambio('cambio');
 
   const TipoDeMerma(this.codigo);
 
   final String codigo;
 
   /// Cuánto cambia el inventario del camión: −1 si sale, +1 si entra.
-  int get signo => this == TipoDeMerma.merma ? -1 : 1;
+  int get signo => this == TipoDeMerma.devolucion ? 1 : -1;
+
+  /// Si el documento necesita al cliente. Una devolución sin él no se puede
+  /// revisar contra su venta; un cambio sin él es mercancía que salió sin rastro.
+  bool get exigeCliente => this != TipoDeMerma.merma;
 }
 
 /// Un renglón: qué producto y cuánto, en unidad base.
@@ -239,10 +251,12 @@ class RegistroDeMerma {
         );
       }
     }
-    if (tipo == TipoDeMerma.devolucion && (clienteId ?? '').isEmpty) {
-      throw const MermaRechazada(
+    if (tipo.exigeCliente && (clienteId ?? '').isEmpty) {
+      throw MermaRechazada(
         MotivoNoMerma.faltaCliente,
-        'una devolución sin cliente no se puede revisar contra su venta',
+        tipo == TipoDeMerma.cambio
+            ? 'un cambio sin cliente es mercancía que salió sin rastro'
+            : 'una devolución sin cliente no se puede revisar contra su venta',
       );
     }
 

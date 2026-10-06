@@ -62,6 +62,21 @@
     </div>
   </a>
 
+  <a class="tarjeta {% if indicadores.cobros_por_confirmar %}aviso{% endif %}"
+     href="/panel/cobranza/por-confirmar" style="text-decoration:none;color:inherit"
+     id="tarjeta_por_confirmar">
+    <div class="numero">{{ indicadores.cobros_por_confirmar }}</div>
+    <div class="etiqueta">transferencias y cheques por confirmar</div>
+    <div class="sutil" style="margin-top:6px">
+      {% if indicadores.cobros_por_confirmar %}
+        {{ indicadores.importe_por_confirmar }} que todavía no baja ninguna deuda.
+        Compáralo contra el estado de cuenta.
+      {% else %}
+        Nada esperando al banco.
+      {% endif %}
+    </div>
+  </a>
+
   <div class="tarjeta">
     <div class="numero">{{ indicadores.ventas_hoy }}</div>
     <div class="etiqueta">ventas recibidas hoy</div>

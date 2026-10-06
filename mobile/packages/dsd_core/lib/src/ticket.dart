@@ -386,9 +386,19 @@ List<int> ticketDeCobro(
 
   // Sin saldo, y se dice por qué: el vendedor no tiene que inventar una
   // explicación cuando el cliente pregunta cuánto le queda.
+  //
+  // Lo que no es efectivo se abona hasta que la oficina lo ve en el banco
+  // (migración 0038 del servidor), y el papel lo dice: un recibo que promete un
+  // abono inmediato es la disputa del día que el cheque rebote.
+  t.linea();
+  if (cobro.formaDePago.entraAlArqueo) {
+    t.parrafo('Este pago se abona a tu cuenta.');
+  } else {
+    t
+      ..parrafo('Se abona a tu cuenta cuando la oficina confirme el depósito.')
+      ..parrafo('Mientras tanto tu crédito no cambia.');
+  }
   t
-    ..linea()
-    ..parrafo('Este pago se abona a tu cuenta.')
     ..parrafo('Consulta tu saldo con tu vendedor.')
     ..linea()
     ..linea()

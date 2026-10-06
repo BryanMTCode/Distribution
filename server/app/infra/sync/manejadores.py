@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.importes import cantidad_base, importe_de_linea
 from app.domain.sync.sobres import CodigoError
+from app.infra.cobranza import Aplicacion, aplicar_fifo
 from app.infra.models import Cliente
 
 __all__ = ["Contexto", "ErrorDeManejador", "manejador_de", "obtener_manejador"]
@@ -775,7 +776,11 @@ FORMAS_DE_PAGO = ("efectivo", "transferencia", "cheque")
 async def crear_cobro(
     sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
 ) -> None:
-    """Registra un abono y lo aplica a las facturas en orden FIFO.
+    """Registra un abono y, si es efectivo, lo aplica a las facturas en FIFO.
+
+    Una transferencia o un cheque se registra `por_confirmar` y NO se aplica:
+    la deuda del cliente sigue completa hasta que la oficina confirma que el
+    dinero está en el banco (migración 0038, ADR 0002 §54).
 
     Idempotente: el UUID lo generó el teléfono y es la llave primaria. Reenviar el
     sobre no abona dos veces — que es la peor consecuencia posible de un reintento
@@ -858,6 +863,15 @@ async def crear_cobro(
     ):
         motivos.append(MOTIVO_SALDO_DESFASADO)
 
+    # ------------------------------------------------------------------
+    # Lo que no es efectivo espera al banco (migración 0038)
+    # ------------------------------------------------------------------
+    # Regla de la dirección: una transferencia o un cheque sin confirmar NO
+    # libera crédito. Se registra —el cliente tiene su recibo, y el vendedor no
+    # debe volver a cobrarle— pero no se aplica a ninguna factura hasta que la
+    # oficina vea el dinero en la cuenta. Ver `app/api/admin/cobranza.py`.
+    espera_al_banco = forma_pago != "efectivo"
+
     await sesion.execute(
         text(
             """
@@ -868,7 +882,7 @@ async def crear_cobro(
                                 fecha_operativa, requiere_revision, revision_motivos)
             VALUES (:id, :dispositivo, :folio, :folio_local, :cliente, :vendedor,
                     :visita, :importe, :forma, :referencia, :saldo_disp,
-                    :lat, :lng, 'confirmado', :fecha_dispositivo, :ahora,
+                    :lat, :lng, :estado, :fecha_dispositivo, :ahora,
                     :fecha_operativa, :revision, :motivos)
             """
         ),
@@ -882,6 +896,7 @@ async def crear_cobro(
             "visita": _uuid_opcional(datos, "visita_id"),
             "importe": importe,
             "forma": forma_pago,
+            "estado": "por_confirmar" if espera_al_banco else "confirmado",
             "referencia": _texto(datos, "referencia"),
             "saldo_disp": saldo_del_equipo,
             "lat": _decimal(datos, "lat"),
@@ -895,87 +910,20 @@ async def crear_cobro(
         },
     )
 
-    # ------------------------------------------------------------------
-    # La aplicación FIFO.
-    # ------------------------------------------------------------------
-    # `FOR UPDATE` sobre las facturas: dos cobros del mismo cliente llegando en
-    # el mismo lote aplicarían los dos sobre el mismo saldo leído, y el segundo
-    # sobrepasaría `pago_no_excede_original`. Serializar aquí es correcto porque
-    # son las facturas de UN cliente, no de la cartera.
-    facturas = (
-        await sesion.execute(
-            text(
-                """
-                SELECT venta_id, saldo FROM cuentas_por_cobrar
-                 WHERE cliente_id = :c AND estado <> 'liquidada' AND saldo > 0
-                 ORDER BY fecha_vencimiento, fecha_emision
-                 FOR UPDATE
-                """
-            ),
-            {"c": cliente_id},
-        )
-    ).mappings().all()
+    if espera_al_banco:
+        # Sin aplicar: las marcas de deuda (sin deuda, excede) se deciden al
+        # confirmar, contra la cartera de ESE momento, que es cuando el dinero
+        # de verdad se abona.
+        return
 
-    if not facturas:
-        motivos.append(MOTIVO_SIN_DEUDA)
-
-    por_aplicar = importe
-    aplicado_total = Decimal("0")
-    for factura in facturas:
-        if por_aplicar <= 0:
-            break
-        # Lo que cabe en esta factura. El sobrante pasa a la siguiente, y lo que
-        # quede al final es saldo a favor.
-        cabe = min(por_aplicar, Decimal(factura["saldo"]))
-        if cabe <= 0:
-            continue
-
-        await sesion.execute(
-            text(
-                """
-                INSERT INTO cobros_aplicaciones (cobro_id, venta_id, importe, aplicado_en)
-                VALUES (:cobro, :venta, :importe, :ahora)
-                """
-            ),
-            {
-                "cobro": entidad_id,
-                "venta": factura["venta_id"],
-                "importe": cabe,
-                "ahora": ctx.recibido_en,
-            },
-        )
-        # `saldo` es una columna GENERADA (importe_original − importe_pagado): se
-        # actualiza el pagado y la base recalcula. Escribir el saldo a mano daría
-        # dos verdades que tarde o temprano no coinciden.
-        await sesion.execute(
-            text(
-                """
-                UPDATE cuentas_por_cobrar
-                   SET importe_pagado = importe_pagado + :importe,
-                       estado = CASE
-                                  WHEN importe_pagado + :importe >= importe_original
-                                    THEN 'liquidada'
-                                  ELSE 'parcial'
-                                END,
-                       actualizado_en = :ahora
-                 WHERE venta_id = :venta
-                """
-            ),
-            {"importe": cabe, "venta": factura["venta_id"], "ahora": ctx.recibido_en},
-        )
-        por_aplicar -= cabe
-        aplicado_total += cabe
-
-    # ------------------------------------------------------------------
-    # El sobrante es saldo a favor, nunca un error.
-    # ------------------------------------------------------------------
-    # El dinero ya cambió de manos. Rechazar el excedente haría que el vendedor se
-    # guardara efectivo sin documento, que es exactamente lo que este manejador
-    # existe para evitar. Se marca para que la oficina decida si es anticipo o
-    # devolución.
-    if por_aplicar > 0 and facturas:
-        motivos.append(MOTIVO_EXCEDE_DEUDA)
-
+    aplicacion = await aplicar_fifo(
+        sesion,
+        cobro_id=entidad_id,
+        cliente_id=cliente_id,
+        importe=importe,
+        ahora=ctx.recibido_en,
+    )
+    motivos += motivos_de_aplicacion(aplicacion)
     await sesion.execute(
         text(
             "UPDATE cobros SET importe_aplicado = :aplicado, saldo_a_favor = :favor, "
@@ -983,13 +931,28 @@ async def crear_cobro(
             " WHERE id = :id"
         ),
         {
-            "aplicado": aplicado_total,
-            "favor": por_aplicar,
+            "aplicado": aplicacion.aplicado,
+            "favor": aplicacion.sobrante,
             "revision": bool(motivos),
             "motivos": motivos,
             "id": entidad_id,
         },
     )
+
+
+def motivos_de_aplicacion(aplicacion: Aplicacion) -> list[str]:
+    """Las marcas que deja el FIFO. Las usa también el panel al confirmar.
+
+    El sobrante es saldo a favor, nunca un error: el dinero ya cambió de manos.
+    Rechazar el excedente haría que el vendedor se guardara efectivo sin
+    documento, que es exactamente lo que este manejador existe para evitar. Se
+    marca para que la oficina decida si es anticipo o devolución.
+    """
+    if not aplicacion.habia_deuda:
+        return [MOTIVO_SIN_DEUDA]
+    if aplicacion.sobrante > 0:
+        return [MOTIVO_EXCEDE_DEUDA]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1018,7 +981,7 @@ MOTIVO_NO_DROP_SIN_NOTA = "no_drop_sin_nota"
 # en absoluto sí se rechaza, porque no hay nada a lo que mapearlo.
 MOTIVO_MOTIVO_INACTIVO = "motivo_fuera_de_catalogo"
 
-TIPOS_DE_MERMA = ("merma", "devolucion_cliente")
+TIPOS_DE_MERMA = ("merma", "devolucion_cliente", "cambio")
 
 
 @manejador_de("merma.crear")
@@ -1064,6 +1027,13 @@ async def crear_merma(
         raise ErrorDeManejador(
             CodigoError.PAYLOAD_INVALIDO,
             "una devolución sin cliente no se puede revisar contra su venta",
+        )
+    if tipo == "cambio" and cliente_id is None:
+        # Un cambio sin a quién se le cambió es exactamente cómo se escondería
+        # mercancía que salió del camión por otra puerta (migración 0040).
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO,
+            "un cambio físico sin cliente no se puede revisar",
         )
 
     detalle = datos.get("detalle")
@@ -1135,8 +1105,10 @@ async def crear_merma(
         },
     )
 
-    # El signo: una merma sale del camión, una devolución entra.
-    sale = tipo == "merma"
+    # El signo: una merma sale del camión, una devolución entra. Un cambio físico
+    # SALE: lo que se va es el producto fresco que se le dio al cliente, y el
+    # malo que él entregó va al almacén de merma igual que una merma.
+    sale = tipo in ("merma", "cambio")
 
     # Hacia dónde va lo mermado. Si la empresa configuró un almacén de merma, la
     # pérdida queda contabilizada ahí y el libro mayor cuadra en los dos lados; si

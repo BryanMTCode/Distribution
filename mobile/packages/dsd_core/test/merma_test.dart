@@ -149,6 +149,47 @@ void main() {
     test('los signos del tipo son explícitos', () {
       expect(TipoDeMerma.merma.signo, equals(-1));
       expect(TipoDeMerma.devolucion.signo, equals(1));
+      // El cambio físico SALE: lo que se va es el fresco que se le dio al
+      // cliente. Con signo +1 el camión subiría en vez de bajar, y el corte
+      // encontraría el doble de faltante.
+      expect(TipoDeMerma.cambio.signo, equals(-1));
+    });
+
+    test('UN CAMBIO FÍSICO SACA EL FRESCO DEL CAMIÓN', () {
+      final m = registroDeMerma().registrar(
+        tipo: TipoDeMerma.cambio,
+        motivoCodigo: 'ROTO',
+        clienteId: 'cli-1',
+        renglones: [
+          RenglonDeMerma(productoId: 'p-sopa', cantidadBase: Cantidad.deEnteros(4)),
+        ],
+      );
+      expect(m.tipo, equals(TipoDeMerma.cambio));
+      expect(enCamion('p-sopa'), equals(236.0));
+      final fila = db.select('SELECT tipo, cliente_id FROM mermas').single;
+      expect(fila['tipo'], equals('cambio'));
+      expect(fila['cliente_id'], equals('cli-1'));
+    });
+
+    test('un cambio SIN cliente se rechaza, y no quema folio', () {
+      // Sin a quién se le cambió, es mercancía que salió del camión sin rastro.
+      expect(
+        () => registroDeMerma().registrar(
+          tipo: TipoDeMerma.cambio,
+          motivoCodigo: 'CADUCADO',
+          renglones: [
+            RenglonDeMerma(productoId: 'p-sopa', cantidadBase: Cantidad.deEnteros(4)),
+          ],
+        ),
+        throwsA(
+          isA<MermaRechazada>().having(
+            (e) => e.motivo,
+            'motivo',
+            MotivoNoMerma.faltaCliente,
+          ),
+        ),
+      );
+      expect(folios.leer('merma')!.consumidoHasta, equals(0));
     });
 
     test('UNA MERMA SE REGISTRA AUNQUE EL CAMIÓN DIGA QUE NO HABÍA', () {

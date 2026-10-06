@@ -78,13 +78,20 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
               key: const Key('menu_de_visita'),
               icon: const Icon(Icons.more_vert),
               onSelected: (opcion) {
-                final destino = opcion == 'no_drop'
-                    ? MaterialPageRoute<void>(
-                        builder: (_) => PantallaNoDrop(cliente: cliente),
-                      )
-                    : MaterialPageRoute<void>(
-                        builder: (_) => PantallaMerma(cliente: cliente),
-                      );
+                final destino = switch (opcion) {
+                  'no_drop' => MaterialPageRoute<void>(
+                      builder: (_) => PantallaNoDrop(cliente: cliente),
+                    ),
+                  'cambio' => MaterialPageRoute<void>(
+                      builder: (_) => PantallaMerma(
+                        cliente: cliente,
+                        tipoInicial: TipoDeMerma.cambio,
+                      ),
+                    ),
+                  _ => MaterialPageRoute<void>(
+                      builder: (_) => PantallaMerma(cliente: cliente),
+                    ),
+                };
                 Navigator.of(context).push(destino);
               },
               itemBuilder: (_) => const [
@@ -101,6 +108,17 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
                   child: ListTile(
                     leading: Icon(Icons.undo),
                     title: Text('Me devolvió mercancía'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                // Fresco por caducado o dañado, sin dinero (octubre 2026).
+                PopupMenuItem(
+                  value: 'cambio',
+                  key: Key('opcion_cambio'),
+                  child: ListTile(
+                    leading: Icon(Icons.swap_horiz),
+                    title: Text('Cambio físico'),
+                    subtitle: Text('Caducado o dañado, sin cobro'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),

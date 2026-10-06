@@ -30,6 +30,14 @@
   Los ajustes ya están en el libro mayor, y el camión quedó exactamente en lo
   contado: la mercancía se queda arriba para el día siguiente.
 </div>
+{% if cargos %}
+<div class="aviso-caja aviso" id="cargos_del_corte">
+  <strong>Se le cargaron ${{ '%.2f'|format(total_cargado) }} al vendedor</strong>
+  (la mercancía a costo):
+  {% for x in cargos %}{{ origenes.get(x.origen, x.origen)|lower }} ${{ '%.2f'|format(x.importe) }}{% if not loop.last %}, {% endif %}{% endfor %}.
+  <a href="/panel/vendedores/cuenta/{{ c.vendedor_id }}">Ver su cuenta →</a>
+</div>
+{% endif %}
 {# ----------------------------------------------------------------------- #}
 {# Sobre QUÉ descansó este cierre.                                         #}
 {# ----------------------------------------------------------------------- #}

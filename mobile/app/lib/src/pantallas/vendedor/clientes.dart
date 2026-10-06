@@ -372,7 +372,26 @@ class _Renglon extends StatelessWidget {
             ),
         ],
       ),
-      subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
+      subtitle: subtitulo.isEmpty && cliente.porConfirmar.esCero
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitulo.isNotEmpty) Text(subtitulo),
+                // Ya pagó por transferencia o cheque y la oficina no lo ha
+                // confirmado: la deuda sigue completa, pero no hay que volver a
+                // cobrárselo.
+                if (!cliente.porConfirmar.esCero)
+                  Text(
+                    key: Key('por_confirmar_${cliente.id}'),
+                    '\$${cliente.porConfirmar.texto} pagado, por confirmar',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
+                  ),
+              ],
+            ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

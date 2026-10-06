@@ -165,8 +165,14 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                     WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada')
                     AS importe_hoy,
                   (SELECT count(*) FROM cobros
-                    WHERE requiere_revision AND estado = 'confirmado')
+                    WHERE requiere_revision AND estado IN ('confirmado', 'por_confirmar'))
                     AS cobros_en_revision,
+                  -- Lo que espera al banco: no baja ninguna deuda hasta que alguien
+                  -- lo confirme, así que un número que crece es crédito congelado.
+                  (SELECT count(*) FROM cobros WHERE estado = 'por_confirmar')
+                    AS cobros_por_confirmar,
+                  (SELECT COALESCE(sum(importe), 0) FROM cobros
+                    WHERE estado = 'por_confirmar') AS importe_por_confirmar,
                   -- EFECTIVO A ENTREGAR = VENTAS DE CONTADO + COBROS EN EFECTIVO.
                   --
                   -- Faltaba el primer término, y con él el caso más común de una
@@ -214,6 +220,7 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
     indicadores = dict(fila)
     indicadores["importe_hoy"] = dinero(fila["importe_hoy"])
     indicadores["efectivo_hoy"] = dinero(fila["efectivo_hoy"])
+    indicadores["importe_por_confirmar"] = dinero(fila["importe_por_confirmar"])
     # La bandera va aparte del texto: si la plantilla comparara el número ya
     # formateado contra "$0.00", el día que cambie el separador de miles la alerta
     # se encendería sola y nadie sabría por qué.

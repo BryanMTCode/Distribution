@@ -85,11 +85,15 @@ class _EnCaptura {
 }
 
 class PantallaMerma extends ConsumerStatefulWidget {
-  const PantallaMerma({super.key, this.cliente});
+  const PantallaMerma({super.key, this.cliente, this.tipoInicial});
 
   /// Cuando viene de la visita a un cliente, la pantalla abre en modo
   /// **devolución**: es de donde sale la mercancía que regresa.
   final ClienteEnRuta? cliente;
+
+  /// Con qué tipo abre. El menú de la visita la abre en **cambio** cuando el
+  /// vendedor eligió «Cambio físico».
+  final TipoDeMerma? tipoInicial;
 
   @override
   ConsumerState<PantallaMerma> createState() => _EstadoMerma();
@@ -106,9 +110,8 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
   @override
   void initState() {
     super.initState();
-    _tipo = widget.cliente == null
-        ? TipoDeMerma.merma
-        : TipoDeMerma.devolucion;
+    _tipo = widget.tipoInicial ??
+        (widget.cliente == null ? TipoDeMerma.merma : TipoDeMerma.devolucion);
   }
 
   @override
@@ -143,7 +146,11 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
 
   void _registrar() {
     if (_motivo == null) {
-      setState(() => _error = 'Escoge por qué se perdió.');
+      setState(
+        () => _error = _tipo == TipoDeMerma.cambio
+            ? 'Escoge por qué se cambia.'
+            : 'Escoge por qué se perdió.',
+      );
       return;
     }
     if (_renglones.isEmpty) {
@@ -156,7 +163,9 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
       final cantidad = r.enBase;
       if (cantidad == null || cantidad.milesimos <= 0) {
         setState(
-          () => _error = 'Pon cuántas se perdieron de ${r.producto.nombre}.',
+          () => _error = _tipo == TipoDeMerma.cambio
+              ? 'Pon cuántas cambiaste de ${r.producto.nombre}.'
+              : 'Pon cuántas se perdieron de ${r.producto.nombre}.',
         );
         return;
       }
@@ -209,10 +218,17 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
     }
 
     final esDevolucion = _tipo == TipoDeMerma.devolucion;
+    final esCambio = _tipo == TipoDeMerma.cambio;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(esDevolucion ? 'Devolución del cliente' : 'Registrar merma'),
+        title: Text(
+          esCambio
+              ? 'Cambio físico'
+              : esDevolucion
+                  ? 'Devolución del cliente'
+                  : 'Registrar merma',
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -227,32 +243,51 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
 
           // El signo, dicho con el efecto y no con el nombre del tipo: "sale del
           // camión" se entiende sin saber qué es una merma.
+          //
+          // El cambio solo se ofrece con cliente: sin él no hay a quién se le
+          // cambió. Con tres opciones van sin icono, porque con icono la fila
+          // desborda en un teléfono angosto.
           SegmentedButton<TipoDeMerma>(
             key: const Key('tipo_de_merma'),
-            segments: const [
+            showSelectedIcon: widget.cliente == null,
+            segments: [
               ButtonSegment(
                 value: TipoDeMerma.merma,
-                label: Text('Se perdió'),
-                icon: Icon(Icons.delete_outline),
+                label: const Text('Se perdió'),
+                icon: widget.cliente == null
+                    ? const Icon(Icons.delete_outline)
+                    : null,
               ),
               ButtonSegment(
                 value: TipoDeMerma.devolucion,
-                label: Text('Me la devolvió'),
-                icon: Icon(Icons.undo),
+                label: Text(
+                  widget.cliente == null ? 'Me la devolvió' : 'Devolvió',
+                ),
+                icon: widget.cliente == null ? const Icon(Icons.undo) : null,
               ),
+              if (widget.cliente != null)
+                const ButtonSegment(
+                  value: TipoDeMerma.cambio,
+                  label: Text('Cambio', key: Key('segmento_cambio')),
+                ),
             ],
             selected: {_tipo},
             onSelectionChanged: (s) => setState(() => _tipo = s.first),
           ),
           const SizedBox(height: 6),
           Text(
-            esDevolucion
-                ? 'Entra al camión y regresa a la bodega en la liquidación.'
-                : 'Sale del camión. Es lo que evita que el faltante se te cargue '
-                    'a ti.',
+            esCambio
+                ? 'Le das producto fresco y te llevas el caducado o dañado. El '
+                    'fresco sale del camión con este documento: no es faltante, '
+                    'no se cobra y no toca tu efectivo.'
+                : esDevolucion
+                    ? 'Entra al camión y regresa a la bodega en la liquidación.'
+                    : 'Sale del camión. Es lo que evita que el faltante se te '
+                        'cargue a ti.',
+            key: const Key('explicacion_tipo'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          if (esDevolucion && widget.cliente == null) ...[
+          if (_tipo.exigeCliente && widget.cliente == null) ...[
             const SizedBox(height: 12),
             const Aviso(
               'Una devolución se registra desde la visita al cliente: sin él la '
@@ -262,7 +297,7 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
           ],
           const SizedBox(height: 16),
 
-          const Text('Por qué'),
+          Text(esCambio ? 'Por qué se cambia' : 'Por qué'),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
             key: const Key('motivo_de_merma'),
@@ -333,7 +368,13 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(esDevolucion ? 'Registrar la devolución' : 'Registrar la merma'),
+                : Text(
+                    esCambio
+                        ? 'Registrar el cambio'
+                        : esDevolucion
+                            ? 'Registrar la devolución'
+                            : 'Registrar la merma',
+                  ),
           ),
         ],
       ),
@@ -341,6 +382,9 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
   }
 
   List<Widget> _avisoDeCargo(List<MotivoDeMerma> motivos) {
+    // Un cambio nunca se le cobra, sea cual sea el motivo: el producto se echó a
+    // perder en la tienda del cliente, no en su camión.
+    if (_tipo == TipoDeMerma.cambio) return const [];
     final motivo = motivos.where((m) => m.codigo == _motivo).firstOrNull;
     if (motivo == null || !motivo.afectaVendedor) return const [];
     return [
@@ -357,7 +401,7 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
     final capturado = r.enBase;
     final existencia = r.producto.existenciaBase;
     // Se avisa, no se bloquea: el cartón ya está roto.
-    final pasaLoQueHay = _tipo == TipoDeMerma.merma &&
+    final pasaLoQueHay = _tipo.signo < 0 &&
         capturado != null &&
         capturado.milesimos > existencia.milesimos;
 
@@ -510,10 +554,17 @@ class _MermaGuardadaVista extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final esDevolucion = merma.tipo == TipoDeMerma.devolucion;
+    final esCambio = merma.tipo == TipoDeMerma.cambio;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(esDevolucion ? 'Devolución registrada' : 'Merma registrada'),
+        title: Text(
+          esCambio
+              ? 'Cambio registrado'
+              : esDevolucion
+                  ? 'Devolución registrada'
+                  : 'Merma registrada',
+        ),
         automaticallyImplyLeading: false,
       ),
       body: ListView(
@@ -539,12 +590,16 @@ class _MermaGuardadaVista extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            esDevolucion
-                ? 'La mercancía ya cuenta como que entró al camión. En la '
-                    'liquidación se suma a lo que regresas.'
-                : 'Ya está en la cola. En la liquidación esto se resta de lo '
-                    'que se te va a contar, así que el faltante no va a '
-                    'aparecer como tuyo.',
+            esCambio
+                ? 'El fresco ya salió del camión con su documento. En el corte '
+                    'no aparece como faltante, no se te cobra y no cambia el '
+                    'efectivo que entregas.'
+                : esDevolucion
+                    ? 'La mercancía ya cuenta como que entró al camión. En la '
+                        'liquidación se suma a lo que regresas.'
+                    : 'Ya está en la cola. En la liquidación esto se resta de '
+                        'lo que se te va a contar, así que el faltante no va a '
+                        'aparecer como tuyo.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 24),

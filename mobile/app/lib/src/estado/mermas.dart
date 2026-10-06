@@ -154,8 +154,8 @@ class MermaFallida extends EstadoMerma {
         MotivoNoMerma.cantidadInvalida =>
           'Hay un renglón en cero. Pon cuánto fue, o quítalo.',
         MotivoNoMerma.faltaCliente =>
-          'Una devolución necesita cliente: sin él la oficina no puede '
-              'revisarla contra su venta.',
+          'Una devolución o un cambio necesitan cliente: regístralos desde la '
+              'visita, para que la oficina sepa a quién.',
         MotivoNoMerma.motivoDesconocido =>
           'Ese motivo ya no está en el catálogo. Sincroniza y escoge otro.',
         MotivoNoMerma.sinRangoDeFolios =>

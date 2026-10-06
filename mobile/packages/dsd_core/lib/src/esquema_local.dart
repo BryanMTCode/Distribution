@@ -121,6 +121,12 @@ CREATE TABLE IF NOT EXISTS clientes (
     saldo_cache             REAL NOT NULL DEFAULT 0,
     saldo_cache_en          TEXT,
 
+    -- Transferencias y cheques que el cliente reportó pagados y la oficina
+    -- todavía no confirma en el banco. NO se restan del saldo —no liberan
+    -- crédito (migración 0038 del servidor)—: se muestran para que el vendedor
+    -- no le vuelva a cobrar lo que ya le pagaron.
+    por_confirmar           REAL NOT NULL DEFAULT 0,
+
     -- 1 cuando el cliente nació en este teléfono y aún no lo confirma el
     -- servidor. Es zona PROPIA hasta que llega su confirmación.
     es_local                INTEGER NOT NULL DEFAULT 0,

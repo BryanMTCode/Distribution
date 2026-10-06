@@ -69,6 +69,10 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # La cuenta del vendedor (migración 0039) cuelga de `usuarios`; explícita por
+    # lo mismo que las demás. Es append-only, pero TRUNCATE no dispara los
+    # disparadores de renglón que lo impiden.
+    "cuenta_vendedor",
     # El piso de retención del change_log (migración 0034). Es estado de la
     # INSTALACIÓN, no dato de referencia: una prueba que lo sube —la del job de
     # poda— dejaría a todas las que corran después recibiendo «resincroniza» en

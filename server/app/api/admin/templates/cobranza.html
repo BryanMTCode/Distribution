@@ -16,6 +16,10 @@
           class="{% if not solo_revision %}secundario{% endif %}">
     Por revisar{% if pendientes %} ({{ pendientes }}){% endif %}
   </button>
+  <a href="/panel/cobranza/por-confirmar" class="boton-chico" id="enlace_por_confirmar">
+    Por confirmar{% if por_confirmar.cuantos %} ({{ por_confirmar.cuantos }} ·
+    ${{ '%.2f'|format(por_confirmar.importe) }}){% endif %}
+  </a>
 </form>
 
 {# ------------------------------------------------------------------------- #}
@@ -25,7 +29,9 @@
 <h2>Qué entregar hoy</h2>
 <p class="sutil" style="margin:-6px 0 12px">
   Solo el efectivo entra al arqueo. Una transferencia entra al sistema pero no a
-  la bolsa del vendedor, y sumarlas haría que la caja nunca cuadre.
+  la bolsa del vendedor, y sumarlas haría que la caja nunca cuadre. Y mientras
+  esté <a href="/panel/cobranza/por-confirmar">por confirmar</a> tampoco baja la
+  deuda del cliente.
 </p>
 <div class="tabla-marco">
   <table>
@@ -34,6 +40,7 @@
         <th>Vendedor</th>
         <th class="numero">Efectivo a entregar</th>
         <th class="numero">Otras formas</th>
+        <th class="numero">Por confirmar</th>
         <th class="numero">Cobros</th>
         <th>Por revisar</th>
       </tr>
@@ -44,6 +51,9 @@
         <td>{{ c.vendedor }}</td>
         <td class="numero"><strong>${{ '%.2f'|format(c.efectivo) }}</strong></td>
         <td class="numero sutil">${{ '%.2f'|format(c.otras_formas) }}</td>
+        <td class="numero sutil">
+          {% if c.por_confirmar %}${{ '%.2f'|format(c.por_confirmar) }}{% else %}—{% endif %}
+        </td>
         <td class="numero">{{ c.cuantos }}</td>
         <td>
           {% if c.marcados %}
@@ -92,6 +102,11 @@
           <div class="sutil">
             {{ f.forma_pago }}{% if f.forma_pago not in formas_en_arqueo %} (no arqueo){% endif %}
           </div>
+          {% if f.estado == 'por_confirmar' %}
+            <div><span class="etiqueta-motivo">por confirmar</span></div>
+          {% elif f.estado == 'rechazado' %}
+            <div><span class="etiqueta-motivo" style="color:var(--alerta)">rechazado</span></div>
+          {% endif %}
           {% if f.saldo_a_favor and f.saldo_a_favor > 0 %}
             <div class="sutil">${{ '%.2f'|format(f.saldo_a_favor) }} a favor</div>
           {% endif %}

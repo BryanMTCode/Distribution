@@ -202,4 +202,45 @@
   No se registró ninguna merma en este periodo.
 </div>
 {% endif %}
+
+{# ----------------------------------------------------------------------- #}
+{# Los cambios físicos: fresco por caducado o dañado, sin dinero.          #}
+{# ----------------------------------------------------------------------- #}
+<h2 id="cambios">Cambios físicos</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  Producto que se le cambió al cliente por estar caducado o dañado. Sale del camión
+  con documento y <strong>nunca se le cobra al vendedor</strong>: se echó a perder
+  en la tienda, no en el camión. Lo que hay que mirar es a quién y qué se le cambia
+  seguido.
+</p>
+{% if cambios %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th>Producto</th>
+        <th>Motivo</th>
+        <th>Vendedor</th>
+        <th class="numero">Unidades</th>
+        <th class="numero">Cambios</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cambios %}
+      <tr>
+        <td>{{ c.cliente or '—' }}</td>
+        <td>{{ c.producto }}</td>
+        <td class="sutil">{{ c.motivo }}</td>
+        <td class="sutil">{{ c.vendedor }}</td>
+        <td class="numero"><strong>{{ c.unidades|entero }}</strong></td>
+        <td class="numero sutil">{{ c.documentos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">No se registró ningún cambio físico en este periodo.</div>
+{% endif %}
 {% endblock %}

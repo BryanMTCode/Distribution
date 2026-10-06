@@ -234,6 +234,39 @@ async def listar(
         )
     ).mappings().all()
 
+    # ------------------------------------------------------------------
+    # Los cambios físicos (migración 0040): fresco por caducado o dañado.
+    # ------------------------------------------------------------------
+    # Aparte de las mermas porque NUNCA se le cobran al vendedor —el producto se
+    # echó a perder en la tienda, no en su camión—, y mezclarlos haría que la
+    # columna «¿se le descuenta?» mintiera. Por cliente y producto, que es la
+    # pregunta que hace la oficina: ¿a quién le estamos cambiando, y qué?
+    cambios = (
+        await sesion.execute(
+            text(
+                """
+                SELECT c.nombre_comercial AS cliente, p.nombre AS producto,
+                       mm.nombre AS motivo, u.nombre AS vendedor,
+                       count(DISTINCT m.id) AS documentos,
+                       COALESCE(sum(d.cantidad_base), 0) AS unidades
+                  FROM mermas m
+                  JOIN merma_detalle d ON d.merma_id = m.id
+                  JOIN productos p ON p.id = d.producto_id
+                  JOIN motivos_merma mm ON mm.codigo = m.motivo_codigo
+                  LEFT JOIN clientes c ON c.id = m.cliente_id
+                  JOIN usuarios u ON u.id = m.vendedor_id
+                 WHERE m.estado = 'confirmada'
+                   AND m.tipo = 'cambio'
+                   AND m.fecha_operativa BETWEEN :desde AND :hasta
+                 GROUP BY c.nombre_comercial, p.nombre, mm.nombre, u.nombre
+                 ORDER BY unidades DESC, c.nombre_comercial
+                 LIMIT 200
+                """
+            ),
+            {"desde": inicio, "hasta": fin},
+        )
+    ).mappings().all()
+
     visitas = sum(f["visitas"] for f in por_vendedor)
     ventas = sum(f["ventas"] for f in por_vendedor)
     nuestras = sum(f["cuantas"] for f in motivos if f["categoria"] in NUESTRA_CULPA)
@@ -271,6 +304,7 @@ async def listar(
             ],
             "motivos": motivos,
             "mermas": mermas,
+            "cambios": cambios,
             "visitas": visitas,
             "ventas": ventas,
             "perdidas": perdidas,

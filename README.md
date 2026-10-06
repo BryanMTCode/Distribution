@@ -18,7 +18,7 @@ la bodega sube cuando alguien la cuenta.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0037) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0040) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -82,6 +82,9 @@ la bodega sube cuando alguien la cuenta.
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
 | **Cobranza en el panel** — arqueo del día, cobros marcados y antigüedad | ✅ 25 pruebas |
+| **Transferencias y cheques por confirmar** — no liberan crédito hasta que la oficina los ve en el banco | ✅ 22 pruebas + 4 de Dart y 4 de widget |
+| **Cuenta del vendedor** — faltante y mermas a su cargo **a costo**, efectivo; abonos y condonación | ✅ 23 pruebas |
+| **Cambio físico** — fresco por caducado o dañado: sale del camión con documento, sin cobro ni faltante | ✅ 8 pruebas + 2 de Dart y 5 de widget |
 | **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
 | **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
@@ -113,7 +116,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1163 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **578 de Dart** y **267 de widget**, todas en verde.
+**1216 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **584 de Dart** y **276 de widget**, todas en verde.
 
 ## Stack
 
@@ -177,7 +180,9 @@ server/
                      equipo.py        usuarios, rutas, almacenes y listas de precios
                      inventario.py    existencias y libro mayor por almacén
                      liquidaciones.py el corte del día (Fase 7)
-                     cobranza.py      arqueo del día, cobros marcados y antigüedad
+                     cobranza.py      arqueo del día, cobros marcados, transferencias
+                                      por confirmar y antigüedad
+                     cuenta_vendedores.py lo que debe cada vendedor, y cómo lo paga
                      efectividad.py   visitas, no-drops por categoría y mermas por motivo
                      objetivos.py     la meta mensual de cada ruta (sin ella el tablero no compara)
                      equipos.py       los teléfonos: rezago, suspensión y borrado remoto
@@ -194,6 +199,7 @@ server/
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
+    infra/           cobranza.py (el FIFO, y deshacerlo) · cuenta_vendedor.py (los cargos del Corte)
     api/v1/          auth, dispositivos, salud, tablero
     workers/         cola sobre PostgreSQL + proceso worker
   db/
@@ -210,7 +216,7 @@ mobile/
                      vista previa, crédito, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            578 pruebas que corren en segundos
+    test/            584 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -219,7 +225,7 @@ mobile/
                      merma y devolución, no-drop, lienzo espacial, MI DÍA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
                      gerencia/ (tablero, mapa del día)
-    test/            267 pruebas de widget, sin emulador
+    test/            276 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -238,8 +244,8 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1163 pruebas de Python
-make movil                          # 578 de Dart + 267 de widget
+make pruebas                        # 1216 pruebas de Python
+make movil                          # 584 de Dart + 276 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

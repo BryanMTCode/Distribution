@@ -34,24 +34,52 @@ aplicación la decidió el FIFO sobre la cartera real; dejar que la oficina lo
 mueva con un botón abriría la puerta a maquillar una cartera sin que quede
 rastro. Lo que sí hace es **marcar como revisado**, que es un acto de auditoría y
 no una corrección: deja quién lo vio y cuándo.
+
+────────────────────────────────────────────────────────────────────────────
+TRANSFERENCIAS Y CHEQUES: LA OFICINA LOS CONFIRMA (octubre 2026)
+────────────────────────────────────────────────────────────────────────────
+Lo que no es efectivo llega `por_confirmar` y NO baja la deuda del cliente: una
+transferencia sin confirmar no libera crédito (migración 0038). Aquí la oficina
+la compara contra el estado de cuenta y hace una de dos cosas:
+
+  · **Confirmar** — varios a la vez. En ese momento se aplica en FIFO, con la
+    misma función que aplica el efectivo al sincronizar.
+  · **Rechazar** — uno por uno y con motivo, porque es acusar. Si el cobro ya
+    estaba confirmado (el cheque rebotó después), la aplicación se revierte y
+    las facturas vuelven a deber.
+
+El efectivo no pasa por aquí: está en la mano y lo cuenta el arqueo.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 from starlette import status
 
-from app.api.admin.comun import SesionDep, render, texto_o_nulo
+from app.api.admin.comun import SesionDep, dinero, render, texto_o_nulo
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.cobranza import aplicar_fifo, revertir_aplicacion
+from app.infra.sync.manejadores import motivos_de_aplicacion
 
 router = APIRouter(prefix="/panel/cobranza", tags=["panel"], include_in_schema=False)
 
 PERMISO = "cobranza.ver"
+
+# Confirmar o rechazar dinero que no es efectivo. Separado de `cobranza.ver`: la
+# misma mano que vigila la ruta no debe dar por buena la transferencia de su
+# vendedor (ver la migración 0038).
+PERMISO_CONFIRMAR = "cobranza.confirmar"
+
+# Los estados que son un cobro vivo. `cancelado` no cuenta para nada; `rechazado`
+# sí se lista —la oficina tiene que poder ver qué rechazó—, pero no suma.
+ESTADOS_VISIBLES = ("confirmado", "por_confirmar", "rechazado")
 
 # Cómo se le explica a la oficina cada motivo. El código es para el sistema; esto
 # es para la persona que tiene que decidir qué hacer con el cobro.
@@ -97,10 +125,10 @@ async def listar(
     """
     actor.exigir(PERMISO)
 
-    filtro = "WHERE k.requiere_revision AND k.estado = 'confirmado'"
+    filtro = "WHERE k.requiere_revision AND k.estado IN ('confirmado', 'por_confirmar')"
     if not solo_revision:
         filtro = (
-            "WHERE k.estado = 'confirmado' "
+            "WHERE k.estado IN ('confirmado', 'por_confirmar', 'rechazado') "
             "  AND k.fecha_operativa = COALESCE(:dia, CURRENT_DATE)"
         )
 
@@ -112,6 +140,7 @@ async def listar(
                        k.importe_aplicado, k.saldo_a_favor, k.saldo_cache_disp,
                        k.fecha_operativa, k.fecha_dispositivo, k.fecha_servidor,
                        k.requiere_revision, k.revision_motivos, k.impreso,
+                       k.estado,
                        c.nombre_comercial AS cliente, c.codigo AS codigo_cliente,
                        u.nombre AS vendedor
                   FROM cobros k
@@ -137,14 +166,18 @@ async def listar(
                 """
                 SELECT u.id AS vendedor_id, u.nombre AS vendedor,
                        COALESCE(sum(k.importe) FILTER (
-                           WHERE k.forma_pago = ANY(:arqueo)), 0) AS efectivo,
+                           WHERE k.estado = 'confirmado'
+                             AND k.forma_pago = ANY(:arqueo)), 0) AS efectivo,
                        COALESCE(sum(k.importe) FILTER (
-                           WHERE NOT (k.forma_pago = ANY(:arqueo))), 0) AS otras_formas,
+                           WHERE k.estado = 'confirmado'
+                             AND NOT (k.forma_pago = ANY(:arqueo))), 0) AS otras_formas,
+                       COALESCE(sum(k.importe) FILTER (
+                           WHERE k.estado = 'por_confirmar'), 0) AS por_confirmar,
                        count(*) AS cuantos,
                        count(*) FILTER (WHERE k.requiere_revision) AS marcados
                   FROM cobros k
                   JOIN usuarios u ON u.id = k.vendedor_id
-                 WHERE k.estado = 'confirmado'
+                 WHERE k.estado IN ('confirmado', 'por_confirmar')
                    AND k.fecha_operativa = COALESCE(:dia, CURRENT_DATE)
                  GROUP BY u.id, u.nombre
                  ORDER BY u.nombre
@@ -158,10 +191,12 @@ async def listar(
         await sesion.execute(
             text(
                 "SELECT count(*) FROM cobros "
-                " WHERE requiere_revision AND estado = 'confirmado'"
+                " WHERE requiere_revision AND estado IN ('confirmado', 'por_confirmar')"
             )
         )
     ).scalar_one()
+
+    por_confirmar = await _cuantos_por_confirmar(sesion)
 
     return render(
         peticion,
@@ -172,6 +207,7 @@ async def listar(
             "dia": dia,
             "solo_revision": bool(solo_revision),
             "pendientes": pendientes,
+            "por_confirmar": por_confirmar,
             "explicacion": EXPLICACION_MOTIVOS,
             "formas_en_arqueo": FORMAS_EN_ARQUEO,
             "puede_editar": actor.puede(PERMISO),
@@ -181,12 +217,205 @@ async def listar(
     )
 
 
+async def _cuantos_por_confirmar(sesion) -> dict:
+    """Cuántos esperan al banco y cuánto suman. Lo usan la lista y el tablero."""
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT count(*) AS cuantos, COALESCE(sum(importe), 0) AS importe "
+                "  FROM cobros WHERE estado = 'por_confirmar'"
+            )
+        )
+    ).mappings().one()
+    return dict(fila)
+
+
+# ---------------------------------------------------------------------------
+# Transferencias y cheques por confirmar
+# ---------------------------------------------------------------------------
+# Esta ruta va ANTES de `/{cobro_id}`: Starlette prueba las rutas en orden, y
+# «por-confirmar» encajaría en `{cobro_id}` y fallaría como UUID inválido.
+
+@router.get("/por-confirmar", response_class=HTMLResponse)
+async def por_confirmar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    guardado: str = "",
+    error: str = "",
+) -> HTMLResponse:
+    """Lo que el cliente dice que pagó y la oficina todavía no ve en el banco.
+
+    El más viejo arriba: una transferencia que lleva cuatro días sin aparecer en
+    el estado de cuenta ya no es un retraso del banco, es una pregunta para el
+    vendedor.
+    """
+    actor.exigir(PERMISO)
+
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT k.id, k.folio_local, k.importe, k.forma_pago, k.referencia,
+                       k.fecha_operativa, k.fecha_servidor,
+                       CURRENT_DATE - k.fecha_operativa AS dias,
+                       k.requiere_revision, k.revision_motivos,
+                       c.nombre_comercial AS cliente, c.codigo AS codigo_cliente,
+                       u.nombre AS vendedor
+                  FROM cobros k
+                  JOIN clientes c ON c.id = k.cliente_id
+                  JOIN usuarios u ON u.id = k.vendedor_id
+                 WHERE k.estado = 'por_confirmar'
+                 ORDER BY k.fecha_operativa, k.fecha_servidor
+                 LIMIT 500
+                """
+            )
+        )
+    ).mappings().all()
+
+    return render(
+        peticion,
+        "cobranza_por_confirmar.html",
+        {
+            "filas": filas,
+            "total": sum((Decimal(f["importe"]) for f in filas), Decimal(0)),
+            "puede_confirmar": actor.puede(PERMISO_CONFIRMAR),
+            "explicacion": EXPLICACION_MOTIVOS,
+            "guardado": guardado,
+            "error": error,
+        },
+        actor=actor,
+        seccion="Cobranza",
+    )
+
+
+@router.post("/confirmar")
+async def confirmar(peticion: Request, actor: ActorWeb, sesion: SesionDep):
+    """Confirma de una vez los cobros marcados en la lista, y los aplica en FIFO.
+
+    Confirmar es lo que el banco ya dijo, así que va en bloque, como se concilia
+    un estado de cuenta: renglón por renglón contra la lista, y un botón al final.
+    Rechazar no: ver `rechazar`.
+
+    Cada cobro se bloquea (`FOR UPDATE`) y se confirma solo si SIGUE por
+    confirmar: dos personas conciliando a la vez, o un doble clic, no lo aplican
+    dos veces.
+    """
+    actor.exigir(PERMISO_CONFIRMAR)
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+
+    ids: list[uuid.UUID] = []
+    for valor in formulario.getlist("cobro"):
+        try:
+            ids.append(uuid.UUID(str(valor)))
+        except ValueError:
+            continue
+    if not ids:
+        return _a_por_confirmar(
+            error="No marcaste ningún cobro. Palomea los que ya viste en el banco."
+        )
+
+    ahora = datetime.now(UTC)
+    confirmados = 0
+    total = Decimal(0)
+    for cobro_id in ids:
+        cobro = (
+            await sesion.execute(
+                text(
+                    "SELECT id, cliente_id, importe, revision_motivos FROM cobros "
+                    " WHERE id = :id AND estado = 'por_confirmar' FOR UPDATE"
+                ),
+                {"id": cobro_id},
+            )
+        ).mappings().first()
+        if cobro is None:
+            continue
+
+        await _confirmar_y_aplicar(sesion, cobro, quien=actor.usuario_id, ahora=ahora)
+        await _auditar(sesion, cobro_id, "confirmar", actor.usuario_id, None)
+        confirmados += 1
+        total += Decimal(cobro["importe"])
+
+    await sesion.commit()
+    if not confirmados:
+        return _a_por_confirmar(
+            error="Ninguno seguía por confirmar: alguien más ya los había resuelto."
+        )
+    return _a_por_confirmar(
+        guardado=f"Se confirmaron {confirmados} cobro(s) por {dinero(total)}. Ya se "
+        "abonaron a las facturas de cada cliente y su crédito se liberó."
+    )
+
+
+async def _confirmar_y_aplicar(sesion, cobro, *, quien, ahora, nota: str | None = None) -> None:
+    """Da el cobro por bueno y lo reparte en FIFO sobre la cartera de hoy.
+
+    Primero el estado, luego la aplicación: la base no deja abonar un cobro que
+    sigue por confirmar (`cobro_sin_aplicar_hasta_confirmar`).
+    """
+    await sesion.execute(
+        text(
+            "UPDATE cobros SET estado = 'confirmado', resuelto_en = :ahora, "
+            "       resuelto_por = :quien, resolucion_nota = :nota WHERE id = :id"
+        ),
+        {"id": cobro["id"], "ahora": ahora, "quien": quien, "nota": nota},
+    )
+    aplicacion = await aplicar_fifo(
+        sesion,
+        cobro_id=cobro["id"],
+        cliente_id=cobro["cliente_id"],
+        importe=Decimal(cobro["importe"]),
+        ahora=ahora,
+    )
+    nuevos = motivos_de_aplicacion(aplicacion)
+    await sesion.execute(
+        text(
+            "UPDATE cobros SET importe_aplicado = :aplicado, saldo_a_favor = :favor, "
+            "       requiere_revision = requiere_revision OR :marcar, "
+            "       revision_motivos = revision_motivos || :nuevos "
+            " WHERE id = :id"
+        ),
+        {
+            "id": cobro["id"],
+            "aplicado": aplicacion.aplicado,
+            "favor": aplicacion.sobrante,
+            "marcar": bool(nuevos),
+            "nuevos": nuevos,
+        },
+    )
+
+
+def _a_por_confirmar(*, guardado: str = "", error: str = "") -> RedirectResponse:
+    destino = "/panel/cobranza/por-confirmar"
+    if guardado:
+        destino += f"?guardado={quote(guardado)}"
+    elif error:
+        destino += f"?error={quote(error)}"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+async def _auditar(sesion, cobro_id, accion: str, quien, motivo: str | None) -> None:
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO auditoria (entidad, entidad_id, accion, usuario_id, motivo,
+                                   ocurrido_en)
+            VALUES ('cobro', :id, :accion, :quien, :motivo, now())
+            """
+        ),
+        {"id": cobro_id, "accion": accion, "quien": quien, "motivo": motivo},
+    )
+
+
 @router.get("/{cobro_id}", response_class=HTMLResponse)
 async def detalle(
     peticion: Request,
     actor: ActorWeb,
     sesion: SesionDep,
     cobro_id: uuid.UUID,
+    guardado: str = "",
+    error: str = "",
 ) -> HTMLResponse:
     """Un cobro con sus aplicaciones y el estado de la cartera del cliente.
 
@@ -202,11 +431,12 @@ async def detalle(
                 """
                 SELECT k.*, c.nombre_comercial AS cliente, c.codigo AS codigo_cliente,
                        c.id AS cliente_id, u.nombre AS vendedor,
-                       d.etiqueta AS dispositivo
+                       d.etiqueta AS dispositivo, r.nombre AS resolvio
                   FROM cobros k
                   JOIN clientes c ON c.id = k.cliente_id
                   JOIN usuarios u ON u.id = k.vendedor_id
                   JOIN dispositivos d ON d.id = k.dispositivo_id
+                  LEFT JOIN usuarios r ON r.id = k.resuelto_por
                  WHERE k.id = :id
                 """
             ),
@@ -238,7 +468,8 @@ async def detalle(
         await sesion.execute(
             text(
                 "SELECT saldo, saldo_vencido, facturas_abiertas, facturas_vencidas, "
-                "       limite_credito, disponible, vencimiento_mas_antiguo "
+                "       limite_credito, disponible, vencimiento_mas_antiguo, "
+                "       por_confirmar "
                 "  FROM v_cartera_cliente WHERE cliente_id = :c"
             ),
             {"c": cobro["cliente_id"]},
@@ -266,6 +497,11 @@ async def detalle(
             "explicacion": EXPLICACION_MOTIVOS,
             "en_arqueo": cobro["forma_pago"] in FORMAS_EN_ARQUEO,
             "puede_editar": actor.puede(PERMISO),
+            "puede_confirmar": actor.puede(PERMISO_CONFIRMAR),
+            "puede_cargar_al_vendedor": actor.puede(PERMISO_CONFIRMAR)
+            and actor.puede("vendedores.cuenta_mover"),
+            "guardado": guardado,
+            "error": error,
         },
         actor=actor,
         seccion="Cobranza",
@@ -313,6 +549,186 @@ async def marcar_revisado(
     return RedirectResponse(
         f"/panel/cobranza/{cobro_id}", status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+@router.post("/{cobro_id}/rechazar")
+async def rechazar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    cobro_id: uuid.UUID,
+    csrf: str = Form(""),
+    motivo: str = Form(""),
+) -> RedirectResponse:
+    """El dinero no llegó: la transferencia no aparece o el cheque rebotó.
+
+    Uno por uno y con motivo obligatorio, al revés que confirmar: rechazar dice
+    que alguien —el cliente o el vendedor— reportó un pago que no existe, y eso
+    no se hace en bloque ni sin escribir por qué.
+
+    Dos casos, y la base garantiza el resultado de los dos:
+
+      · **Por confirmar** — nunca se aplicó, así que la deuda del cliente ya
+        estaba completa. Solo cambia el estado.
+      · **Ya confirmado** (el cheque rebotó días después) — la aplicación se
+        revierte: cada factura vuelve a deber lo que ese cheque le había pagado.
+
+    El efectivo no se rechaza: estaba en la mano y el arqueo ya lo contó. Si el
+    efectivo falta, eso se ve en el Corte del día.
+    """
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO_CONFIRMAR)
+
+    cobro = (
+        await sesion.execute(
+            text(
+                "SELECT id, estado, forma_pago, importe FROM cobros "
+                " WHERE id = :id FOR UPDATE"
+            ),
+            {"id": cobro_id},
+        )
+    ).mappings().first()
+    if cobro is None:
+        return RedirectResponse("/panel/cobranza", status_code=status.HTTP_303_SEE_OTHER)
+
+    nota = (motivo or "").strip()
+    if not nota:
+        return _a_detalle(
+            cobro_id,
+            error="Escribe por qué se rechaza: «no aparece en el estado de cuenta», "
+            "«cheque devuelto por fondos insuficientes».",
+        )
+    if cobro["forma_pago"] == "efectivo":
+        return _a_detalle(
+            cobro_id,
+            error="El efectivo no se rechaza: estaba en la mano y el arqueo ya lo "
+            "contó. Si falta, se ve en el Corte del día.",
+        )
+    if cobro["estado"] not in ("por_confirmar", "confirmado"):
+        return _a_detalle(cobro_id, error="Este cobro ya no se puede rechazar.")
+
+    ahora = datetime.now(UTC)
+    revertido = Decimal(0)
+    if cobro["estado"] == "confirmado":
+        revertido = await revertir_aplicacion(sesion, cobro_id=cobro_id, ahora=ahora)
+
+    await sesion.execute(
+        text(
+            """
+            UPDATE cobros
+               SET estado = 'rechazado', importe_aplicado = 0, saldo_a_favor = 0,
+                   resuelto_en = :ahora, resuelto_por = :quien,
+                   resolucion_nota = :nota
+             WHERE id = :id
+            """
+        ),
+        {"id": cobro_id, "ahora": ahora, "quien": actor.usuario_id, "nota": nota[:300]},
+    )
+    await _auditar(sesion, cobro_id, "rechazar", actor.usuario_id, nota[:300])
+    await sesion.commit()
+
+    mensaje = f"Se rechazó el cobro de {dinero(cobro['importe'])}."
+    if revertido > 0:
+        mensaje += (
+            f" Se revirtieron {dinero(revertido)} que ya estaban abonados: esas "
+            "facturas vuelven a deberse."
+        )
+    else:
+        mensaje += " La deuda del cliente no se había tocado y sigue completa."
+    return _a_detalle(cobro_id, guardado=mensaje)
+
+
+@router.post("/{cobro_id}/no-entregado")
+async def no_entregado(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    cobro_id: uuid.UUID,
+    csrf: str = Form(""),
+    motivo: str = Form(""),
+) -> RedirectResponse:
+    """El cliente SÍ pagó, y el dinero no llegó a la empresa.
+
+    Es la fuga que motivó todo el módulo: el vendedor cobra en efectivo, lo
+    captura como «transferencia», y la caja le cuadra. El cliente tiene su recibo
+    y pagó de buena fe, así que rechazar el cobro le cobraría dos veces a quien
+    no hizo nada.
+
+    Lo correcto son dos cosas en una transacción: **al cliente se le abona** (el
+    cobro se confirma y se reparte en FIFO, como si el dinero hubiera llegado) y
+    **al vendedor se le carga** el importe en su cuenta. Por eso pide los dos
+    permisos: confirmar dinero y mover la cuenta de un vendedor.
+    """
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO_CONFIRMAR)
+    actor.exigir("vendedores.cuenta_mover")
+
+    cobro = (
+        await sesion.execute(
+            text(
+                "SELECT id, estado, forma_pago, importe, cliente_id, vendedor_id, "
+                "       folio_local FROM cobros WHERE id = :id FOR UPDATE"
+            ),
+            {"id": cobro_id},
+        )
+    ).mappings().first()
+    if cobro is None:
+        return RedirectResponse("/panel/cobranza", status_code=status.HTTP_303_SEE_OTHER)
+
+    nota = (motivo or "").strip()
+    if not nota:
+        return _a_detalle(
+            cobro_id,
+            error="Escribe qué pasó: «el cliente enseñó su recibo; la transferencia "
+            "nunca existió, cobró en efectivo».",
+        )
+    if cobro["estado"] != "por_confirmar":
+        return _a_detalle(
+            cobro_id, error="Solo se carga al vendedor un cobro que sigue por confirmar."
+        )
+
+    ahora = datetime.now(UTC)
+    await _confirmar_y_aplicar(
+        sesion, cobro, quien=actor.usuario_id, ahora=ahora, nota=nota[:300]
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO cuenta_vendedor
+              (vendedor_id, tipo, origen, importe, fecha, concepto, cobro_id,
+               registrado_por, registrado_en)
+            VALUES (:v, 'cargo', 'cobro_no_entregado', :importe, :fecha, :concepto,
+                    :cobro, :quien, :ahora)
+            """
+        ),
+        {
+            "v": cobro["vendedor_id"],
+            "importe": cobro["importe"],
+            "fecha": ahora.date(),
+            "concepto": f"Recibo {cobro['folio_local']}: el cliente pagó y el dinero "
+            f"no llegó. {nota[:240]}",
+            "cobro": cobro_id,
+            "quien": actor.usuario_id,
+            "ahora": ahora,
+        },
+    )
+    await _auditar(sesion, cobro_id, "no_entregado", actor.usuario_id, nota[:300])
+    await sesion.commit()
+
+    return _a_detalle(
+        cobro_id,
+        guardado=f"Se le abonaron {dinero(cobro['importe'])} al cliente y se le "
+        "cargaron al vendedor en su cuenta.",
+    )
+
+
+def _a_detalle(cobro_id, *, guardado: str = "", error: str = "") -> RedirectResponse:
+    destino = f"/panel/cobranza/{cobro_id}"
+    if guardado:
+        destino += f"?guardado={quote(guardado)}"
+    elif error:
+        destino += f"?error={quote(error)}"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/cartera/antiguedad", response_class=HTMLResponse)

@@ -164,6 +164,17 @@ class _EstadoAbono extends ConsumerState<PantallaAbono> {
                     antiguedadDelSaldo(widget.cliente.saldoCacheEn),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (!widget.cliente.porConfirmar.esCero) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      key: const Key('aviso_por_confirmar'),
+                      'Ya reportó \$${widget.cliente.porConfirmar.texto} por '
+                      'transferencia o cheque. La oficina todavía no lo confirma '
+                      'en el banco, por eso sigue en la deuda: no se lo vuelvas a '
+                      'cobrar.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -220,6 +231,15 @@ class _EstadoAbono extends ConsumerState<PantallaAbono> {
                     'Sin ella la oficina no puede encontrar el pago en el banco.',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            // La regla, dicha antes de cobrar: el vendedor tiene que poder
+            // explicarle al cliente por qué su crédito no se libera hoy.
+            const Aviso(
+              key: Key('aviso_no_libera_credito'),
+              'Una transferencia o un cheque no libera crédito hasta que la '
+              'oficina lo vea en el banco. Si el cliente quiere comprar a '
+              'crédito hoy, su línea sigue como estaba.',
             ),
           ],
 

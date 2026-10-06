@@ -1036,7 +1036,8 @@ class AplicadorDeltas {
              saldo_cache_en = ?,
              limite_credito = ?,
              permite_credito = ?,
-             bloqueado = ?
+             bloqueado = ?,
+             por_confirmar = ?
        WHERE id = ?
       ''',
       [
@@ -1045,6 +1046,8 @@ class AplicadorDeltas {
         _aNumero(c['limite_credito']) ?? 0,
         _aBool(c['permite_credito']),
         _aBool(c['bloqueado']),
+        // Un servidor anterior a la 0038 no lo manda: cero, que es lo que era.
+        _aNumero(c['por_confirmar']) ?? 0,
         delta.entidadId,
       ],
     );

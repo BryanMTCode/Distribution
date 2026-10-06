@@ -20,6 +20,7 @@ class ClienteEnRuta {
     this.secuencia,
     this.saldoCacheEn,
     this.esLocal = false,
+    this.porConfirmar = Dinero.cero,
   });
 
   final String id;
@@ -39,6 +40,15 @@ class ClienteEnRuta {
   /// Alta hecha en este teléfono que aún no confirma el servidor.
   final bool esLocal;
 
+  /// Transferencias y cheques que el cliente ya pagó y la oficina todavía no
+  /// confirma en el banco: los que trae el servidor más los de este teléfono sin
+  /// sincronizar.
+  ///
+  /// NO están restados del saldo ni del crédito —una transferencia sin confirmar
+  /// no libera línea (migración 0038 del servidor)—. Existen para que el vendedor
+  /// no le vuelva a cobrar al cliente lo que ya le pagó.
+  final Dinero porConfirmar;
+
   /// Lo que se pinta como distintivo en la lista.
   ResultadoCredito evaluar(Dinero total, {required bool aCredito}) =>
       evaluarVenta(credito, total, aCredito: aCredito);
@@ -55,9 +65,12 @@ class RepoClientes {
   /// Clientes de la ruta, en orden de visita.
   ///
   /// El saldo efectivo se compone en SQL sumando lo que este dispositivo tiene
-  /// sin sincronizar: ventas a crédito encoladas y cobros encolados. Sin eso,
-  /// cinco ventas de la mañana pasarían todas el límite (ver
+  /// sin sincronizar: ventas a crédito encoladas y cobros EN EFECTIVO encolados.
+  /// Sin eso, cinco ventas de la mañana pasarían todas el límite (ver
   /// `dsd_core/credito.dart`).
+  ///
+  /// Una transferencia o un cheque encolado NO resta: no libera crédito hasta que
+  /// la oficina lo confirme. Se suma aparte, a `por_confirmar`.
   List<ClienteEnRuta> deLaRuta({String? busqueda, int limite = 200}) {
     final filtro = (busqueda ?? '').trim();
     final tieneFiltro = filtro.isNotEmpty;
@@ -87,8 +100,16 @@ class RepoClientes {
                SELECT SUM(k.importe) FROM cobros k
                 WHERE k.cliente_id = c.id
                   AND k.estado = 'confirmado'
+                  AND k.forma_pago = 'efectivo'
                   AND k.sincronizado = 0
-             ), 0) AS abonos_pendientes
+             ), 0) AS abonos_pendientes,
+             c.por_confirmar + COALESCE((
+               SELECT SUM(k.importe) FROM cobros k
+                WHERE k.cliente_id = c.id
+                  AND k.estado = 'confirmado'
+                  AND k.forma_pago <> 'efectivo'
+                  AND k.sincronizado = 0
+             ), 0) AS por_confirmar
         FROM clientes c
        WHERE c.activo = 1
          AND (?1 = 0 OR c.nombre_comercial LIKE ?2 OR c.codigo LIKE ?2
@@ -126,6 +147,7 @@ class RepoClientes {
       secuencia: f['secuencia'] as int?,
       saldoCacheEn: f['saldo_cache_en'] as String?,
       esLocal: (f['es_local'] as int) == 1,
+      porConfirmar: desdeBase(f['por_confirmar']),
       credito: EstadoCredito(
         limite: desdeBase(f['limite_credito']),
         saldoConfirmado: desdeBase(f['saldo_cache']),

@@ -75,7 +75,14 @@ def _csrf(cliente, respuesta=None) -> str:
 
 @pytest.fixture
 async def dia_de_trabajo(sesion, semilla) -> dict:
+    return await sembrar_dia_de_trabajo(sesion, semilla)
+
+
+async def sembrar_dia_de_trabajo(sesion, semilla) -> dict:
     """Un día completo: carga confirmada de 240 piezas y una venta de 180.
+
+    Función aparte del fixture para que otros módulos la reusen
+    (`test_cuenta_vendedor.py`) sin importar un fixture por su nombre.
 
     Montado con los mismos movimientos que escribe el panel, para que las
     existencias de partida sean las reales: 240 en el camión, 240 menos en bodega.

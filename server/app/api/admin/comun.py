@@ -75,6 +75,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
             ("/panel/ventas", "Ventas"),
             ("/panel/cobranza", "Cobranza"),
             ("/panel/liquidaciones", "Corte del día"),
+            # Junto al Corte: es donde terminan sus faltantes.
+            ("/panel/vendedores/cuenta", "Cuenta de vendedores"),
         ],
     ),
     (

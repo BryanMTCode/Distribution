@@ -20,6 +20,8 @@ library;
 import 'dart:io';
 
 import 'package:dsd_app/src/datos/base_local.dart';
+import 'package:dsd_app/src/datos/repo_clientes.dart';
+import 'package:dsd_core/dsd_core.dart';
 
 import 'package:dsd_app/src/datos/impresora.dart';
 import 'package:dsd_app/src/estado/carrito.dart';
@@ -274,6 +276,42 @@ void main() {
     testWidgets('el efectivo no pide referencia', (tester) async {
       await irAlPago(tester);
       expect(find.textContaining('encontrar el pago en el banco'), findsNothing);
+      expect(find.byKey(const Key('aviso_no_libera_credito')), findsNothing);
+    });
+
+    testWidgets('una transferencia avisa que NO libera crédito', (tester) async {
+      // La regla de la dirección (octubre 2026), dicha antes de cobrar: el
+      // vendedor tiene que poder explicarle al cliente por qué hoy no tiene más
+      // línea aunque ya pagó.
+      await irAlPago(tester);
+      await tester.tap(find.text('Transferencia'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('aviso_no_libera_credito')), findsOneWidget);
+
+      await tester.tap(find.text('Cheque'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('aviso_no_libera_credito')), findsOneWidget);
+    });
+
+    testWidgets('si ya pagó por transferencia, se le dice al vendedor', (tester) async {
+      // Lo que el servidor manda en `por_confirmar`: sin este aviso el vendedor
+      // vería la deuda completa y le volvería a cobrar.
+      await montarApp(
+        tester,
+        credencial: credencialDelServidor(),
+        sembrar: (b) {
+          sembrarEscenarioDeVenta(b, saldoCache: 2000);
+          sembrarParaCobrar(b);
+          sembrarFoliosDeCobro(b);
+          b.db.execute('UPDATE clientes SET por_confirmar = 800');
+        },
+      );
+      await entrarCon(tester, pinCorrecto);
+      expect(find.byKey(const Key('por_confirmar_cliente-1')), findsOneWidget);
+
+      await tocar(tester, const Key('cobrar_cliente-1'));
+      expect(find.byKey(const Key('aviso_por_confirmar')), findsOneWidget);
+      expect(find.textContaining('800.00'), findsWidgets);
     });
   });
 
@@ -327,6 +365,35 @@ void main() {
   });
 
   group('lo que queda en la cola', () {
+    testWidgets('UNA TRANSFERENCIA ENCOLADA NO LIBERA CRÉDITO', (tester) async {
+      // El efectivo encolado libera línea al momento; la transferencia no, hasta
+      // que la oficina la vea en el banco. Pero sí se muestra como pagada, para
+      // que nadie le vuelva a cobrar.
+      final base = await irAlPago(tester, saldoCache: 2000);
+      await tester.tap(find.text('Transferencia'));
+      await tester.pumpAndSettle();
+      await escribirEn(tester, const Key('campo_importe'), '500');
+      await escribirEn(tester, const Key('campo_referencia'), 'SPEI-1');
+      await tocar(tester, const Key('registrar_pago'));
+      await tester.tap(find.text('Listo'));
+      await tester.pumpAndSettle();
+
+      final cliente = RepoClientes(base.db).porId('cliente-1')!;
+      expect(cliente.credito.saldoEfectivo, equals(Dinero.deTexto('2000.00')));
+      expect(cliente.porConfirmar, equals(Dinero.deTexto('500.00')));
+      expect(find.byKey(const Key('por_confirmar_cliente-1')), findsOneWidget);
+    });
+
+    testWidgets('el efectivo encolado sí libera crédito', (tester) async {
+      final base = await pagar(tester, '500');
+      await tester.tap(find.text('Listo'));
+      await tester.pumpAndSettle();
+
+      final cliente = RepoClientes(base.db).porId('cliente-1')!;
+      expect(cliente.credito.saldoEfectivo, equals(Dinero.deTexto('1500.00')));
+      expect(cliente.porConfirmar.esCero, isTrue);
+    });
+
     testWidgets('el cobro encolado baja el saldo que ve el vendedor', (tester) async {
       // El `saldo_cache` NO se toca —es zona espejo—, pero el número que se
       // muestra sí baja, porque se compone restando los cobros sin sincronizar.

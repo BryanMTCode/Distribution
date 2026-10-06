@@ -44,6 +44,13 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
     'error',
     'ALTER TABLE deltas_desconocidos ADD COLUMN error TEXT',
   ),
+  // Lo que el cliente pagó por transferencia o cheque y la oficina todavía no
+  // confirma (octubre 2026, migración 0038 del servidor).
+  (
+    'clientes',
+    'por_confirmar',
+    'ALTER TABLE clientes ADD COLUMN por_confirmar REAL NOT NULL DEFAULT 0',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

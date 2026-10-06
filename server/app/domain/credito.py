@@ -24,6 +24,10 @@ Los abonos cuentan igual de rápido que los cargos. Si el vendedor acaba de
 cobrarle al cliente en efectivo, la línea se libera en ese momento: hacerlo
 esperar a la sincronización sería negarle una venta que ya pagó.
 
+**Solo el efectivo.** Una transferencia o un cheque no libera línea hasta que la
+oficina lo confirma en el banco (migración 0038): en el servidor ni siquiera se
+aplica a las facturas, y en el teléfono no entra a `abonos_pendientes`.
+
 ──────────────────────────────────────────────────────────────────────────────
 DOS EVALUACIONES, UNA SOLA FUNCIÓN
 ──────────────────────────────────────────────────────────────────────────────

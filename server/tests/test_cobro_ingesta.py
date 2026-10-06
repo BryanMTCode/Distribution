@@ -48,7 +48,14 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
 async def escenario(sesion: AsyncSession, semilla: dict) -> dict:
+    return await sembrar_escenario(sesion, semilla)
+
+
+async def sembrar_escenario(sesion: AsyncSession, semilla: dict) -> dict:
     """Un cliente con dos facturas abiertas: $800 vencida y $1,200 por vencer.
+
+    Función aparte del fixture para que otros módulos la reusen
+    (`test_cobros_por_confirmar.py`) sin importar un fixture por su nombre.
 
     El orden importa para el FIFO, y la que vence antes NO es la que se emitió
     antes: así la prueba distingue "ordenar por vencimiento" de "ordenar por

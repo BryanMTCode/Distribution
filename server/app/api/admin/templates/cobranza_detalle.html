@@ -7,6 +7,35 @@
   · cobró {{ cobro.vendedor }} con {{ cobro.dispositivo }}
 </p>
 
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+{% if cobro.estado == 'por_confirmar' %}
+<div class="aviso-caja aviso" id="aviso_por_confirmar">
+  <strong>Esperando al banco.</strong> El cliente reportó este pago y la oficina
+  todavía no lo ve en el estado de cuenta. Mientras tanto <strong>no baja su
+  deuda ni le libera crédito</strong>.
+</div>
+{% elif cobro.estado == 'rechazado' %}
+<div class="aviso-caja error" id="aviso_rechazado">
+  <strong>Rechazado</strong>{% if cobro.resolvio %} por {{ cobro.resolvio }}{% endif %}
+  {% if cobro.resuelto_en %} el {{ cobro.resuelto_en.strftime('%d/%m/%Y') }}{% endif %}:
+  {{ cobro.resolucion_nota }}. El dinero no llegó, y la deuda del cliente sigue
+  completa.
+</div>
+{% elif cobro.forma_pago != 'efectivo' and cobro.resuelto_en and cobro.resolucion_nota %}
+<div class="aviso-caja aviso" id="aviso_no_entregado">
+  <strong>El dinero no llegó a la empresa.</strong> Se le abonó al cliente y se le
+  cargó al vendedor{% if cobro.resolvio %} ({{ cobro.resolvio }},
+  {{ cobro.resuelto_en.strftime('%d/%m/%Y') }}){% endif %}: {{ cobro.resolucion_nota }}
+</div>
+{% elif cobro.forma_pago != 'efectivo' and cobro.resuelto_en %}
+<div class="aviso-caja neutro">
+  Confirmado en el banco{% if cobro.resolvio %} por {{ cobro.resolvio }}{% endif %}
+  el {{ cobro.resuelto_en.strftime('%d/%m/%Y') }}.
+</div>
+{% endif %}
+
 {% if cobro.requiere_revision %}
 <div class="aviso-caja error">
   <strong>Este cobro está marcado para revisión.</strong>
@@ -25,8 +54,16 @@
   </div>
   <div class="tarjeta">
     <div class="numero">${{ '%.2f'|format(cobro.importe_aplicado) }}</div>
-    <div class="etiqueta">Aplicado a facturas</div>
+    <div class="etiqueta">
+      Aplicado a facturas{% if cobro.estado == 'por_confirmar' %} — se aplica al confirmar{% endif %}
+    </div>
   </div>
+  {% if cobro.referencia %}
+  <div class="tarjeta">
+    <div class="numero mono" style="font-size:1.1rem">{{ cobro.referencia }}</div>
+    <div class="etiqueta">Referencia para buscarlo en el banco</div>
+  </div>
+  {% endif %}
   {% if cobro.saldo_a_favor and cobro.saldo_a_favor > 0 %}
   <div class="tarjeta aviso">
     <div class="numero">${{ '%.2f'|format(cobro.saldo_a_favor) }}</div>
@@ -83,7 +120,15 @@
   El reparto lo hizo el FIFO sobre la cartera real: primero lo que vence antes,
   que es lo que de verdad reduce el riesgo.
 </p>
-{% if aplicaciones %}
+{% if cobro.estado in ('por_confirmar', 'rechazado') %}
+<div class="vacio">
+  {% if cobro.estado == 'por_confirmar' %}
+    Todavía a ninguna: se reparte en FIFO cuando la oficina lo confirme.
+  {% else %}
+    A ninguna: se rechazó, y lo que se hubiera abonado se revirtió.
+  {% endif %}
+</div>
+{% elif aplicaciones %}
 <div class="tabla-marco">
   <table>
     <thead>
@@ -145,7 +190,78 @@
     <div class="numero">${{ '%.2f'|format(cartera.disponible) }}</div>
     <div class="etiqueta">Línea disponible de ${{ '%.2f'|format(cartera.limite_credito) }}</div>
   </div>
+  {% if cartera.por_confirmar and cartera.por_confirmar > 0 %}
+  <div class="tarjeta aviso">
+    <div class="numero">${{ '%.2f'|format(cartera.por_confirmar) }}</div>
+    <div class="etiqueta">Reportado pagado, por confirmar: no libera línea todavía</div>
+  </div>
+  {% endif %}
 </div>
+{% endif %}
+
+{# ------------------------------------------------------------------------- #}
+{# Confirmar o rechazar lo que no es efectivo.                               #}
+{# ------------------------------------------------------------------------- #}
+{% if puede_confirmar and cobro.forma_pago != 'efectivo' %}
+  {% if cobro.estado == 'por_confirmar' %}
+  <h2>¿Ya está en el banco?</h2>
+  <form method="post" action="/panel/cobranza/confirmar" style="margin-bottom:18px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="cobro" value="{{ cobro.id }}">
+    <button type="submit" id="boton_confirmar_uno">Sí, confirmar y abonar</button>
+    <span class="sutil" style="margin-left:8px">
+      Se reparte en FIFO sobre la cartera de hoy y libera el crédito del cliente.
+    </span>
+  </form>
+  {% endif %}
+  {% if cobro.estado in ('por_confirmar', 'confirmado') %}
+  <details {% if cobro.estado == 'por_confirmar' %}open{% endif %}>
+    <summary style="cursor:pointer">
+      {% if cobro.estado == 'confirmado' %}¿Rebotó el cheque o se reversó la transferencia?
+      {% else %}No llegó: rechazarlo{% endif %}
+    </summary>
+    <form method="post" action="/panel/cobranza/{{ cobro.id }}/rechazar" style="margin-top:10px"
+          id="forma_rechazar">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo">
+        <label for="motivo">Por qué se rechaza</label>
+        <input type="text" id="motivo" style="width:100%;max-width:560px" name="motivo" maxlength="300" required
+               placeholder="No aparece en el estado de cuenta del 06/10">
+        <div class="ayuda">
+          {% if cobro.estado == 'confirmado' %}
+            Ya se había abonado: al rechazarlo, cada factura que pagó vuelve a deber
+            lo que este pago le había quitado.
+          {% else %}
+            La deuda del cliente no se ha tocado y sigue completa.
+          {% endif %}
+        </div>
+      </div>
+      <button type="submit" class="peligro">Rechazar el pago</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if cobro.estado == 'por_confirmar' and puede_cargar_al_vendedor %}
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer">
+      El cliente sí pagó, pero el dinero no llegó a la empresa
+    </summary>
+    <p class="sutil" style="margin:8px 0">
+      El cliente tiene su recibo y pagó de buena fe: rechazarlo le cobraría dos
+      veces. Esto <strong>le abona al cliente</strong> y <strong>le carga el
+      importe al vendedor</strong> en su cuenta.
+    </p>
+    <form method="post" action="/panel/cobranza/{{ cobro.id }}/no-entregado"
+          id="forma_no_entregado">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo">
+        <label for="motivo_no_entregado">Qué pasó</label>
+        <input type="text" id="motivo_no_entregado" style="width:100%;max-width:560px" name="motivo" maxlength="300" required
+               placeholder="El cliente pagó en efectivo; la transferencia nunca existió">
+      </div>
+      <button type="submit" class="peligro">Abonar al cliente y cargar al vendedor</button>
+    </form>
+  </details>
+  {% endif %}
 {% endif %}
 
 {# ------------------------------------------------------------------------- #}

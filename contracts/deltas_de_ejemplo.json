@@ -154,6 +154,7 @@
         "cliente_id": "019283e0-0002-7000-8000-000000000002",
         "disponible": 3800.0,
         "dias_credito": 15,
+        "por_confirmar": 0.0,
         "saldo_vencido": 0.0,
         "limite_credito": 5000.0,
         "credito_agotado": false,

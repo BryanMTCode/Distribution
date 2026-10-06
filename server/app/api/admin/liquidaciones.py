@@ -112,6 +112,7 @@ from app.domain.liquidacion import (
     diferencia_de_efectivo,
     saldo_inicial,
 )
+from app.infra.cuenta_vendedor import ORIGENES, cargar_el_corte
 from app.workers.cola import encolar
 
 router = APIRouter(
@@ -444,6 +445,18 @@ async def detalle(
     bloqueos = await _bloqueos_para_cerrar(sesion, cabecera)
     respaldo = await _respaldo_de_sincronizacion(sesion, cabecera)
 
+    # Lo que este Corte le cargó al vendedor, si ya se cerró. Es la respuesta a
+    # «¿y esto cuánto le costó?» sin salir de la pantalla.
+    cargos = (
+        await sesion.execute(
+            text(
+                "SELECT origen, importe FROM cuenta_vendedor "
+                " WHERE liquidacion_id = :l ORDER BY origen"
+            ),
+            {"l": liquidacion_id},
+        )
+    ).mappings().all()
+
     return render(
         peticion,
         "liquidacion_detalle.html",
@@ -464,6 +477,9 @@ async def detalle(
             ),
             "error": error,
             "guardado": guardado,
+            "cargos": cargos,
+            "total_cargado": sum((Decimal(x["importe"]) for x in cargos), Decimal(0)),
+            "origenes": ORIGENES,
         },
         actor=actor,
         seccion="Corte del día",
@@ -571,7 +587,7 @@ async def arqueo(
         text(
             "UPDATE liquidaciones "
             "   SET efectivo_entregado = :e, efectivo_esperado = :esp, "
-            "       observaciones = :obs "
+            "       observaciones = :obs, arqueo_en = now() "
             " WHERE id = :l"
         ),
         {
@@ -671,6 +687,20 @@ async def cerrar(
     # defendible frente al vendedor. Ver `saldo_inicial`.
     await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
 
+    # Y el efectivo esperado, por la misma razón: ahora de esto sale un cargo a
+    # una persona (la cuenta del vendedor), y un cobro que sincronizó después
+    # del arqueo no puede quedar fuera de la cuenta. `diferencia_efectivo` es
+    # columna generada y se recalcula sola.
+    await sesion.execute(
+        text("UPDATE liquidaciones SET efectivo_esperado = :e WHERE id = :l"),
+        {
+            "e": await _efectivo_esperado(
+                sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
+            ),
+            "l": liquidacion_id,
+        },
+    )
+
     renglones = (
         await sesion.execute(
             text(
@@ -769,6 +799,17 @@ async def cerrar(
         },
     )
 
+    # ------------------------------------------------------------------
+    # Lo que se le carga al vendedor (migración 0039).
+    # ------------------------------------------------------------------
+    # Antes el Corte decía «faltan 3 cajas» y ahí terminaba. Ahora el faltante,
+    # las mermas a su cargo y el efectivo que no entregó van a su cuenta, a
+    # COSTO —regla de la dirección—, en esta misma transacción: si el cierre se
+    # deshace, el cargo también.
+    cargos = await cargar_el_corte(
+        sesion, liquidacion_id=liquidacion_id, quien=actor.usuario_id, ahora=ahora
+    )
+
     # Este UPDATE publica el delta de la carga liquidada. Ya no vacía el camión
     # del teléfono: le lleva el AJUSTE que se acaba de escribir, para que el saldo
     # del teléfono y el del servidor queden en el mismo número. Ver la migración
@@ -830,6 +871,29 @@ async def cerrar(
         "La mercancía se queda arriba del camión: el teléfono recibe el saldo "
         "corregido en la siguiente sincronización."
     )
+    if cargos.total > 0:
+        partes = []
+        if cargos.mercancia:
+            partes.append(f"mercancía {dinero(cargos.mercancia)}")
+        if cargos.merma:
+            partes.append(f"mermas a su cargo {dinero(cargos.merma)}")
+        if cargos.efectivo:
+            partes.append(f"efectivo {dinero(cargos.efectivo)}")
+        aviso += (
+            f" Se cargaron {dinero(cargos.total)} a la cuenta del vendedor "
+            f"({', '.join(partes)}), la mercancía a costo."
+        )
+    if cargos.sin_costo:
+        aviso += (
+            f" OJO: {len(cargos.sin_costo)} producto(s) sin costo capturado no se "
+            f"cobraron ({', '.join(cargos.sin_costo[:5])}). Captura su costo en "
+            "Compras y, si corresponde, cárgalo a mano en su cuenta."
+        )
+    if cargos.sin_arqueo:
+        aviso += (
+            " OJO: no se capturó el arqueo, así que el efectivo no se le cobró "
+            "al vendedor: nadie lo contó."
+        )
     return _a_lista(guardado=aviso)
 
 
@@ -1042,7 +1106,10 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                       ) v ON true
                       LEFT JOIN LATERAL (
                             SELECT
-                              sum(md.cantidad_base) FILTER (WHERE me.tipo = 'merma')
+                              -- El cambio físico (migración 0040) también:
+                              -- el fresco salió del camión con documento.
+                              sum(md.cantidad_base)
+                                FILTER (WHERE me.tipo IN ('merma', 'cambio'))
                                 AS merma,
                               sum(md.cantidad_base)
                                 FILTER (WHERE me.tipo = 'devolucion_cliente')

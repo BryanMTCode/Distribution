@@ -462,6 +462,39 @@ void main() {
     expect(texto, contains('SPEI-77231'));
   });
 
+  test('EL RECIBO DE UNA TRANSFERENCIA NO PROMETE UN ABONO INMEDIATO', () {
+    // Lo que no es efectivo se abona hasta que la oficina lo ve en el banco
+    // (migración 0038 del servidor). Un papel que dice «se abona a tu cuenta» es
+    // la disputa del día que el cheque rebote.
+    DatosDeLaVisita visita() => const DatosDeLaVisita(
+          nombreCliente: 'Abarrotes Doña Mary',
+          nombreVendedor: 'Juan Pérez',
+        );
+    const negocio = DatosDelNegocio(nombre: 'Distribuidora El Sol');
+
+    for (final forma in [FormaDePago.transferencia, FormaDePago.cheque]) {
+      final cobro = registro().registrar(
+        clienteId: 'cli-1',
+        importe: Dinero.deTexto('500.00'),
+        formaDePago: forma,
+        referencia: 'REF-1',
+      );
+      final texto = textoDe(ticketDeCobro(cobro, negocio: negocio, visita: visita()));
+      expect(texto, contains('cuando la oficina confirme'), reason: '$forma');
+      expect(texto, contains('no cambia'), reason: '$forma');
+      expect(texto, isNot(contains('Este pago se abona a tu cuenta.')),
+          reason: '$forma');
+    }
+
+    final efectivo = registro().registrar(
+      clienteId: 'cli-1',
+      importe: Dinero.deTexto('500.00'),
+    );
+    final texto = textoDe(ticketDeCobro(efectivo, negocio: negocio, visita: visita()));
+    expect(texto, contains('Este pago se abona a tu cuenta.'));
+    expect(texto, isNot(contains('cuando la oficina confirme')));
+  });
+
   test('NINGUNA LÍNEA DEL RECIBO SE DESBORDA DE LAS 32 COLUMNAS', () {
     // El desborde no falla: la impresora continúa el texto en el renglón
     // siguiente y corre el resto del ticket. Ya pasó una vez con la remisión.

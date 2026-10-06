@@ -3899,3 +3899,110 @@ Un solo botón agrega todos los renglones que traigan cantidad
 
 No cambia nada de lo que viaja al teléfono: la carga sigue publicando su delta al
 confirmarse, como en la Fase 2.
+
+## 54. El dinero que falta cerrar: transferencias por confirmar, la cuenta del vendedor y el cambio físico
+
+**Decisión (octubre 2026).** Tres fugas que el diagnóstico de la operación encontró
+abiertas, cerradas en un módulo, con las reglas que la dirección dejó por escrito:
+
+1. **Una transferencia sin confirmar NO libera crédito.** El saldo del cliente se
+   restaura hasta que la oficina confirma que el dinero está en firme.
+2. **La mercancía se le cobra al vendedor a costo**, no a precio de venta: se recupera
+   la pérdida real del inventario, no se gana margen con el error del empleado.
+3. **El cambio físico** (fresco por caducado o dañado) saca el fresco del camión
+   legalmente, el malo cuenta como merma, y al vendedor no se le descuadra el arqueo
+   ni se le exige un cobro.
+
+### Transferencias y cheques: por confirmar (migración 0038)
+
+Antes, un cobro por transferencia se aplicaba a las facturas en cuanto sincronizaba,
+con la palabra del vendedor. La fuga era directa: cobrar $5,000 en efectivo,
+capturarlos como «transferencia», y la caja cuadraba —la transferencia no entra al
+arqueo— mientras el cliente quedaba pagado.
+
+Ahora lo que no es efectivo nace **`por_confirmar`** y **no se aplica**: la deuda del
+cliente sigue completa. La regla vive en tres lugares a la vez, y los tres tienen
+prueba:
+
+- **En la base**: `cobro_sin_aplicar_hasta_confirmar` impide que un cobro por
+  confirmar o rechazado tenga un peso abonado. Ningún camino —ni un `UPDATE` a mano—
+  libera crédito sin confirmar.
+- **En el teléfono**: el crédito local resta los cobros encolados **en efectivo**; una
+  transferencia encolada no libera línea.
+- **En la vista de cartera**: `por_confirmar` viaja aparte del saldo, para que el
+  vendedor vea «$800 pagado, por confirmar» y no le vuelva a cobrar.
+
+La oficina tiene tres salidas, en Cobranza → Por confirmar:
+
+| Qué pasó | Qué hace el sistema |
+|---|---|
+| El dinero está en el banco | **Confirmar** (varios a la vez): se aplica en FIFO, con la misma función que el efectivo |
+| No llegó, o el cheque rebotó | **Rechazar** con motivo: la deuda sigue completa; si ya estaba confirmado, la aplicación **se revierte** y las facturas vuelven a deber |
+| El cliente sí pagó, pero el dinero no llegó a la empresa | **Abonar al cliente y cargar al vendedor**: el cliente tiene su recibo y pagó de buena fe |
+
+Confirmar va en bloque porque así se concilia un estado de cuenta; rechazar va uno
+por uno porque es acusar. Lo hace gerencia (`cobranza.confirmar`): el supervisor vigila
+la ruta, y que la misma mano dé por buena la transferencia de su vendedor es la
+separación que esto existe para crear.
+
+El recibo impreso de una transferencia ya no dice «se abona a tu cuenta»: dice que se
+abona cuando la oficina confirme el depósito.
+
+### La cuenta del vendedor (migración 0039)
+
+El Corte del día calculaba el faltante con nombre y apellido, y ahí terminaba. Ahora
+el cierre escribe los cargos en `cuenta_vendedor`, en la misma transacción:
+
+| Cargo | De dónde sale | Cómo se valúa |
+|---|---|---|
+| Faltante de mercancía | lo contado abajo de lo esperado | **costo promedio** (`producto_costos`, §41) |
+| Merma a su cargo | mermas del día con motivo `afecta_vendedor` | costo promedio |
+| Faltante de efectivo | entregó menos de lo esperado | el importe |
+| Cobro que no llegó | la oficina lo decide en Cobranza | el importe |
+
+Tres decisiones que no son obvias:
+
+- **Un producto sin costo capturado no se cobra en cero a escondidas.** Queda en el
+  detalle con `costo: null`, y el mensaje del cierre lo nombra para que se capture el
+  costo y, si corresponde, se cargue a mano.
+- **El efectivo se carga solo si alguien contó.** `efectivo_entregado` nace en 0, y un
+  Corte cerrado sin arqueo habría cargado el efectivo completo del día. Con
+  `liquidaciones.arqueo_en` el cierre distingue «entregó $0» de «nadie contó», y lo
+  dice. Y el cierre **recalcula** el esperado: un cobro en efectivo que sincronizó
+  después del arqueo entra a la cuenta.
+- **Un sobrante no se le abona.** Casi siempre es una venta sin sincronizar; no es
+  dinero del vendedor.
+
+La cuenta es un **libro**: la base no deja editar ni borrar (`fn_bloquear_mutacion`,
+la misma del libro mayor). Un cargo equivocado se compensa con una condonación que
+dice por qué. Baja con descuento de nómina, pago o condonación; un abono no puede
+dejarle saldo a favor. Ver: supervisor y gerencia. Mover: gerencia. No lleva
+`change_log`: trae costos, y el costo no sale de la oficina (§41).
+
+### El cambio físico (migración 0040)
+
+En la calle el cliente enseña un producto caducado y el vendedor se lo cambia por uno
+fresco. Antes no había cómo registrarlo: no es venta (no hay dinero), no es devolución
+(la devolución mete mercancía al camión y aquí sale), y sin registrar el fresco salía
+sin documento y el Corte lo encontraba como faltante — que ahora se cobra a costo.
+
+Es un tipo más de `mermas`, **`cambio`**, desde el menú de la visita («Cambio
+físico»):
+
+- **Sale del camión**: lo que se va es el fresco. El malo va al almacén de merma si la
+  empresa tiene uno, igual que en una merma.
+- **Exige cliente**: un cambio sin a quién se le cambió es exactamente cómo se
+  escondería mercancía robada. Lo impone el teléfono, el manejador y un `CHECK`.
+- **Nunca se le carga al vendedor**, aunque el motivo diga `afecta_vendedor`: el
+  producto se echó a perder en la tienda del cliente, no en su camión. La cuenta del
+  vendedor solo carga `tipo = 'merma'`.
+- **En el Corte cuenta en la columna «merma»**: salió del camión con documento, y la
+  ecuación no necesita saber por qué.
+- **No toca el arqueo**: no hay dinero esperado.
+
+La oficina los ve en Efectividad → Cambios físicos, por cliente y producto: la
+pregunta que importa es a quién le estamos cambiando seguido, y qué.
+
+Un cambio es **del mismo producto, uno por uno**. Cambiar una caja de atún por una de
+sardina es otra operación —una venta y una devolución— porque los dos productos no
+valen lo mismo, y meterla aquí escondería esa diferencia.

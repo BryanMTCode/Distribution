@@ -76,6 +76,26 @@ Future<BaseLocal> irALaDevolucion(WidgetTester tester) async {
   return base;
 }
 
+/// Abre la pantalla desde la visita en modo CAMBIO físico (octubre 2026).
+Future<BaseLocal> irAlCambio(WidgetTester tester) async {
+  final base = await montarApp(
+    tester,
+    credencial: credencialDelServidor(),
+    sembrar: (b) {
+      sembrarEscenarioDeVenta(b);
+      sembrarParaCobrar(b);
+      sembrarMotivos(b);
+      sembrarFolios(b, tipo: 'merma');
+    },
+  );
+  await entrarCon(tester, pinCorrecto);
+  await tocar(tester, const Key('cliente_cliente-1'));
+  await tocar(tester, const Key('menu_de_visita'));
+  await tester.tap(find.byKey(const Key('opcion_cambio')));
+  await tester.pumpAndSettle();
+  return base;
+}
+
 Future<void> escoger(WidgetTester tester, Key campo, String valor) async {
   await tocar(tester, campo);
   await tester.tap(find.text(valor).last);
@@ -337,6 +357,62 @@ void main() {
       await tester.tap(find.text('Me la devolvió'));
       await tester.pumpAndSettle();
       expect(find.textContaining('desde la visita al cliente'), findsOneWidget);
+    });
+  });
+
+  group('el cambio físico (fresco por caducado, sin cobro)', () {
+    testWidgets('el menú de la visita lo abre en modo cambio', (tester) async {
+      await irAlCambio(tester);
+      expect(find.text('Cambio físico'), findsWidgets);
+      expect(find.textContaining('no toca tu efectivo'), findsOneWidget);
+      expect(find.text('Registrar el cambio'), findsOneWidget);
+    });
+
+    testWidgets('EL FRESCO SALE DEL CAMIÓN, CON EL CLIENTE', (tester) async {
+      // La regla de la dirección: el fresco sale legalmente. Sin el documento,
+      // el corte lo encontraría como faltante y se le cobraría a costo.
+      final base = await irAlCambio(tester);
+      final db = BaseLocalDePrueba(base);
+
+      await escoger(tester, const Key('motivo_de_merma'), 'Producto caducado');
+      await capturar(tester, cuantas: '4');
+      await tocar(tester, const Key('registrar_merma'));
+
+      final merma = db.unaFila('SELECT tipo, cliente_id FROM mermas');
+      expect(merma['tipo'], 'cambio');
+      expect(merma['cliente_id'], 'cliente-1');
+      final camion = db.unaFila(
+        "SELECT cant_actual FROM existencias_camion WHERE producto_id = 'p-sopa'",
+      );
+      expect(camion['cant_actual'], 236, reason: '240 − 4: sale, no entra');
+      expect(find.text('Cambio registrado'), findsOneWidget);
+
+      // Y lo que viaja al servidor dice que es un cambio.
+      final sobre = db.unaFila("SELECT payload FROM outbox WHERE tipo = 'merma.crear'");
+      expect(sobre['payload'] as String, contains('"tipo":"cambio"'));
+    });
+
+    testWidgets('un cambio NUNCA avisa que se le descuenta', (tester) async {
+      // «Empaque roto» se le descuenta en una merma. En un cambio no: se echó a
+      // perder en la tienda del cliente, no en su camión.
+      await irAlCambio(tester);
+      await escoger(tester, const Key('motivo_de_merma'), 'Empaque roto');
+      expect(find.textContaining('se te descuenta'), findsNothing);
+    });
+
+    testWidgets('las tres opciones caben en un teléfono de 360', (tester) async {
+      // Ya pasó una vez: la barra de la lista de clientes desbordaba 46 píxeles
+      // en un teléfono angosto. Aquí son tres segmentos donde antes había dos.
+      await irAlCambio(tester);
+      tester.view.physicalSize = const Size(360, 800);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('segmento_cambio')), findsOneWidget);
+    });
+
+    testWidgets('desde el camión, sin cliente, no se ofrece', (tester) async {
+      await irALaMerma(tester);
+      expect(find.byKey(const Key('segmento_cambio')), findsNothing);
     });
   });
 }

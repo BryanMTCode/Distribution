@@ -14,6 +14,7 @@ from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import cobranza as panel_cobranza
 from app.api.admin import compras as panel_compras
+from app.api.admin import cuenta_vendedores as panel_cuenta_vendedores
 from app.api.admin import desempeno as panel_desempeno
 from app.api.admin import efectividad as panel_efectividad
 from app.api.admin import entradas as panel_entradas
@@ -114,6 +115,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_ventas.router)
     app.include_router(panel_liquidaciones.router)
     app.include_router(panel_cobranza.router)
+    app.include_router(panel_cuenta_vendedores.router)
     app.include_router(panel_desempeno.router)
     app.include_router(panel_efectividad.router)
     app.include_router(panel_objetivos.router)

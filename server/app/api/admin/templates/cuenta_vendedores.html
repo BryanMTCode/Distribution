@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Cuenta de vendedores{% endblock %}
+{% block contenido %}
+<h1>Cuenta de vendedores</h1>
+<p class="subtitulo">
+  Lo que cada vendedor le debe a la empresa. Los cargos nacen solos al cerrar el
+  <a href="/panel/liquidaciones">Corte del día</a> —faltante de mercancía <strong>a
+  costo</strong>, mermas a su cargo y efectivo que no entregó— y aquí se registra
+  cómo bajan: descuento de nómina, pago o condonación.
+</p>
+
+{% if filas %}
+<div class="tarjetas">
+  <div class="tarjeta {% if total > 0 %}aviso{% endif %}">
+    <div class="numero">${{ '%.2f'|format(total) }}</div>
+    <div class="etiqueta">deben entre todos</div>
+  </div>
+</div>
+
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Vendedor</th>
+        <th class="numero">Cargado</th>
+        <th class="numero">Pagado</th>
+        <th class="numero">Condonado</th>
+        <th class="numero">Debe</th>
+        <th>Último movimiento</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>
+          <a href="/panel/vendedores/cuenta/{{ f.id }}">{{ f.nombre }}</a>
+          <div class="sutil mono">{{ f.codigo }}{% if not f.activo %} · inactivo{% endif %}</div>
+        </td>
+        <td class="numero sutil">${{ '%.2f'|format(f.cargos) }}</td>
+        <td class="numero sutil">${{ '%.2f'|format(f.abonos) }}</td>
+        <td class="numero sutil">${{ '%.2f'|format(f.condonado) }}</td>
+        <td class="numero">
+          {% if f.saldo > 0 %}<strong style="color:var(--alerta)">${{ '%.2f'|format(f.saldo) }}</strong>
+          {% else %}<span class="sutil">$0.00</span>{% endif %}
+        </td>
+        <td class="sutil">
+          {% if f.ultimo_movimiento %}{{ f.ultimo_movimiento.strftime('%d/%m/%Y') }}{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">No hay vendedores dados de alta.</div>
+{% endif %}
+{% endblock %}

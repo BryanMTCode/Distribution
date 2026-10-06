@@ -51,6 +51,24 @@ void main() {
     );
   });
 
+  test('UNA BASE VIEJA RECIBE clientes.por_confirmar', () {
+    // Octubre 2026: lo que el cliente pagó por transferencia y la oficina no ha
+    // confirmado. El aplicador de cartera lo escribe en cada pull: sin la
+    // columna, el primer pull después de actualizar la app reventaría.
+    aplicarEsquemaLocal(db);
+    db.execute('ALTER TABLE clientes DROP COLUMN por_confirmar');
+    db.execute(
+      "INSERT INTO clientes (id, nombre_comercial, saldo_cache) "
+      "VALUES ('cli-1', 'La Esquina', 1200)",
+    );
+
+    aplicarEsquemaLocal(db);
+
+    final fila = db.select('SELECT * FROM clientes').single;
+    expect(fila['por_confirmar'], equals(0.0));
+    expect(fila['saldo_cache'], equals(1200.0), reason: 'no se pierde la fila');
+  });
+
   test('aplicarlo dos veces no truena', () {
     // Es lo que pasa en cada arranque de la app.
     aplicarEsquemaLocal(db);

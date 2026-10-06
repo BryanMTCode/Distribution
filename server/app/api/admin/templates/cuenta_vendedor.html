@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block titulo %}Cuenta de {{ vendedor.nombre }}{% endblock %}
+{% block contenido %}
+<h1>Cuenta de {{ vendedor.nombre }}</h1>
+<p class="subtitulo">
+  <span class="mono">{{ vendedor.codigo }}</span> ·
+  <a href="/panel/vendedores/cuenta">← Todos los vendedores</a>
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta {% if saldo > 0 %}alerta{% endif %}" id="tarjeta_saldo">
+    <div class="numero">${{ '%.2f'|format(saldo) }}</div>
+    <div class="etiqueta">debe hoy</div>
+  </div>
+</div>
+
+<h2>Movimientos</h2>
+<p class="sutil" style="margin:-6px 0 12px">
+  Es un libro: nada se edita ni se borra. Un cargo equivocado se compensa con una
+  condonación que dice por qué, y los dos quedan a la vista.
+</p>
+{% if movimientos %}
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Concepto</th>
+        <th class="numero">Cargo</th>
+        <th class="numero">Abono</th>
+        <th class="numero">Saldo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in movimientos %}
+      <tr>
+        <td class="sutil">{{ m.fecha.strftime('%d/%m/%Y') }}</td>
+        <td>
+          <strong>{{ origenes.get(m.origen, m.origen) }}</strong>
+          <div>{{ m.concepto }}</div>
+          <div class="sutil">
+            {% if m.corte %}<a href="/panel/liquidaciones/{{ m.liquidacion_id }}">Corte {{ m.corte }}</a>{% endif %}
+            {% if m.recibo %}<a href="/panel/cobranza/{{ m.cobro_id }}" class="mono">{{ m.recibo }}</a>{% endif %}
+            {% if m.registro %}· registró {{ m.registro }}{% endif %}
+          </div>
+          {% if m.detalle and m.detalle is iterable and m.detalle is not mapping %}
+          <details>
+            <summary class="sutil" style="cursor:pointer">De dónde sale</summary>
+            <table style="margin-top:6px">
+              <thead>
+                <tr><th>Producto</th><th class="numero">Cantidad</th><th class="numero">Costo</th><th class="numero">Importe</th></tr>
+              </thead>
+              <tbody>
+                {% for d in m.detalle %}
+                <tr>
+                  <td>{{ d.nombre }} <span class="sutil mono">{{ d.sku }}</span>
+                    {% if d.motivo %}<div class="sutil">{{ d.motivo }}</div>{% endif %}</td>
+                  <td class="numero">{{ d.cantidad|float|round(0)|int }}</td>
+                  <td class="numero">
+                    {% if d.costo is none %}<span style="color:var(--alerta)">sin costo</span>
+                    {% else %}${{ '%.2f'|format(d.costo|float) }}{% endif %}
+                  </td>
+                  <td class="numero">
+                    {% if d.importe is none %}—{% else %}${{ '%.2f'|format(d.importe|float) }}{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+          {% elif m.detalle and m.detalle is mapping and m.detalle.esperado %}
+          <div class="sutil">
+            Esperado ${{ '%.2f'|format(m.detalle.esperado|float) }} ·
+            entregó ${{ '%.2f'|format(m.detalle.entregado|float) }}
+          </div>
+          {% endif %}
+        </td>
+        <td class="numero">
+          {% if m.tipo == 'cargo' %}${{ '%.2f'|format(m.importe) }}{% endif %}
+        </td>
+        <td class="numero">
+          {% if m.tipo != 'cargo' %}${{ '%.2f'|format(m.importe) }}{% endif %}
+        </td>
+        <td class="numero">${{ '%.2f'|format(m.saldo) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Sin movimientos. Nunca se le ha cargado nada.</div>
+{% endif %}
+
+{% if puede_mover %}
+<h2>Registrar</h2>
+<form method="post" action="/panel/vendedores/cuenta/{{ vendedor.id }}/movimiento"
+      id="forma_movimiento">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo">
+    <label for="origen">Qué pasó</label>
+    <select id="origen" name="origen" required>
+      <option value="descuento_nomina">Descuento de nómina (abono)</option>
+      <option value="pago">Pagó en efectivo (abono)</option>
+      <option value="condonacion">Condonar: la empresa decide no cobrarlo</option>
+      <option value="cargo_manual">Cargo a mano</option>
+    </select>
+  </div>
+  <div class="campo">
+    <label for="importe">Importe</label>
+    <input type="text" id="importe" name="importe" inputmode="decimal" required
+           placeholder="0.00" style="max-width:160px">
+  </div>
+  <div class="campo">
+    <label for="concepto">Concepto</label>
+    <input type="text" id="concepto" style="width:100%;max-width:560px" name="concepto" maxlength="300" required
+           placeholder="Quincena del 15/10">
+    <div class="ayuda">
+      Para condonar, el porqué: queda con tu nombre, y es lo que se lee cuando
+      alguien pregunta por qué este dinero no se cobró.
+    </div>
+  </div>
+  <div class="campo">
+    <label for="fecha">Fecha</label>
+    <input type="date" id="fecha" name="fecha" value="{{ hoy.isoformat() }}">
+  </div>
+  <button type="submit">Registrar</button>
+</form>
+{% endif %}
+{% endblock %}

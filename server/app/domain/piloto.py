@@ -105,7 +105,9 @@ v AS (
 ),
 c AS (
     SELECT fecha_operativa AS fecha,
-           COALESCE(sum(importe) FILTER (WHERE estado = 'confirmado'), 0) AS cobranza
+           -- Lo que se CAPTURÓ, que es lo que el papel también tiene: una
+           -- transferencia por confirmar o rechazada sí está en el recibo.
+           COALESCE(sum(importe) FILTER (WHERE estado <> 'cancelado'), 0) AS cobranza
       FROM cobros
      WHERE vendedor_id = :vendedor
        AND fecha_operativa BETWEEN :desde AND :hasta
@@ -157,7 +159,7 @@ SELECT
       AND estado = 'confirmada')                                AS importe,
   (SELECT COALESCE(sum(importe), 0) FROM cobros
     WHERE vendedor_id = :vendedor AND fecha_operativa = :fecha
-      AND estado = 'confirmado')                                AS cobranza
+      AND estado <> 'cancelado')                                AS cobranza
 """
 
 # Las jornadas capturadas, con su cifra congelada. Se cruza en Python con

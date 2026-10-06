@@ -165,7 +165,9 @@ cobros_dia AS (
            sum(importe)                                              AS cobrado_total,
            sum(importe) FILTER (WHERE forma_pago = 'efectivo')       AS cobrado_efectivo
       FROM cobros
-     WHERE fecha_operativa = :fecha AND estado = 'confirmado'
+     -- Lo que el vendedor REPORTÓ cobrar hoy: una transferencia por confirmar es
+     -- trabajo del día aunque el banco no la haya acreditado. La rechazada no.
+     WHERE fecha_operativa = :fecha AND estado IN ('confirmado', 'por_confirmar')
      GROUP BY vendedor_id
 ),
 -- Solo 'merma': la devolución de cliente comparte tabla pero es otra cosa —la
@@ -179,7 +181,9 @@ mermas_dia AS (
       LEFT JOIN merma_detalle d ON d.merma_id = m.id
      WHERE m.fecha_operativa = :fecha
        AND m.estado = 'confirmada'
-       AND m.tipo = 'merma'
+       -- El cambio físico es pérdida de la empresa aunque no del vendedor: el
+       -- producto que se cambió ya no se vende.
+       AND m.tipo IN ('merma', 'cambio')
      GROUP BY m.vendedor_id
 ),
 -- El UNION (no UNION ALL) de los cinco: un vendedor que solo cobró, o que solo

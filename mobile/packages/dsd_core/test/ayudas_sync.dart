@@ -256,6 +256,7 @@ Map<String, Object?> deltaCartera(
   String id, {
   String saldo = '1200.00',
   String limite = '5000.00',
+  String? porConfirmar,
 }) =>
     {
       'cursor': cursor,
@@ -268,6 +269,7 @@ Map<String, Object?> deltaCartera(
         'limite_credito': limite,
         'permite_credito': true,
         'bloqueado': false,
+        if (porConfirmar != null) 'por_confirmar': porConfirmar,
       },
     };
 

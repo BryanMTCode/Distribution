@@ -17,6 +17,11 @@
 ///
 /// Los abonos cuentan igual de rápido que los cargos: si el vendedor acaba de
 /// cobrarle en efectivo, la línea se libera en ese momento.
+///
+/// **Solo el efectivo.** Una transferencia o un cheque no libera línea hasta que
+/// la oficina lo confirma en el banco (regla de la dirección, octubre 2026;
+/// migración 0038 del servidor). Quien arma `abonosPendientes` lo filtra: ver
+/// `RepoClientes.deLaRuta`.
 library;
 
 import 'dinero.dart';
@@ -55,7 +60,9 @@ class EstadoCredito {
   /// Ventas a crédito de este equipo que aún no sincronizan.
   final Dinero cargosPendientes;
 
-  /// Cobros de este equipo que aún no sincronizan. Liberan línea de inmediato.
+  /// Cobros EN EFECTIVO de este equipo que aún no sincronizan. Liberan línea de
+  /// inmediato. Las transferencias y los cheques no entran aquí: esperan a que
+  /// la oficina los confirme.
   final Dinero abonosPendientes;
 
   /// Puede quedar negativo: es saldo a favor, y suma línea disponible.

@@ -326,6 +326,54 @@ void main() {
     expect(repo.disponible('c1'), equals('200.00'));
   });
 
+  test('LA CARTERA TRAE LO POR CONFIRMAR, Y NO LO RESTA DEL CRÉDITO', () async {
+    // Una transferencia sin confirmar no libera línea (migración 0038 del
+    // servidor): el saldo llega completo y lo pagado viaja aparte, para que el
+    // vendedor no le vuelva a cobrar.
+    final transporte = TransporteFalso([
+      Responde.pull(cambios: [
+        deltaCliente(1, 'c1'),
+        deltaCartera(2, 'c1', saldo: '4800.00', porConfirmar: '800.00'),
+      ]),
+    ]);
+    await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
+
+    final fila = db.select(
+      'SELECT saldo_cache, por_confirmar FROM clientes WHERE id = ?',
+      ['c1'],
+    ).first;
+    expect(fila['saldo_cache'], equals(4800.0));
+    expect(fila['por_confirmar'], equals(800.0));
+    expect(RepoDePrueba(db).disponible('c1'), equals('200.00'),
+        reason: 'los 800 por confirmar no liberan línea');
+
+    // La oficina lo confirmó: el saldo baja y lo por confirmar vuelve a cero.
+    final despues = TransporteFalso([
+      Responde.pull(cambios: [
+        deltaCartera(3, 'c1', saldo: '4000.00', porConfirmar: '0.00'),
+      ]),
+    ]);
+    await armarSincronizador(db, despues).sincronizar(cursorActual: 2);
+    final confirmada = db.select(
+      'SELECT saldo_cache, por_confirmar FROM clientes WHERE id = ?',
+      ['c1'],
+    ).first;
+    expect(confirmada['por_confirmar'], equals(0.0));
+    expect(RepoDePrueba(db).disponible('c1'), equals('1000.00'));
+  });
+
+  test('una cartera de un servidor viejo, sin por_confirmar, deja cero', () async {
+    final transporte = TransporteFalso([
+      Responde.pull(cambios: [deltaCliente(1, 'c1'), deltaCartera(2, 'c1')]),
+    ]);
+    await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
+    final fila = db.select(
+      'SELECT por_confirmar FROM clientes WHERE id = ?',
+      ['c1'],
+    ).first;
+    expect(fila['por_confirmar'], equals(0.0));
+  });
+
   test('el delta de cliente no pisa el saldo con cero', () async {
     // El payload de `clientes` no trae saldo. Escribirlo desde ahí lo pondría
     // en cero justo después de que la cartera lo actualizó.
