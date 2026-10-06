@@ -6,6 +6,8 @@
 /// creer.
 library;
 
+import 'package:dsd_app/src/datos/servicio_ubicacion.dart';
+import 'package:dsd_app/src/estado/alta.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -158,4 +160,61 @@ void main() {
 
     expect(find.byKey(const Key('aviso_ajustes_oficina')), findsNothing);
   });
+
+  testWidgets('después de vender, «Mi camión» muestra lo que queda', (tester) async {
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarEscenarioDeVenta(base);
+        sembrarParaCobrar(base);
+      },
+      extras: [
+        servicioUbicacionProvider.overrideWithValue(
+          ServicioUbicacionFalso.siempre(const GpsSinLectura()),
+        ),
+      ],
+    );
+    await entrarCon(tester, pinCorrecto);
+
+    // El vendedor revisa su camión en la mañana: 240 piezas, 10 cajas.
+    await abrirCamion(tester);
+    expect(textoQueContiene('240.000'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await vender2CajasDeSopa(tester);
+
+    // Y a media ruta lo vuelve a abrir: 2 cajas son 48 piezas, quedan 192.
+    await abrirCamion(tester);
+    expect(textoQueContiene('192.000'), findsOneWidget,
+        reason: 'la venta ya descontó la base local; la pantalla tiene que verlo');
+    expect(textoQueContiene('240.000'), findsNothing,
+        reason: 'lo de la mañana ya no está en el camión');
+  });
+
 }
+
+// ===========================================================================
+// El defecto de campo de octubre: «vendo y el camión no baja»
+// ===========================================================================
+// La venta SÍ descontaba la base local, en la misma transacción que el
+// documento. Lo que no bajaba era la PANTALLA: el proveedor que lee «Mi camión»
+// se calculaba la primera vez que se abría y nadie lo volvía a calcular, porque
+// cada lugar que cambia el camión —la venta, la merma, la devolución, la
+// sincronización— invalidaba su propia lista de proveedores, y ninguna incluía
+// éste. El vendedor abría su camión a media ruta y veía lo que traía en la
+// mañana.
+//
+// Estas pruebas recorren el camino real —abrir el camión, salir, vender, volver—
+// porque una prueba que monta la pantalla después de la venta la calcula fresca
+// y pasa aunque el defecto siga ahí.
+Future<void> vender2CajasDeSopa(WidgetTester tester) async {
+  await tocar(tester, const Key('cliente_cliente-1'));
+  await tocar(tester, const Key('agregar_p-sopa|CAJA'));
+  await tocar(tester, const Key('mas_p-sopa|CAJA'));
+  await tocar(tester, const Key('boton_ver_carrito'));
+  await tocar(tester, const Key('boton_cobrar'));
+  await tocar(tester, const Key('boton_terminar_visita'));
+}
+

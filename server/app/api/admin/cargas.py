@@ -321,11 +321,19 @@ async def detalle(
                 SELECT d.id, d.producto_id, d.cantidad, d.lote, d.caducidad,
                        p.nombre, p.sku, p.unidad_base,
                        COALESCE(e.cantidad, 0) AS en_bodega,
+                       -- Lo que el camión trae AHORA, con lo vendido descontado.
+                       -- La columna de al lado es lo que se CARGÓ, que es un
+                       -- documento y no se mueve; sin ésta, quien abría la carga
+                       -- a mediodía veía las 240 piezas de la mañana y concluía
+                       -- que la venta no había bajado el camión.
+                       COALESCE(k.cantidad, 0) AS en_camion,
                        pu.presentaciones
                   FROM carga_detalle d
                   JOIN productos p ON p.id = d.producto_id
                   LEFT JOIN existencias e ON e.producto_id = d.producto_id
                        AND e.almacen_id = :bodega
+                  LEFT JOIN existencias k ON k.producto_id = d.producto_id
+                       AND k.almacen_id = :camion
                   LEFT JOIN LATERAL (
                         SELECT json_agg(json_build_object(
                                  'unidad', u.unidad_codigo, 'factor', u.factor::text)
@@ -337,7 +345,11 @@ async def detalle(
                  ORDER BY p.nombre
                 """
             ),
-            {"id": carga_id, "bodega": carga["almacen_origen_id"]},
+            {
+                "id": carga_id,
+                "bodega": carga["almacen_origen_id"],
+                "camion": carga["almacen_destino_id"],
+            },
         )
     ).mappings().all()
 

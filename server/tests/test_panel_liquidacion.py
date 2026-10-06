@@ -34,14 +34,14 @@ Seis cosas que se rompen en silencio, y cada una le cuesta dinero a una persona:
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
 
 from app.domain.liquidacion import RenglonDeLiquidacion
-from tests.conftest import PASSWORD_VENDEDOR, texto_plano
+from tests.conftest import PASSWORD_VENDEDOR, solo_texto, texto_plano
 
 pytestmark = pytest.mark.asyncio
 
@@ -1353,3 +1353,168 @@ async def test_una_venta_SIN_CARGA_cuenta_en_el_cierre_del_dia(
     assert fila["cant_vendida"] == Decimal("190.000"), "no contó la venta sin carga"
     # Y el inicial sigue siendo cero: ese camión amaneció vacío de verdad.
     assert fila["cant_inicial"] == Decimal("0.000")
+
+
+# ===========================================================================
+# El defecto de octubre: «vendo en la app y el camión del panel nunca baja»
+# ===========================================================================
+async def _venta_tardia(sesion, semilla, dia_de_trabajo, *, piezas, carga, folio=9):
+    """Una venta que sincroniza DESPUÉS de abrir la liquidación, con su salida."""
+    otra = uuid.uuid4()
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, carga_id, tipo,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            VALUES (:v, :d, :f, :fl, :c, :u, :a, :carga, 'contado',
+                    :total, :total, now(), :dia)
+            """
+        ),
+        {
+            "v": otra,
+            "d": dia_de_trabajo["dispositivo"],
+            "f": folio,
+            "fl": f"VEND01-{folio:06d}",
+            "c": dia_de_trabajo["cliente"],
+            "u": semilla["vendedor"],
+            "a": semilla["camion"],
+            "carga": carga,
+            "total": Decimal(piezas) * Decimal("12.50"),
+            "dia": dia_de_trabajo["dia"],
+        },
+    )
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO venta_partidas (id, venta_id, linea, producto_id, unidad_codigo,
+                                        factor_unidad, cantidad, cantidad_base,
+                                        precio_unitario, importe)
+            VALUES (:id, :v, 1, :p, 'PZA', 1, :n, :n, 12.5000, :importe)
+            """
+        ),
+        {
+            "id": uuid.uuid4(),
+            "v": otra,
+            "p": dia_de_trabajo["producto"],
+            "n": piezas,
+            "importe": Decimal(piezas) * Decimal("12.50"),
+        },
+    )
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = cantidad - :n "
+            " WHERE almacen_id = :c AND producto_id = :p"
+        ),
+        {"n": piezas, "c": semilla["camion"], "p": dia_de_trabajo["producto"]},
+    )
+    await sesion.commit()
+
+
+async def _renglon(sesion, liq) -> dict:
+    return dict(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT cant_vendida, cant_contada, diferencia "
+                    "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
+                ),
+                {"l": uuid.UUID(liq)},
+            )
+        ).mappings().one()
+    )
+
+
+async def test_LA_PANTALLA_ABIERTA_MUESTRA_LA_VENTA_QUE_LLEGO_DESPUES(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """El reporte de la dirección, octubre 2026, reproducido tal cual.
+
+    La liquidación se abre en la mañana; el teléfono sincroniza una venta a
+    mediodía; la pantalla donde se cuenta el camión tiene que decir lo que el
+    camión trae AHORA. Antes guardaba una foto al abrir —«un primer borrador»— y
+    solo recalculaba al cerrar: quien contaba lo hacía contra el camión de la
+    mañana, y el cierre cobraba otra cosa.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    antes = await cliente.get(f"/panel/liquidaciones/{liq}")
+    assert antes.status_code == 200
+
+    async def efectivo_esperado():
+        return (
+            await sesion.execute(
+                text("SELECT efectivo_esperado FROM liquidaciones WHERE id = :l"),
+                {"l": uuid.UUID(liq)},
+            )
+        ).scalar_one()
+
+    efectivo_de_la_manana = await efectivo_esperado()
+
+    await _venta_tardia(sesion, semilla, dia_de_trabajo, piezas=20, carga=dia_de_trabajo["carga"])
+
+    plano = solo_texto(await cliente.get(f"/panel/liquidaciones/{liq}"))
+    renglon = await _renglon(sesion, liq)
+    # 180 de la mañana + 20 de mediodía.
+    assert renglon["cant_vendida"] == Decimal("200.000")
+    # 240 cargadas − 200 vendidas: el camión trae 40, y eso dice la pantalla.
+    assert "40" in plano
+    # Y el efectivo esperado también se movió: 20 piezas a $12.50 de contado.
+    assert await efectivo_esperado() == efectivo_de_la_manana + Decimal("250.00")
+
+
+async def test_refrescar_la_pantalla_NO_BORRA_LO_YA_CONTADO(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """Lo único que esta pantalla no puede calcular es lo que una persona contó.
+
+    Recalcular lo vendido no puede tocarlo: alguien contó 40 cajas, llegó una venta
+    tardía y recargó la página — su conteo sigue ahí.
+    """
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _contar(cliente, liq, sesion, "40")
+
+    await _venta_tardia(sesion, semilla, dia_de_trabajo, piezas=20, carga=dia_de_trabajo["carga"])
+    await cliente.get(f"/panel/liquidaciones/{liq}")
+
+    renglon = await _renglon(sesion, liq)
+    assert renglon["cant_contada"] == Decimal("40.000")
+    assert renglon["cant_vendida"] == Decimal("200.000")
+    # 40 contadas contra 40 esperadas.
+    assert renglon["diferencia"] == Decimal("0.000")
+
+
+async def test_una_venta_con_la_carga_de_AYER_cuenta_en_el_corte_de_HOY(
+    cliente, semilla, dia_de_trabajo, sesion
+):
+    """El camión rodante: el vendedor sale a vender lo que le sobró antes de que su
+    teléfono reciba la carga de hoy, así que la venta lleva la carga de ayer.
+
+    Se busca por vendedor, camión y DÍA —como las mermas—, no por `carga_id`. Antes
+    esa venta no contaba en ningún corte abierto: «vendido» decía de menos y
+    `inicial` lo absorbía en silencio.
+    """
+    ayer = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id, "
+            "                    vendedor_id, fecha_operativa, estado) "
+            "VALUES (:c, 'CG-AYER', :b, :cam, :v, :d, 'liquidada')"
+        ),
+        {
+            "c": ayer,
+            "b": semilla["bodega"],
+            "cam": semilla["camion"],
+            "v": semilla["vendedor"],
+            "d": dia_de_trabajo["dia"] - timedelta(days=1),
+        },
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    liq = await _abrir(cliente, dia_de_trabajo["carga"])
+    await _venta_tardia(sesion, semilla, dia_de_trabajo, piezas=20, carga=ayer)
+    await cliente.get(f"/panel/liquidaciones/{liq}")
+
+    assert (await _renglon(sesion, liq))["cant_vendida"] == Decimal("200.000")

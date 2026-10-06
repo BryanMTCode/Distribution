@@ -371,6 +371,25 @@ async def detalle(
     if cabecera is None:
         return RedirectResponse("/panel/liquidaciones", status_code=303)
 
+    # Mientras no se cierre, la pantalla muestra el camión de AHORA: lo vendido,
+    # mermado y devuelto que haya sincronizado hasta este momento, y el efectivo
+    # que eso implica. Ver `_refrescar_cifras`: era el defecto de «vendo y el
+    # camión del panel no baja». Lo contado no se toca.
+    if cabecera["estado"] != "cerrada":
+        await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
+        esperado = await _efectivo_esperado(
+            sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
+        )
+        await sesion.execute(
+            text(
+                "UPDATE liquidaciones SET efectivo_esperado = :e "
+                " WHERE id = :l AND estado <> 'cerrada'"
+            ),
+            {"e": esperado, "l": liquidacion_id},
+        )
+        await sesion.commit()
+        cabecera = {**dict(cabecera), "efectivo_esperado": esperado}
+
     crudos = (
         await sesion.execute(
             text(
@@ -650,34 +669,7 @@ async def cerrar(
     # Con esto, `diferencia` —la columna generada— acaba siendo exactamente
     # «lo contado menos el saldo vivo del camión», que es el único número
     # defendible frente al vendedor. Ver `saldo_inicial`.
-    for r in _con_inicial(await _renglones_calculados(sesion, cabecera["carga_id"])):
-        await sesion.execute(
-            text(
-                """
-                INSERT INTO liquidacion_detalle
-                  (id, liquidacion_id, producto_id, cant_inicial, cant_cargada,
-                   cant_vendida, cant_merma, cant_devuelta, cant_contada)
-                VALUES (:id, :l, :p, :inicial, :cargada, :vendida, :merma,
-                        :devuelta, 0)
-                ON CONFLICT (liquidacion_id, producto_id) DO UPDATE SET
-                  cant_inicial  = excluded.cant_inicial,
-                  cant_cargada  = excluded.cant_cargada,
-                  cant_vendida  = excluded.cant_vendida,
-                  cant_merma    = excluded.cant_merma,
-                  cant_devuelta = excluded.cant_devuelta
-                """
-            ),
-            {
-                "id": uuid.uuid4(),
-                "l": liquidacion_id,
-                "p": r["producto_id"],
-                "inicial": r["inicial"],
-                "cargada": r["cargada"],
-                "vendida": r["vendida"],
-                "merma": r["merma"],
-                "devuelta": r["devuelta"],
-            },
-        )
+    await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
 
     renglones = (
         await sesion.execute(
@@ -846,6 +838,61 @@ async def cerrar(
 # ---------------------------------------------------------------------------
 
 
+async def _refrescar_cifras(sesion, liquidacion_id: uuid.UUID, carga_id: uuid.UUID) -> None:
+    """Recalcula inicial, cargado, vendido, merma y devuelto. NO toca lo contado.
+
+    ────────────────────────────────────────────────────────────────────────
+    POR QUÉ CORRE AL MOSTRAR Y NO SOLO AL CERRAR
+    ────────────────────────────────────────────────────────────────────────
+    Al principio solo corría al cerrar, y las cifras que se guardaban al abrir
+    eran «un primer borrador para la pantalla». Ese borrador era el defecto que
+    la dirección reportó en octubre de 2026 como «vendo en la app y el camión
+    del panel nunca baja»: la liquidación se abría en la mañana, las ventas
+    sincronizaban durante el día, y la pantalla donde se CUENTA el camión seguía
+    diciendo vendido 0, esperado 240. Quien contaba lo hacía contra el camión de
+    la mañana, y al cerrar el sistema recalculaba y cobraba otra cosa: dos
+    números distintos con la misma etiqueta, y el que se vio no era el que se
+    cobró.
+
+    Ahora la pantalla y el cierre leen lo mismo, porque los dos pasan por aquí.
+
+    `cant_contada` se queda fuera del `UPDATE` a propósito: es lo único que esta
+    pantalla no puede calcular —lo escribe una persona contando cajas— y
+    recalcular las demás cifras no puede borrar su trabajo. Un producto que
+    aparece después de abrir (una devolución de cliente de algo que no venía en la
+    carga) entra como renglón nuevo con su conteo en cero, para que se pueda
+    contar.
+    """
+    for r in _con_inicial(await _renglones_calculados(sesion, carga_id)):
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO liquidacion_detalle
+                  (id, liquidacion_id, producto_id, cant_inicial, cant_cargada,
+                   cant_vendida, cant_merma, cant_devuelta, cant_contada)
+                VALUES (:id, :l, :p, :inicial, :cargada, :vendida, :merma,
+                        :devuelta, 0)
+                ON CONFLICT (liquidacion_id, producto_id) DO UPDATE SET
+                  cant_inicial  = excluded.cant_inicial,
+                  cant_cargada  = excluded.cant_cargada,
+                  cant_vendida  = excluded.cant_vendida,
+                  cant_merma    = excluded.cant_merma,
+                  cant_devuelta = excluded.cant_devuelta
+                """
+            ),
+            {
+                "id": uuid.uuid4(),
+                "l": liquidacion_id,
+                "p": r["producto_id"],
+                "inicial": r["inicial"],
+                "cargada": r["cargada"],
+                "vendida": r["vendida"],
+                "merma": r["merma"],
+                "devuelta": r["devuelta"],
+            },
+        )
+
+
 async def _mover(
     sesion,
     *,
@@ -965,30 +1012,33 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                       LEFT JOIN cargado g ON g.producto_id = pc.producto_id
                       LEFT JOIN arriba  a ON a.producto_id = pc.producto_id
                       LEFT JOIN LATERAL (
-                            -- Las ventas de esta carga, Y las del día que salieron
-                            -- SIN carga.
+                            -- Las ventas del DÍA de este camión: mismo vendedor,
+                            -- mismo camión, misma fecha operativa. Igual que las
+                            -- mermas de abajo.
                             --
-                            -- Lo segundo dejó de ser un caso raro con el camión
-                            -- rodante: el vendedor puede salir a vender lo que le
-                            -- quedó, sin carga nueva, o vender después de que la
-                            -- oficina liquidó la de ayer. Esas ventas llevan
-                            -- `carga_id` nulo, y sin esta rama el renglón diría que
-                            -- el camión amaneció con menos de lo que amaneció.
+                            -- Antes se buscaban por `carga_id`, y con el camión
+                            -- rodante eso dejó de ser cierto: el teléfono pone en
+                            -- la venta la carga activa QUE CONOCE, y si el vendedor
+                            -- sale a vender lo que le sobró antes de sincronizar la
+                            -- carga de hoy, la venta lleva la carga de AYER. El
+                            -- corte de hoy no la contaba como vendida —y el de
+                            -- ayer ya estaba cerrado—, así que la columna
+                            -- «vendido» decía de menos y `inicial` lo absorbía en
+                            -- silencio. El esperado seguía bien, porque sale del
+                            -- saldo vivo; lo que mentía era la explicación.
                             --
-                            -- No se cuentan dos veces: la primera rama exige esta
-                            -- carga y la segunda exige que no haya ninguna.
+                            -- Una venta tiene un solo día operativo y
+                            -- `uq_carga_vendedor_dia` impide dos cargas del mismo
+                            -- vendedor el mismo día: no hay forma de contarla en
+                            -- dos cortes.
                             SELECT sum(vp.cantidad_base) AS vendida
                               FROM venta_partidas vp
                               JOIN ventas ve ON ve.id = vp.venta_id
                              WHERE vp.producto_id = pc.producto_id
                                AND ve.estado = 'confirmada'
-                               AND (
-                                     ve.carga_id = c.id
-                                  OR (ve.carga_id IS NULL
-                                      AND ve.vendedor_id = c.vendedor_id
-                                      AND ve.almacen_id = c.almacen_destino_id
-                                      AND ve.fecha_operativa = c.fecha_operativa)
-                               )
+                               AND ve.vendedor_id = c.vendedor_id
+                               AND ve.almacen_id = c.almacen_destino_id
+                               AND ve.fecha_operativa = c.fecha_operativa
                       ) v ON true
                       LEFT JOIN LATERAL (
                             SELECT

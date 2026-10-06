@@ -17,6 +17,7 @@ final busquedaCamionProvider = StateProvider<String>((_) => '');
 /// pantalla no tiene que calcular nada — y por eso el número que muestra es el que
 /// el vendedor debería encontrar si abre la caja y cuenta.
 final inventarioCamionProvider = Provider<List<ProductoDelCamion>>((ref) {
+  ref.watch(revisionDelCamionProvider);
   final busqueda = ref.watch(busquedaCamionProvider);
   return ref.watch(repoCatalogoProvider).enElCamion(busqueda: busqueda);
 });
@@ -42,6 +43,7 @@ class AjusteDeOficina {
 /// La nota la escribió gerencia al guardar el ajuste, y es obligatoria justamente
 /// para que aquí haya algo que leer.
 final ajustesDeOficinaProvider = Provider<List<AjusteDeOficina>>((ref) {
+  ref.watch(revisionDelCamionProvider);
   final db = ref.watch(baseLocalProvider).db;
   return db
       .select(

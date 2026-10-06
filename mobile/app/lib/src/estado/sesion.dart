@@ -23,6 +23,27 @@ final baseLocalProvider = Provider<BaseLocal>(
   (_) => throw UnimplementedError('se define en el arranque'),
 );
 
+/// Cambia cada vez que algo modifica el inventario del camión en la base local.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// POR QUÉ EXISTE: «VENDO Y EL CAMIÓN NO BAJA» (octubre 2026)
+/// ─────────────────────────────────────────────────────────────────────────
+/// La venta SÍ descontaba la base local, en la misma transacción que el
+/// documento. Lo que no bajaba era la PANTALLA: «Mi camión» se calculaba la
+/// primera vez que se abría y nadie lo volvía a calcular. Cada lugar que cambia
+/// el camión —la venta, la merma, la devolución, la sincronización— invalidaba
+/// a mano SU lista de proveedores, y ninguna lista estaba completa: la venta no
+/// tocaba «Mi camión», la sincronización no tocaba ninguno.
+///
+/// Con este contador, los que LEEN el camión lo observan y los que lo CAMBIAN
+/// lo incrementan. Un lector nuevo no puede olvidar en qué lista apuntarse,
+/// porque no hay lista: si lee el camión, observa el contador.
+final revisionDelCamionProvider = StateProvider<int>((_) => 0);
+
+/// Lo llama todo el que escriba `existencias_camion` o lo que de ella depende.
+void elCamionCambio(Ref ref) =>
+    ref.read(revisionDelCamionProvider.notifier).state++;
+
 final repoCredencialProvider = Provider<RepoCredencial>(
   (ref) => RepoCredencial(ref.watch(almacenSeguroProvider)),
 );

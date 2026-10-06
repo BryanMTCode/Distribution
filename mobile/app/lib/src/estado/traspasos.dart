@@ -106,9 +106,7 @@ class ControladorTraspaso extends Notifier<EstadoTraspaso> {
       // El camión bajó: el catálogo y las existencias tienen que reflejarlo antes
       // de la siguiente venta, o le ofrecería al cliente mercancía que acaba de
       // dejar en la bodega.
-      ref.invalidate(existenciasProvider);
-      ref.invalidate(catalogoProvider);
-      ref.invalidate(productosDelCamionProvider);
+      elCamionCambio(ref);
       ref.invalidate(traspasosRecientesProvider);
       ref.invalidate(resumenColaProvider);
       state = TraspasoRegistrado(traspaso);

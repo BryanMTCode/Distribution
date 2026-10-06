@@ -47,8 +47,9 @@
     <thead>
       <tr>
         <th>Producto</th>
-        <th class="numero">Va en el camión</th>
+        <th class="numero">{% if editable %}Va en el camión{% else %}Se cargó{% endif %}</th>
         <th class="numero">Hay en bodega</th>
+        {% if not editable %}<th class="numero">En el camión ahora</th>{% endif %}
         {% if editable and puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
@@ -81,6 +82,12 @@
             <div class="sutil" style="color:var(--alerta)">no alcanza</div>
           {% endif %}
         </td>
+        {% if not editable %}
+        <td class="numero" {% if r.en_camion < 0 %}style="color:var(--alerta)"{% endif %}>
+          <a href="/panel/inventario/{{ carga.almacen_destino_id }}/{{ r.producto_id }}">{{ r.en_camion|entero }}</a>
+          <div class="sutil">con lo vendido descontado</div>
+        </td>
+        {% endif %}
         {% if editable and puede_editar %}
         <td>
           <form method="post"
@@ -99,6 +106,7 @@
         <td><strong>Total</strong></td>
         <td class="numero"><strong>{{ total_piezas|entero }}</strong> unidades base</td>
         <td></td>
+        {% if not editable %}<td></td>{% endif %}
         {% if editable and puede_editar %}<td></td>{% endif %}
       </tr>
     </tbody>

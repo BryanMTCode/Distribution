@@ -1047,3 +1047,35 @@ async def test_el_borrador_avisa_sin_bloquear(cliente, sesion, semilla, catalogo
     assert (
         await sesion.execute(text("SELECT estado FROM cargas"))
     ).scalar() == "confirmada"
+
+
+async def test_la_carga_confirmada_dice_cuanto_queda_en_el_camion(
+    cliente, semilla, sesion, catalogo
+):
+    """«Vendo y el camión del panel nunca baja» (octubre 2026).
+
+    La carga es un documento: lo que se cargó no se mueve. Pero quien la abría a
+    mediodía veía las 240 piezas de la mañana y concluía que la venta no había
+    bajado el camión. Ahora la carga confirmada trae al lado lo que el camión trae
+    AHORA, con lo vendido descontado.
+    """
+    await _entrar(cliente)
+    carga = await _abrir(cliente, semilla)
+    await _agregar(cliente, carga, cantidad="10")
+    await _confirmar(cliente, carga)
+
+    # Una venta de 48 piezas descontada del camión, como lo hace la ingesta.
+    await sesion.execute(
+        text(
+            "UPDATE existencias SET cantidad = cantidad - 48 "
+            " WHERE almacen_id = :c AND producto_id = :p"
+        ),
+        {"c": semilla["camion"], "p": catalogo["producto"]},
+    )
+    await sesion.commit()
+
+    plano = solo_texto(await cliente.get(f"/panel/cargas/{carga}"))
+    assert "En el camión ahora" in plano
+    assert "Se cargó" in plano
+    # 10 cajas de 24 = 240 cargadas; menos 48 vendidas = 192.
+    assert "192" in plano

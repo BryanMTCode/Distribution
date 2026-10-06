@@ -104,9 +104,10 @@ final motivosDeNoDropProvider = Provider<List<MotivoDeNoDrop>>(
 );
 
 /// Lo que trae el camión, para escoger qué se mermó.
-final productosDelCamionProvider = Provider<List<ProductoDelCamion>>(
-  (ref) => ref.watch(repoCatalogoProvider).enElCamion(),
-);
+final productosDelCamionProvider = Provider<List<ProductoDelCamion>>((ref) {
+  ref.watch(revisionDelCamionProvider);
+  return ref.watch(repoCatalogoProvider).enElCamion();
+});
 
 final foliosDeMermaProvider = Provider<RangoFolios?>(
   (ref) => ref.watch(repoFoliosProvider).leer('merma'),
@@ -200,9 +201,7 @@ class ControladorMerma extends Notifier<EstadoMerma> {
       // El inventario del camión cambió: el catálogo y las existencias que ve el
       // vendedor tienen que reflejarlo antes de la siguiente venta, o le ofrecería
       // mercancía que acaba de tirar.
-      ref.invalidate(existenciasProvider);
-      ref.invalidate(catalogoProvider);
-      ref.invalidate(productosDelCamionProvider);
+      elCamionCambio(ref);
       ref.invalidate(resumenColaProvider);
       state = MermaRegistrada(merma);
     } on MermaRechazada catch (e) {

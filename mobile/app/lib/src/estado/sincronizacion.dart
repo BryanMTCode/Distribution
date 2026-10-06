@@ -207,6 +207,10 @@ class ControladorSync extends Notifier<EstadoSync> {
     ref.invalidate(resumenColaProvider);
     ref.invalidate(clientesProvider);
     ref.invalidate(cursorProvider);
+    // El pull aplica cargas, ajustes de la oficina, ventas que gerencia corrigió
+    // y devoluciones recibidas: todo eso mueve el camión. Antes no se avisaba a
+    // nadie, y la carga de la mañana no aparecía en «Mi camión» hasta reiniciar.
+    elCamionCambio(ref);
 
     // ---- Orden de borrado (Fase 9) --------------------------------------
     //

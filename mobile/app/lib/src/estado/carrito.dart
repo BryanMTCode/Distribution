@@ -53,9 +53,10 @@ final listaDeLaVisitaProvider = Provider<ListaResuelta?>((ref) {
 
 /// Lo que trae el camión hoy. Se lee entero: el carrito lo consulta en cada
 /// toque de "+", y una consulta por toque se sentiría pegajosa.
-final existenciasProvider = Provider<ExistenciasCamion>(
-  (ref) => ref.watch(repoCatalogoProvider).existencias(),
-);
+final existenciasProvider = Provider<ExistenciasCamion>((ref) {
+  ref.watch(revisionDelCamionProvider);
+  return ref.watch(repoCatalogoProvider).existencias();
+});
 
 final repoBorradorProvider = Provider<RepoBorrador>(
   (ref) => RepoBorrador(ref.watch(baseLocalProvider).db),
@@ -84,12 +85,16 @@ String _uuidV4() {
 
 /// `true` cuando el camión no trae carga. No es un error de la app, y se dice
 /// con esas palabras.
-final sinCargaActivaProvider = Provider<bool>(
-  (ref) => ref.watch(repoCatalogoProvider).sinCargaActiva,
-);
+final sinCargaActivaProvider = Provider<bool>((ref) {
+  ref.watch(revisionDelCamionProvider);
+  return ref.watch(repoCatalogoProvider).sinCargaActiva;
+});
 
 /// El catálogo cotizado para el cliente de la visita, filtrado por la búsqueda.
 final catalogoProvider = Provider<List<ProductoEnCatalogo>>((ref) {
+  // El catálogo dice cuánto queda de cada producto: ofrecerle al siguiente
+  // cliente lo que ya se vendió es como se llega a una venta imposible.
+  ref.watch(revisionDelCamionProvider);
   final lista = ref.watch(listaDeLaVisitaProvider);
   if (lista == null) return const [];
   return ref.watch(repoCatalogoProvider).paraCliente(
@@ -367,7 +372,7 @@ class ControladorCobro extends Notifier<EstadoCobro> {
       // bajó y hay un sobre nuevo por enviar.
       ref.invalidate(clientesProvider);
       ref.invalidate(resumenColaProvider);
-      ref.invalidate(existenciasProvider);
+      elCamionCambio(ref);
     } catch (_) {
       // Se sigue de frente: la venta está escrita y la pantalla del ticket es
       // lo que el cliente está esperando.
