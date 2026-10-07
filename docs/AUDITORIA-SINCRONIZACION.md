@@ -522,6 +522,13 @@ servidor ya estuviera actualizado. *Corrección (ADR 0002 §59)*: «Reprocesar»
 detalle de la cuarentena, con las mismas reglas que el push; después, el reintento del
 teléfono recibe «duplicada» y se destraba.
 
+**Hallazgo 11 · Los folios retrocedían** (reportado: «No se guardó la venta»). Al volver
+a vincular, el rango regresaba con lo consumido sin avanzar y el teléfono reusaba
+folios; un teléfono nuevo del mismo vendedor empezaba en 1 y el servidor rechazaba sus
+ventas por folio duplicado. *Corrección (ADR 0002 §60)*: el contador del teléfono
+nunca baja del último folio escrito, y el servidor calcula lo consumido desde los
+documentos y asigna rangos por vendedor.
+
 ### 8.3 Lo que se revisó y se queda así
 
 - **La contraseña y `dias_max_offline` viajan en la credencial**, que se reescribe con

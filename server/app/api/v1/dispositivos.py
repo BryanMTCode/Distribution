@@ -20,6 +20,14 @@ router = APIRouter(prefix="/dispositivos", tags=["dispositivos"])
 TAMANO_RANGO = 1000
 TIPOS_DOCUMENTO = ("venta", "cobro", "merma", "no_drop")
 
+# Dónde queda escrito cada tipo de documento, con su `folio_consecutivo`.
+TABLA_DE_DOCUMENTO = {
+    "venta": "ventas",
+    "cobro": "cobros",
+    "merma": "mermas",
+    "no_drop": "no_drops",
+}
+
 
 class PeticionRegistro(BaseModel):
     # El UUID lo genera el dispositivo, igual que los documentos de campo.
@@ -121,13 +129,29 @@ async def asignar_folios(
 
     asignados: list[RangoAsignado] = []
     for tipo in TIPOS_DOCUMENTO:
+        tabla = TABLA_DE_DOCUMENTO[tipo]
+        # El tope es el del VENDEDOR, no el del equipo. El folio impreso es
+        # «VEND01-000123»: no dice de qué teléfono salió, así que el teléfono
+        # nuevo de un vendedor tiene que seguir donde se quedó el anterior. Antes
+        # empezaba en 1, repetía «VEND01-000001», y el servidor rechazaba cada
+        # venta por folio duplicado —a cuarentena, una tras otra—. Bug de campo,
+        # octubre 2026. Y cuenta también lo ya escrito en los documentos, por si
+        # algún folio quedó fuera de su rango registrado.
         tope = (
             await sesion.execute(
                 text(
-                    "SELECT COALESCE(MAX(hasta), 0) FROM folios_rangos "
-                    "WHERE dispositivo_id = :dev AND documento_tipo = :tipo"
+                    f"""
+                    SELECT GREATEST(
+                      (SELECT COALESCE(MAX(r.hasta), 0) FROM folios_rangos r
+                         JOIN dispositivos d ON d.id = r.dispositivo_id
+                        WHERE d.usuario_id = :usr AND r.documento_tipo = :tipo),
+                      (SELECT COALESCE(MAX(x.folio_consecutivo), 0) FROM {tabla} x
+                         JOIN dispositivos d ON d.id = x.dispositivo_id
+                        WHERE d.usuario_id = :usr)
+                    )
+                    """  # noqa: S608 — la tabla sale de una constante, no del usuario
                 ),
-                {"dev": str(dispositivo_id), "tipo": tipo},
+                {"usr": dispositivo.usuario_id, "tipo": tipo},
             )
         ).scalar_one()
 
@@ -142,6 +166,23 @@ async def asignar_folios(
         ).scalars().first()
 
         if activo is not None:
+            # Lo consumido sale de los documentos que ya llegaron, no del renglón
+            # del rango: ese número nunca avanzaba con las ventas, y devolverlo al
+            # volver a vincular hacía que el teléfono reusara folios —«No se
+            # guardó la venta», una y otra vez—. El teléfono además nunca
+            # retrocede su contador por debajo de lo que ya escribió.
+            usado = (
+                await sesion.execute(
+                    text(
+                        f"SELECT COALESCE(MAX(folio_consecutivo), 0) FROM {tabla} "  # noqa: S608
+                        " WHERE dispositivo_id = :dev "
+                        "   AND folio_consecutivo BETWEEN :desde AND :hasta"
+                    ),
+                    {"dev": dispositivo_id, "desde": activo.desde, "hasta": activo.hasta},
+                )
+            ).scalar_one()
+            if usado > activo.consumido_hasta:
+                activo.consumido_hasta = usado
             asignados.append(
                 RangoAsignado(
                     documento_tipo=tipo,

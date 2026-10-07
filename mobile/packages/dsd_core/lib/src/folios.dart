@@ -81,10 +81,29 @@ class RepoFolios {
 
   final Database _db;
 
+  /// Dónde vive cada tipo de documento, para saber cuál fue su último folio.
+  static const _tablaDe = {
+    'venta': 'ventas',
+    'cobro': 'cobros',
+    'merma': 'mermas',
+    'no_drop': 'no_drops',
+  };
+
   /// Lee el rango vigente, o `null` si el servidor no ha asignado ninguno.
   ///
   /// Sin rango no se puede vender, y eso se le dice al vendedor con esas
   /// palabras: "sincroniza una vez para recibir folios".
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LO CONSUMIDO NUNCA ES MENOS QUE EL ÚLTIMO FOLIO QUE YA SE USÓ AQUÍ
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Bug de campo, octubre 2026: al volver a vincular el equipo, el servidor
+  /// devolvía su rango con un `consumido_hasta` que nunca había avanzado, y
+  /// `guardar` lo escribía encima. La siguiente venta tomaba un folio que ya
+  /// tenía otra venta de este teléfono, la base la rechazaba por duplicada, y el
+  /// vendedor veía «No se guardó la venta» —una y otra vez, porque el contador
+  /// nunca avanzaba—. Así que el contador se lee contra los documentos mismos:
+  /// lo que ya está escrito manda sobre lo que diga cualquier copia del número.
   RangoFolios? leer(String tipo) {
     final filas = _db.select(
       'SELECT desde, hasta, consumido_hasta FROM folios_rangos WHERE tipo = ?',
@@ -92,11 +111,18 @@ class RepoFolios {
     );
     if (filas.isEmpty) return null;
     final f = filas.first;
+    final tabla = _tablaDe[tipo];
+    final usado = tabla == null
+        ? 0
+        : _db
+                .select('SELECT COALESCE(MAX(folio_consecutivo), 0) AS m FROM $tabla')
+                .single['m'] as int;
+    final consumido = f['consumido_hasta'] as int;
     return RangoFolios(
       tipo: tipo,
       desde: f['desde'] as int,
       hasta: f['hasta'] as int,
-      consumidoHasta: f['consumido_hasta'] as int,
+      consumidoHasta: usado > consumido ? usado : consumido,
     );
   }
 
@@ -112,7 +138,13 @@ class RepoFolios {
       ON CONFLICT(tipo) DO UPDATE SET
         desde = excluded.desde,
         hasta = excluded.hasta,
-        consumido_hasta = excluded.consumido_hasta,
+        -- El MISMO rango que vuelve a llegar no retrocede lo consumido: el
+        -- servidor no sabe de las ventas que todavía no se le han subido.
+        consumido_hasta = CASE
+          WHEN excluded.desde = folios_rangos.desde
+            THEN MAX(folios_rangos.consumido_hasta, excluded.consumido_hasta)
+          ELSE excluded.consumido_hasta
+        END,
         asignado_en = excluded.asignado_en
       ''',
       [rango.tipo, rango.desde, rango.hasta, rango.consumidoHasta, asignadoEn],

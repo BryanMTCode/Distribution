@@ -100,6 +100,47 @@ void main() {
 
   tearDown(() => db.dispose());
 
+  group('volver a vincular no rebobina los folios', () {
+    // Bug de campo, octubre 2026: al volver a vincular, el servidor devolvía el
+    // rango con su `consumido_hasta` sin avanzar; el teléfono lo escribía encima,
+    // la siguiente venta tomaba un folio ya usado y el vendedor veía «No se
+    // guardó la venta» cada vez.
+    test('el mismo rango con lo consumido atrasado no retrocede el contador', () {
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+
+      folios.guardar(
+        RangoFolios(tipo: 'venta', desde: 1, hasta: 500, consumidoHasta: 0),
+        asignadoEn: '2026-10-07T09:00:00.000Z',
+      );
+
+      final tercera =
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      expect(tercera.folioConsecutivo, equals(3));
+    });
+
+    test('aunque el contador guardado esté atrás, manda el último folio escrito', () {
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      // Como lo dejaba la versión anterior: el contador rebobinado a mano.
+      db.execute("UPDATE folios_rangos SET consumido_hasta = 0 WHERE tipo = 'venta'");
+
+      final siguiente =
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      expect(siguiente.folioConsecutivo, equals(2));
+      expect(db.select('SELECT COUNT(*) AS n FROM ventas').single['n'], equals(2));
+    });
+
+    test('un rango NUEVO sí reemplaza lo consumido', () {
+      folios.guardar(
+        RangoFolios(tipo: 'venta', desde: 501, hasta: 1000, consumidoHasta: 500),
+        asignadoEn: '2026-10-07T09:00:00.000Z',
+      );
+      final venta =
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      expect(venta.folioConsecutivo, equals(501));
+    });
+  });
+
   group('la venta se escribe completa', () {
     test('venta, partidas, existencia, cola y folio, en una pasada', () {
       final guardada = cierre().cerrar(

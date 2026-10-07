@@ -183,3 +183,75 @@ async def test_la_base_impide_rangos_traslapados(sesion, semilla):
         )
         await sesion.commit()
     await sesion.rollback()
+
+
+async def _equipo_con_folios(cliente, cabeceras) -> str:
+    dispositivo_id = str(uuid.uuid4())
+    await cliente.post(
+        "/v1/dispositivos/registrar",
+        json={"id": dispositivo_id, "etiqueta": "Moto G54"},
+        headers=cabeceras,
+    )
+    await cliente.post(f"/v1/dispositivos/{dispositivo_id}/folios", headers=cabeceras)
+    return dispositivo_id
+
+
+async def test_volver_a_vincular_devuelve_lo_que_de_verdad_se_consumio(
+    cliente, semilla, sesion
+):
+    """Bug de campo, octubre 2026: el rango volvía con `consumido_hasta` sin
+    avanzar, el teléfono lo escribía encima y reusaba folios —«No se guardó la
+    venta», una y otra vez—."""
+    token = await _token_admin(cliente)
+    cabeceras = {"Authorization": f"Bearer {token}"}
+    dispositivo_id = await _equipo_con_folios(cliente, cabeceras)
+
+    cliente_id = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes (id, nombre_comercial, ruta_id, creado_en, actualizado_en) "
+            "VALUES (:c, 'Abarrotes Lupita', :r, now(), now())"
+        ),
+        {"c": cliente_id, "r": semilla["ruta"]},
+    )
+    for folio in (1, 2):
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                    cliente_id, vendedor_id, almacen_id, tipo,
+                                    subtotal, total, fecha_dispositivo, fecha_operativa)
+                VALUES (gen_random_uuid(), :d, :f, :fl, :c, :u, :a, 'contado',
+                        10, 10, now(), CURRENT_DATE)
+                """
+            ),
+            {"d": uuid.UUID(dispositivo_id), "f": folio, "fl": f"ADMIN01-{folio:06d}",
+             "c": cliente_id, "u": semilla["admin"], "a": semilla["camion"]},
+        )
+    await sesion.commit()
+
+    r = await cliente.post(f"/v1/dispositivos/{dispositivo_id}/folios", headers=cabeceras)
+    venta = next(x for x in r.json() if x["documento_tipo"] == "venta")
+    assert venta["desde"] == 1
+    assert venta["consumido_hasta"] == 2
+
+
+async def test_el_telefono_nuevo_de_un_vendedor_sigue_donde_se_quedo_el_anterior(
+    cliente, semilla, sesion
+):
+    """El folio impreso es «VEND01-000123»: no dice de qué teléfono salió. El
+    teléfono nuevo empezaba en 1, repetía folios del anterior, y el servidor
+    rechazaba cada venta por duplicada."""
+    token = await _token_admin(cliente)
+    cabeceras = {"Authorization": f"Bearer {token}"}
+    viejo = await _equipo_con_folios(cliente, cabeceras)
+    await sesion.execute(
+        text("UPDATE dispositivos SET estado = 'revocado', revocado_en = now() WHERE id = :d"),
+        {"d": uuid.UUID(viejo)},
+    )
+    await sesion.commit()
+
+    nuevo = await _equipo_con_folios(cliente, cabeceras)
+    r = await cliente.post(f"/v1/dispositivos/{nuevo}/folios", headers=cabeceras)
+    venta = next(x for x in r.json() if x["documento_tipo"] == "venta")
+    assert venta["desde"] == 1001

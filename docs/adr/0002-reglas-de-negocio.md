@@ -4272,3 +4272,22 @@ saca de su cola y se le quita lo rojo. Atendida **no es aplicada**: no entra nad
 Y una descartada todavía se puede **reprocesar**: antes del botón, marcarla como
 atendida era la única salida, y una venta real descartada así nunca habría entrado. La
 pantalla advierte que no se reprocese si ya se capturó a mano.
+
+## 60. Los folios nunca retroceden: ni al volver a vincular, ni con un teléfono nuevo
+
+**Decisión (octubre 2026).** Reportado en operación: «hice una venta y dice que no se
+guardó». Dos defectos de folios, uno de cada lado:
+
+- **Al volver a vincular el teléfono**, el servidor devolvía su rango vigente con un
+  `consumido_hasta` que nunca avanzaba con las ventas, y el teléfono lo escribía
+  encima. La siguiente venta tomaba un folio que ya tenía otra venta de ese teléfono;
+  la base local la rechazaba por duplicada y el vendedor veía «No se guardó la
+  venta» —una y otra vez, porque el contador nunca avanzaba—.
+- **El teléfono nuevo de un vendedor** empezaba sus folios en 1. El folio impreso es
+  «VEND01-000123» y no dice de qué teléfono salió, así que repetía los del anterior y
+  el servidor rechazaba cada venta por folio duplicado: a cuarentena.
+
+Ahora: el teléfono nunca toma un folio por debajo del último que ya escribió en sus
+documentos, y el mismo rango que vuelve a llegar no retrocede lo consumido; el
+servidor calcula lo consumido desde los documentos que recibió, y el rango de un
+teléfono nuevo empieza después del más alto de **todos** los teléfonos del vendedor.
