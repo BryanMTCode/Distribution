@@ -6,6 +6,9 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:dsd_app/src/estado/sesion.dart';
+import 'package:dsd_app/src/datos/base_local.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'ayudas.dart';
@@ -72,6 +75,62 @@ void main() {
     await abrirMiDia(tester);
 
     expect(find.byKey(const Key('aviso_sin_sincronizar')), findsOneWidget);
+  });
+
+  testWidgets('al tocar una venta se despliega lo que se le vendió', (tester) async {
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+        sembrarProducto(base, id: 'p-sopa', nombre: 'Sopa de fideo 70 g');
+        sembrarVentaDelDia(base, folio: 'V1', total: 592.00);
+        base.db.execute(
+          'INSERT INTO venta_partidas (id, venta_id, linea, producto_id, unidad_codigo, '
+          '       factor_unidad, cantidad, cantidad_base, precio_unitario, importe) '
+          "VALUES ('pa-1', 'V1', 1, 'p-sopa', 'CAJA', 24, 2, 48, 296, 592)",
+        );
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirMiDia(tester);
+
+    expect(textoQueContiene('Sopa de fideo'), findsNothing,
+        reason: 'cerrada, la lista se lee de un vistazo');
+    await tester.tap(find.byKey(const Key('venta_V1')));
+    await tester.pumpAndSettle();
+    expect(textoQueContiene('2 CAJA · Sopa de fideo 70 g'), findsOneWidget);
+    expect(textoQueContiene('592.00'), findsWidgets);
+  });
+
+  testWidgets('al sincronizar, la venta pasa a «subida» sin reiniciar la app',
+      (tester) async {
+    // Bug de campo, octubre 2026: se quedaba en rojo hasta cerrar y abrir la app.
+    late BaseLocal laBase;
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        laBase = base;
+        sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+        sembrarVentaDelDia(base, folio: 'V1', total: 10.00);
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirMiDia(tester);
+    Finder icono(IconData i) =>
+        find.descendant(of: find.byKey(const Key('venta_V1')), matching: find.byIcon(i));
+    expect(icono(Icons.cloud_off_outlined), findsOneWidget);
+
+    // Lo que hace la sincronización al terminar: el documento queda marcado y
+    // se avisa a la cola.
+    laBase.db.execute("UPDATE ventas SET sincronizada = 1 WHERE id = 'V1'");
+    ProviderScope.containerOf(tester.element(find.byKey(const Key('venta_V1'))))
+        .invalidate(resumenColaProvider);
+    await tester.pumpAndSettle();
+
+    expect(icono(Icons.cloud_done_outlined), findsOneWidget);
+    expect(find.byKey(const Key('aviso_sin_sincronizar')), findsNothing);
   });
 
   testWidgets('un día sin ventas lo dice en lugar de mostrar ceros sueltos',

@@ -26,6 +26,14 @@ final diaOperativoProvider = Provider<String>(
 );
 
 /// Lo vendido y lo cobrado hoy, leído de SQLite: funciona sin señal.
-final miDiaProvider = Provider<MiDia>(
-  (ref) => ref.watch(repoMiDiaProvider).delDia(ref.watch(diaOperativoProvider)),
-);
+///
+/// Escucha la cola (`resumenColaProvider`) y el camión: los dos se avisan al
+/// vender, cobrar, mermar y al terminar cada sincronización. Bug de campo,
+/// octubre 2026: sin esto, el provider se quedaba con la primera lectura y la
+/// venta seguía «sin subir» en rojo hasta cerrar y abrir la app, aunque el
+/// panel ya la tuviera.
+final miDiaProvider = Provider<MiDia>((ref) {
+  ref.watch(resumenColaProvider);
+  ref.watch(revisionDelCamionProvider);
+  return ref.watch(repoMiDiaProvider).delDia(ref.watch(diaOperativoProvider));
+});

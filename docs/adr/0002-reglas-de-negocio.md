@@ -4361,3 +4361,14 @@ el sobre (uno de visita trae venta y cobro): ventas, cobros, mermas, no-drops,
 devoluciones y altas de cliente. Y en cada sincronización se repasa todo lo
 confirmado, así que lo que se confirmó con la versión anterior también se corrige
 solo. (versionCode 20)
+
+## 64. «Mi día»: se ve lo que se vendió, y se entera de la sincronización
+
+**Decisión (octubre 2026).** Dos pedidos de la prueba en campo:
+
+- **Al tocar una venta se despliega lo que se le vendió**: cantidad, presentación,
+  producto e importe, en el orden del ticket. Es lo que el vendedor necesita para
+  contestar «¿qué me dejaste el martes?» sin reimprimir.
+- **La venta pasaba a «subida» solo al reiniciar la app.** El provider de «Mi día»
+  se quedaba con su primera lectura. Ahora escucha la cola y el camión, que se
+  avisan al vender, cobrar, mermar y al terminar cada sincronización. (versionCode 21)

@@ -218,10 +218,14 @@ class PantallaMiDia extends ConsumerWidget {
             )
           else
             for (final venta in dia.ventas)
-              ListTile(
+              // Al tocarla se despliega lo que se le vendió: lo que el vendedor
+              // necesita para contestar «¿qué me dejaste el martes?» sin
+              // reimprimir el ticket.
+              ExpansionTile(
                 key: Key('venta_${venta.folio}'),
                 dense: true,
-                contentPadding: EdgeInsets.zero,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(left: 36, bottom: 8),
                 leading: Icon(
                   venta.sincronizada ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
                   size: 20,
@@ -240,6 +244,31 @@ class PantallaMiDia extends ConsumerWidget {
                     color: venta.esContado ? null : colores.outline,
                   ),
                 ),
+                children: [
+                  if (venta.partidas.isEmpty)
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Sin renglones guardados.'),
+                    ),
+                  for (final p in venta.partidas)
+                    Padding(
+                      key: Key('partida_${venta.folio}_${p.producto}'),
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${p.cantidadTexto} ${p.unidad} · ${p.producto}',
+                            ),
+                          ),
+                          Text(
+                            '\$${p.importe.texto}',
+                            style: TextStyle(color: colores.outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
         ],
       ),

@@ -5,7 +5,7 @@ publish_to: none
 # repartir un APK nuevo, por dos razones distintas: Android rechaza instalar
 # encima un versionCode MENOR que el instalado, y dos APK con el MISMO número
 # son indistinguibles con el teléfono en la mano. `make apk` lo imprime.
-version: 0.1.0+20
+version: 0.1.0+21
 
 environment:
   sdk: ^3.9.0

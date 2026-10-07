@@ -22,6 +22,29 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'dinero.dart';
 
+/// Un renglón de lo que se le vendió al cliente.
+class PartidaDeMiDia {
+  const PartidaDeMiDia({
+    required this.producto,
+    required this.cantidad,
+    required this.unidad,
+    required this.precio,
+    required this.importe,
+  });
+
+  final String producto;
+
+  /// En la presentación en que se vendió: «2 CAJA», no «48 PZA».
+  final num cantidad;
+  final String unidad;
+  final Dinero precio;
+  final Dinero importe;
+
+  /// `2` y no `2.0`; `1.5` se queda.
+  String get cantidadTexto =>
+      cantidad == cantidad.roundToDouble() ? cantidad.round().toString() : '$cantidad';
+}
+
 /// Una venta del día, para la lista.
 class VentaDeMiDia {
   const VentaDeMiDia({
@@ -30,7 +53,12 @@ class VentaDeMiDia {
     required this.total,
     required this.tipo,
     required this.sincronizada,
+    this.partidas = const [],
   });
+
+  /// Lo que se vendió, en el orden del ticket. Se despliega al tocar la venta:
+  /// es lo que el vendedor necesita para contestar «¿qué me dejaste el martes?».
+  final List<PartidaDeMiDia> partidas;
 
   final String folio;
   final String cliente;
@@ -123,6 +151,29 @@ class RepoMiDia {
 
   final Database _db;
 
+  List<PartidaDeMiDia> _partidasDe(String ventaId) => _db
+      .select(
+        '''
+        SELECT COALESCE(p.nombre, vp.producto_id) AS producto, vp.cantidad,
+               vp.unidad_codigo, vp.precio_unitario, vp.importe
+          FROM venta_partidas vp
+          LEFT JOIN productos p ON p.id = vp.producto_id
+         WHERE vp.venta_id = ?
+         ORDER BY vp.linea
+        ''',
+        [ventaId],
+      )
+      .map(
+        (f) => PartidaDeMiDia(
+          producto: f['producto'] as String,
+          cantidad: f['cantidad'] as num,
+          unidad: f['unidad_codigo'] as String,
+          precio: _dinero(f['precio_unitario']),
+          importe: _dinero(f['importe']),
+        ),
+      )
+      .toList();
+
   /// El corte de [fechaOperativa] (`AAAA-MM-DD`).
   ///
   /// Se pide la fecha en vez de calcularla aquí: el día operativo lo decide el
@@ -133,7 +184,7 @@ class RepoMiDia {
     final ventas = _db
         .select(
           '''
-          SELECT v.folio_local, v.total, v.tipo, v.sincronizada,
+          SELECT v.id, v.folio_local, v.total, v.tipo, v.sincronizada,
                  COALESCE(c.nombre_comercial, 'Cliente nuevo') AS cliente
             FROM ventas v
             LEFT JOIN clientes c ON c.id = v.cliente_id
@@ -149,6 +200,7 @@ class RepoMiDia {
             total: _dinero(f['total']),
             tipo: f['tipo'] as String,
             sincronizada: (f['sincronizada'] as int? ?? 0) == 1,
+            partidas: _partidasDe(f['id'] as String),
           ),
         )
         .toList();
