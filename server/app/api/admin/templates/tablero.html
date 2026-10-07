@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block titulo %}Tablero{% endblock %}
 {% block contenido %}
+{# Cómo se dice el periodo en una etiqueta corta; la fecha completa va en el título. #}
+{% set cuando = "hoy" if periodo.es_hoy else ("en el periodo" if periodo.clave == "rango" else "· " ~ periodo.etiqueta|lower) %}
 <h1>Tablero de operación</h1>
 <p class="subtitulo">
   Lo que necesita atención hoy. Cada número lleva a su pantalla.
@@ -42,13 +44,7 @@
 <div class="aviso-caja bien" id="sin_pendientes">Nada pendiente. Todo lo que llegó está registrado y cuadrado.</div>
 {% endif %}
 
-<h2>El día en números</h2>
-
-{#
-  El orden NO es alfabético ni por tamaño: es por urgencia operativa.
-  La cuarentena va primero porque un sobre rechazado es una venta que la oficina
-  no tiene y el cliente sí: mientras esté ahí, el descuadre crece.
-#}
+<h2>Lo que hay que atender ahora</h2>
 <div class="tarjetas">
   <a class="tarjeta {% if indicadores.cuarentena %}alerta{% endif %}"
      href="/panel/cuarentena" style="text-decoration:none;color:inherit">
@@ -115,9 +111,27 @@
     </div>
   </a>
 
+  <a class="tarjeta {% if indicadores.hay_cartera_vencida %}alerta{% endif %}"
+     href="/panel/cobranza/cartera/antiguedad" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ indicadores.cartera_vencida }}</div>
+    <div class="etiqueta">cartera vencida</div>
+    <div class="sutil" style="margin-top:6px">
+      Lo que ya pasó su fecha de pago. La antigüedad dice desde cuándo.
+    </div>
+  </a>
+</div>
+
+{#
+  Las cifras del periodo. Hoy por omisión; el selector cambia SOLO esta parte:
+  los pendientes y el estado de arriba son de ahora, no de un periodo.
+#}
+<h2 id="cifras">{% if periodo.es_hoy %}Cifras de hoy{% elif periodo.clave == "rango" %}Cifras {{ periodo.descripcion }}{% else %}Cifras · {{ periodo.etiqueta|lower }}{% endif %}</h2>
+{% set ocultos = {} %}
+{% include "_periodo.html" %}
+<div class="tarjetas" id="cifras_periodo">
   <div class="tarjeta">
     <div class="numero">{{ indicadores.ventas_hoy }}</div>
-    <div class="etiqueta">ventas recibidas hoy</div>
+    <div class="etiqueta">ventas recibidas {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
       {{ indicadores.importe_hoy }} en total.
       {# §0.3: el número se muestra con la advertencia de qué representa. #}
@@ -132,22 +146,105 @@
   <a class="tarjeta" href="/panel/liquidaciones"
      style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.efectivo_hoy }}</div>
-    <div class="etiqueta">efectivo a entregar hoy</div>
+    <div class="etiqueta">{% if periodo.es_hoy %}efectivo a entregar hoy{% else %}efectivo cobrado {{ cuando }}{% endif %}</div>
     <div class="sutil" style="margin-top:6px">
       Ventas de contado más cobros en efectivo. El crédito no suma —no se cobró
       nada— y una transferencia entra al sistema pero no a la bolsa del vendedor.
     </div>
   </a>
 
-  <a class="tarjeta {% if indicadores.hay_cartera_vencida %}alerta{% endif %}"
-     href="/panel/cobranza/cartera/antiguedad" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.cartera_vencida }}</div>
-    <div class="etiqueta">cartera vencida</div>
+  <div class="tarjeta">
+    <div class="numero">{{ cifras.cobrado|dinero }}</div>
+    <div class="etiqueta">cobrado {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
-      Lo que ya pasó su fecha de pago. La antigüedad dice desde cuándo.
+      Abonos confirmados, en todas las formas de pago. Las transferencias por
+      confirmar no cuentan hasta que el banco las confirme.
     </div>
-  </a>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ cifras.contado|dinero }}</div>
+    <div class="etiqueta">de contado · {{ cifras.credito|dinero }} a crédito</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ cifras.clientes_atendidos }} cliente(s) con compra{% if cifras.canceladas %},
+      {{ cifras.canceladas }} venta(s) cancelada(s){% endif %}.
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ cifras.no_ventas }}</div>
+    <div class="etiqueta">visitas sin venta</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ cifras.mermas }} merma(s) y {{ cifras.devoluciones }} devolución(es) de cliente.
+      <a href="/panel/efectividad?desde={{ periodo.inicio.isoformat() }}&hasta={{ periodo.fin.isoformat() }}">Ver en Efectividad</a>
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ cifras.clientes_nuevos }}</div>
+    <div class="etiqueta">clientes nuevos</div>
+    <div class="sutil" style="margin-top:6px">Dados de alta en el periodo, en la calle o en la oficina.</div>
+  </div>
 </div>
+
+<h3>Por vendedor</h3>
+{% if por_vendedor %}
+<div class="tabla-marco">
+  <table id="tabla_por_vendedor">
+    <thead>
+      <tr>
+        <th>Vendedor</th>
+        <th class="numero">Ventas</th>
+        <th class="numero">Importe</th>
+        <th class="numero">Contado</th>
+        <th class="numero">Crédito</th>
+        <th class="numero">Cobrado</th>
+        <th class="numero">Sin venta</th>
+        <th class="numero">Mermas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in por_vendedor %}
+      <tr>
+        <td><a href="/panel/vendedores/{{ v.id }}?{{ periodo.como_parametros() }}">{{ v.nombre }}</a>
+          <span class="sutil">{{ v.codigo }}</span></td>
+        <td class="numero">{{ v.ventas }}</td>
+        <td class="numero">{{ v.importe|dinero }}</td>
+        <td class="numero">{{ v.contado|dinero }}</td>
+        <td class="numero">{{ v.credito|dinero }}</td>
+        <td class="numero">{{ v.cobrado|dinero }}</td>
+        <td class="numero">{{ v.no_ventas }}</td>
+        <td class="numero">{{ v.mermas }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">No hay vendedores dados de alta.</div>
+{% endif %}
+
+{% if por_dia %}
+<h3>Por día</h3>
+<div class="tabla-marco">
+  <table id="tabla_por_dia">
+    <thead>
+      <tr><th>Día</th><th class="numero">Ventas</th><th class="numero">Importe</th>
+          <th style="width:30%"></th><th class="numero">Cobrado</th></tr>
+    </thead>
+    <tbody>
+      {% for d in por_dia %}
+      <tr>
+        <td>{{ d.fecha.strftime('%d/%m/%Y') }}</td>
+        <td class="numero">{{ d.ventas }}</td>
+        <td class="numero">{{ d.importe|dinero }}</td>
+        <td aria-hidden="true">
+          <div style="height:10px;border-radius:5px;background:var(--acento);width:{{ d.barra }}%;min-width:{{ 2 if d.importe else 0 }}px"></div>
+        </td>
+        <td class="numero">{{ d.cobrado|dinero }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 <h2>Catálogo</h2>
 <div class="tarjetas">

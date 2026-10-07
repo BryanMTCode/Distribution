@@ -82,6 +82,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
             ("/panel/ventas", "Ventas"),
             ("/panel/cobranza", "Cobranza"),
             ("/panel/liquidaciones", "Corte del día"),
+            # Todo lo que hizo cada vendedor, en una línea de tiempo.
+            ("/panel/vendedores", "Vendedores"),
             # Junto al Corte: es donde terminan sus faltantes.
             ("/panel/vendedores/cuenta", "Cuenta de vendedores"),
         ],
@@ -111,6 +113,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
             ("/panel/objetivos", "Objetivos"),
             ("/panel/equipo", "Usuarios y rutas"),
             ("/panel/equipos", "Teléfonos"),
+            # Cada subida y cada bajada entre los teléfonos y el servidor.
+            ("/panel/sincronizaciones", "Sincronizaciones"),
             ("/panel/cuarentena", "Cuarentena"),
             # Al final: el piloto es temporal por naturaleza —dos semanas— y la
             # pantalla misma explica qué hacer cuando no hay uno activo.
@@ -138,6 +142,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/ventas": None,
     "/panel/cobranza": "cobranza.ver",
     "/panel/liquidaciones": "inventario.ver",
+    "/panel/vendedores": "ventas.ver_todas",
     "/panel/vendedores/cuenta": "vendedores.cuenta_ver",
     "/panel/clientes": "clientes.ver",
     "/panel/productos": "catalogo.ver",
@@ -149,6 +154,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/objetivos": "tablero.ver",
     "/panel/equipo": None,
     "/panel/equipos": "inventario.ver",
+    "/panel/sincronizaciones": None,
     "/panel/cuarentena": None,
     "/panel/piloto": "piloto.administrar",
 }
@@ -396,6 +402,7 @@ def sin_decimales(valor) -> str:
 
 plantillas.env.filters["precio"] = precio_corto
 plantillas.env.filters["entero"] = sin_decimales
+plantillas.env.filters["dinero"] = dinero
 
 
 def render(

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block titulo %}{{ vendedor.nombre if vendedor else 'Vendedor' }}{% endblock %}
+{% block contenido %}
+<p><a href="/panel/vendedores?{{ periodo.como_parametros() }}">← Vendedores</a></p>
+
+{% if not vendedor %}
+<div class="vacio">Ese vendedor no existe.</div>
+{% else %}
+<h1>{{ vendedor.nombre }}</h1>
+<p class="subtitulo">
+  {{ vendedor.codigo }}{% if not vendedor.activo %} · dado de baja{% endif %}
+  · Camión: {{ vendedor.camion or 'sin camión' }}
+  · Rutas: {{ vendedor.rutas or 'ninguna' }}
+  · <a href="/panel/equipo/usuarios/{{ vendedor.id }}">Su ficha</a>
+  · <a href="/panel/vendedores/cuenta/{{ vendedor.id }}">Su cuenta: debe {{ vendedor.saldo_cuenta|dinero }}</a>
+  · <a href="/panel/sincronizaciones?usuario={{ vendedor.id }}&{{ periodo.como_parametros() }}">Sus sincronizaciones</a>
+</p>
+
+{% set ocultos = {'tipo': tipo} %}
+{% include "_periodo.html" %}
+
+{# El resumen es también el filtro: tocar un tipo muestra solo ese. #}
+<div class="tarjetas" id="resumen_movimientos">
+  <a class="tarjeta {% if not tipo %}aviso{% endif %}" style="text-decoration:none;color:inherit"
+     href="?{{ periodo.como_parametros() }}">
+    <div class="numero">{{ resumen.values()|sum(attribute='cuantos') }}</div>
+    <div class="etiqueta">movimientos en total</div>
+  </a>
+  {% for clave, etiqueta in tipos %}
+    {% set r = resumen.get(clave) %}
+    {% if r %}
+    <a class="tarjeta {% if tipo == clave %}aviso{% endif %}" style="text-decoration:none;color:inherit"
+       href="?{{ periodo.como_parametros() }}&tipo={{ clave }}">
+      <div class="numero">{{ r.cuantos }}</div>
+      <div class="etiqueta">{{ etiqueta|lower }}</div>
+      {% if clave in ('venta', 'cobro') %}
+        <div class="sutil" style="margin-top:6px">{{ r.importe|dinero }}</div>
+      {% endif %}
+    </a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+{% if movimientos %}
+<div class="tabla-marco">
+  <table id="tabla_movimientos">
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Qué</th>
+        <th>Folio</th>
+        <th>Cliente</th>
+        <th>Detalle</th>
+        <th class="numero">Importe</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in movimientos %}
+      <tr>
+        <td>{% if m.momento %}{{ m.momento.strftime('%d/%m %H:%M') }}{% else %}{{ m.fecha.strftime('%d/%m') }}{% endif %}</td>
+        <td>{{ dict(tipos)[m.tipo] if m.tipo in dict(tipos) else m.tipo }}</td>
+        <td class="mono">
+          {% if m.enlace %}<a href="{{ m.enlace }}">{{ m.folio or 'ver' }}</a>{% else %}{{ m.folio or '' }}{% endif %}
+        </td>
+        <td>{{ m.cliente or '' }}</td>
+        <td>
+          {{ m.detalle }}
+          {% if m.marca %}<span class="etiqueta-motivo">revisar</span>{% endif %}
+        </td>
+        <td class="numero">{% if m.importe is not none %}{{ m.importe|dinero }}{% endif %}</td>
+        <td>{{ m.estado or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if recortado %}
+<p class="sutil">Se muestran los {{ limite }} más recientes. Elige un tipo o un periodo más corto para ver el resto.</p>
+{% endif %}
+{% else %}
+<div class="vacio">Sin movimientos {{ periodo.descripcion }}.</div>
+{% endif %}
+
+<h2>Sus teléfonos</h2>
+{% if telefonos %}
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Teléfono</th><th>Estado</th><th>Última subida</th><th>Última bajada</th><th class="numero">Por subir (reportado)</th></tr></thead>
+    <tbody>
+      {% for t in telefonos %}
+      <tr>
+        <td>{{ t.etiqueta }}</td>
+        <td>{{ t.estado }}</td>
+        <td>{% if t.ultima_sync_push_en %}{{ t.ultima_sync_push_en.strftime('%d/%m %H:%M') }}{% else %}<span class="sutil">nunca</span>{% endif %}</td>
+        <td>{% if t.ultima_sync_pull_en %}{{ t.ultima_sync_pull_en.strftime('%d/%m %H:%M') }}{% else %}<span class="sutil">nunca</span>{% endif %}</td>
+        <td class="numero">{{ t.cola_pendiente if t.cola_pendiente is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Sin teléfono vinculado. Se vincula en <a href="/panel/equipos">Teléfonos</a>.</div>
+{% endif %}
+{% endif %}
+{% endblock %}

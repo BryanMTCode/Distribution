@@ -1,0 +1,25 @@
+{#
+  El selector de periodo, igual en todas las pantallas que lo usan.
+
+  Espera `periodo` (un Periodo) y `periodos` (la lista de opciones). Lo que la
+  pantalla quiera conservar al cambiar de periodo —un vendedor, un filtro— lo pasa
+  en `ocultos`, un diccionario de nombre → valor.
+
+  Sin JavaScript: las fechas están siempre a la vista y solo cuentan con
+  «Personalizado». Escribirlas sin elegirlo también funciona: el servidor entiende
+  que eso es lo que se quiso.
+#}
+<form class="barra" method="get" id="selector_periodo">
+  {% for nombre, valor in (ocultos or {}).items() %}
+    {% if valor %}<input type="hidden" name="{{ nombre }}" value="{{ valor }}">{% endif %}
+  {% endfor %}
+  <select name="periodo" aria-label="Periodo">
+    {% for clave, etiqueta in periodos %}
+      <option value="{{ clave }}" {% if clave == periodo.clave %}selected{% endif %}>{{ etiqueta }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="desde" value="{{ periodo.inicio.isoformat() }}" aria-label="Desde">
+  <input type="date" name="hasta" value="{{ periodo.fin.isoformat() }}" aria-label="Hasta">
+  <button type="submit" class="secundario">Ver</button>
+  <span class="sutil">{{ periodo.descripcion|capitalize }}</span>
+</form>

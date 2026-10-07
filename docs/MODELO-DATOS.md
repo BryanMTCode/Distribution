@@ -22,7 +22,7 @@ demuestran que el modelo cumple lo que promete.
 | `mobile/db/schema.sql` | Esquema SQLite/SQLCipher del dispositivo |
 | `server/db/tests/smoke_invariantes.sql` | Prueba de las 6 invariantes del diseño |
 
-**Estado de verificación:** las 42 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
+**Estado de verificación:** las 43 migraciones aplican sin error sobre PostgreSQL 16 + PostGIS 3 (vía
 Alembic), y las 6 invariantes pasan. El esquema del dispositivo aplica sobre SQLite 3.45.
 
 > La tabla de arriba lista las migraciones **fundacionales** (0001–0008). Las posteriores —triggers del

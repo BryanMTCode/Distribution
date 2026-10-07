@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}Vendedores{% endblock %}
+{% block contenido %}
+<h1>Vendedores</h1>
+<p class="subtitulo">
+  Lo que hizo cada uno en el periodo. Abre uno para ver <strong>todos sus
+  movimientos</strong> en orden: ventas, cobros, mermas, visitas, cargas, cortes y su
+  cuenta.
+</p>
+
+{% set ocultos = {} %}
+{% include "_periodo.html" %}
+
+{% if vendedores %}
+<div class="tabla-marco">
+  <table id="tabla_vendedores">
+    <thead>
+      <tr>
+        <th>Vendedor</th>
+        <th>Camión · rutas</th>
+        <th class="numero">Ventas</th>
+        <th class="numero">Importe</th>
+        <th class="numero">Cobrado</th>
+        <th class="numero">Sin venta</th>
+        <th class="numero">Mermas</th>
+        <th class="numero">Debe (cuenta)</th>
+        <th>Último contacto</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in vendedores %}
+      <tr {% if not v.activo %}style="opacity:.6"{% endif %}>
+        <td>
+          <a href="/panel/vendedores/{{ v.id }}?{{ periodo.como_parametros() }}">{{ v.nombre }}</a>
+          <div class="sutil">{{ v.codigo }}{% if not v.activo %} · dado de baja{% endif %}</div>
+        </td>
+        <td>
+          {{ v.camion or 'sin camión' }}
+          <div class="sutil">{{ v.rutas or 'sin ruta' }}</div>
+        </td>
+        <td class="numero">{{ v.ventas }}</td>
+        <td class="numero">{{ v.importe|dinero }}</td>
+        <td class="numero">{{ v.cobrado|dinero }}</td>
+        <td class="numero">{{ v.no_ventas }}</td>
+        <td class="numero">{{ v.mermas }}</td>
+        <td class="numero">
+          <a href="/panel/vendedores/cuenta/{{ v.id }}">{{ v.saldo_cuenta|dinero }}</a>
+        </td>
+        <td>
+          {% if v.ultimo_contacto %}{{ v.ultimo_contacto.strftime('%d/%m %H:%M') }}{% else %}<span class="sutil">nunca</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">No hay vendedores. Se dan de alta en <a href="/panel/equipo">Usuarios y rutas</a>.</div>
+{% endif %}
+{% endblock %}

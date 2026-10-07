@@ -34,6 +34,7 @@ from sqlalchemy import text
 
 from app.api.admin.arranque import faltan_para_operar, pendientes_de_hoy, revisar_arranque
 from app.api.admin.comun import SesionDep, dinero, render
+from app.api.admin.periodo import PERIODOS, leer_periodo
 from app.api.admin.sesion_web import (
     ActorWeb,
     abrir_sesion,
@@ -137,13 +138,26 @@ async def salir(peticion: Request, sesion: SesionDep):
 
 
 @router.get("", response_class=HTMLResponse)
-async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTMLResponse:
+async def tablero(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
+) -> HTMLResponse:
     """Los indicadores que dicen qué necesita atención hoy.
 
     Cada uno es una consulta corta con índice. El tablero se abre cien veces al
     día: una consulta que recorra `ventas` completa lo volvería lento justo cuando
     el volumen crezca, que es cuando más se necesita.
+
+    Las cifras de ventas y dinero son del PERIODO elegido (hoy por omisión). Los
+    pendientes y los estados —la cuarentena, lo que espera al banco, la cartera
+    vencida— son de ahora: no tiene sentido preguntar cuánta cuarentena había el
+    mes pasado, sino cuánta hay que atender.
     """
+    rango = leer_periodo(periodo, desde, hasta)
     fila = (
         await sesion.execute(
             text(
@@ -160,10 +174,12 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                       AND (ultima_sync_push_en IS NULL
                            OR ultima_sync_push_en < CURRENT_DATE)) AS equipos_rezagados,
                   (SELECT count(*) FROM ventas
-                    WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada')
+                    WHERE fecha_operativa BETWEEN :desde AND :hasta
+                      AND estado = 'confirmada')
                     AS ventas_hoy,
                   (SELECT COALESCE(sum(total), 0) FROM ventas
-                    WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada')
+                    WHERE fecha_operativa BETWEEN :desde AND :hasta
+                      AND estado = 'confirmada')
                     AS importe_hoy,
                   (SELECT count(*) FROM cobros
                     WHERE requiere_revision AND estado IN ('confirmado', 'por_confirmar'))
@@ -193,12 +209,12 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                   -- cuadre y que el descuadre se atribuyera a quien no fue.
                   (
                     (SELECT COALESCE(sum(total), 0) FROM ventas
-                      WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmada'
-                        AND tipo = 'contado')
+                      WHERE fecha_operativa BETWEEN :desde AND :hasta
+                        AND estado = 'confirmada' AND tipo = 'contado')
                     +
                     (SELECT COALESCE(sum(importe), 0) FROM cobros
-                      WHERE fecha_operativa = CURRENT_DATE AND estado = 'confirmado'
-                        AND forma_pago = 'efectivo')
+                      WHERE fecha_operativa BETWEEN :desde AND :hasta
+                        AND estado = 'confirmado' AND forma_pago = 'efectivo')
                   ) AS efectivo_hoy,
                   (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
                     WHERE estado IN ('abierta', 'parcial')
@@ -214,7 +230,8 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
                           JOIN listas_precios l ON l.id = pr.lista_id AND l.es_default
                          WHERE pr.producto_id = p.id)) AS sin_precio
                 """
-            )
+            ),
+            {"desde": rango.inicio, "hasta": rango.fin},
         )
     ).mappings().one()
 
@@ -235,10 +252,117 @@ async def tablero(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTML
             "indicadores": indicadores,
             "pendientes": await pendientes_de_hoy(sesion, actor),
             "faltan_para_operar": faltan_para_operar(await revisar_arranque(sesion)),
+            "periodo": rango,
+            "periodos": PERIODOS,
+            **await _cifras_del_periodo(sesion, rango),
         },
         actor=actor,
         seccion="Tablero",
     )
+
+
+SQL_PERIODO = """
+SELECT
+  (SELECT COALESCE(sum(total) FILTER (WHERE tipo = 'contado'), 0) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada') AS contado,
+  (SELECT COALESCE(sum(total) FILTER (WHERE tipo = 'credito'), 0) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada') AS credito,
+  (SELECT count(*) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'cancelada') AS canceladas,
+  (SELECT COALESCE(sum(importe), 0) FROM cobros
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmado') AS cobrado,
+  (SELECT count(*) FROM mermas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente')
+    AS mermas,
+  (SELECT count(*) FROM mermas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo = 'devolucion_cliente')
+    AS devoluciones,
+  (SELECT count(*) FROM no_drops
+    WHERE fecha_operativa BETWEEN :desde AND :hasta) AS no_ventas,
+  (SELECT count(DISTINCT cliente_id) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada')
+    AS clientes_atendidos,
+  (SELECT count(*) FROM clientes
+    WHERE creado_en::date BETWEEN :desde AND :hasta) AS clientes_nuevos
+"""
+
+# Por vendedor: todos los vendedores activos, aunque no hayan vendido —un cero
+# también es información—, y los inactivos solo si tuvieron algo en el periodo.
+SQL_POR_VENDEDOR = """
+WITH v AS (
+    SELECT vendedor_id,
+           count(*) AS ventas,
+           sum(total) AS importe,
+           sum(total) FILTER (WHERE tipo = 'contado') AS contado,
+           sum(total) FILTER (WHERE tipo = 'credito') AS credito
+      FROM ventas
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada'
+     GROUP BY vendedor_id
+), c AS (
+    SELECT vendedor_id, sum(importe) AS cobrado
+      FROM cobros
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmado'
+     GROUP BY vendedor_id
+), m AS (
+    SELECT vendedor_id, count(*) AS mermas
+      FROM mermas
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente'
+     GROUP BY vendedor_id
+), n AS (
+    SELECT vendedor_id, count(*) AS no_ventas
+      FROM no_drops
+     WHERE fecha_operativa BETWEEN :desde AND :hasta
+     GROUP BY vendedor_id
+)
+SELECT u.id, u.codigo, u.nombre,
+       COALESCE(v.ventas, 0) AS ventas, COALESCE(v.importe, 0) AS importe,
+       COALESCE(v.contado, 0) AS contado, COALESCE(v.credito, 0) AS credito,
+       COALESCE(c.cobrado, 0) AS cobrado, COALESCE(m.mermas, 0) AS mermas,
+       COALESCE(n.no_ventas, 0) AS no_ventas
+  FROM usuarios u
+  LEFT JOIN v ON v.vendedor_id = u.id
+  LEFT JOIN c ON c.vendedor_id = u.id
+  LEFT JOIN m ON m.vendedor_id = u.id
+  LEFT JOIN n ON n.vendedor_id = u.id
+ WHERE u.rol_codigo = 'vendedor'
+   AND (u.activo OR v.ventas IS NOT NULL OR c.cobrado IS NOT NULL)
+ ORDER BY COALESCE(v.importe, 0) DESC, u.codigo
+"""
+
+SQL_POR_DIA = """
+SELECT d::date AS fecha,
+       COALESCE((SELECT count(*) FROM ventas
+                  WHERE fecha_operativa = d::date AND estado = 'confirmada'), 0) AS ventas,
+       COALESCE((SELECT sum(total) FROM ventas
+                  WHERE fecha_operativa = d::date AND estado = 'confirmada'), 0) AS importe,
+       COALESCE((SELECT sum(importe) FROM cobros
+                  WHERE fecha_operativa = d::date AND estado = 'confirmado'), 0) AS cobrado
+  FROM generate_series(CAST(:desde AS date), CAST(:hasta AS date), interval '1 day') d
+ ORDER BY 1 DESC
+"""
+
+# El desglose por día se muestra hasta dos meses: más renglones ya no se leen,
+# y para eso está el rango por vendedor o la analítica.
+DIAS_MAXIMOS_POR_DIA = 62
+
+
+async def _cifras_del_periodo(sesion, rango) -> dict:
+    parametros = {"desde": rango.inicio, "hasta": rango.fin}
+    cifras = dict((await sesion.execute(text(SQL_PERIODO), parametros)).mappings().one())
+    por_vendedor = [
+        dict(f) for f in (await sesion.execute(text(SQL_POR_VENDEDOR), parametros)).mappings()
+    ]
+    por_dia: list[dict] = []
+    if 1 < rango.dias <= DIAS_MAXIMOS_POR_DIA:
+        por_dia = [
+            dict(f) for f in (await sesion.execute(text(SQL_POR_DIA), parametros)).mappings()
+        ]
+    # La barra de cada día es relativa al mejor día del periodo: es una forma de
+    # ver de un vistazo qué día flojeó, no una gráfica con escala.
+    tope = max((Decimal(d["importe"]) for d in por_dia), default=Decimal(0))
+    for d in por_dia:
+        d["barra"] = int(Decimal(d["importe"]) * 100 / tope) if tope else 0
+    return {"cifras": cifras, "por_vendedor": por_vendedor, "por_dia": por_dia}
 
 
 # ---------------------------------------------------------------------------

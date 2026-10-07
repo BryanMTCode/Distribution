@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -235,6 +236,39 @@ class DeltaSalida(BaseModel):
     )
 
 
+async def _anotar_bajada(
+    sesion,
+    actor,
+    desde: int,
+    hasta: int,
+    cambios: int,
+    entidades: dict[str, int],
+    *,
+    hay_mas: bool = False,
+    resincronizar: bool = False,
+) -> None:
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO sync_bajadas (dispositivo_id, usuario_id, cursor_desde, cursor_hasta,
+                                      cambios, entidades, hay_mas, resincronizar)
+            VALUES (:dev, :usr, :desde, :hasta, :cambios, CAST(:entidades AS jsonb),
+                    :hay_mas, :resincronizar)
+            """
+        ),
+        {
+            "dev": actor.dispositivo_id,
+            "usr": actor.usuario_id,
+            "desde": desde,
+            "hasta": hasta,
+            "cambios": cambios,
+            "entidades": json.dumps(entidades),
+            "hay_mas": hay_mas,
+            "resincronizar": resincronizar,
+        },
+    )
+
+
 @router.get("/pull", response_model=DeltaSalida)
 async def pull(
     actor: ActorDep,
@@ -281,6 +315,8 @@ async def pull(
         await sesion.execute(text("SELECT piso_cursor FROM sync_retencion"))
     ).scalar_one_or_none() or 0
     if cursor and cursor < piso:
+        await _anotar_bajada(sesion, actor, cursor, 0, 0, {}, resincronizar=True)
+        await sesion.commit()
         return DeltaSalida(cursor=0, hay_mas=True, cambios=[], resincronizar=True)
 
     rutas = list(actor.rutas)
@@ -306,19 +342,29 @@ async def pull(
     filas = filas[:limite]
     nuevo_cursor = filas[-1]["cursor"] if filas else cursor
 
+    # La hora se toca SIEMPRE, aunque no haya nada nuevo: es lo que dice que el
+    # teléfono sigue preguntando. Antes solo se movía cuando bajaba algo, y un
+    # teléfono al día parecía uno apagado. El cursor solo avanza: un pull viejo
+    # que llegue tarde no debe retroceder la marca de agua del dispositivo.
+    await sesion.execute(
+        text(
+            "UPDATE dispositivos "
+            "   SET ultimo_cursor_pull = GREATEST(ultimo_cursor_pull, :c), "
+            "       ultima_sync_pull_en = now() "
+            " WHERE id = :dev"
+        ),
+        {"c": nuevo_cursor, "dev": actor.dispositivo_id},
+    )
     if filas:
-        # Solo avanza: un pull viejo que llegue tarde no debe retroceder la
-        # marca de agua del dispositivo.
-        await sesion.execute(
-            text(
-                "UPDATE dispositivos "
-                "   SET ultimo_cursor_pull = GREATEST(ultimo_cursor_pull, :c), "
-                "       ultima_sync_pull_en = now() "
-                " WHERE id = :dev"
-            ),
-            {"c": nuevo_cursor, "dev": actor.dispositivo_id},
+        # La constancia de entrega (migración 0043): qué bajó y cuánto, para
+        # poder contestar «¿ya le llegó el ajuste?» sin preguntarle al vendedor.
+        entidades: dict[str, int] = {}
+        for f in filas:
+            entidades[f["entidad"]] = entidades.get(f["entidad"], 0) + 1
+        await _anotar_bajada(
+            sesion, actor, cursor, nuevo_cursor, len(filas), entidades, hay_mas=hay_mas
         )
-        await sesion.commit()
+    await sesion.commit()
 
     return DeltaSalida(
         cursor=nuevo_cursor,

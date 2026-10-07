@@ -18,7 +18,7 @@ la bodega sube cuando alguien la cuenta.
 
 | Pieza | Estado |
 |---|---|
-| Migraciones PostgreSQL + PostGIS (0001–0042) | ✅ aplican vía Alembic |
+| Migraciones PostgreSQL + PostGIS (0001–0043) | ✅ aplican vía Alembic |
 | **La venta offline** — folio, inventario, cola y ticket en una transacción | ✅ 20 pruebas de atomicidad |
 | Ingesta de la venta: **marca, nunca rechaza** (§0.1) | ✅ 19 pruebas |
 | Borrador del carrito (sobrevive a que Android mate la app) | ✅ 9 pruebas |
@@ -91,6 +91,7 @@ la bodega sube cuando alguien la cuenta.
 | **Panel → teléfono, acción por acción** — la ruta viaja con su titular, la cartera con el cliente, el alcance se lee en vivo ([§8](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 10 pruebas + 3 de Dart |
 | **Guardia entre lenguajes** — lo que publica el servidor, el teléfono lo sabe aplicar (y al revés) | ✅ 3 pruebas |
 | **Cuadre del camión** — con todo entregado y todo traído, el teléfono queda igual al panel | ✅ 6 pruebas + 12 de Dart |
+| **Tablero por periodo**, **movimientos de cada vendedor** y **bitácora de sincronizaciones** | ✅ 17 pruebas |
 | **Reprocesar la cuarentena** desde el panel — lo rechazado por una causa ya corregida entra, lo atendido deja de salir rojo, y el teléfono se destraba | ✅ 6 pruebas |
 | **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
@@ -123,7 +124,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1296 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **612 de Dart** y **281 de widget**, todas en verde.
+**1313 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **612 de Dart** y **281 de widget**, todas en verde.
 
 ## Stack
 
@@ -181,6 +182,9 @@ server/
     api/admin/       PANEL DE OPERACIÓN: sesión con cookie, CSRF, plantillas
                      comun.py         navegación (filtrada por permisos) y números escritos a mano
                      arranque.py      ¿listo para operar? y los pendientes de hoy
+                     periodo.py       hoy, la semana, el mes o un rango: igual en todo el panel
+                     vendedores.py    lo que hizo cada vendedor, en una línea de tiempo
+                     sincronizaciones.py cada subida y cada bajada, y si cada teléfono está al día
                      desempeno.py     el día de cada vendedor contra sus mismos días de la semana
                      productos.py     catálogo y precios (los 4 decimales)
                      clientes.py      confirmar prospectos y decidir el crédito
@@ -255,7 +259,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1296 pruebas de Python
+make pruebas                        # 1313 pruebas de Python
 make movil                          # 612 de Dart + 281 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

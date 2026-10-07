@@ -4291,3 +4291,45 @@ Ahora: el teléfono nunca toma un folio por debajo del último que ya escribió 
 documentos, y el mismo rango que vuelve a llegar no retrocede lo consumido; el
 servidor calcula lo consumido desde los documentos que recibió, y el rango de un
 teléfono nuevo empieza después del más alto de **todos** los teléfonos del vendedor.
+
+## 61. El tablero por periodo, los movimientos de cada vendedor y la bitácora de sincronización
+
+**Decisión (octubre 2026).** Tres pedidos de la dirección para operar con confianza.
+
+### El periodo, uno solo para todo el panel
+
+`app/api/admin/periodo.py`: hoy, ayer, esta semana, semana pasada, este mes, mes
+pasado o un rango a mano. La semana empieza en **lunes**, como la ruta y el plan de
+visita, y vive en un solo lugar para que «esta semana» quiera decir lo mismo en el
+tablero, en vendedores y en sincronizaciones. Un periodo mal escrito cae en hoy, uno
+al revés se endereza y uno de más de un año se recorta.
+
+### El tablero
+
+Las cifras de dinero —ventas, efectivo, cobrado, contado y crédito, visitas sin
+venta, clientes nuevos— son del **periodo elegido**, con el desglose por vendedor
+(que lleva a sus movimientos con el mismo periodo) y por día. Lo que se atiende
+—pendientes, cuarentena, por confirmar, cartera vencida— sigue siendo de **ahora**:
+no tiene sentido preguntar cuánta cuarentena había el mes pasado.
+
+### Vendedores (Operación de rutas → Vendedores)
+
+La lista con el resumen del periodo de cada uno, y la **línea de tiempo** de un
+vendedor: ventas, cobros, mermas y cambios, visitas sin venta, clientes que dio de
+alta, cargas, devoluciones a bodega, cortes, ajustes de su camión y su cuenta, en
+orden de hora, cada renglón con enlace a su pantalla de siempre. No hay tablas
+nuevas: es una consulta que lee lo que ya existe, así que no puede contradecir a
+ninguna otra pantalla.
+
+### Sincronizaciones (Administración → Sincronizaciones)
+
+Arriba, cada teléfono **ahora**: «al día» —todo subido, todo bajado, nada en
+cuarentena, contacto en el último día— o lo que le falta. Abajo, la bitácora del
+periodo: cada subida con lo que el servidor aceptó, ya tenía o rechazó (y su
+detalle, operación por operación, con enlace al documento o a la cuarentena), y cada
+bajada con cuántos cambios y de qué tipo.
+
+Las subidas ya quedaban registradas. Las bajadas no: la migración 0043 crea
+`sync_bajadas`, un renglón por cada pull que entregó algo, y se poda junto con el
+`change_log`. El pull además actualiza la hora de la última bajada aunque no haya
+nada nuevo: antes un teléfono al día parecía uno apagado.

@@ -69,6 +69,9 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # La bitácora de bajadas (migración 0043) cuelga de `dispositivos`; explícita
+    # por lo mismo que las demás.
+    "sync_bajadas",
     # La cuenta del vendedor (migración 0039) cuelga de `usuarios`; explícita por
     # lo mismo que las demás. Es append-only, pero TRUNCATE no dispara los
     # disparadores de renglón que lo impiden.

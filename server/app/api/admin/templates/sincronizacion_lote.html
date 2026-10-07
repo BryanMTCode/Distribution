@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titulo %}Subida{% endblock %}
+{% block contenido %}
+<p><a href="/panel/sincronizaciones">← Sincronizaciones</a></p>
+
+{% if not lote %}
+<div class="vacio">Esa subida no existe.</div>
+{% else %}
+<h1>Subida de {{ lote.vendedor or 'un teléfono' }}</h1>
+<p class="subtitulo">
+  {{ lote.recibido_en.strftime('%d/%m/%Y a las %H:%M:%S') }} · {{ lote.telefono }}
+  {% if lote.app_version %} · app {{ lote.app_version }}{% endif %}
+  {% if lote.duracion_ms is not none %} · {{ lote.duracion_ms }} ms{% endif %}
+</p>
+
+<div class="tarjetas">
+  <div class="tarjeta"><div class="numero">{{ lote.total_operaciones }}</div><div class="etiqueta">operaciones</div></div>
+  <div class="tarjeta"><div class="numero">{{ lote.aceptadas }}</div><div class="etiqueta">aceptadas</div></div>
+  <div class="tarjeta"><div class="numero">{{ lote.duplicadas }}</div><div class="etiqueta">ya estaban</div></div>
+  <div class="tarjeta {% if lote.rechazadas %}alerta{% endif %}"><div class="numero">{{ lote.rechazadas }}</div><div class="etiqueta">rechazadas</div></div>
+</div>
+
+{% if operaciones %}
+<div class="tabla-marco">
+  <table id="operaciones_lote">
+    <thead><tr><th>Operación</th><th>Resultado</th><th>Detalle</th></tr></thead>
+    <tbody>
+      {% for o in operaciones %}
+      <tr>
+        <td>
+          {% if o.enlace %}<a href="{{ o.enlace }}">{{ o.nombre }}</a>{% else %}{{ o.nombre }}{% endif %}
+          <div class="sutil mono">{{ o.operacion_id }}</div>
+        </td>
+        <td>
+          {% if o.resultado == 'aceptada' %}<span style="color:var(--acento);font-weight:700">Aceptada</span>
+          {% elif o.resultado == 'duplicada' %}Ya estaba
+          {% else %}<span style="color:var(--alerta);font-weight:700">Rechazada</span>{% endif %}
+        </td>
+        <td>
+          {% if o.error_mensaje %}{{ o.error_mensaje }}{% endif %}
+          {% if o.cuarentena_id %}
+            <div class="sutil"><a href="/panel/cuarentena/{{ o.cuarentena_id }}">En cuarentena · {{ o.cuarentena_estado }}</a></div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% if lote.duplicadas %}
+<p class="sutil">
+  Lo que «ya estaba» es un reenvío: el teléfono no supo si llegó y lo volvió a mandar.
+  Cada operación se registra en la subida donde llegó por primera vez, y ahí se ve.
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

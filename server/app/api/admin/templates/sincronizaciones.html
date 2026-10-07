@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block titulo %}Sincronizaciones{% endblock %}
+{% block contenido %}
+<h1>Sincronizaciones</h1>
+<p class="subtitulo">
+  Lo que va y viene entre los teléfonos y el servidor. <strong>Subida</strong>: lo que
+  el vendedor hizo en la calle. <strong>Bajada</strong>: lo que la oficina cambió y el
+  teléfono recibió.
+</p>
+
+<h2>Cada teléfono, ahora</h2>
+{% if telefonos %}
+<div class="tabla-marco">
+  <table id="estado_telefonos">
+    <thead>
+      <tr>
+        <th>Vendedor · teléfono</th>
+        <th>¿Al día?</th>
+        <th>Última subida</th>
+        <th>Última bajada</th>
+        <th>Versión de la app</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in telefonos %}
+      <tr>
+        <td>
+          <a href="/panel/sincronizaciones?usuario={{ t.usuario_id }}&{{ periodo.como_parametros() }}">{{ t.vendedor }}</a>
+          <div class="sutil">{{ t.etiqueta }}{% if t.estado != 'activo' %} · {{ t.estado }}{% endif %}</div>
+        </td>
+        <td>
+          {% if t.al_dia %}
+            <span style="color:var(--acento);font-weight:700">✓ Al día</span>
+            <div class="sutil">Todo subido, todo bajado, nada atorado.</div>
+          {% else %}
+            <span style="color:var(--aviso);font-weight:700">Le falta</span>
+            <div class="sutil">{{ t.faltas|join('; ') }}.</div>
+            {% if t.cuarentena %}<div class="sutil"><a href="/panel/cuarentena">Ver la cuarentena</a></div>{% endif %}
+          {% endif %}
+        </td>
+        <td>{% if t.ultima_sync_push_en %}{{ t.ultima_sync_push_en.strftime('%d/%m %H:%M') }}{% else %}<span class="sutil">nunca</span>{% endif %}</td>
+        <td>{% if t.ultima_sync_pull_en %}{{ t.ultima_sync_pull_en.strftime('%d/%m %H:%M') }}{% else %}<span class="sutil">nunca</span>{% endif %}</td>
+        <td>{{ t.app_version or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  «Por subir» es lo que el teléfono reportó en su último envío; si el vendedor vendió
+  después sin señal, lo sabremos al siguiente.
+</p>
+{% else %}
+<div class="vacio">No hay teléfonos vinculados. Se vinculan en <a href="/panel/equipos">Teléfonos</a>.</div>
+{% endif %}
+
+<h2>Bitácora</h2>
+<form class="barra" method="get" id="filtros_sync">
+  <select name="periodo" aria-label="Periodo">
+    {% for clave, etiqueta in periodos %}
+      <option value="{{ clave }}" {% if clave == periodo.clave %}selected{% endif %}>{{ etiqueta }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="desde" value="{{ periodo.inicio.isoformat() }}" aria-label="Desde">
+  <input type="date" name="hasta" value="{{ periodo.fin.isoformat() }}" aria-label="Hasta">
+  <select name="usuario" aria-label="Vendedor">
+    <option value="">Todos los vendedores</option>
+    {% for v in vendedores %}
+      <option value="{{ v.id }}" {% if usuario == v.id|string %}selected{% endif %}>{{ v.codigo }} · {{ v.nombre }}</option>
+    {% endfor %}
+  </select>
+  <select name="direccion" aria-label="Dirección">
+    <option value="" {% if not direccion %}selected{% endif %}>Subidas y bajadas</option>
+    <option value="subida" {% if direccion == 'subida' %}selected{% endif %}>Solo subidas</option>
+    <option value="bajada" {% if direccion == 'bajada' %}selected{% endif %}>Solo bajadas</option>
+  </select>
+  <label style="align-self:center"><input type="checkbox" name="problemas" value="1" {% if problemas %}checked{% endif %}> Solo con problemas</label>
+  <button type="submit" class="secundario">Ver</button>
+  <span class="sutil" style="align-self:center">{{ periodo.descripcion|capitalize }}</span>
+</form>
+
+<div class="tarjetas" id="totales_sync">
+  <div class="tarjeta">
+    <div class="numero">{{ totales.subidas }}</div>
+    <div class="etiqueta">subidas</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ totales.aceptadas }} aceptada(s), {{ totales.duplicadas }} ya estaban
+      {%- if totales.rechazadas %}, <strong>{{ totales.rechazadas }} rechazada(s)</strong>{% endif %}.
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ totales.bajadas }}</div>
+    <div class="etiqueta">bajadas con cambios</div>
+    <div class="sutil" style="margin-top:6px">{{ totales.cambios }} cambio(s) entregado(s).</div>
+  </div>
+</div>
+
+{% if movimientos %}
+<div class="tabla-marco">
+  <table id="tabla_bitacora">
+    <thead>
+      <tr><th>Cuándo</th><th>Qué</th><th>Vendedor · teléfono</th><th>Detalle</th></tr>
+    </thead>
+    <tbody>
+      {% for m in movimientos %}
+      <tr>
+        <td>{{ m.momento.strftime('%d/%m %H:%M:%S') }}</td>
+        <td>
+          {% if m.direccion == 'subida' %}
+            <a href="/panel/sincronizaciones/lote/{{ m.ref }}">↑ Subida</a>
+          {% else %}
+            ↓ Bajada
+          {% endif %}
+        </td>
+        <td>{{ m.vendedor or '' }}<div class="sutil">{{ m.telefono }}</div></td>
+        <td>
+          {% if m.direccion == 'subida' %}
+            {{ m.cuantos }} operación(es): {{ m.aceptadas }} aceptada(s){% if m.duplicadas %}, {{ m.duplicadas }} ya estaban{% endif %}
+            {%- if m.rechazadas %}, <strong style="color:var(--alerta)">{{ m.rechazadas }} rechazada(s)</strong>{% endif %}.
+            <div class="sutil">{% if m.app_version %}App {{ m.app_version }}{% endif %}{% if m.duracion_ms is not none %} · {{ m.duracion_ms }} ms{% endif %}</div>
+          {% elif m.resincronizar %}
+            <strong style="color:var(--aviso)">Se le pidió volver a empezar</strong>: su cursor era más viejo que lo que el servidor conserva.
+          {% else %}
+            {{ m.cuantos }} cambio(s): {{ m.desglose }}{% if m.hay_mas %} · siguió bajando{% endif %}
+            <div class="sutil">Cursor {{ m.cursor_desde }} → {{ m.cursor_hasta }}</div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if recortado %}
+<p class="sutil">Se muestran las {{ limite }} más recientes. Elige un vendedor o un periodo más corto para ver el resto.</p>
+{% endif %}
+{% else %}
+<div class="vacio">Sin sincronizaciones {{ periodo.descripcion }}{% if usuario %} de ese vendedor{% endif %}.</div>
+{% endif %}
+{% endblock %}

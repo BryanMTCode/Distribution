@@ -152,6 +152,14 @@ async def _podar_change_log(payload: dict[str, Any]) -> None:
                 text("DELETE FROM change_log WHERE cursor < :c"), {"c": corte}
             )
         ).rowcount
+        # La constancia de entrega de lo que ya se podó tampoco hace falta
+        # (migración 0043): se va con la misma antigüedad que el libro de cambios.
+        await sesion.execute(
+            text(
+                "DELETE FROM sync_bajadas WHERE ocurrido_en < now() - make_interval(days => :d)"
+            ),
+            {"d": dias},
+        )
         # UPSERT y no UPDATE: si la fila no existiera —una base recién
         # truncada, un restore a medias— un UPDATE afectaría cero renglones y el
         # piso se quedaría en silencio sin escribir, que es exactamente el hueco
