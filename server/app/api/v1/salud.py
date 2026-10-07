@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hmac
+from functools import cache
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -29,6 +31,28 @@ class Salud(BaseModel):
     # mirando la base: las políticas están ahí, simplemente el rol dueño las
     # salta. Que lo diga un endpoint permite comprobarlo después de desplegar.
     rls: bool
+
+    # La revisión de Alembic en la base y la que trae este código. Si no son la
+    # misma, el código nuevo corre contra una base vieja: las pantallas que leen
+    # una columna nueva responden «Internal Server Error» y nada más lo explica.
+    # Pasa cuando se reconstruye `api` sin reconstruir `migraciones`.
+    esquema: str | None = None
+    esquema_esperado: str | None = None
+
+
+@cache
+def _revision_del_codigo() -> str | None:
+    """La última revisión de `db/alembic/versions`, leída una vez."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        raiz = Path(__file__).resolve().parents[3]
+        cfg = Config(str(raiz / "alembic.ini"))
+        cfg.set_main_option("script_location", str(raiz / "db" / "alembic"))
+        return ScriptDirectory.from_config(cfg).get_current_head()
+    except Exception:
+        return None
 
 
 @router.get("/salud", response_model=Salud)
@@ -59,13 +83,24 @@ async def salud(sesion: SesionDep) -> Salud:
             text("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
         )
     ).scalar_one()
+    try:
+        async with sesion.begin_nested():
+            esquema = (
+                await sesion.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar_one_or_none()
+    except Exception:
+        esquema = None
+    esperado = _revision_del_codigo()
+    al_dia = esquema is None or esperado is None or esquema == esperado
     return Salud(
-        ok=db_ok and postgis,
+        ok=db_ok and postgis and al_dia,
         base_de_datos=db_ok,
         postgis=postgis,
         migraciones=tablas,
         version=cfg.version,
         rls=cfg.rls_activa,
+        esquema=esquema,
+        esquema_esperado=esperado,
     )
 
 

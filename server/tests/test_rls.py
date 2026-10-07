@@ -874,3 +874,54 @@ async def test_toda_funcion_que_escribe_el_libro_de_cambios_corre_como_su_dueno(
     assert sin_dueno == [], (
         f"publican al teléfono sin SECURITY DEFINER (en producción darían 500): {sin_dueno}"
     )
+
+
+@pytest.mark.asyncio
+async def test_cada_pantalla_del_panel_abre_con_el_rol_restringido(cliente_rls, semilla):
+    """El panel entero, como lo ve producción: hablando con PostgreSQL como `dsd_api`.
+
+    Las pruebas del panel corren con el rol dueño, que salta RLS y todos los
+    GRANT. Así llegó a producción un tablero que respondía «Internal Server
+    Error» al entrar: la consulta nueva leía una tabla a la que `dsd_api` no
+    tenía permiso, y ninguna prueba abría el panel con ese rol.
+    """
+    from app.api.admin.comun import NAVEGACION
+    from tests.conftest import PASSWORD_VENDEDOR
+
+    r = await cliente_rls.post(
+        "/panel/entrar",
+        data={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    rotas = []
+    for _, enlaces in NAVEGACION:
+        for ruta, etiqueta in enlaces:
+            r = await cliente_rls.get(ruta)
+            if r.status_code != 200:
+                rotas.append(f"{etiqueta} ({ruta}): {r.status_code}")
+    assert rotas == [], rotas
+
+
+@pytest.mark.asyncio
+async def test_salud_dice_si_la_base_esta_al_dia_con_el_codigo(cliente_rls, sesion):
+    """Con el rol de producción: si `migraciones` no se reconstruyó, el código nuevo
+    corre contra una base vieja y el panel responde «Internal Server Error» sin
+    explicar nada. `/salud` lo dice desde el navegador."""
+    al_dia = (await cliente_rls.get("/salud")).json()
+    assert al_dia["esquema"] is not None, "dsd_api no puede leer alembic_version"
+    assert al_dia["esquema"] == al_dia["esquema_esperado"]
+    assert al_dia["ok"] is True
+
+    real = al_dia["esquema"]
+    try:
+        await sesion.execute(
+            text("UPDATE alembic_version SET version_num = '0034_plan_de_visita'")
+        )
+        await sesion.commit()
+        atrasada = (await cliente_rls.get("/salud")).json()
+        assert atrasada["esquema"] == "0034_plan_de_visita"
+        assert atrasada["ok"] is False
+    finally:
+        await sesion.execute(text("UPDATE alembic_version SET version_num = :v"), {"v": real})
+        await sesion.commit()
