@@ -274,7 +274,7 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker dsd        # cerrar sesión y volver a entrar
 
 # La zona horaria de la OPERACIÓN, no UTC. Las imágenes de VPS vienen en UTC.
-sudo timedatectl set-timezone America/Mexico_City
+sudo timedatectl set-timezone America/Mazatlan
 
 git clone https://github.com/BryanMTCode/Distribution.git
 cd Distribution

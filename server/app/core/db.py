@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
@@ -14,6 +15,25 @@ from app.core.config import obtener_config
 _cfg = obtener_config()
 
 
+def _opciones_de_zona() -> dict:
+    """La zona de la OPERACIÓN también para PostgreSQL, en cada conexión.
+
+    `CURRENT_DATE` dice qué es «hoy» para el tablero, el corte y los periodos, y
+    usa la zona de la sesión de PostgreSQL. Esa zona la fija `initdb` UNA vez, con
+    la `TZ` que tenía el contenedor el día que se creó el volumen: cambiar
+    `DSD_ZONA` después movía la hora de Python y no la de la base, y las dos
+    discrepaban. Así que la conexión la pide explícitamente, con la misma `TZ`.
+
+    La operación es en Mazatlán (`America/Mazatlan`, una hora detrás de la Ciudad
+    de México todo el año), aunque el panel se use desde otro lado: «hoy» es el
+    día de quien vende.
+    """
+    zona = os.environ.get("TZ", "").strip()
+    if not zona or zona.startswith(":"):
+        return {}
+    return {"connect_args": {"options": f"-c timezone={zona}"}}
+
+
 def _crear_motor(url: str):
     return create_async_engine(
         url,
@@ -21,6 +41,7 @@ def _crear_motor(url: str):
         max_overflow=_cfg.db_max_overflow,
         pool_pre_ping=True,   # el servidor es local: un reinicio no debe tirar la app
         echo=_cfg.debug,
+        **_opciones_de_zona(),
     )
 
 

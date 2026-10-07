@@ -4333,3 +4333,18 @@ Las subidas ya quedaban registradas. Las bajadas no: la migración 0043 crea
 `sync_bajadas`, un renglón por cada pull que entregó algo, y se poda junto con el
 `change_log`. El pull además actualiza la hora de la última bajada aunque no haya
 nada nuevo: antes un teléfono al día parecía uno apagado.
+
+## 62. El día es el de Mazatlán, en el teléfono y en el servidor
+
+**Decisión (octubre 2026).** La operación es en **Mazatlán** (`America/Mazatlan`, UTC−7
+todo el año, una hora detrás de la Ciudad de México), aunque el sistema se administre
+desde la CDMX. «Hoy» es el día de quien vende.
+
+- **«Mi día» en el teléfono** calculaba el día en UTC mientras los documentos se
+  estampaban con el día local: de la tarde en adelante buscaba las ventas de mañana, y
+  una venta que sí llegó al servidor no aparecía en el corte del vendedor. Ahora usa
+  `diaOperativoDe`, la misma función que estampa la venta. (versionCode 19)
+- **El servidor** toma la zona de `DSD_ZONA`, que ahora vale `America/Mazatlan` por
+  omisión, y la API se la pide a PostgreSQL **en cada conexión**: la zona de la base
+  la fija `initdb` el día que se crea el volumen, y cambiar la variable después movía
+  la hora de Python sin mover la de `CURRENT_DATE`.

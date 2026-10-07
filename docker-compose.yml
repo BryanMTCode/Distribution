@@ -5,7 +5,10 @@
 #   · Simulacro de restauración: un respaldo que nunca restauraste no lo es.
 #   · Failover 4G en el router.
 #   · ZONA HORARIA. Todos los servicios van en la hora de la operación, no en
-#     UTC. `CURRENT_DATE` y `date.today()` deciden qué es "hoy", y en UTC−6 un
+#     UTC. La operación es en MAZATLÁN (America/Mazatlan, UTC−7 todo el año, una
+#     hora detrás de la Ciudad de México): «hoy» es el día de quien vende, no el
+#     de quien usa el panel. Y la API se la pide a PostgreSQL en cada conexión
+#     (core/db.py), porque la del volumen se fijó el día que se creó. `CURRENT_DATE` y `date.today()` deciden qué es "hoy", y en UTC−6 un
 #     reloj en UTC hace que a partir de las 18:00 locales "hoy" sea ya mañana:
 #     el tablero del día sale vacío por la tarde y el arqueo de la liquidación
 #     no cuadra con el efectivo que la gente tiene en la mano. El síntoma
@@ -21,7 +24,7 @@ services:
       POSTGRES_DB: dsd
       POSTGRES_USER: ${DSD_DB_USUARIO:-dsd}
       POSTGRES_PASSWORD: ${DSD_DB_PASSWORD:?define DSD_DB_PASSWORD en .env}
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
     volumes:
       - datos_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +39,7 @@ services:
     command: alembic upgrade head
     environment:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,7 +86,7 @@ services:
       PGDATABASE: dsd
       DSD_CLAVE_API: ${DSD_CLAVE_API:?falta DSD_CLAVE_API en .env, es la clave del rol con el que la API aplica RLS}
       DSD_CLAVE_ANALITICA: ${DSD_CLAVE_ANALITICA:?falta DSD_CLAVE_ANALITICA en .env, es la clave del rol de solo lectura del laboratorio}
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
     volumes:
       - ./server/db/ops:/ops:ro
     depends_on:
@@ -99,7 +102,7 @@ services:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO:?genera uno con 'openssl rand -hex 32'}
       DSD_ENTORNO: produccion
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
       # Endurecimiento (Fase 9). El rol restringido es OBLIGATORIO en
       # producción: sin él la API no arranca, porque las políticas por renglón
       # quedarían escritas y sin efecto. Se crea con db/ops/rol_api.sql.
@@ -130,7 +133,7 @@ services:
       DSD_DATABASE_URL: postgresql+psycopg://${DSD_DB_USUARIO:-dsd}:${DSD_DB_PASSWORD}@postgres:5432/dsd
       DSD_JWT_SECRETO: ${DSD_JWT_SECRETO}
       DSD_ENTORNO: produccion
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
       # El worker NO usa el rol restringido, y es deliberado: recalcula el
       # tablero y refresca la analítica, que son agregados de TODA la operación
       # y no pertenecen a ninguna ruta. Se conecta con el rol dueño, que salta
@@ -163,7 +166,7 @@ services:
     # mal escrita no puede tocar la cartera. Crear con db/ops/rol_analitico.sql.
     environment:
       DSD_ANALITICA_URL: postgresql://dsd_analitica:${DSD_CLAVE_ANALITICA:?falta DSD_CLAVE_ANALITICA en .env}@postgres:5432/dsd
-      TZ: ${DSD_ZONA:-America/Mexico_City}
+      TZ: ${DSD_ZONA:-America/Mazatlan}
     depends_on:
       postgres:
         condition: service_healthy

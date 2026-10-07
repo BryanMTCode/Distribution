@@ -251,7 +251,7 @@ consola web y pega la llave a mano en `/root/.ssh/authorized_keys`.
 ```bash
 apt update && apt upgrade -y
 apt install -y git
-timedatectl set-timezone America/Mexico_City
+timedatectl set-timezone America/Mazatlan
 ```
 
 Comprueba:
@@ -260,7 +260,7 @@ Comprueba:
 timedatectl | grep "Time zone"
 ```
 
-**✅ Debes ver:** `Time zone: America/Mexico_City (CST, -0600)`
+**✅ Debes ver:** `Time zone: America/Mazatlan (MST, -0700)`
 
 > **Por qué importa tanto la hora:** `CURRENT_DATE` decide qué es «hoy». Con el
 > reloj en UTC —como vienen las imágenes de VPS— a partir de las 18:00 locales
@@ -521,7 +521,7 @@ DSD_JWT_SECRETO        64 caracteres
 DSD_CLAVE_API          64 caracteres
 DSD_CLAVE_ANALITICA    64 caracteres
 DSD_ENTORNO=produccion
-DSD_ZONA=America/Mexico_City
+DSD_ZONA=America/Mazatlan
 DSD_DOMINIO_API=api.distribucionesse.com
 DSD_DOMINIO_ANALITICA=analitica.distribucionesse.com
 DSD_TUNNEL_TOKEN=
