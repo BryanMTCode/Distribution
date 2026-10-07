@@ -159,12 +159,63 @@ class Outbox {
         'WHERE operacion_id IN ($marcadores)',
         [confirmadoEn, ...operacionIds],
       );
+      _marcarDocumentos();
       _db.execute('COMMIT');
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
     }
   }
+
+  /// Marca como subidos los documentos cuyo sobre el servidor ya confirmó.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// BUG DE CAMPO, OCTUBRE 2026
+  /// ───────────────────────────────────────────────────────────────────────
+  /// `confirmar` sacaba el sobre de la cola y nadie tocaba el documento: la
+  /// venta se quedaba con `sincronizada = 0` para siempre. «Mi día» decía «1
+  /// documento no ha subido, sincroniza antes de entregar» de una venta que la
+  /// oficina ya tenía en el panel, y el vendedor no tenía forma de quitarlo.
+  ///
+  /// Se marca por cada operación DENTRO del sobre —uno de visita trae venta y
+  /// cobro—, y recorre todos los confirmados, no solo los de esta tanda: así
+  /// también se corrigen los que se confirmaron con la versión anterior.
+  void marcarDocumentosConfirmados() {
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      _marcarDocumentos();
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  void _marcarDocumentos() {
+    for (final (tipo, tabla, columna) in _documentos) {
+      _db.execute(
+        "UPDATE $tabla SET $columna = 1 "
+        " WHERE $columna = 0 "
+        "   AND id IN ("
+        "     SELECT json_extract(op.value, '\$.entidad_id') "
+        "       FROM outbox o, json_each(o.payload, '\$.operaciones') op "
+        "      WHERE o.estado = 'confirmada' "
+        "        AND json_extract(op.value, '\$.tipo') = ?"
+        "   )",
+        [tipo],
+      );
+    }
+  }
+
+  /// Qué documento deja cada tipo de operación, y su bandera de «ya subió».
+  static const _documentos = [
+    ('venta.crear', 'ventas', 'sincronizada'),
+    ('cobro.crear', 'cobros', 'sincronizado'),
+    ('merma.crear', 'mermas', 'sincronizada'),
+    ('no_drop.crear', 'no_drops', 'sincronizado'),
+    ('traspaso.crear', 'traspasos', 'sincronizado'),
+    ('cliente.crear', 'clientes', 'sincronizado'),
+  ];
 
   /// Saca de la cola un sobre que el servidor rechazó.
   ///

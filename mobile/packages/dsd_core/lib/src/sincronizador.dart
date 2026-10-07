@@ -309,6 +309,14 @@ class Sincronizador {
       }
     }
 
+    // Los documentos de lo ya confirmado quedan como subidos, también los que
+    // se confirmaron con una versión que no los marcaba (ver Outbox).
+    try {
+      _outbox.marcarDocumentosConfirmados();
+    } catch (_) {
+      // Es una marca para la pantalla; nunca detiene la sincronización.
+    }
+
     // ---- BORRADO: solo cuando ya no queda nada que entregar -------------
     //
     // Es la regla que gobierna el borrado remoto: NUNCA SE BORRA LO QUE NO SE

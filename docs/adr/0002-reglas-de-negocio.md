@@ -4348,3 +4348,16 @@ desde la CDMX. «Hoy» es el día de quien vende.
   omisión, y la API se la pide a PostgreSQL **en cada conexión**: la zona de la base
   la fija `initdb` el día que se crea el volumen, y cambiar la variable después movía
   la hora de Python sin mover la de `CURRENT_DATE`.
+
+## 63. Lo que el servidor confirmó queda como subido en el teléfono
+
+**Decisión (octubre 2026).** Reportado en operación: «Mi día» decía «1 documento no ha
+subido, sincroniza antes de entregar» de una venta que el panel ya mostraba. Al
+confirmar un sobre, la cola lo sacaba pero **nadie marcaba el documento**: la venta
+se quedaba con `sincronizada = 0` para siempre.
+
+Ahora `Outbox.confirmar` marca, en la misma transacción, cada documento que declara
+el sobre (uno de visita trae venta y cobro): ventas, cobros, mermas, no-drops,
+devoluciones y altas de cliente. Y en cada sincronización se repasa todo lo
+confirmado, así que lo que se confirmó con la versión anterior también se corrige
+solo. (versionCode 20)
