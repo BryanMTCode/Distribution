@@ -91,6 +91,7 @@ la bodega sube cuando alguien la cuenta.
 | **Panel → teléfono, acción por acción** — la ruta viaja con su titular, la cartera con el cliente, el alcance se lee en vivo ([§8](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 10 pruebas + 3 de Dart |
 | **Guardia entre lenguajes** — lo que publica el servidor, el teléfono lo sabe aplicar (y al revés) | ✅ 3 pruebas |
 | **Cuadre del camión** — con todo entregado y todo traído, el teléfono queda igual al panel | ✅ 6 pruebas + 12 de Dart |
+| **Reprocesar la cuarentena** desde el panel — lo rechazado por una causa ya corregida entra, y el teléfono se destraba | ✅ 4 pruebas |
 | **El teléfono reporta su cola**, y `sync_completa` deja de ser una casilla | ✅ 8 + 6 pruebas |
 | **Efectividad de visita** — cuántas visitas perdidas podemos arreglar nosotros | ✅ 20 pruebas |
 | **Esquema estrella** (`fact_ventas`, `fact_visitas`, `dim_*`) con refresco por job | ✅ 27 pruebas |
@@ -122,7 +123,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1288 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **609 de Dart** y **281 de widget**, todas en verde.
+**1292 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **609 de Dart** y **281 de widget**, todas en verde.
 
 ## Stack
 
@@ -254,7 +255,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1288 pruebas de Python
+make pruebas                        # 1292 pruebas de Python
 make movil                          # 609 de Dart + 281 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

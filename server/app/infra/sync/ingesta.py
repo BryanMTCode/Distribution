@@ -57,7 +57,7 @@ log = logging.getLogger("dsd.sync")
 # recibida, y el tablero lo DICE: muestra la antigüedad de cada cifra.
 RETRASO_TABLERO_SEG = 60
 
-__all__ = ["procesar_lote"]
+__all__ = ["procesar_lote", "reprocesar_cuarentena"]
 
 
 async def _registrar_lote(
@@ -343,3 +343,148 @@ async def _procesar_sobre(
         Estado.ACEPTADA,
         entidades=[o.entidad_id for o in sobre.operaciones],
     )
+
+
+# ---------------------------------------------------------------------------
+# Reprocesar lo que quedó en cuarentena
+# ---------------------------------------------------------------------------
+# El servidor recuerda que rechazó un sobre, y a un reenvío le contesta lo mismo
+# sin volver a aplicarlo (§1 de este archivo). Es lo correcto para un rechazo por
+# los datos, y un callejón sin salida para uno por un fallo NUESTRO: el teléfono ya
+# instalado con la versión nueva manda algo que el servidor todavía viejo no
+# conocía, el servidor se actualiza... y el sobre se queda rechazado para siempre.
+# El vendedor ve «1 con error», toca para reintentar, y nada cambia.
+#
+# La salida la decide una persona desde el panel: volver a aplicar el payload que
+# se guardó, íntegro, con las MISMAS reglas que el push. Si pasa, la operación
+# queda aceptada en `sync_operaciones`, y el siguiente reintento del teléfono
+# recibe «duplicada» —ya está del otro lado—, la saca de su cola y se le quita lo
+# rojo. Si no pasa, se queda pendiente con el motivo nuevo.
+
+
+async def reprocesar_cuarentena(
+    sesion: AsyncSession, id_fila: int, quien: uuid.UUID
+) -> tuple[bool, str]:
+    """Vuelve a aplicar una operación en cuarentena. Devuelve (pasó, mensaje).
+
+    No hace `commit`: lo hace quien llama, igual que con el push.
+    """
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT * FROM sync_cuarentena WHERE id = :id AND estado = 'pendiente' "
+                "FOR UPDATE"
+            ),
+            {"id": id_fila},
+        )
+    ).mappings().first()
+    if fila is None:
+        return False, "Esa operación ya no está pendiente."
+    if fila["error_codigo"] == CodigoError.HASH_NO_COINCIDE.value:
+        # El contenido no es el que el equipo firmó: no hay forma de saber cuál es
+        # el legítimo, y aplicarlo sería apostar.
+        return False, (
+            "Esta no se reprocesa: el contenido no coincide con su firma. Atiéndela "
+            "por fuera y márcala como atendida."
+        )
+
+    usuario = (
+        await sesion.execute(
+            text("SELECT almacen_id FROM usuarios WHERE id = :u"), {"u": fila["usuario_id"]}
+        )
+    ).mappings().first()
+    rutas = tuple(
+        (
+            await sesion.execute(
+                text("SELECT ruta_id FROM usuarios_rutas WHERE usuario_id = :u"),
+                {"u": fila["usuario_id"]},
+            )
+        ).scalars()
+    )
+    ctx = Contexto(
+        dispositivo_id=fila["dispositivo_id"],
+        usuario_id=fila["usuario_id"],
+        rutas=rutas,
+        almacen_id=usuario["almacen_id"] if usuario else None,
+    )
+
+    payload = fila["payload"] or {}
+    operaciones = payload.get("operaciones") or []
+    if not operaciones:
+        return False, "La operación guardada no trae nada que aplicar."
+
+    # El mismo candado que el push: si el teléfono está subiendo justo ahora, uno
+    # espera al otro en vez de aplicar lo mismo dos veces.
+    async with lock_de_dispositivo(sesion, ctx.dispositivo_id):
+        try:
+            async with sesion.begin_nested():
+                for o in operaciones:
+                    manejador = obtener_manejador(o["tipo"])
+                    await manejador(sesion, ctx, uuid.UUID(o["entidad_id"]), o.get("datos") or {})
+        except ErrorDeManejador as e:
+            codigo, mensaje = e.codigo.value, e.mensaje
+        except (IntegrityError, DBAPIError) as e:
+            codigo, mensaje = CodigoError.CONFLICTO_DE_DATOS.value, str(getattr(e, "orig", e))
+        else:
+            codigo = mensaje = None
+
+    if codigo is not None:
+        await sesion.execute(
+            text(
+                "UPDATE sync_cuarentena SET error_codigo = :c, error_mensaje = :m "
+                " WHERE id = :id"
+            ),
+            {"c": codigo, "m": (mensaje or "")[:2000], "id": id_fila},
+        )
+        return False, f"Sigue sin poder aplicarse: {mensaje}"
+
+    entidad = payload.get("visita_id") or operaciones[0]["entidad_id"]
+    actualizadas = (
+        await sesion.execute(
+            text(
+                "UPDATE sync_operaciones "
+                "   SET resultado = 'aceptada', error_codigo = NULL, error_mensaje = NULL, "
+                "       entidad_id = :ent "
+                " WHERE operacion_id = :op"
+            ),
+            {"op": fila["operacion_id"], "ent": entidad},
+        )
+    ).rowcount
+    if not actualizadas:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO sync_operaciones (operacion_id, dispositivo_id, tipo, entidad_id,
+                                              hash_payload, resultado)
+                VALUES (:op, :dev, :tipo, :ent, :hash, 'aceptada')
+                """
+            ),
+            {
+                "op": fila["operacion_id"],
+                "dev": fila["dispositivo_id"],
+                "tipo": fila["tipo"],
+                "ent": entidad,
+                "hash": fila["hash_payload"],
+            },
+        )
+    await sesion.execute(
+        text(
+            "UPDATE sync_cuarentena "
+            "   SET estado = 'reprocesada', resuelto_por = :quien, resuelto_en = now(), "
+            "       nota_resolucion = 'Reprocesada desde el panel' "
+            " WHERE id = :id"
+        ),
+        {"quien": quien, "id": id_fila},
+    )
+    await encolar(
+        sesion,
+        "recalcular_tablero",
+        {"motivo": "reproceso", "dispositivo_id": str(ctx.dispositivo_id)},
+        clave_unica="recalcular_tablero",
+        retraso=timedelta(seconds=RETRASO_TABLERO_SEG),
+    )
+    return True, (
+        "Aplicada. En el teléfono, toca la barra roja para reintentar: el servidor le "
+        "contesta que ya la tiene y se le quita el error."
+    )
+

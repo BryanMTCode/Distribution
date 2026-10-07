@@ -306,6 +306,8 @@ async def cuarentena_detalle(
     actor: ActorWeb,
     sesion: SesionDep,
     id_fila: int,
+    error: str = "",
+    guardado: str = "",
 ) -> HTMLResponse:
     """El payload completo, tal como llegó.
 
@@ -338,6 +340,11 @@ async def cuarentena_detalle(
         {
             "fila": fila,
             "payload": json.dumps(fila["payload"], indent=2, ensure_ascii=False),
+            # `nota` es el aviso que ya usaba «descartar» cuando falta la nota.
+            "error": "Escribe qué se hizo antes de marcarla como atendida."
+            if error == "nota"
+            else error,
+            "guardado": guardado,
         },
         actor=actor,
         seccion="Cuarentena",
@@ -380,6 +387,36 @@ async def descartar_cuarentena(
     )
     await sesion.commit()
     return RedirectResponse("/panel/cuarentena", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/cuarentena/{id_fila}/reprocesar")
+async def reprocesar_cuarentena_web(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    id_fila: int,
+    csrf: Annotated[str, Form()] = "",
+):
+    """Vuelve a aplicar el payload guardado, con las mismas reglas que el push.
+
+    Es la salida cuando el rechazo fue culpa nuestra —un servidor que todavía no
+    conocía lo que mandó la app nueva—: sin esto, el teléfono reintenta y el
+    servidor le contesta el mismo rechazo para siempre. Ver
+    `ingesta.reprocesar_cuarentena`.
+    """
+    from urllib.parse import quote
+
+    from app.infra.sync.ingesta import reprocesar_cuarentena
+
+    exigir_csrf(peticion, csrf)
+    actor.exigir("sync.cuarentena")
+    paso, mensaje = await reprocesar_cuarentena(sesion, id_fila, actor.usuario_id)
+    await sesion.commit()
+    clave = "guardado" if paso else "error"
+    return RedirectResponse(
+        f"/panel/cuarentena/{id_fila}?{clave}={quote(mensaje)}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 # ---------------------------------------------------------------------------

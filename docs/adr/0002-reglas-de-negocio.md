@@ -4237,3 +4237,27 @@ respuesta rara se ignoran, porque las ventas ya quedaron entregadas.
 Las diferencias se quedan: siguen siendo lo correcto mientras hay operaciones en
 vuelo. El cuadre es lo que garantiza que, en cuanto deja de haberlas, el teléfono y
 el panel vuelven a decir lo mismo.
+
+## 59. Reprocesar la cuarentena desde el panel
+
+**Decisión (octubre 2026).** Lo reportó la operación: un teléfono con la app nueva
+mandó algo que el servidor —todavía sin actualizar— rechazó. Se actualizó el
+servidor, el vendedor tocó «reintentar», y la barra siguió roja.
+
+No era un fallo de la actualización: el servidor **recuerda** que rechazó cada sobre y
+a un reenvío le contesta lo mismo sin volver a aplicarlo. Es lo correcto para un
+rechazo por los datos —reintentar a ciegas solo llenaría la cuarentena de copias— y un
+callejón sin salida para uno por causa nuestra o ya corregida. El panel solo podía
+«descartar».
+
+**Reprocesar** (en el detalle de la operación en cuarentena) vuelve a aplicar el
+payload guardado, íntegro, con los **mismos manejadores y el mismo candado por equipo**
+que el push, y con el alcance y el camión que el vendedor tiene HOY. Si pasa:
+
+- la operación queda `aceptada` en `sync_operaciones` y `reprocesada` en la cuarentena;
+- el siguiente reintento del teléfono recibe «duplicada» —ya está del otro lado—, la
+  saca de su cola y se le quita lo rojo, sin aplicarse dos veces.
+
+Si no pasa, no se aplica nada y la operación se queda pendiente con el motivo nuevo.
+Lo que llegó con un contenido que no coincide con su firma (`hash_no_coincide`) no se
+reprocesa nunca: no hay forma de saber cuál de las dos versiones es la legítima.

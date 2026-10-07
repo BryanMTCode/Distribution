@@ -515,6 +515,13 @@ cargas y ajustes de toda la historia sin restar las ventas viejas. *Corrección 
 estado del servidor solo con la cola vacía, el cursor idéntico, sin cuarentena y con
 el mismo camión.
 
+**Hallazgo 10 · Una operación rechazada no tenía salida.** El servidor contesta a cada
+reenvío el mismo rechazo sin reprocesar, y el panel solo podía descartar: un sobre
+rechazado por un servidor viejo se quedaba rojo en el teléfono para siempre, aunque el
+servidor ya estuviera actualizado. *Corrección (ADR 0002 §59)*: «Reprocesar» en el
+detalle de la cuarentena, con las mismas reglas que el push; después, el reintento del
+teléfono recibe «duplicada» y se destraba.
+
 ### 8.3 Lo que se revisó y se queda así
 
 - **La contraseña y `dias_max_offline` viajan en la credencial**, que se reescribe con

@@ -952,3 +952,21 @@ async def test_la_foto_del_camion_sale_con_el_rol_restringido(cliente_rls, sesio
     foto = await cliente_rls.get("/v1/sync/camion", headers=cab)
     assert foto.status_code == 200, foto.text
     assert foto.json()["almacen_id"] == str(semilla["camion"])
+
+
+@pytest.mark.asyncio
+async def test_reprocesar_la_cuarentena_funciona_con_el_rol_restringido(
+    cliente_rls, sesion, semilla
+):
+    """Reprocesar escribe ventas, clientes y el registro de operaciones desde la
+    sesión del PANEL, no la del teléfono: con el rol de producción tiene que poder."""
+    from tests.test_cuarentena_reprocesar import _rechazado_por_ruta_ajena, _reprocesar
+
+    _, _, otra_ruta, id_fila = await _rechazado_por_ruta_ajena(cliente_rls, sesion, semilla)
+    await sesion.execute(
+        text("INSERT INTO usuarios_rutas (usuario_id, ruta_id) VALUES (:u, :r)"),
+        {"u": semilla["vendedor"], "r": otra_ruta},
+    )
+    await sesion.commit()
+    r = await _reprocesar(cliente_rls, id_fila)
+    assert 'id="aviso_guardado"' in r.text, r.text[-2000:]

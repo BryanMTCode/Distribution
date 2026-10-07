@@ -8,6 +8,9 @@
   desde {{ fila.equipo }}{% if fila.vendedor %} ({{ fila.vendedor }}){% endif %}.
 </p>
 
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja aviso" id="aviso_error">{{ error }}</div>{% endif %}
+
 <div class="aviso-caja error">
   <strong>{{ fila.error_codigo }}</strong><br>
   {{ fila.error_mensaje }}
@@ -38,6 +41,20 @@
 <div class="tabla-marco" style="padding:14px;background:var(--papel);overflow:auto">
   <pre class="mono" style="margin:0">{{ payload }}</pre>
 </div>
+
+{% if fila.estado == 'pendiente' and fila.error_codigo != 'hash_no_coincide' %}
+<h2>Volver a aplicarla</h2>
+<p>
+  Si el rechazo ya no aplica —se actualizó el servidor, se dio de alta el producto o
+  el cliente que faltaba, se le asignó el camión al vendedor—, se vuelve a aplicar
+  tal como llegó, con las mismas reglas que una sincronización. Si vuelve a fallar,
+  se queda aquí con el motivo nuevo y no se aplica nada.
+</p>
+<form method="post" action="/panel/cuarentena/{{ fila.id }}/reprocesar" style="margin-bottom:24px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit" id="boton_reprocesar">Reprocesar</button>
+</form>
+{% endif %}
 
 {% if fila.estado == 'pendiente' %}
 <h2>Atender</h2>
