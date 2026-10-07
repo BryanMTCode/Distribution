@@ -42,7 +42,7 @@
   <pre class="mono" style="margin:0">{{ payload }}</pre>
 </div>
 
-{% if fila.estado == 'pendiente' and fila.error_codigo != 'hash_no_coincide' %}
+{% if fila.estado in ('pendiente', 'descartada') and fila.error_codigo != 'hash_no_coincide' %}
 <h2>Volver a aplicarla</h2>
 <p>
   Si el rechazo ya no aplica —se actualizó el servidor, se dio de alta el producto o
@@ -50,6 +50,13 @@
   tal como llegó, con las mismas reglas que una sincronización. Si vuelve a fallar,
   se queda aquí con el motivo nuevo y no se aplica nada.
 </p>
+{% if fila.estado == 'descartada' %}
+<div class="aviso-caja aviso">
+  Esta ya se marcó como atendida{% if fila.nota_resolucion %}: «{{ fila.nota_resolucion }}»{% endif %}.
+  <strong>Si ya la capturaste a mano, no la reproceses</strong>: quedaría dos veces.
+  Reprocésala solo si se marcó como atendida sin haberla capturado.
+</div>
+{% endif %}
 <form method="post" action="/panel/cuarentena/{{ fila.id }}/reprocesar" style="margin-bottom:24px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <button type="submit" id="boton_reprocesar">Reprocesar</button>

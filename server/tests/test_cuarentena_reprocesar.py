@@ -120,3 +120,50 @@ async def test_lo_que_no_coincide_con_su_firma_no_se_reprocesa(cliente, sesion, 
 
     await _entrar(cliente)
     assert 'id="boton_reprocesar"' not in (await cliente.get(f"/panel/cuarentena/{id_fila}")).text
+
+
+async def _descartar(cliente, id_fila, nota="Revisado con el vendedor"):
+    await _entrar(cliente)
+    pantalla = await cliente.get(f"/panel/cuarentena/{id_fila}")
+    return await cliente.post(
+        f"/panel/cuarentena/{id_fila}/descartar",
+        data={"csrf": _csrf(cliente, pantalla), "nota": nota},
+        follow_redirects=True,
+    )
+
+
+async def test_la_que_la_oficina_marco_como_atendida_ya_no_le_sale_roja_al_telefono(
+    cliente, sesion, semilla
+):
+    """Lo reportó la operación: se marcó como atendida en el panel y el teléfono
+    seguía con «1 con error», porque a cada reintento el servidor contestaba el
+    rechazo original."""
+    cab, cuerpo, _, id_fila = await _rechazado_por_ruta_ajena(cliente, sesion, semilla)
+    await _descartar(cliente, id_fila)
+
+    reintento = await cliente.post("/v1/sync/push", json=cuerpo, headers=cab)
+    assert reintento.json()["resultados"][0]["estado"] == "duplicada"
+    # Atendida no es aplicada: no entró nada.
+    assert await _contar(sesion, "clientes") == 0
+
+
+async def test_una_descartada_por_error_todavia_puede_entrar(cliente, sesion, semilla):
+    """Antes del botón de reprocesar, marcarla como atendida era la única salida, y
+    una venta real descartada así nunca habría entrado."""
+    cab, cuerpo, otra_ruta, id_fila = await _rechazado_por_ruta_ajena(cliente, sesion, semilla)
+    await _descartar(cliente, id_fila)
+    await sesion.execute(
+        text("INSERT INTO usuarios_rutas (usuario_id, ruta_id) VALUES (:u, :r)"),
+        {"u": semilla["vendedor"], "r": otra_ruta},
+    )
+    await sesion.commit()
+
+    pantalla = await cliente.get(f"/panel/cuarentena/{id_fila}")
+    assert "no la reproceses" in pantalla.text
+    r = await _reprocesar(cliente, id_fila)
+    assert 'id="aviso_guardado"' in r.text
+    assert await _contar(sesion, "clientes") == 1
+
+    reintento = await cliente.post("/v1/sync/push", json=cuerpo, headers=cab)
+    assert reintento.json()["resultados"][0]["estado"] == "duplicada"
+    assert await _contar(sesion, "clientes") == 1

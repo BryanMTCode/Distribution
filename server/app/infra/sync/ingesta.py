@@ -96,6 +96,22 @@ async def _previo(sesion: AsyncSession, operacion_id: uuid.UUID) -> dict | None:
     return dict(fila) if fila else None
 
 
+async def _atendida_en_oficina(sesion: AsyncSession, operacion_id: uuid.UUID) -> bool:
+    """Si la oficina ya marcó la operación como atendida y no quedó otra pendiente."""
+    return bool(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT bool_or(estado = 'descartada') "
+                    "       AND NOT bool_or(estado = 'pendiente') "
+                    "  FROM sync_cuarentena WHERE operacion_id = :op"
+                ),
+                {"op": operacion_id},
+            )
+        ).scalar_one()
+    )
+
+
 async def _anotar(
     sesion: AsyncSession,
     sobre: Sobre,
@@ -276,11 +292,24 @@ async def _procesar_sobre(
                 error_codigo=CodigoError.HASH_NO_COINCIDE.value,
                 error_mensaje="contenido distinto para un operacion_id ya usado",
             )
-        # Reenvío legítimo: se responde lo mismo que la primera vez.
+        # Reenvío legítimo: se responde lo mismo que la primera vez...
         estado = (
             Estado.RECHAZADA if previo["resultado"] == Estado.RECHAZADA.value
             else Estado.DUPLICADA
         )
+        # ...salvo que la oficina ya la haya atendido. Una operación que se marcó
+        # como atendida en el panel («descartada») ya no le toca al teléfono: si
+        # se le siguiera contestando «rechazada», el vendedor vería «1 con error»
+        # para siempre por algo que la oficina ya resolvió, y aprendería a
+        # ignorar la barra roja. Se le contesta que ya está del otro lado.
+        if estado is Estado.RECHAZADA and await _atendida_en_oficina(
+            sesion, sobre.operacion_id
+        ):
+            return ResultadoSobre(
+                sobre.operacion_id,
+                Estado.DUPLICADA,
+                entidades=[previo["entidad_id"]] if previo["entidad_id"] else [],
+            )
         return ResultadoSobre(
             sobre.operacion_id,
             estado,
@@ -372,14 +401,18 @@ async def reprocesar_cuarentena(
     fila = (
         await sesion.execute(
             text(
-                "SELECT * FROM sync_cuarentena WHERE id = :id AND estado = 'pendiente' "
+                # También una descartada: la que se marcó como atendida por error
+                # —antes de que existiera este botón, era la única salida— todavía
+                # tiene que poder entrar.
+                "SELECT * FROM sync_cuarentena "
+                " WHERE id = :id AND estado IN ('pendiente', 'descartada') "
                 "FOR UPDATE"
             ),
             {"id": id_fila},
         )
     ).mappings().first()
     if fila is None:
-        return False, "Esa operación ya no está pendiente."
+        return False, "Esa operación ya entró: se reprocesó antes."
     if fila["error_codigo"] == CodigoError.HASH_NO_COINCIDE.value:
         # El contenido no es el que el equipo firmó: no hay forma de saber cuál es
         # el legítimo, y aplicarlo sería apostar.

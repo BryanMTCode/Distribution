@@ -4261,3 +4261,14 @@ que el push, y con el alcance y el camión que el vendedor tiene HOY. Si pasa:
 Si no pasa, no se aplica nada y la operación se queda pendiente con el motivo nuevo.
 Lo que llegó con un contenido que no coincide con su firma (`hash_no_coincide`) no se
 reprocesa nunca: no hay forma de saber cuál de las dos versiones es la legítima.
+
+**La que se marcó como atendida (octubre 2026, el mismo día).** Marcarla como
+atendida en el panel no le decía nada al teléfono: a cada reintento el servidor seguía
+contestando el rechazo original, y el vendedor veía «1 con error» por algo que la
+oficina ya había resuelto. Ahora, si la oficina la marcó como atendida y no queda otra
+pendiente, el reintento recibe «duplicada» —ya está del otro lado—, el teléfono la
+saca de su cola y se le quita lo rojo. Atendida **no es aplicada**: no entra nada.
+
+Y una descartada todavía se puede **reprocesar**: antes del botón, marcarla como
+atendida era la única salida, y una venta real descartada así nunca habría entrado. La
+pantalla advierte que no se reprocese si ya se capturó a mano.
