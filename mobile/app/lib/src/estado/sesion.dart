@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,25 @@ import 'sincronizacion.dart';
 
 /// Dónde vive el refresh token de Gerencia en el Keystore.
 const claveRefreshToken = 'refresh_token_gerencia';
+
+/// Dónde se recuerda que hay una sesión abierta, y hasta cuándo.
+const claveSesionRecordada = 'sesion_recordada_v1';
+
+/// Cuánto dura una sesión antes de volver a pedir la contraseña.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// «SI CIERRO LA APP NO QUIERO ENTRAR OTRA VEZ» (octubre 2026)
+/// ─────────────────────────────────────────────────────────────────────────
+/// La sesión vivía solo en memoria: Android cierra la app en cuanto el
+/// vendedor abre la cámara o el WhatsApp, y al volver pedía la contraseña.
+/// Ahora se recuerda en el Keystore con su vencimiento, y al abrir la app se
+/// entra sola mientras no haya pasado.
+///
+/// Doce horas desde que se tecleó la contraseña: cubre la jornada entera y a
+/// la mañana siguiente la pide otra vez. Es FIJO, no se alarga con el uso: un
+/// teléfono olvidado en la tienda no debe quedar abierto para siempre solo
+/// porque alguien lo sigue tocando. «Salir» la borra al instante.
+const vigenciaDeLaSesion = Duration(hours: 12);
 
 /// Se sobrescriben en las pruebas y en el arranque real.
 final almacenSeguroProvider = Provider<AlmacenSeguro>(
@@ -127,6 +147,7 @@ class ControladorSesion extends Notifier<Sesion> {
     state = resultado == ResultadoLogin.ok
         ? SesionAbierta(credencial!)
         : SinSesion(motivo: resultado);
+    if (resultado == ResultadoLogin.ok) await _recordar({'tipo': 'vendedor'});
 
     // Y, SI HAY RED, UN TOKEN — porque sin él entrar no sirve de nada.
     //
@@ -341,6 +362,16 @@ class ControladorSesion extends Notifier<Sesion> {
           .read(almacenSeguroProvider)
           .escribir(claveRefreshToken, sesion.refreshToken);
       state = SesionDeGerencia(perfil);
+      await _recordar({
+        'tipo': 'gerencia',
+        'perfil': {
+          'usuario_id': perfil.usuarioId,
+          'codigo': perfil.codigo,
+          'nombre': perfil.nombre,
+          'rol': perfil.rol,
+          'permisos': perfil.permisos,
+        },
+      });
       return null;
     } on CredencialesInvalidas {
       return 'Código o contraseña incorrectos.';
@@ -354,26 +385,83 @@ class ControladorSesion extends Notifier<Sesion> {
     }
   }
 
-  /// Reabre la sesión de Gerencia con el refresh token guardado.
+  /// Deja escrito que hay sesión, y hasta cuándo. Ver `vigenciaDeLaSesion`.
+  Future<void> _recordar(Map<String, Object?> datos) async {
+    final hasta = ref.read(relojProvider)().toUtc().add(vigenciaDeLaSesion);
+    await ref.read(almacenSeguroProvider).escribir(
+          claveSesionRecordada,
+          jsonEncode({...datos, 'hasta': hasta.toIso8601String()}),
+        );
+  }
+
+  /// Al abrir la app: vuelve a entrar sola si la sesión no ha vencido.
   ///
-  /// Es lo que evita teclear la contraseña cada mañana. Si falla —token
-  /// revocado, sin señal— no se trata como error: simplemente no hay sesión y
-  /// se pide entrar, que es lo que la pantalla ya sabe mostrar.
-  Future<bool> reabrirGerencia() async {
-    final guardado =
-        await ref.read(almacenSeguroProvider).leer(claveRefreshToken);
-    if (guardado == null) return false;
+  /// No toca la red, y eso es a propósito: se abre en la bodega sin datos y
+  /// tiene que responder al instante. El token se deja VACÍO, no nulo: «hay
+  /// sesión, el acceso está por renovar». La primera petición recibe 401 y
+  /// `TransporteRenovable` lo renueva con el refresh guardado; sin señal, cada
+  /// pantalla dice «sin conexión» como siempre, y el tablero muestra su copia.
+  ///
+  /// Devuelve `true` si entró.
+  Future<bool> reabrir() async {
+    if (state is! SinSesion) return true;
+    final almacen = ref.read(almacenSeguroProvider);
+    final crudo = await almacen.leer(claveSesionRecordada);
+    if (crudo == null) return false;
+
+    final ahora = ref.read(relojProvider)().toUtc();
+    Map<String, Object?>? datos;
+    DateTime? hasta;
     try {
-      final sesion =
-          await ClienteAuth(ref.read(transporteSinSesionProvider)).renovar(guardado);
-      final perfil = sesion.perfil;
-      if (perfil == null || !perfil.puedeVerTablero) return false;
-      ref.read(tokenProvider.notifier).state = sesion.accessToken;
-      state = SesionDeGerencia(perfil);
-      return true;
-    } on Exception {
+      datos = (jsonDecode(crudo) as Map).cast<String, Object?>();
+      hasta = DateTime.parse(datos['hasta']! as String).toUtc();
+    } on Object {
+      datos = null;
+    }
+
+    Future<bool> olvidar() async {
+      await almacen.borrar(claveSesionRecordada);
+      // Gerencia entra solo con el refresh token: si la sesión venció, ese token
+      // tampoco debe poder abrirla. El del vendedor se queda, porque no abre nada
+      // por sí solo —el vendedor entra con su contraseña— y sirve para subir.
+      if (datos?['tipo'] == 'gerencia') await almacen.borrar(claveRefreshToken);
       return false;
     }
+
+    if (datos == null || hasta == null || !ahora.isBefore(hasta)) return olvidar();
+
+    final Sesion recuperada;
+    switch (datos['tipo']) {
+      case 'vendedor':
+        final credencial = await ref.read(repoCredencialProvider).leer();
+        // La misma vigencia que el login sin señal: una credencial vencida o
+        // rara no abre la app por la puerta de atrás.
+        if (credencial == null ||
+            credencial.vencidaEn(ahora) ||
+            !hashAceptable(credencial.passwordHash)) {
+          return olvidar();
+        }
+        recuperada = SesionAbierta(credencial);
+      case 'gerencia':
+        final perfil = datos['perfil'];
+        if (perfil is! Map ||
+            await almacen.leer(claveRefreshToken) == null) {
+          return olvidar();
+        }
+        try {
+          recuperada = SesionDeGerencia(Perfil.deJson(perfil.cast<String, Object?>()));
+        } on Object {
+          return olvidar();
+        }
+      default:
+        return olvidar();
+    }
+
+    // Alguien pudo entrar a mano mientras se leía el Keystore: gana lo suyo.
+    if (state is! SinSesion) return true;
+    ref.read(tokenProvider.notifier).state ??= '';
+    state = recuperada;
+    return true;
   }
 
   Future<void> salir() async {
@@ -381,6 +469,7 @@ class ControladorSesion extends Notifier<Sesion> {
     // nadie —la siguiente apertura reabriría la sesión sola— y eso convierte un
     // botón de seguridad en un adorno.
     await ref.read(almacenSeguroProvider).borrar(claveRefreshToken);
+    await ref.read(almacenSeguroProvider).borrar(claveSesionRecordada);
     ref.read(tokenProvider.notifier).state = null;
     state = const SinSesion();
   }
@@ -388,6 +477,15 @@ class ControladorSesion extends Notifier<Sesion> {
 
 final sesionProvider = NotifierProvider<ControladorSesion, Sesion>(
   ControladorSesion.new,
+);
+
+/// El intento de volver a entrar solo, al abrir la app. Una vez por arranque.
+///
+/// Mientras corre, el portal muestra una espera en vez de la pantalla de
+/// entrada: si no, el teclado saltaría sobre el campo de contraseña medio
+/// segundo antes de que la app entrara sola.
+final reaperturaProvider = FutureProvider<bool>(
+  (ref) => ref.read(sesionProvider.notifier).reabrir(),
 );
 
 /// Lista de clientes filtrada. Lee de SQLite, así que responde igual sin señal.

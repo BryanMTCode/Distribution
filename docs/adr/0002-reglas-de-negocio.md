@@ -4372,3 +4372,63 @@ solo. (versionCode 20)
 - **La venta pasaba a «subida» solo al reiniciar la app.** El provider de «Mi día»
   se quedaba con su primera lectura. Ahora escucha la cola y el camión, que se
   avisan al vender, cobrar, mermar y al terminar cada sincronización. (versionCode 21)
+
+## 65. La sesión de la app se recuerda doce horas, y el acceso se renueva solo
+
+**Decisión (octubre 2026).** Dos quejas de campo con la misma raíz, que la sesión
+vivía solo en memoria:
+
+- **«Si cierro la app me pide entrar otra vez.»** Android cierra la app en cuanto
+  el vendedor abre la cámara o el WhatsApp. Ahora, al entrar con la contraseña,
+  se guarda en el Keystore que hay sesión y **hasta cuándo: doce horas**
+  (`vigenciaDeLaSesion`). Al abrir la app se entra sola mientras no hayan pasado;
+  después pide la contraseña. Es un plazo FIJO desde que se tecleó la contraseña,
+  no se alarga con el uso: un teléfono olvidado en una tienda no debe quedar
+  abierto para siempre. «Salir» lo borra al instante, igual que el borrado remoto.
+  La sesión recordada no salta la vigencia de la credencial: vencida, pide red.
+- **«Gerencia me saca a la media hora» / «el vendedor ya no puede subir».** El
+  access token dura 30 minutos y la app nunca lo renovaba aunque tenía el refresh
+  token (30 días) guardado. `TransporteRenovable` envuelve al transporte: ante un
+  401 renueva con el refresh y repite la petición UNA vez —seguro, porque el
+  servidor es idempotente—, con una sola renovación aunque choquen dos peticiones.
+  Si no se puede renovar (refresh revocado, equipo dado de baja, sin señal), cada
+  pantalla dice lo que ya decía.
+
+Reabrir no toca la red: deja el token vacío («hay sesión, acceso por renovar») y
+la primera petición lo renueva. Así la app abre al instante en la bodega sin
+datos, y el tablero sin señal muestra su copia.
+
+## 66. El tablero de gerencia se calcula al pedirlo si nadie lo ha calculado
+
+**Decisión (octubre 2026).** La gerencia entraba al tablero en la app y leía «el
+servidor no ha calculado el tablero todavía». Lo calculaba solo el worker, al
+entrar una sincronización: recién desplegado, caído o sin ventas que lo
+dispararan, nadie lo pedía nunca. Ahora `/v1/tablero` llama a `asegurar_fresco`:
+si el cálculo nunca se hizo o tiene más de dos minutos, se hace ahí, con un
+candado que no espera (si otro ya está calculando, se lee lo que haya). El worker
+y la pantalla comparten ese candado, así que no borran e insertan los mismos días
+a la vez. Una falla al calcular no tumba la pantalla. El panel queda como estaba.
+
+## 67. Las cargas del camión también desde la app, solo para los puestos de arriba
+
+**Decisión (octubre 2026).** «Las cargas quiero hacerlas también en la app, pero
+solo para los administradores y puestos de arriba, no para los vendedores.»
+
+- **Quién:** `inventario.cargar`. Lo tenían admin y supervisor; la migración 0044
+  se lo da también al **gerente**. El vendedor sigue sin él: cargarse su propio
+  camión sería firmar su propia entrega. La app solo muestra el botón (camión en
+  la barra del tablero) a quien lo tiene; el servidor contesta 403 a los demás.
+- **Mismas reglas que el panel, no una copia:** `/v1/cargas` importa del panel la
+  confirmación (`mover_y_confirmar`: libro mayor, existencias y delta al teléfono
+  del vendedor, en una transacción), los bloqueos del §2.3 —que se fuerzan solo
+  escribiendo el motivo, que queda en `auditoria`—, y la captura en bultos
+  enteros convertidos a unidad base. Confirmar dos veces no carga dos veces.
+- **Flujo en el teléfono:** Cargas → Nueva carga (vendedor y bodega) → escribir
+  cuántas cajas de cada producto que hay en la bodega → Agregar → Confirmar.
+
+## 68. La versión instalada, al pie de la pantalla de entrada
+
+**Decisión (octubre 2026).** Con el teléfono en la mano no había forma de saber si
+el APK nuevo de verdad quedó instalado. Ahora la pantalla de entrada dice abajo
+«Versión 0.1.0+22», y esa misma versión viaja en cada subida, así que el panel la
+muestra en Sincronizaciones. (versionCode 22)

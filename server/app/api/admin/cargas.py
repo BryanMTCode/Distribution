@@ -804,6 +804,48 @@ async def confirmar(
             "registrado.",
         )
 
+    negativos = await mover_y_confirmar(
+        sesion,
+        carga,
+        renglones,
+        quien=actor.usuario_id,
+        bloqueos=bloqueos,
+        razon_forzado=razon_forzado,
+    )
+
+    aviso = (
+        f"Carga {carga['folio']} confirmada: {len(renglones)} renglones. "
+        "El teléfono del vendedor la recibe en su siguiente sincronización."
+    )
+    if negativos:
+        aviso += (
+            f" Ojo: la bodega quedó con {negativos} producto(s) en negativo. "
+            "No se rechazó porque la mercancía ya está en el camión: es el conteo "
+            "de la bodega el que hay que revisar."
+        )
+    return _volver(carga_id, guardado=aviso)
+
+
+async def mover_y_confirmar(
+    sesion,
+    carga,
+    renglones,
+    *,
+    quien: uuid.UUID,
+    bloqueos: list[str],
+    razon_forzado: str | None,
+) -> int:
+    """El punto sin retorno de la carga: mueve el inventario, publica y commitea.
+
+    Lo usan el panel y la app (`/v1/cargas`), y por eso vive aparte: la carga
+    hecha desde el teléfono de la oficina tiene que mover el libro mayor, la
+    caché y el delta EXACTAMENTE igual que la del panel. Dos copias de esto
+    acabarían discrepando el día que alguien arregle una y no la otra.
+
+    El llamador ya bloqueó la carga (`FOR UPDATE`), comprobó que es borrador y
+    decidió si los bloqueos se fuerzan. Devuelve cuántos productos dejó la
+    bodega en negativo, para el aviso.
+    """
     # Cuántas operaciones reportaron los equipos en este instante. Se guarda
     # SIEMPRE, incluso en cero: cero es un dato —«el equipo estaba al día»— y no
     # una ausencia de dato.
@@ -841,8 +883,8 @@ async def confirmar(
                 "cant": r["cantidad"],
                 "lote": r["lote"],
                 "cad": r["caducidad"],
-                "doc": carga_id,
-                "quien": actor.usuario_id,
+                "doc": carga["id"],
+                "quien": quien,
                 "ahora": ahora,
             },
         )
@@ -891,9 +933,9 @@ async def confirmar(
             " WHERE id = :id"
         ),
         {
-            "id": carga_id,
+            "id": carga["id"],
             "ahora": ahora,
-            "quien": actor.usuario_id,
+            "quien": quien,
             "pendientes": pendientes,
             "forzada": bool(bloqueos),
         },
@@ -921,8 +963,8 @@ async def confirmar(
                 """
             ),
             {
-                "id": carga_id,
-                "quien": actor.usuario_id,
+                "id": carga["id"],
+                "quien": quien,
                 "motivo": razon_forzado,
                 # Los bloqueos que había, no solo que hubo: dentro de un mes la
                 # pregunta no es «¿se forzó?» sino «¿a pesar de qué?».
@@ -949,18 +991,7 @@ async def confirmar(
             {"a": carga["almacen_origen_id"]},
         )
     ).scalar_one()
-
-    aviso = (
-        f"Carga {carga['folio']} confirmada: {len(renglones)} renglones. "
-        "El teléfono del vendedor la recibe en su siguiente sincronización."
-    )
-    if negativos:
-        aviso += (
-            f" Ojo: la bodega quedó con {negativos} producto(s) en negativo. "
-            "No se rechazó porque la mercancía ya está en el camión: es el conteo "
-            "de la bodega el que hay que revisar."
-        )
-    return _volver(carga_id, guardado=aviso)
+    return negativos
 
 
 @router.post("/{carga_id}/cancelar")

@@ -628,10 +628,10 @@ async def gerente(sesion, semilla) -> None:
     await sesion.commit()
 
 
-async def test_el_gerente_ve_las_cargas_y_no_las_confirma(
-    cliente, semilla, catalogo, gerente
-):
-    """Gerencia monitorea, no opera: no tiene `inventario.cargar`."""
+async def test_el_gerente_tambien_carga(cliente, sesion, semilla, catalogo, gerente):
+    """Antes: «gerencia monitorea, no opera». Desde la migración 0044 el gerente
+    tiene `inventario.cargar`: la dirección pidió que los puestos de arriba
+    carguen camiones —también desde la app— y el vendedor no."""
     await _entrar(cliente, "ADMIN01")
     carga_id = await _abrir(cliente, semilla)
     await _agregar(cliente, carga_id, cantidad="10")
@@ -640,14 +640,16 @@ async def test_el_gerente_ve_las_cargas_y_no_las_confirma(
     await _entrar(cliente, "GER01")
     lectura = await cliente.get(f"/panel/cargas/{carga_id}")
     assert lectura.status_code == 200
-    assert "Atún en agua 140 g" in lectura.text
-    assert "Confirmar la carga" not in lectura.text
+    assert "Confirmar la carga" in lectura.text
 
     r = await cliente.post(
         f"/panel/cargas/{carga_id}/confirmar", data={"csrf": _csrf(cliente, lectura)}
     )
-    assert r.status_code == 403
-    assert "inventario.cargar" in r.text
+    assert r.status_code == 303
+    estado = (
+        await sesion.execute(text("SELECT estado FROM cargas WHERE id = :c"), {"c": carga_id})
+    ).scalar_one()
+    assert estado == "confirmada"
 
 
 async def test_confirmar_exige_el_token_csrf(cliente, semilla, catalogo):

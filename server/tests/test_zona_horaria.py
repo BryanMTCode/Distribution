@@ -13,12 +13,20 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.core import db
 from tests.conftest import URL_PRUEBAS
+
+# `app.core.db` se importa DENTRO de cada prueba, nunca aquí arriba. Al importarse
+# crea los motores con la URL de ese momento, y pytest importa todos los archivos
+# ANTES de que el conftest apunte la configuración a la base de pruebas: un
+# import aquí dejaba el motor dueño apuntando a la base por omisión, y cuatro
+# pruebas de otros archivos —las que usan ese motor— fallaban con «password
+# authentication failed for user dsd» solo en la suite completa.
 
 
 @pytest.mark.asyncio
 async def test_la_sesion_usa_la_zona_de_la_operacion(monkeypatch):
+    from app.core import db
+
     monkeypatch.setenv("TZ", "America/Mazatlan")
     motor = create_async_engine(URL_PRUEBAS, **db._opciones_de_zona())
     try:
@@ -30,5 +38,7 @@ async def test_la_sesion_usa_la_zona_de_la_operacion(monkeypatch):
 
 
 def test_sin_tz_no_se_fuerza_nada(monkeypatch):
+    from app.core import db
+
     monkeypatch.delenv("TZ", raising=False)
     assert db._opciones_de_zona() == {}

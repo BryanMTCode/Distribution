@@ -61,6 +61,10 @@ class Perfil {
   bool puede(String permiso) => rol == 'admin' || permisos.contains(permiso);
 
   bool get puedeVerTablero => puede('tablero.ver');
+
+  /// Cargar camiones: admin, supervisor y gerente. Nunca el vendedor —cargarse
+  /// su propio camión sería firmar su propia entrega—.
+  bool get puedeCargar => puede('inventario.cargar');
 }
 
 /// La sesión en línea recién abierta.

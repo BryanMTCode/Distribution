@@ -40,6 +40,7 @@ __all__ = [
     "recalcular_cartera",
     "recalcular_dia",
     "recalcular_mes",
+    "asegurar_fresco",
     "recalcular_todo",
 ]
 
@@ -114,6 +115,9 @@ async def recalcular_todo(sesion: AsyncSession, hoy: date | None = None) -> dict
     cobranza de hace media hora, y nadie podría explicar la diferencia.
     """
     arranque = time.monotonic()
+    # El worker y `asegurar_fresco` (la pantalla que lo pide) no pueden borrar e
+    # insertar los mismos días a la vez. Se suelta con el commit.
+    await sesion.execute(text("SELECT pg_advisory_xact_lock(hashtext('recalcular_tablero'))"))
     dias = await dias_a_recalcular(sesion, hoy)
 
     for dia in dias:
@@ -162,3 +166,48 @@ async def recalcular_todo(sesion: AsyncSession, hoy: date | None = None) -> dict
         "cola_reportada": mundo["cola_reportada"],
         "ops_en_cuarentena": mundo["ops_en_cuarentena"],
     }
+
+
+# Cuánto puede tener el tablero antes de recalcularlo al pedirlo.
+FRESCURA_MAXIMA_SEG = 120
+
+
+async def asegurar_fresco() -> bool:
+    """Si el tablero nunca se calculó, o tiene más de dos minutos, lo calcula aquí.
+
+    Reportado en operación (octubre 2026): la gerencia entraba en el teléfono y
+    leía «el servidor no ha calculado el tablero todavía». El recálculo lo hace el
+    worker cuando entra una sincronización; si el worker no ha corrido —recién
+    desplegado, caído, o sin ventas que lo disparen— nadie lo pedía nunca.
+
+    Corre con el rol dueño, como el worker (son agregados de toda la operación),
+    y con un candado que no espera: si otro ya está recalculando, se lee lo que
+    haya. Nunca tumba la pantalla: si algo falla, se registra y se sigue.
+    """
+    from app.core.db import CrearSesion
+
+    try:
+        async with CrearSesion() as sesion:
+            fresco = (
+                await sesion.execute(
+                    text(
+                        "SELECT calculado_en > now() - make_interval(secs => :s) "
+                        "  FROM tablero_refrescos WHERE id"
+                    ),
+                    {"s": FRESCURA_MAXIMA_SEG},
+                )
+            ).scalar_one_or_none()
+            if fresco:
+                return False
+            libre = (
+                await sesion.execute(
+                    text("SELECT pg_try_advisory_xact_lock(hashtext('recalcular_tablero'))")
+                )
+            ).scalar_one()
+            if not libre:
+                return False
+            await recalcular_todo(sesion)
+            return True
+    except Exception:  # noqa: BLE001 — una cifra vieja es mejor que una pantalla caída
+        log.exception("no se pudo recalcular el tablero al pedirlo")
+        return False

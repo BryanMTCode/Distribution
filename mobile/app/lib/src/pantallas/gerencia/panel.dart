@@ -32,9 +32,11 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../estado/cargas.dart';
 import '../../estado/sesion.dart';
 import '../../datos/repo_tablero.dart';
 import '../../estado/tablero.dart';
+import 'cargas.dart';
 import 'comunes.dart';
 import 'mapa.dart';
 
@@ -84,6 +86,18 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
           ],
         ),
         actions: [
+          // Cargar camiones: solo quien tiene `inventario.cargar` (admin,
+          // supervisor, gerente). El vendedor nunca llega a esta pantalla, y
+          // aunque llegara, el servidor le contesta 403.
+          if (ref.watch(puedeCargarProvider))
+            IconButton(
+              key: const Key('boton_cargas'),
+              tooltip: 'Cargas del camión',
+              icon: const Icon(Icons.local_shipping_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PantallaCargas()),
+              ),
+            ),
           IconButton(
             key: const Key('boton_refrescar_tablero'),
             tooltip: 'Volver a consultar',

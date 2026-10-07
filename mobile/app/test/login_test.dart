@@ -79,4 +79,11 @@ void main() {
     await tocarEnElMenu(tester, const Key('boton_salir'));
     expect(find.byKey(const Key('campo_pin')), findsOneWidget);
   });
+
+  testWidgets('hasta abajo dice qué versión está instalada', (tester) async {
+    // Con el teléfono en la mano, es la forma de saber si el APK nuevo quedó.
+    await montarApp(tester, credencial: credencialDelServidor());
+    expect(find.byKey(const Key('version_app')), findsOneWidget);
+    expect(find.text('Versión 0.1.0+22'), findsOneWidget);
+  });
 }

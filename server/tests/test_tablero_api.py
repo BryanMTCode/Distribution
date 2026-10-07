@@ -331,8 +331,29 @@ async def test_la_venta_sin_ruta_se_muestra_no_se_esconde(
 # ---------------------------------------------------------------------------
 # Frescura
 # ---------------------------------------------------------------------------
-async def test_un_tablero_nunca_calculado_lo_dice(cliente, sesion, semilla):
-    """`minutos = None`, no 0. Un cero se lee como "recién calculado"."""
+async def test_un_tablero_nunca_calculado_se_calcula_al_pedirlo(cliente, sesion, semilla):
+    """Reportado en operación: la gerencia entraba en el teléfono y leía «el
+    servidor no ha calculado el tablero todavía», porque solo lo calculaba el
+    worker al entrar una sincronización. Ahora pedirlo basta."""
+    assert (await sesion.execute(text("SELECT count(*) FROM tablero_refrescos"))).scalar() == 0
+
+    cuerpo = (await cliente.get("/v1/tablero", headers=await _cab(cliente))).json()
+    assert cuerpo["frescura"]["calculado_en"] is not None
+    assert cuerpo["frescura"]["minutos"] == 0
+    assert "no se ha calculado" not in (cuerpo["frescura"]["advertencia"] or "")
+
+
+async def test_si_el_calculo_falla_la_pantalla_dice_que_nunca_se_calculo(
+    cliente, sesion, semilla, monkeypatch
+):
+    """`minutos = None`, no 0. Un cero se lee como "recién calculado". Y una
+    falla al calcular no tumba la pantalla: se lee lo que haya."""
+    import app.workers.tablero as modulo
+
+    async def _falla(*_a, **_k):
+        raise RuntimeError("se cayó a medio cálculo")
+
+    monkeypatch.setattr(modulo, "recalcular_todo", _falla)
     cuerpo = (await cliente.get("/v1/tablero", headers=await _cab(cliente))).json()
     assert cuerpo["frescura"]["calculado_en"] is None
     assert cuerpo["frescura"]["minutos"] is None

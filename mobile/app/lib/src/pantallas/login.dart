@@ -13,8 +13,9 @@
 /// su teléfono no guarda credencial para entrar sin red — no le serviría, y un
 /// teléfono de oficina no tiene por qué cargar con una.
 ///
-/// Lo que sí se guarda es el refresh token, para que abrir la app por la mañana
-/// no exija teclear la contraseña otra vez.
+/// Lo que sí se guarda es el refresh token. Volver a entrar sin teclear nada,
+/// mientras la sesión no venza, lo hace `ControladorSesion.reabrir` antes de
+/// que esta pantalla se muestre.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -25,6 +26,7 @@ import '../datos/servicio_ubicacion.dart';
 import '../demo.dart';
 import '../estado/alta.dart';
 import '../estado/sesion.dart';
+import '../estado/sincronizacion.dart';
 
 class PantallaLogin extends ConsumerStatefulWidget {
   const PantallaLogin({super.key});
@@ -49,21 +51,6 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
   String? _errorEnLinea;
   String? _errorVinculo;
   bool _mostrarVinculo = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Se intenta reabrir la sesión de Gerencia con el refresh token guardado.
-    //
-    // Sin esperar y sin bloquear: si el vendedor es quien abrió la app, el
-    // campo de PIN tiene que estar listo de inmediato, y esta llamada no le
-    // sirve de nada. `reabrirGerencia` lee el Keystore primero y se rinde al
-    // instante si no hay nada guardado, así que en el teléfono del vendedor no
-    // toca la red nunca.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(sesionProvider.notifier).reabrirGerencia();
-    });
-  }
 
   @override
   void dispose() {
@@ -458,6 +445,18 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                     const SizedBox(height: 4),
                     Text(
                       'PIN de demo: $pinDemo',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  // Hasta abajo, la versión instalada: con el teléfono en la
+                  // mano es como se sabe si el APK nuevo de verdad quedó.
+                  if (ref.watch(versionDeLaAppProvider).valueOrNull
+                      case final version?) ...[
+                    const SizedBox(height: 32),
+                    Text(
+                      'Versión $version',
+                      key: const Key('version_app'),
                       style: Theme.of(context).textTheme.bodySmall,
                       textAlign: TextAlign.center,
                     ),

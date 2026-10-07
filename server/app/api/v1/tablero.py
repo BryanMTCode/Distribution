@@ -60,6 +60,7 @@ from app.domain.tablero import (
     inicio_de_mes,
     porcentaje,
 )
+from app.workers.tablero import asegurar_fresco
 
 router = APIRouter(prefix="/tablero", tags=["tablero"])
 
@@ -303,6 +304,8 @@ async def ver_tablero(
     ] = None,
 ) -> Tablero:
     actor.exigir(PERMISO)
+    # Si el worker no ha calculado el tablero, se calcula ahora (ver la función).
+    await asegurar_fresco()
     dia = _fecha_pedida(fecha)
     periodo = inicio_de_mes(dia)
 

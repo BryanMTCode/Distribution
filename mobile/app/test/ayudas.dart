@@ -16,6 +16,7 @@ import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 /// Hash Argon2id real, generado por el servidor. Se lee de los vectores
 /// compartidos para que la prueba ejerza el contrato de verdad y no un hash
@@ -411,6 +412,14 @@ Future<BaseLocal> montarApp(
   /// no hay forma de mirarlo desde fuera.
   AlmacenSeguroEnMemoria? almacenPropio,
 }) async {
+  // Sin teléfono no hay de dónde leer la versión instalada.
+  PackageInfo.setMockInitialValues(
+    appName: 'DSD Ruta',
+    packageName: 'mx.dsd.ruta',
+    version: '0.1.0',
+    buildNumber: '22',
+    buildSignature: '',
+  );
   final base = BaseLocal.enMemoria();
   final almacen = almacenPropio ?? AlmacenSeguroEnMemoria();
   if (credencial != null) {

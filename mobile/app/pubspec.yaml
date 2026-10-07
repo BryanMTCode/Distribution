@@ -5,7 +5,7 @@ publish_to: none
 # repartir un APK nuevo, por dos razones distintas: Android rechaza instalar
 # encima un versionCode MENOR que el instalado, y dos APK con el MISMO número
 # son indistinguibles con el teléfono en la mano. `make apk` lo imprime.
-version: 0.1.0+21
+version: 0.1.0+22
 
 environment:
   sdk: ^3.9.0
@@ -33,6 +33,9 @@ dependencies:
   intl: ^0.19.0
   geolocator: ^14.0.2
   uuid: ^4.6.0
+  # La versión instalada, al pie de la pantalla de entrada: con el teléfono en
+  # la mano es la forma de saber si el APK nuevo de verdad quedó instalado.
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

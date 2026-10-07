@@ -62,7 +62,11 @@ class PortalPorRol extends ConsumerWidget {
     }
 
     return switch (sesion) {
-      SinSesion() => const PantallaLogin(),
+      // Antes de pedir la contraseña, se intenta volver a entrar solo: ver
+      // `vigenciaDeLaSesion`. Solo lee el Keystore, así que tarda un instante.
+      SinSesion() => ref.watch(reaperturaProvider).isLoading
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : const PantallaLogin(),
       SesionAbierta(:final credencial) => _porRol(credencial),
       // Gerencia entró en línea y no guardó credencial: su teléfono no tiene
       // cartera ni maquinaria offline que proteger. Ver `SesionDeGerencia`.

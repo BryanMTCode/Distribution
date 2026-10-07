@@ -16,6 +16,7 @@ class TransporteHttp implements Transporte {
   TransporteHttp({
     required this.baseUrl,
     required this.token,
+    this.leerToken,
     http.Client? cliente,
     this.tiempoLimite = const Duration(seconds: 30),
   }) : _cliente = cliente ?? http.Client();
@@ -25,10 +26,17 @@ class TransporteHttp implements Transporte {
   /// Access token. Cuando caduca, el servidor responde 401 y el sincronizador
   /// se detiene sin tocar la cola.
   final String token;
+
+  /// Si se da, manda sobre `token`: se lee en CADA petición. Es lo que permite
+  /// que `TransporteRenovable` repita una petición con el token recién renovado
+  /// sin armar otro transporte.
+  final String Function()? leerToken;
   final Duration tiempoLimite;
   final http.Client _cliente;
 
-  Map<String, String> get _cabeceras => {
+  Map<String, String> get _cabeceras {
+    final token = leerToken?.call() ?? this.token;
+    return {
         // Sin token no se manda la cabecera. Un `Authorization: Bearer ` vacío
         // no significa "sin credencial": es una credencial mal formada, y el
         // servidor la contesta con 401 antes de llegar al endpoint. Eso
@@ -38,6 +46,7 @@ class TransporteHttp implements Transporte {
         if (token.isNotEmpty) 'Authorization': 'Bearer $token',
         'Content-Type': 'application/json; charset=utf-8',
       };
+  }
 
   @override
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) =>

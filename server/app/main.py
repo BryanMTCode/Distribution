@@ -36,7 +36,7 @@ from app.api.admin import vendedores as panel_vendedores
 from app.api.admin import ventas as panel_ventas
 from app.api.admin.sesion_web import SinSesionWeb
 from app.api.middleware import Observabilidad
-from app.api.v1 import auth, catalogo, clientes, dispositivos, salud, sync, tablero
+from app.api.v1 import auth, cargas, catalogo, clientes, dispositivos, salud, sync, tablero
 from app.core.config import obtener_config
 from app.core.db import motor, motor_api
 from app.core.observabilidad import iniciar_sentry
@@ -105,6 +105,7 @@ def crear_app() -> FastAPI:
     app.include_router(clientes.router, prefix="/v1")
     app.include_router(sync.router, prefix="/v1")
     app.include_router(tablero.router, prefix="/v1")
+    app.include_router(cargas.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una
     # interfaz. Versionar sus rutas obligaría a mantener la vieja viva cuando

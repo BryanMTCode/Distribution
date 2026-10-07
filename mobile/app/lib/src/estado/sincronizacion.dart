@@ -4,8 +4,10 @@ library;
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../datos/transporte_http.dart';
+import '../datos/transporte_renovable.dart';
 import 'sesion.dart';
 
 /// Dirección del servidor.
@@ -62,6 +64,15 @@ const apkSinServidor = kReleaseMode && baseUrlPorOmision == marcadorSinServidor;
 
 final baseUrlProvider = Provider<String>((_) => baseUrlPorOmision);
 
+/// La versión instalada, «0.1.0+22». Se muestra al pie de la pantalla de
+/// entrada —con el teléfono en la mano es la forma de saber si el APK nuevo
+/// quedó instalado— y viaja en cada subida, para que el panel la diga en
+/// Sincronizaciones sin preguntarle a nadie.
+final versionDeLaAppProvider = FutureProvider<String>((_) async {
+  final info = await PackageInfo.fromPlatform();
+  return info.buildNumber.isEmpty ? info.version : '${info.version}+${info.buildNumber}';
+});
+
 /// Token vigente. Nulo mientras no haya sesión.
 final tokenProvider = StateProvider<String?>((_) => null);
 
@@ -85,11 +96,42 @@ final transporteSinSesionProvider = Provider<Transporte>(
   (ref) => TransporteHttp(baseUrl: ref.watch(baseUrlProvider), token: ''),
 );
 
+/// El transporte con sesión. Renueva el acceso solo cuando el servidor lo da
+/// por vencido: ver `TransporteRenovable`.
+///
+/// Observa solo SI hay token, no cuál: renovar cambia el token cada media hora,
+/// y si este provider se reconstruyera con cada cambio, cada pantalla que
+/// depende de él se reconstruiría también a mitad de lo que estuviera haciendo.
+/// El token se lee en cada petición.
 final transporteProvider = Provider<Transporte?>((ref) {
-  final token = ref.watch(tokenProvider);
-  if (token == null) return null;
-  return TransporteHttp(baseUrl: ref.watch(baseUrlProvider), token: token);
+  final hayToken = ref.watch(tokenProvider.select((t) => t != null));
+  if (!hayToken) return null;
+  return TransporteRenovable(
+    TransporteHttp(
+      baseUrl: ref.watch(baseUrlProvider),
+      token: '',
+      leerToken: () => ref.read(tokenProvider) ?? '',
+    ),
+    renovar: () => renovarAcceso(ref),
+  );
 });
+
+/// Pide un access token nuevo con el refresh guardado. `true` si lo consiguió.
+///
+/// No pide contraseña ni toca la sesión de la app: si falla, el llamador
+/// recibe el 401 de siempre y la pantalla dice lo que ya decía.
+Future<bool> renovarAcceso(Ref ref) async {
+  final refresh = await ref.read(almacenSeguroProvider).leer(claveRefreshToken);
+  if (refresh == null) return false;
+  try {
+    final sesion =
+        await ClienteAuth(ref.read(transporteSinSesionProvider)).renovar(refresh);
+    ref.read(tokenProvider.notifier).state = sesion.accessToken;
+    return true;
+  } on Object {
+    return false;
+  }
+}
 
 /// Lo que la pantalla muestra del último intento.
 sealed class EstadoSync {
@@ -182,6 +224,7 @@ class ControladorSync extends Notifier<EstadoSync> {
 
     final resultado = await sincronizador.sincronizar(
       cursorActual: ref.read(cursorProvider),
+      appVersion: ref.read(versionDeLaAppProvider).valueOrNull,
     );
 
     // El cursor se guarda DESPUÉS de aplicar. Si la app muere entre el pull y
@@ -262,6 +305,7 @@ class ControladorSync extends Notifier<EstadoSync> {
     ref.invalidate(credencialGuardadaProvider);
     await ref.read(almacenSeguroProvider).borrar('llave_base_local');
     await ref.read(almacenSeguroProvider).borrar(claveRefreshToken);
+    await ref.read(almacenSeguroProvider).borrar(claveSesionRecordada);
     ref.read(baseLocalProvider).borrarTodo();
 
     try {
