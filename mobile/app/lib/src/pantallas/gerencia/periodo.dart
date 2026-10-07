@@ -18,7 +18,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
-import '../../estado/tablero.dart';
 import '../../estado/vendedores.dart';
 import 'comunes.dart';
 import 'vendedores.dart';
@@ -38,6 +37,17 @@ class PeriodoElegido {
 /// Los periodos que se ofrecen como botones. «Personalizado» abre el calendario.
 const _periodosRapidos = {'hoy', 'ayer', 'semana', 'semana_pasada', 'mes', 'mes_pasado'};
 
+/// Los mismos que `PERIODOS` del servidor (`app/api/admin/periodo.py`), para
+/// dibujar el selector antes de la primera respuesta.
+const periodosDeSiempre = [
+  ('hoy', 'Hoy'),
+  ('ayer', 'Ayer'),
+  ('semana', 'Esta semana'),
+  ('semana_pasada', 'Semana pasada'),
+  ('mes', 'Este mes'),
+  ('mes_pasado', 'Mes pasado'),
+];
+
 /// Botones de periodo en una fila que se desliza, y «Fechas…» al final.
 class SelectorDePeriodo extends StatelessWidget {
   const SelectorDePeriodo({
@@ -46,12 +56,33 @@ class SelectorDePeriodo extends StatelessWidget {
     required this.elegido,
     required this.onElegir,
     required this.hoy,
+    this.conUnDia = false,
   });
 
   final List<(String, String)> periodos;
   final PeriodoElegido elegido;
   final ValueChanged<PeriodoElegido> onElegir;
   final DateTime hoy;
+
+  /// Ofrece también «Un día…»: el calendario para un solo día.
+  final bool conUnDia;
+
+  bool get _esUnDia => elegido.clave == 'rango' && elegido.desde == elegido.hasta;
+
+  Future<void> _elegirUnDia(BuildContext context) async {
+    final dia = DateTime(hoy.year, hoy.month, hoy.day);
+    final elegidoDia = await showDatePicker(
+      context: context,
+      initialDate: _esUnDia ? DateTime.parse(elegido.desde!) : dia,
+      firstDate: dia.subtract(const Duration(days: 366)),
+      // Un día futuro no tiene cifras: no se ofrece.
+      lastDate: dia,
+      helpText: '¿Qué día quieres ver?',
+    );
+    if (elegidoDia == null) return;
+    final d = diaOperativoDe(elegidoDia);
+    onElegir(PeriodoElegido.rango(d, d));
+  }
 
   Future<void> _elegirFechas(BuildContext context) async {
     final dia = DateTime(hoy.year, hoy.month, hoy.day);
@@ -88,11 +119,22 @@ class SelectorDePeriodo extends StatelessWidget {
                     onSelected: (_) => onElegir(PeriodoElegido(clave)),
                   ),
                 ),
+            if (conUnDia)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  key: const Key('periodo_un_dia'),
+                  avatar: const Icon(Icons.event, size: 18),
+                  label: Text(_esUnDia ? diaEnPalabras(elegido.desde!) : 'Un día…'),
+                  selected: _esUnDia,
+                  onSelected: (_) => _elegirUnDia(context),
+                ),
+              ),
             ChoiceChip(
               key: const Key('periodo_rango'),
               avatar: const Icon(Icons.date_range, size: 18),
               label: const Text('Fechas…'),
-              selected: elegido.clave == 'rango',
+              selected: elegido.clave == 'rango' && !(conUnDia && _esUnDia),
               onSelected: (_) => _elegirFechas(context),
             ),
           ],
@@ -104,15 +146,22 @@ class SelectorDePeriodo extends StatelessWidget {
 /// cambia a «Día» para abrir el tablero de la fecha que se tocó.
 final pestanaDeOficinaProvider = StateProvider<int>((_) => 0);
 
-class PantallaPeriodo extends ConsumerStatefulWidget {
-  const PantallaPeriodo({super.key});
+/// El resumen de un periodo de varios días. Vive dentro del Tablero, que pone el
+/// selector arriba: un solo día se ve con el tablero completo, no aquí.
+class VistaDelPeriodo extends ConsumerStatefulWidget {
+  const VistaDelPeriodo({super.key, required this.periodo, required this.onVerDia});
+
+  final PeriodoElegido periodo;
+
+  /// Tocar un día del desglose: el Tablero lo abre completo.
+  final ValueChanged<String> onVerDia;
 
   @override
-  ConsumerState<PantallaPeriodo> createState() => _EstadoPeriodo();
+  ConsumerState<VistaDelPeriodo> createState() => _EstadoPeriodo();
 }
 
-class _EstadoPeriodo extends ConsumerState<PantallaPeriodo> {
-  PeriodoElegido _periodo = const PeriodoElegido('semana');
+class _EstadoPeriodo extends ConsumerState<VistaDelPeriodo> {
+  PeriodoElegido get _periodo => widget.periodo;
   TableroDelPeriodo? _datos;
   String? _error;
 
@@ -148,11 +197,7 @@ class _EstadoPeriodo extends ConsumerState<PantallaPeriodo> {
     }
   }
 
-  void _verDia(String fecha) {
-    ref.read(fechaDelTableroProvider.notifier).state = DateTime.parse(fecha);
-    ref.read(tableroProvider.notifier).cargar();
-    ref.read(pestanaDeOficinaProvider.notifier).state = 0;
-  }
+  void _verDia(String fecha) => widget.onVerDia(fecha);
 
   @override
   Widget build(BuildContext context) {
@@ -160,41 +205,13 @@ class _EstadoPeriodo extends ConsumerState<PantallaPeriodo> {
     final hoy = ref.watch(relojProvider)();
     final estilo = Theme.of(context).textTheme;
     final puedeVerVendedores = ref.watch(puedeVerVendedoresProvider);
-    return Scaffold(
-      key: const Key('pantalla_periodo'),
-      appBar: AppBar(
-        title: const Text('Por periodo'),
-        actions: [
-          IconButton(
-            tooltip: 'Volver a consultar',
-            icon: const Icon(Icons.refresh),
-            onPressed: _cargar,
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
+    return RefreshIndicator(
+        key: const Key('pantalla_periodo'),
         onRefresh: _cargar,
         child: ListView(
           key: const Key('lista_periodo'),
           padding: const EdgeInsets.all(16),
           children: [
-            SelectorDePeriodo(
-              periodos: d?.periodos ?? const [
-                ('hoy', 'Hoy'),
-                ('ayer', 'Ayer'),
-                ('semana', 'Esta semana'),
-                ('semana_pasada', 'Semana pasada'),
-                ('mes', 'Este mes'),
-                ('mes_pasado', 'Mes pasado'),
-              ],
-              elegido: _periodo,
-              hoy: hoy,
-              onElegir: (p) {
-                setState(() => _periodo = p);
-                _cargar();
-              },
-            ),
-            const SizedBox(height: 8),
             if (_error != null)
               Text(_error!, key: const Key('aviso_periodo_error'),
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -280,7 +297,6 @@ class _EstadoPeriodo extends ConsumerState<PantallaPeriodo> {
             ],
           ],
         ),
-      ),
     );
   }
 

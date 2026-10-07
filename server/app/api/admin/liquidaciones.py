@@ -123,6 +123,24 @@ PERMISO = "inventario.liquidar"
 
 
 # ---------------------------------------------------------------------------
+# El corte, aparte de la pantalla
+# ---------------------------------------------------------------------------
+# Las funciones `abrir_corte`, `datos_del_corte`, `guardar_conteo`,
+# `guardar_arqueo` y `cerrar_corte` son el corte: las usan el panel y la app
+# (`/v1/cortes`). Viven aquí, una vez, para que el corte hecho desde el teléfono
+# mueva el inventario, le cobre al vendedor y avise al teléfono EXACTAMENTE igual
+# que el del panel. Las rutas del panel solo traducen a HTML.
+
+
+class CorteNoExiste(Exception):
+    """La liquidación (o la carga) que se pidió no existe."""
+
+
+class CorteRechazado(Exception):
+    """El corte no se puede hacer así; el mensaje dice por qué y qué hacer."""
+
+
+# ---------------------------------------------------------------------------
 # Lista
 # ---------------------------------------------------------------------------
 
@@ -143,8 +161,26 @@ async def listar(
     """
     actor.exigir("inventario.ver")
 
-    pendientes = (
-        await sesion.execute(
+    return render(
+        peticion,
+        "liquidaciones.html",
+        {
+            "pendientes": await cargas_por_cortar(sesion),
+            "liquidaciones": await cortes_recientes(sesion),
+            "puede_editar": actor.puede(PERMISO),
+            "error": error,
+            "guardado": guardado,
+        },
+        actor=actor,
+        seccion="Corte del día",
+    )
+
+
+async def cargas_por_cortar(sesion) -> list:
+    """Las cargas que salieron y nadie ha cortado, las más viejas primero."""
+    return list(
+        (
+            await sesion.execute(
             text(
                 """
                 SELECT c.id, c.folio, c.fecha_operativa, c.estado,
@@ -167,10 +203,15 @@ async def listar(
                 """
             )
         )
-    ).mappings().all()
+        ).mappings().all()
+    )
 
-    liquidaciones = (
-        await sesion.execute(
+
+async def cortes_recientes(sesion) -> list:
+    """Los cortes abiertos y cerrados, los más nuevos primero."""
+    return list(
+        (
+            await sesion.execute(
             text(
                 """
                 SELECT l.id, l.folio, l.estado, l.fecha_operativa,
@@ -191,20 +232,7 @@ async def listar(
                 """
             )
         )
-    ).mappings().all()
-
-    return render(
-        peticion,
-        "liquidaciones.html",
-        {
-            "pendientes": pendientes,
-            "liquidaciones": liquidaciones,
-            "puede_editar": actor.puede(PERMISO),
-            "error": error,
-            "guardado": guardado,
-        },
-        actor=actor,
-        seccion="Corte del día",
+        ).mappings().all()
     )
 
 
@@ -242,6 +270,20 @@ async def abrir(
     except ValueError:
         return _a_lista(error="Falta la carga.")
 
+    try:
+        liquidacion_id = await abrir_corte(sesion, carga)
+    except (CorteNoExiste, CorteRechazado) as e:
+        return _a_lista(error=str(e))
+    return RedirectResponse(
+        f"/panel/liquidaciones/{liquidacion_id}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+async def abrir_corte(sesion, carga: uuid.UUID) -> uuid.UUID:
+    """Abre el corte de esa carga y devuelve su id; si ya estaba abierto, ese.
+
+    Ver `abrir` para el porqué de cada decisión.
+    """
     cabecera = (
         await sesion.execute(
             text(
@@ -252,9 +294,9 @@ async def abrir(
         )
     ).mappings().first()
     if cabecera is None:
-        return _a_lista(error="Esa carga no existe.")
+        raise CorteNoExiste("Esa carga no existe.")
     if cabecera["estado"] not in ("confirmada", "en_ruta"):
-        return _a_lista(error=f"Esa carga está {cabecera['estado']}: no hay qué liquidar.")
+        raise CorteRechazado(f"Esa carga está {cabecera['estado']}: no hay qué liquidar.")
 
     ya = (
         await sesion.execute(
@@ -262,15 +304,12 @@ async def abrir(
         )
     ).scalar_one_or_none()
     if ya is not None:
-        return RedirectResponse(
-            f"/panel/liquidaciones/{ya}", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return ya
 
     renglones = _con_inicial(await _renglones_calculados(sesion, carga))
     if not renglones:
-        return _a_lista(
-            error="Ni esa carga trae renglones ni el camión tiene saldo: "
-            "no hay qué liquidar."
+        raise CorteRechazado(
+            "Ni esa carga trae renglones ni el camión tiene saldo: no hay qué liquidar."
         )
 
     liquidacion_id = uuid.uuid4()
@@ -329,9 +368,7 @@ async def abrir(
         )
 
     await sesion.commit()
-    return RedirectResponse(
-        f"/panel/liquidaciones/{liquidacion_id}", status_code=status.HTTP_303_SEE_OTHER
-    )
+    return liquidacion_id
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +387,39 @@ async def detalle(
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
+    datos = await datos_del_corte(sesion, liquidacion_id)
+    if datos is None:
+        return RedirectResponse("/panel/liquidaciones", status_code=303)
+    cabecera = datos["cabecera"]
+
+    return render(
+        peticion,
+        "liquidacion_detalle.html",
+        {
+            "c": cabecera,
+            "respaldo": datos["respaldo"],
+            "renglones": datos["renglones"],
+            "descuadres": datos["descuadres"],
+            "divergencias": datos["divergencias"],
+            "bloqueos": datos["bloqueos"],
+            "abierta": cabecera["estado"] != "cerrada",
+            "puede_editar": actor.puede(PERMISO),
+            "esperado_texto": dinero(cabecera["efectivo_esperado"]),
+            "entregado_texto": dinero(cabecera["efectivo_entregado"]),
+            "diferencia_efectivo": datos["diferencia_efectivo"],
+            "error": error,
+            "guardado": guardado,
+            "cargos": datos["cargos"],
+            "total_cargado": datos["total_cargado"],
+            "origenes": ORIGENES,
+        },
+        actor=actor,
+        seccion="Corte del día",
+    )
+
+
+async def datos_del_corte(sesion, liquidacion_id: uuid.UUID) -> dict | None:
+    """Todo lo que se ve de un corte. Si sigue abierto, con las cifras de AHORA."""
     cabecera = (
         await sesion.execute(
             text(
@@ -370,7 +440,7 @@ async def detalle(
         )
     ).mappings().first()
     if cabecera is None:
-        return RedirectResponse("/panel/liquidaciones", status_code=303)
+        return None
 
     # Mientras no se cierre, la pantalla muestra el camión de AHORA: lo vendido,
     # mermado y devuelto que haya sincronizado hasta este momento, y el efectivo
@@ -457,33 +527,20 @@ async def detalle(
         )
     ).mappings().all()
 
-    return render(
-        peticion,
-        "liquidacion_detalle.html",
-        {
-            "c": cabecera,
-            "respaldo": respaldo,
-            "renglones": renglones,
-            "descuadres": descuadres,
-            "divergencias": divergencias,
-            "bloqueos": bloqueos,
-            "abierta": cabecera["estado"] != "cerrada",
-            "puede_editar": actor.puede(PERMISO),
-            "esperado_texto": dinero(cabecera["efectivo_esperado"]),
-            "entregado_texto": dinero(cabecera["efectivo_entregado"]),
-            "diferencia_efectivo": diferencia_de_efectivo(
-                Decimal(cabecera["efectivo_entregado"]),
-                Decimal(cabecera["efectivo_esperado"]),
-            ),
-            "error": error,
-            "guardado": guardado,
-            "cargos": cargos,
-            "total_cargado": sum((Decimal(x["importe"]) for x in cargos), Decimal(0)),
-            "origenes": ORIGENES,
-        },
-        actor=actor,
-        seccion="Corte del día",
-    )
+    return {
+        "cabecera": dict(cabecera),
+        "respaldo": respaldo,
+        "renglones": renglones,
+        "descuadres": descuadres,
+        "divergencias": divergencias,
+        "bloqueos": bloqueos,
+        "diferencia_efectivo": diferencia_de_efectivo(
+            Decimal(cabecera["efectivo_entregado"]),
+            Decimal(cabecera["efectivo_esperado"]),
+        ),
+        "cargos": cargos,
+        "total_cargado": sum((Decimal(x["importe"]) for x in cargos), Decimal(0)),
+    }
 
 
 @router.post("/{liquidacion_id}/contar")
@@ -505,15 +562,37 @@ async def contar(
     formulario = await peticion.form()
     exigir_csrf(peticion, str(formulario.get("csrf") or ""))
 
+    contados = {
+        clave.removeprefix("contada_"): str(valor)
+        for clave, valor in formulario.multi_items()
+        if clave.startswith("contada_")
+    }
+    try:
+        await guardar_conteo(sesion, liquidacion_id, contados)
+    except CorteNoExiste:
+        return RedirectResponse("/panel/liquidaciones", status_code=303)
+    except (CorteRechazado, CapturaInvalida) as e:
+        return _volver(liquidacion_id, error=str(e))
+    return _volver(liquidacion_id, guardado="Conteo guardado.")
+
+
+async def guardar_conteo(
+    sesion, liquidacion_id: uuid.UUID, contados: dict[str, str]
+) -> None:
+    """Guarda el conteo físico. `contados` va de id de renglón a lo tecleado.
+
+    El renglón que no viene, o viene vacío, vale CERO: ver `contar`. Si una
+    cantidad no se entiende, no se guarda nada (`CapturaInvalida`).
+    """
     estado = (
         await sesion.execute(
             text("SELECT estado FROM liquidaciones WHERE id = :l"), {"l": liquidacion_id}
         )
     ).scalar_one_or_none()
     if estado is None:
-        return RedirectResponse("/panel/liquidaciones", status_code=303)
+        raise CorteNoExiste("Ese corte no existe.")
     if estado == "cerrada":
-        return _volver(liquidacion_id, error="Esta liquidación ya está cerrada.")
+        raise CorteRechazado("Esta liquidación ya está cerrada.")
 
     renglones = (
         await sesion.execute(
@@ -522,22 +601,22 @@ async def contar(
         )
     ).scalars().all()
 
+    # Primero se leen TODAS: si una no se entiende no se guarda ninguna, y quien
+    # cuenta no se queda con medio camión guardado sin saberlo.
+    leidos = []
     for renglon in renglones:
-        crudo = formulario.get(f"contada_{renglon}")
-        try:
-            # Se lee con el lector de cantidades de tres decimales, no con `int`:
-            # la columna es numeric(14,3) y un día puede haber un producto a granel.
-            contado = _leer_cantidad(str(crudo) if crudo is not None else "")
-        except CapturaInvalida as e:
-            return _volver(liquidacion_id, error=str(e))
+        crudo = contados.get(str(renglon))
+        # Se lee con el lector de cantidades de tres decimales, no con `int`:
+        # la columna es numeric(14,3) y un día puede haber un producto a granel.
+        leidos.append((renglon, _leer_cantidad(crudo if crudo is not None else "")))
 
+    for renglon, contado in leidos:
         await sesion.execute(
             text("UPDATE liquidacion_detalle SET cant_contada = :r WHERE id = :id"),
             {"r": contado, "id": renglon},
         )
 
     await sesion.commit()
-    return _volver(liquidacion_id, guardado="Conteo guardado.")
 
 
 @router.post("/{liquidacion_id}/efectivo")
@@ -560,6 +639,19 @@ async def arqueo(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        aviso = await guardar_arqueo(sesion, liquidacion_id, efectivo_entregado, observaciones)
+    except CorteNoExiste:
+        return RedirectResponse("/panel/liquidaciones", status_code=303)
+    except (CorteRechazado, CapturaInvalida) as e:
+        return _volver(liquidacion_id, error=str(e))
+    return _volver(liquidacion_id, guardado=aviso)
+
+
+async def guardar_arqueo(
+    sesion, liquidacion_id: uuid.UUID, efectivo_entregado: str, observaciones: str
+) -> str:
+    """Guarda lo entregado contra lo esperado (recalculado). Devuelve el aviso."""
     cabecera = (
         await sesion.execute(
             text(
@@ -570,14 +662,11 @@ async def arqueo(
         )
     ).mappings().first()
     if cabecera is None:
-        return RedirectResponse("/panel/liquidaciones", status_code=303)
+        raise CorteNoExiste("Ese corte no existe.")
     if cabecera["estado"] == "cerrada":
-        return _volver(liquidacion_id, error="Esta liquidación ya está cerrada.")
+        raise CorteRechazado("Esta liquidación ya está cerrada.")
 
-    try:
-        entregado = leer_dinero(efectivo_entregado, campo="El efectivo entregado")
-    except CapturaInvalida as e:
-        return _volver(liquidacion_id, error=str(e))
+    entregado = leer_dinero(efectivo_entregado, campo="El efectivo entregado")
 
     esperado = await _efectivo_esperado(
         sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
@@ -612,7 +701,7 @@ async def arqueo(
             f"Sobran {dinero(falta)}. Suele ser un cobro que el teléfono todavía "
             "no sincronizó."
         )
-    return _volver(liquidacion_id, guardado=aviso)
+    return aviso
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +730,24 @@ async def cerrar(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        aviso = await cerrar_corte(
+            sesion,
+            liquidacion_id,
+            quien=actor.usuario_id,
+            confirmo_sincronizado=bool(confirmo_sincronizado),
+        )
+    except CorteNoExiste:
+        return RedirectResponse("/panel/liquidaciones", status_code=303)
+    except CorteRechazado as e:
+        return _volver(liquidacion_id, error=str(e))
+    return _a_lista(guardado=aviso)
+
+
+async def cerrar_corte(
+    sesion, liquidacion_id: uuid.UUID, *, quien: uuid.UUID, confirmo_sincronizado: bool
+) -> str:
+    """Cierra el corte (ver `cerrar` para el porqué) y devuelve el aviso."""
     cabecera = (
         await sesion.execute(
             text(
@@ -652,23 +759,19 @@ async def cerrar(
         )
     ).mappings().first()
     if cabecera is None:
-        return RedirectResponse("/panel/liquidaciones", status_code=303)
+        raise CorteNoExiste("Ese corte no existe.")
     if cabecera["estado"] == "cerrada":
-        return _volver(liquidacion_id, error="Ya estaba cerrada.")
+        raise CorteRechazado("Ya estaba cerrada.")
 
     bloqueos = await _bloqueos_para_cerrar(sesion, cabecera)
     if bloqueos:
-        return _volver(
-            liquidacion_id,
-            error="No se puede cerrar: " + " ".join(bloqueos),
-        )
+        raise CorteRechazado("No se puede cerrar: " + " ".join(bloqueos))
     respaldo = await _respaldo_de_sincronizacion(sesion, cabecera)
     if not respaldo["respaldado"] and not confirmo_sincronizado:
-        return _volver(
-            liquidacion_id,
-            error="Confirma que el teléfono terminó de sincronizar: "
+        raise CorteRechazado(
+            "Confirma que el teléfono terminó de sincronizar: "
             f"{respaldo['motivo']}. Una venta que entre después del cierre convierte "
-            "un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito.",
+            "un sobrante en un cuadre, y el cierre ya dijo lo contrario por escrito."
         )
 
     ahora = datetime.now(UTC)
@@ -746,7 +849,7 @@ async def cerrar(
             await _mover(
                 sesion, tipo="ajuste", origen=camion, destino=None,
                 producto=r["producto_id"], cantidad=-diferencia,
-                documento=liquidacion_id, quien=actor.usuario_id, ahora=ahora,
+                documento=liquidacion_id, quien=quien, ahora=ahora,
             )
             faltantes += -diferencia
         else:
@@ -756,7 +859,7 @@ async def cerrar(
             await _mover(
                 sesion, tipo="ajuste", origen=None, destino=camion,
                 producto=r["producto_id"], cantidad=diferencia,
-                documento=liquidacion_id, quien=actor.usuario_id, ahora=ahora,
+                documento=liquidacion_id, quien=quien, ahora=ahora,
             )
             sobrantes += diferencia
         ajustes += 1
@@ -785,7 +888,7 @@ async def cerrar(
         ),
         {
             "ahora": ahora,
-            "quien": actor.usuario_id,
+            "quien": quien,
             "l": liquidacion_id,
             "respaldada": respaldo["respaldado"],
             # Las operaciones que el equipo reportaba al cerrar, no un 0 literal.
@@ -807,7 +910,7 @@ async def cerrar(
     # COSTO —regla de la dirección—, en esta misma transacción: si el cierre se
     # deshace, el cargo también.
     cargos = await cargar_el_corte(
-        sesion, liquidacion_id=liquidacion_id, quien=actor.usuario_id, ahora=ahora
+        sesion, liquidacion_id=liquidacion_id, quien=quien, ahora=ahora
     )
 
     # Este UPDATE publica el delta de la carga liquidada. Ya no vacía el camión
@@ -894,7 +997,7 @@ async def cerrar(
             " OJO: no se capturó el arqueo, así que el efectivo no se le cobró "
             "al vendedor: nadie lo contó."
         )
-    return _a_lista(guardado=aviso)
+    return aviso
 
 
 # ---------------------------------------------------------------------------

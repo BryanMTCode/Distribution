@@ -248,6 +248,12 @@ class _SesionDeGerenciaFija extends ControladorSesion {
       );
 }
 
+/// La lista de cifras del tablero. Arriba está el selector de periodo, que
+/// también se desliza (de lado), así que hay que decir cuál mover.
+final _listaDeCifras = find
+    .descendant(of: find.byKey(const Key('tablero_cifras')), matching: find.byType(Scrollable))
+    .first;
+
 void main() {
   group('las cifras', () {
     testWidgets('la venta del día se ve con su desglose', (tester) async {
@@ -291,7 +297,7 @@ void main() {
         tester,
         TransporteDeGerencia(tablero: tableroDelServidor()),
       );
-      await tester.scrollUntilVisible(find.text('vencido'), 200);
+      await tester.scrollUntilVisible(find.text('vencido'), 200, scrollable: _listaDeCifras);
       expect(find.text(r'$48,220'), findsOneWidget);
       expect(
         find.textContaining('27 documentos de 14 clientes'),
@@ -403,6 +409,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.textContaining(r'$11,000.00 del día salió a crédito'),
         200,
+        scrollable: _listaDeCifras,
       );
       expect(find.textContaining(r'$11,000.00 del día salió a crédito'),
           findsOneWidget);
@@ -411,19 +418,25 @@ void main() {
       expect(find.textContaining('34 de 58 visitas'), findsOneWidget);
       expect(find.textContaining(r'$15,200.00 en efectivo'), findsOneWidget);
 
-      await tester.scrollUntilVisible(find.text('vencido'), 200);
+      await tester.scrollUntilVisible(find.text('vencido'), 200, scrollable: _listaDeCifras);
       expect(find.text(r'$48,220'), findsOneWidget);
       expect(find.text(r'$312,890'), findsOneWidget);
 
-      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200, scrollable: _listaDeCifras);
       expect(find.textContaining('42.5% de'), findsOneWidget);
       expect(find.textContaining('esperado 80.0%'), findsOneWidget);
 
       await tester.scrollUntilVisible(
         find.byKey(const Key('vendedor_VEND01')),
         200,
+        scrollable: _listaDeCifras,
       );
       expect(find.text(r'$22,180'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.textContaining('12.500 unidades'),
+        100,
+        scrollable: _listaDeCifras,
+      );
       expect(find.textContaining('12.500 unidades'), findsOneWidget);
     });
 
@@ -477,7 +490,7 @@ void main() {
         tester,
         TransporteDeGerencia(tablero: tableroDelServidor()),
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200, scrollable: _listaDeCifras);
       // 42.5% el día 24 de 30 no es lo mismo que el día 5, y el número es el
       // mismo: sin el esperado al lado la cifra se lee mal.
       expect(find.textContaining('42.5% de'), findsOneWidget);
@@ -493,7 +506,7 @@ void main() {
           tablero: tableroDelServidor(objetivo: null, logrado: null),
         ),
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200, scrollable: _listaDeCifras);
       expect(find.textContaining('Sin objetivo este mes'), findsOneWidget);
       expect(find.text(r'$42,500'), findsOneWidget);
     });
@@ -508,6 +521,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.textContaining('días naturales'),
         200,
+        scrollable: _listaDeCifras,
       );
       expect(find.textContaining('días naturales'), findsOneWidget);
     });
@@ -597,6 +611,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(const Key('vendedor_VEND02')),
         200,
+        scrollable: _listaDeCifras,
       );
       // «Sincronizó y…» y no solo «sin movimiento»: la frase dice por qué su cero
       // ES un cero. La otra causa de un renglón en cero tiene su propio texto.
@@ -620,6 +635,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(const Key('vendedor_VEND02')),
         200,
+        scrollable: _listaDeCifras,
       );
       expect(
         find.textContaining('Su teléfono no ha enviado nada hoy'),
@@ -638,6 +654,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(const Key('vendedor_VEND01')),
         200,
+        scrollable: _listaDeCifras,
       );
       expect(
         find.textContaining('30 visitas · 18 con venta · 60%'),
@@ -656,7 +673,7 @@ void main() {
           mapa: mapaDelServidor(),
         ),
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200, scrollable: _listaDeCifras);
       await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));
@@ -681,7 +698,7 @@ void main() {
           mapa: mapaDelServidor(recortados: true),
         ),
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200, scrollable: _listaDeCifras);
       await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));
@@ -702,7 +719,7 @@ void main() {
           },
         ),
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200);
+      await tester.scrollUntilVisible(find.byKey(const Key('boton_mapa')), 200, scrollable: _listaDeCifras);
       await tester.ensureVisible(find.byKey(const Key('boton_mapa')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('boton_mapa')));

@@ -26,7 +26,10 @@ import '../../estado/cargas.dart';
 
 /// La lista de cargas abiertas, y el botón para abrir una nueva.
 class PantallaCargas extends ConsumerStatefulWidget {
-  const PantallaCargas({super.key});
+  const PantallaCargas({super.key, this.conBarra = true});
+
+  /// Sin barra cuando va dentro de la pestaña Camiones, que ya pone la suya.
+  final bool conBarra;
 
   @override
   ConsumerState<PantallaCargas> createState() => _EstadoCargas();
@@ -110,7 +113,9 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
     final cargas = _cargas;
     return Scaffold(
       key: const Key('pantalla_cargas'),
-      appBar: AppBar(
+      appBar: !widget.conBarra
+          ? null
+          : AppBar(
         title: const Text('Cargas del camión'),
         actions: [
           IconButton(

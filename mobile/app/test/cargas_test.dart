@@ -139,7 +139,8 @@ Future<void> _montar(
 }
 
 Future<void> _abrirCarga(WidgetTester tester) async {
-  await tester.tap(find.byKey(const Key('boton_cargas')));
+  // Cargas vive en la pestaña Camiones; con solo `inventario.cargar`, directo.
+  await tester.tap(find.byKey(const Key('nav_camiones')));
   await tester.pumpAndSettle();
   expect(find.byKey(const Key('cargas_vacio')), findsOneWidget);
 
@@ -157,7 +158,7 @@ void main() {
   testWidgets('sin el permiso de cargar, el botón ni aparece', (tester) async {
     await _montar(tester, _ServidorDeCargas(), permisos: const ['tablero.ver']);
     expect(find.byKey(const Key('panel_gerencia')), findsOneWidget);
-    expect(find.byKey(const Key('boton_cargas')), findsNothing);
+    expect(find.byKey(const Key('nav_camiones')), findsNothing);
   });
 
   testWidgets('abrir, capturar cajas y confirmar', (tester) async {

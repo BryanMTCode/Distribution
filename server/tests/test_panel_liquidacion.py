@@ -1242,8 +1242,10 @@ async def test_el_esperado_se_recalcula_al_guardar_el_arqueo(
 # ---------------------------------------------------------------------------
 
 
-async def test_un_gerente_no_cierra_el_dia(cliente, semilla, dia_de_trabajo, sesion):
-    """Gerencia monitorea: no tiene `inventario.liquidar`."""
+async def test_el_gerente_tambien_cierra_el_dia(cliente, semilla, dia_de_trabajo, sesion):
+    """Antes: «gerencia monitorea, no cierra». Desde la migración 0045 el gerente
+    tiene `inventario.liquidar`: el corte lo hacen los puestos de arriba —también
+    desde la app— y el vendedor no."""
     from app.core.seguridad import hashear_password
 
     await _entrar(cliente)
@@ -1267,15 +1269,13 @@ async def test_un_gerente_no_cierra_el_dia(cliente, semilla, dia_de_trabajo, ses
 
     await _entrar(cliente, "GER01")
     lectura = await cliente.get(f"/panel/liquidaciones/{liq}")
-    assert lectura.status_code == 200
-    assert "Cerrar la liquidación" not in lectura.text
+    assert "Cerrar la liquidación" in lectura.text
 
-    r = await cliente.post(
+    await cliente.post(
         f"/panel/liquidaciones/{liq}/cerrar",
         data={"csrf": _csrf(cliente, lectura), "confirmo_sincronizado": "1"},
     )
-    assert r.status_code == 403
-    assert "inventario.liquidar" in r.text
+    assert (await _leer_cierre(sesion, liq))["estado"] == "cerrada"
 
 
 async def test_cerrar_exige_el_token_csrf(cliente, semilla, dia_de_trabajo, sesion):

@@ -69,6 +69,10 @@ class Perfil {
   /// Ver a cada vendedor: su camión, sus ventas, su cuenta. La oficina, no el
   /// vendedor —la venta de los demás no es suya—.
   bool get puedeVerVendedores => puede('ventas.ver_todas');
+
+  /// El corte del día: admin, supervisor y gerente. Nunca el vendedor —cortarse
+  /// su propio camión sería firmar su propio conteo—.
+  bool get puedeCortar => puede('inventario.liquidar');
 }
 
 /// La sesión en línea recién abierta.

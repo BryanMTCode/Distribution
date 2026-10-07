@@ -36,6 +36,7 @@ import '../../estado/sesion.dart';
 import '../../datos/repo_tablero.dart';
 import '../../estado/tablero.dart';
 import 'comunes.dart';
+import 'periodo.dart';
 import 'mapa.dart';
 
 class PantallaGerencia extends ConsumerStatefulWidget {
@@ -48,6 +49,15 @@ class PantallaGerencia extends ConsumerStatefulWidget {
 }
 
 class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
+  /// Día y periodo en UNA pantalla (pedido en operación, octubre 2026: «¿las
+  /// barras de día y periodo no se pueden combinar?»). Un solo día muestra el
+  /// tablero completo —avance del mes, cartera, por vendedor, mapa—; varios
+  /// días muestran el resumen del periodo, por vendedor y por día.
+  PeriodoElegido _periodo = const PeriodoElegido('hoy');
+
+  /// Cambia para que el resumen del periodo vuelva a consultar al refrescar.
+  int _recarga = 0;
+
   @override
   void initState() {
     super.initState();
@@ -59,27 +69,39 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
     });
   }
 
-  Future<void> _elegirDia(BuildContext context) async {
-    final ahora = ref.read(relojProvider)();
-    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
-    final elegido = await showDatePicker(
-      context: context,
-      initialDate: ref.read(fechaDelTableroProvider) ?? hoy,
-      firstDate: hoy.subtract(const Duration(days: 366)),
-      // Un día futuro no tiene cifras: el servidor lo rechaza, y ofrecerlo
-      // invitaría a leer ceros de algo que no ha pasado.
-      lastDate: hoy,
-      helpText: 'Ver el tablero del día',
-    );
-    if (elegido == null) return;
+  String get _hoy => diaOperativoDe(ref.read(relojProvider)());
+
+  /// El día, si el periodo elegido es de un solo día; si no, nulo.
+  String? _diaUnico(PeriodoElegido p) {
+    final hoy = _hoy;
+    return switch (p.clave) {
+      'hoy' => hoy,
+      'ayer' => diaOperativoDe(DateTime.parse(hoy).subtract(const Duration(hours: 12))),
+      'rango' when p.desde == p.hasta => p.desde,
+      _ => null,
+    };
+  }
+
+  void _elegir(PeriodoElegido p) {
+    setState(() => _periodo = p);
+    final dia = _diaUnico(p);
+    if (dia == null) return;
     ref.read(fechaDelTableroProvider.notifier).state =
-        diaOperativoDe(elegido) == diaOperativoDe(hoy) ? null : elegido;
-    await ref.read(tableroProvider.notifier).cargar();
+        dia == _hoy ? null : DateTime.parse(dia);
+    ref.read(tableroProvider.notifier).cargar();
+  }
+
+  Future<void> _refrescar() async {
+    if (_diaUnico(_periodo) != null) {
+      await ref.read(tableroProvider.notifier).cargar();
+    } else {
+      setState(() => _recarga++);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final estado = ref.watch(tableroProvider);
+    final dia = _diaUnico(_periodo);
 
     return Scaffold(
       // La clave va en el Scaffold y no en la lista de cifras: así identifica
@@ -104,29 +126,11 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
           ],
         ),
         actions: [
-          // Otro día: el tablero sabe pedir cualquier fecha y no había con
-          // qué elegirla. Con un día elegido, el botón de al lado vuelve a hoy.
-          IconButton(
-            key: const Key('boton_elegir_dia'),
-            tooltip: 'Ver otro día',
-            icon: const Icon(Icons.calendar_month_outlined),
-            onPressed: () => _elegirDia(context),
-          ),
-          if (ref.watch(fechaDelTableroProvider) != null)
-            IconButton(
-              key: const Key('boton_volver_a_hoy'),
-              tooltip: 'Volver a hoy',
-              icon: const Icon(Icons.today),
-              onPressed: () {
-                ref.read(fechaDelTableroProvider.notifier).state = null;
-                ref.read(tableroProvider.notifier).cargar();
-              },
-            ),
           IconButton(
             key: const Key('boton_refrescar_tablero'),
             tooltip: 'Volver a consultar',
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(tableroProvider.notifier).cargar(),
+            onPressed: _refrescar,
           ),
           IconButton(
             key: const Key('boton_salir_gerencia'),
@@ -136,7 +140,36 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: SelectorDePeriodo(
+              periodos: periodosDeSiempre,
+              elegido: _periodo,
+              hoy: ref.watch(relojProvider)(),
+              conUnDia: true,
+              onElegir: _elegir,
+            ),
+          ),
+          Expanded(
+            child: dia != null
+                ? _vistaDelDia()
+                : VistaDelPeriodo(
+                    key: ValueKey('periodo-${_periodo.clave}-${_periodo.desde}-'
+                        '${_periodo.hasta}-$_recarga'),
+                    periodo: _periodo,
+                    onVerDia: (fecha) => _elegir(PeriodoElegido.rango(fecha, fecha)),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vistaDelDia() {
+    final estado = ref.watch(tableroProvider);
+    return RefreshIndicator(
         onRefresh: () => ref.read(tableroProvider.notifier).cargar(),
         child: switch (estado) {
           TableroCargando() => const Center(
@@ -190,7 +223,6 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
               onReintentar: () => ref.read(tableroProvider.notifier).cargar(),
             ),
         },
-      ),
     );
   }
 }

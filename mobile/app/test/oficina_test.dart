@@ -131,6 +131,32 @@ class _ServidorDeOficina implements Transporte {
           'cartera': '15000.00', 'cartera_vencida': '0.00',
           'vendido_mes': '98000.00', 'vendido_anio': '980000.00',
         },
+      '/v1/oficina/clientes' => {
+          'filtro': parametros?['filtro'] ?? 'todos',
+          'recortado': false,
+          'conteos': {'todos': 2, 'con_saldo': 1, 'vencidos': 1, 'bloqueados': 0,
+                      'prospectos': 0},
+          'clientes': [
+            {'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'Ruta 4',
+             'estatus': 'activo', 'bloqueado': false, 'telefono': null,
+             'saldo': '400.00', 'saldo_vencido': '400.00', 'facturas_vencidas': 1,
+             'ultima_compra': '2026-09-24'},
+            if (parametros?['filtro'] != 'vencidos')
+              {'id': 'cl2', 'codigo': 'CLI-2', 'nombre': 'Al Corriente', 'ruta': 'Ruta 4',
+               'estatus': 'activo', 'bloqueado': false, 'telefono': null,
+               'saldo': '0.00', 'saldo_vencido': '0.00', 'facturas_vencidas': 0,
+               'ultima_compra': null},
+          ],
+        },
+      '/v1/oficina/clientes/cl1' => _fichaCliente(),
+      '/v1/cortes' => {
+          'por_cortar': [
+            {'carga_id': 'cg1', 'folio': 'CG-000001', 'fecha_operativa': '2026-09-24',
+             'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'dias': 0, 'ventas': 3,
+             'importe': '2250.00'},
+          ],
+          'cortes': <Object?>[],
+        },
       // El tablero del día, de fondo: aquí no importa.
       _ => null,
     };
@@ -138,9 +164,78 @@ class _ServidorDeOficina implements Transporte {
     return RespuestaHttp(200, jsonEncode(cuerpo));
   }
 
+  final List<(String, Map<String, Object?>)> posts = [];
+  bool bloqueado = false;
+  String contada = '0.000';
+  bool cerrado = false;
+
+  Map<String, Object?> _fichaCliente({String? mensaje}) => {
+        'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'razon_social': null,
+        'contacto': 'Doña Mary', 'telefono': '6691234567', 'direccion': 'Juárez 10',
+        'ruta': 'Ruta 4', 'estatus': 'activo', 'permite_credito': true,
+        'limite_credito': '5000.00', 'dias_credito': 7, 'bloqueado': bloqueado,
+        'bloqueo_motivo': bloqueado ? 'Debe tres notas' : null,
+        'saldo': '400.00', 'disponible': '4600.00', 'saldo_vencido': '400.00',
+        'por_confirmar': '0.00', 'comprado_mes': '2750.00', 'comprado_anio': '2750.00',
+        'cuentas': [
+          {'venta_id': 'venta-1', 'folio': 'VEND01-000009', 'fecha_emision': '2026-09-04',
+           'fecha_vencimiento': '2026-09-11', 'importe_original': '500.00',
+           'importe_pagado': '100.00', 'saldo': '400.00', 'vencida': true,
+           'dias_vencida': 13},
+        ],
+        'ventas': [
+          {'id': 'venta-1', 'folio': 'VEND01-000001', 'fecha': '2026-09-24',
+           'momento': null, 'tipo': 'contado', 'estado': 'confirmada',
+           'total': '2250.00', 'vendedor': 'Juan Pérez'},
+        ],
+        'cobros': <Object?>[],
+        'puede_bloquear': true,
+        'mensaje': mensaje,
+      };
+
+  Map<String, Object?> _corte({String? mensaje}) => {
+        'id': 'lq1', 'folio': 'LQ-000001', 'estado': cerrado ? 'cerrada' : 'abierta',
+        'abierto': !cerrado, 'fecha_operativa': '2026-09-24', 'vendedor': 'Juan Pérez',
+        'camion': 'Camión 01', 'carga': 'CG-000001', 'efectivo_esperado': '2250.00',
+        'efectivo_entregado': '0.00', 'diferencia_efectivo': '-2250.00',
+        'arqueo_hecho': false, 'observaciones': null,
+        'renglones': [
+          {'id': 'r1', 'sku': 'ATUN-140', 'nombre': 'Atún', 'unidad_base': 'PZA',
+           'inicial': '0.000', 'cargada': '240.000', 'vendida': '180.000',
+           'merma': '0.000', 'devuelta': '0.000', 'esperado': '60.000',
+           'contada': contada,
+           'diferencia': contada == '0.000' ? '-60.000' : '0.000',
+           'presentaciones': <Object?>[]},
+        ],
+        'bloqueos': <String>[],
+        'respaldo': {'respaldado': false, 'motivo': 'el equipo nunca reportó su cola',
+                     'pendientes': 0},
+        'cargos': <Object?>[], 'total_cargado': '0.00',
+        'mensaje': mensaje,
+      };
+
   @override
-  Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async =>
-      const RespuestaHttp(405, '{}');
+  Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
+    posts.add((ruta, cuerpo));
+    switch (ruta) {
+      case '/v1/oficina/clientes/cl1/bloqueo':
+        bloqueado = cuerpo['bloquear']! as bool;
+        return RespuestaHttp(200, jsonEncode(_fichaCliente(mensaje: 'Listo.')));
+      case '/v1/cortes':
+        return RespuestaHttp(200, jsonEncode(_corte()));
+      case '/v1/cortes/lq1/conteo':
+        final contados = (cuerpo['contados']! as Map).cast<String, String>();
+        contada = '${contados['r1']}.000';
+        return RespuestaHttp(200, jsonEncode(_corte(mensaje: 'Conteo guardado.')));
+      case '/v1/cortes/lq1/cerrar':
+        if (cuerpo['confirmo_sincronizado'] != true) {
+          return const RespuestaHttp(409, '{"detail":"Confirma que el teléfono terminó"}');
+        }
+        cerrado = true;
+        return RespuestaHttp(200, jsonEncode(_corte(mensaje: 'Liquidación LQ-000001 cerrada.')));
+    }
+    return const RespuestaHttp(405, '{}');
+  }
 }
 
 class _Gerencia extends ControladorSesion {
@@ -157,7 +252,9 @@ class _Gerencia extends ControladorSesion {
 
 Future<_ServidorDeOficina> _montar(
   WidgetTester tester, {
-  List<String> permisos = const ['tablero.ver', 'ventas.ver_todas', 'inventario.cargar'],
+  List<String> permisos = const [
+    'tablero.ver', 'ventas.ver_todas', 'inventario.cargar', 'inventario.liquidar',
+  ],
 }) async {
   final servidor = _ServidorDeOficina();
   await montarApp(
@@ -175,21 +272,21 @@ Future<_ServidorDeOficina> _montar(
 
 void main() {
   group('la barra del portal', () {
-    testWidgets('la oficina ve Día, Periodo, Empresa, Vendedores y Cargas',
+    testWidgets('la oficina ve Tablero, Empresa, Vendedores, Clientes y Camiones',
         (tester) async {
       await _montar(tester);
-      for (final k in ['nav_dia', 'nav_periodo', 'nav_empresa', 'boton_vendedores',
-          'boton_cargas']) {
+      for (final k in ['nav_tablero', 'nav_empresa', 'boton_vendedores', 'nav_clientes',
+          'nav_camiones']) {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
     });
 
-    testWidgets('sin ventas.ver_todas ni inventario.cargar, esas pestañas no salen',
-        (tester) async {
+    testWidgets('sin esos permisos, esas pestañas no salen', (tester) async {
       await _montar(tester, permisos: const ['tablero.ver']);
-      expect(find.byKey(const Key('nav_periodo')), findsOneWidget);
+      expect(find.byKey(const Key('nav_tablero')), findsOneWidget);
       expect(find.byKey(const Key('boton_vendedores')), findsNothing);
-      expect(find.byKey(const Key('boton_cargas')), findsNothing);
+      expect(find.byKey(const Key('nav_clientes')), findsNothing);
+      expect(find.byKey(const Key('nav_camiones')), findsNothing);
     });
 
     testWidgets('abrir la app no consulta las pestañas que no se han abierto',
@@ -265,9 +362,14 @@ void main() {
   });
 
   group('periodo y empresa', () {
-    testWidgets('el periodo trae lo vendido, por vendedor y por día', (tester) async {
+    final listaDelPeriodo = find
+        .descendant(of: find.byKey(const Key('lista_periodo')), matching: find.byType(Scrollable))
+        .first;
+
+    testWidgets('en el mismo Tablero: la semana trae lo vendido, por vendedor y por día',
+        (tester) async {
       final servidor = await _montar(tester);
-      await tester.tap(find.byKey(const Key('nav_periodo')));
+      await tester.tap(find.byKey(const Key('periodo_semana')));
       await tester.pumpAndSettle();
 
       expect(servidor.pedidas.last.$1, '/v1/tablero/periodo');
@@ -275,36 +377,38 @@ void main() {
       expect(find.text('Del lunes 21 de septiembre al jueves 24 de septiembre'),
           findsOneWidget);
       expect(find.byKey(const Key('periodo_vendido')), findsOneWidget);
-      expect(find.byKey(const Key('periodo_vendedor_VEND01')), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.byKey(const Key('periodo_dia_2026-09-23')),
-        200,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('lista_periodo')),
-          matching: find.byType(Scrollable),
-        ).first,
-      );
+        find.byKey(const Key('periodo_vendedor_VEND01')), 200, scrollable: listaDelPeriodo);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('periodo_dia_2026-09-23')), 200, scrollable: listaDelPeriodo);
       expect(find.text('miércoles 23 de septiembre'), findsOneWidget);
     });
 
-    testWidgets('tocar un día abre el tablero de ese día', (tester) async {
+    testWidgets('tocar un día abre el tablero completo de ese día, y Hoy regresa',
+        (tester) async {
       final servidor = await _montar(tester);
-      await tester.tap(find.byKey(const Key('nav_periodo')));
+      await tester.tap(find.byKey(const Key('periodo_semana')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.byKey(const Key('periodo_dia_2026-09-23')),
-        200,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('lista_periodo')),
-          matching: find.byType(Scrollable),
-        ).first,
-      );
+        find.byKey(const Key('periodo_dia_2026-09-23')), 200, scrollable: listaDelPeriodo);
       await tester.tap(find.byKey(const Key('periodo_dia_2026-09-23')));
       await tester.pumpAndSettle();
 
       expect(servidor.pedidas.last.$1, '/v1/tablero');
       expect(servidor.pedidas.last.$2, {'fecha': '2026-09-23'});
-      expect(find.byKey(const Key('boton_volver_a_hoy')), findsOneWidget);
+      // El botón del día dice cuál es.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('periodo_un_dia')),
+          matching: find.text('miércoles 23 de septiembre'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('periodo_hoy')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$1, '/v1/tablero');
+      expect(servidor.pedidas.last.$2, isNot(contains('fecha')));
     });
 
     testWidgets('la empresa: clientes, vendedores, artículos', (tester) async {
@@ -342,6 +446,85 @@ void main() {
       expect(find.byKey(const Key('logo_distribuciones_se')), findsOneWidget);
       expect(find.text('Distribuciones'), findsOneWidget);
       expect(find.text('SE'), findsOneWidget);
+    });
+  });
+
+  group('clientes', () {
+    testWidgets('la lista pone arriba al que debe, y filtra los vencidos', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('nav_clientes')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsOneWidget);
+      expect(textoQueContiene(r'Debe $400.00'), findsOneWidget);
+      expect(textoQueContiene('nunca ha comprado'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const Key('filtro_cliente_vencidos')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filtro_cliente_vencidos')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$2, {'filtro': 'vencidos'});
+      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsNothing);
+    });
+
+    testWidgets('su ficha: estado de cuenta, compras y bloquear con motivo', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('nav_clientes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('cliente_oficina_CLI-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pantalla_ficha_cliente')), findsOneWidget);
+      expect(find.text(r'Debe $400.00'), findsOneWidget);
+      expect(textoQueContiene('Vencida hace 13 día(s)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('boton_bloqueo_cliente')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('campo_motivo_bloqueo')), 'Debe tres notas');
+      await tester.tap(find.byKey(const Key('boton_bloquear_de_verdad')));
+      await tester.pumpAndSettle();
+
+      expect(servidor.posts.last.$2, {'bloquear': true, 'motivo': 'Debe tres notas'});
+      expect(textoQueContiene('Crédito BLOQUEADO: Debe tres notas'), findsOneWidget);
+    });
+  });
+
+  group('el corte del día', () {
+    testWidgets('abrir, contar y cerrar confirmando la sincronización', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('nav_camiones')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('pestana_cortes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('por_cortar_CG-000001')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pantalla_corte')), findsOneWidget);
+      expect(servidor.posts.last.$2, {'carga_id': 'cg1'});
+      // El conteo nace vacío: lo que no se anota vale cero.
+      expect(find.text('Faltan 60'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('contado_Atún')), '60');
+      await tester.tap(find.byKey(const Key('boton_guardar_conteo')));
+      await tester.pumpAndSettle();
+      expect(servidor.posts.last.$2, {'contados': {'r1': '60'}});
+      expect(find.text('Faltan 60'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('boton_cerrar_corte')));
+      await tester.pumpAndSettle();
+      // Sin dato de sincronización, hay que marcar la casilla para poder cerrar.
+      expect(
+        tester.widget<FilledButton>(find.byKey(const Key('boton_cerrar_de_verdad'))).onPressed,
+        isNull,
+      );
+      await tester.tap(find.byKey(const Key('casilla_confirmo_sincronizado')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('boton_cerrar_de_verdad')));
+      await tester.pumpAndSettle();
+
+      expect(servidor.posts.last.$2, {'confirmo_sincronizado': true});
+      expect(find.text('Liquidación LQ-000001 cerrada.'), findsOneWidget);
+      expect(find.byKey(const Key('boton_cerrar_corte')), findsNothing);
     });
   });
 }

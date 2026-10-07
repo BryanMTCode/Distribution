@@ -5,11 +5,11 @@
 /// el dashboard: por días, por periodos y por vendedor». Una barra abajo, como
 /// el menú del panel:
 ///
-///   · **Día**: el tablero de un día, con calendario para elegir cuál.
-///   · **Periodo**: semana, mes o fechas a mano, por vendedor y por día.
+///   · **Tablero**: un día (completo) o un periodo (por vendedor y por día).
 ///   · **Empresa**: cuántos clientes, vendedores, artículos; la cartera.
 ///   · **Vendedores**: cada uno, su camión y todo lo que hizo.
-///   · **Cargas**: subirle mercancía a un camión.
+///   · **Clientes**: quién debe y desde cuándo, qué compra, su crédito.
+///   · **Camiones**: cargar y hacer el corte del día.
 ///
 /// Cada pestaña aparece solo si el usuario tiene su permiso. La UI oculta; el
 /// servidor prohíbe de todos modos.
@@ -20,7 +20,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/cargas.dart';
 import '../../estado/vendedores.dart';
-import 'cargas.dart';
+import 'camiones.dart';
+import 'clientes_oficina.dart';
 import 'empresa.dart';
 import 'panel.dart';
 import 'periodo.dart';
@@ -45,17 +46,12 @@ class _EstadoPortal extends ConsumerState<PortalDeOficina> {
   Widget build(BuildContext context) {
     final nombre = widget.nombre;
     final pestanas = <(Key, IconData, String, Widget)>[
+      // Día y periodo en una sola pestaña: ver `PantallaGerencia`.
       (
-        const Key('nav_dia'),
-        Icons.today_outlined,
-        'Día',
+        const Key('nav_tablero'),
+        Icons.insights_outlined,
+        'Tablero',
         PantallaGerencia(nombre: nombre),
-      ),
-      (
-        const Key('nav_periodo'),
-        Icons.date_range_outlined,
-        'Periodo',
-        const PantallaPeriodo(),
       ),
       (
         const Key('nav_empresa'),
@@ -63,19 +59,27 @@ class _EstadoPortal extends ConsumerState<PortalDeOficina> {
         'Empresa',
         const PantallaEmpresa(),
       ),
-      if (ref.watch(puedeVerVendedoresProvider))
+      if (ref.watch(puedeVerVendedoresProvider)) ...[
         (
           const Key('boton_vendedores'),
           Icons.groups_outlined,
           'Vendedores',
           const PantallaVendedores(),
         ),
-      if (ref.watch(puedeCargarProvider))
         (
-          const Key('boton_cargas'),
+          const Key('nav_clientes'),
+          Icons.storefront_outlined,
+          'Clientes',
+          const PantallaClientesDeOficina(),
+        ),
+      ],
+      // Cargar y cortar: lo que se hace con el camión enfrente.
+      if (ref.watch(puedeCargarProvider) || ref.watch(puedeCortarProvider))
+        (
+          const Key('nav_camiones'),
           Icons.local_shipping_outlined,
-          'Cargas',
-          const PantallaCargas(),
+          'Camiones',
+          const PantallaCamiones(),
         ),
     ];
     final elegida = ref.watch(pestanaDeOficinaProvider).clamp(0, pestanas.length - 1);

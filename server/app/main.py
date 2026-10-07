@@ -42,7 +42,9 @@ from app.api.v1 import (
     cargas,
     catalogo,
     clientes,
+    cortes,
     dispositivos,
+    oficina_clientes,
     salud,
     sync,
     tablero,
@@ -117,6 +119,8 @@ def crear_app() -> FastAPI:
     app.include_router(sync.router, prefix="/v1")
     app.include_router(tablero.router, prefix="/v1")
     app.include_router(cargas.router, prefix="/v1")
+    app.include_router(cortes.router, prefix="/v1")
+    app.include_router(oficina_clientes.router, prefix="/v1")
     app.include_router(vendedores.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una

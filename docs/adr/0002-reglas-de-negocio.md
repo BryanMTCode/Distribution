@@ -4511,3 +4511,47 @@ documentos de días pasados, así que el corte de ayer se arma igual que el de h
 sin señal. Mirando otro día, la pantalla lo dice («Estás revisando el …») y el
 efectivo se llama «Efectivo de ese día», para que no se confunda con lo que hay que
 entregar hoy. Salir y volver a entrar abre otra vez en hoy.
+
+## 75. El corte del día desde la app
+
+**Decisión (octubre 2026).** El corte se hace con el camión enfrente, en el patio:
+la app de la oficina lo hace completo (pestaña Camiones → Corte del día). Abrir
+el corte de una carga, contar lo que se queda arriba (en piezas; el campo vacío
+vale cero), el arqueo del efectivo y cerrar.
+
+- **Mismas reglas que el panel, no una copia:** la lógica del corte se separó de
+  la pantalla del panel en `abrir_corte`, `guardar_conteo`, `guardar_arqueo`,
+  `cerrar_corte` y `datos_del_corte` (`app/api/admin/liquidaciones.py`), y la usan
+  el panel y `/v1/cortes`. El cierre desde el teléfono deja el camión en lo
+  contado, carga a la cuenta del vendedor lo que falta y le avisa a su teléfono
+  igual que el del panel.
+- No se cierra con operaciones del vendedor sin subir; sin un dato de que su
+  teléfono terminó, hay que marcar la confirmación —igual que en el panel—.
+- **Quién:** `inventario.liquidar`. La migración 0045 se lo da al gerente, con la
+  regla de la 0044: los puestos de arriba cargan y cortan; el vendedor, no.
+
+## 76. Los clientes en la app de la oficina
+
+**Decisión (octubre 2026).** Pestaña Clientes (`ventas.ver_todas`), por
+`/v1/oficina/clientes` —no es `/v1/clientes`, que es la cartera de ruta que el
+vendedor baja para vender sin señal—:
+
+- La lista abre con lo que más urge cobrar arriba (vencido, luego saldo) y filtra
+  por todos, con saldo, vencidos, bloqueados y prospectos; con búsqueda.
+- La ficha: contacto y dirección, crédito (límite, plazo, disponible), lo que debe
+  **nota por nota** con su vencimiento y días vencida, sus compras (cada una se
+  abre con lo que se le vendió) y sus abonos. Las cifras salen de
+  `v_cartera_cliente`, la misma vista que el panel y el teléfono del vendedor.
+- Bloquear o desbloquear el crédito con motivo, con `clientes.administrar` como
+  en el panel. No impide el contado.
+
+## 77. Día y periodo en un solo Tablero; la barra de la oficina
+
+**Decisión (octubre 2026).** «¿Las barras de día y periodo no se pueden
+combinar?» Sí: una sola pestaña **Tablero** con los botones arriba —Hoy, Ayer,
+Esta semana, la pasada, Este mes, el pasado, «Un día…» y «Fechas…»—. Un solo
+día se ve con el tablero completo (avance del mes, cartera, por vendedor, mapa);
+varios días, con el resumen del periodo por vendedor y por día; tocar un día del
+desglose lo abre completo. La barra de abajo queda en cinco: **Tablero, Empresa,
+Vendedores, Clientes y Camiones** (Cargas y Corte del día, que se hacen con el
+camión enfrente). (versionCode 24)
