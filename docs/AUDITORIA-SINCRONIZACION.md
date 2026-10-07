@@ -468,6 +468,7 @@ mañana, ¿qué ve el vendedor a las diez y cinco?».
 | Crear una ruta con titular / cambiar el titular | **nada** | 🔧 hallazgo 4 |
 | Cualquier cambio de ruta, camión, rol o permiso, en los 30 min del token | **la foto vieja** | 🔧 hallazgo 5 |
 | Quitarle un permiso a un usuario | el panel al instante; la API a los 30 min | 🔧 hallazgo 5 |
+| Ajustar el camión, o cerrar el corte, cuando el teléfono ya estaba desviado | la diferencia se suma **encima del error** | 🔧 hallazgo 9 |
 | Desactivar un usuario o revocar un teléfono | 401 en la siguiente petición | ✅ |
 | Promociones | no hay pantalla; el teléfono las acepta y descarta (§5.3) | ✅ |
 | Cambiar la contraseña o `dias_max_offline` | en la credencial local, con el siguiente login **en línea** | ⚠️ §8.3 |
@@ -504,6 +505,15 @@ En desarrollo no se ve: la API usa el rol dueño. *Migración 0042*, y una guard
 la identidad con camión nulo. *Corrección en el teléfono*: el nulo se guarda como «sin
 camión» y vacía el inventario local; `almacenDelVendedorProvider` ya no vuelve al
 camión de la credencial cuando el servidor dijo que no hay ninguno.
+
+**Hallazgo 9 · El camión del teléfono y el del panel se desviaban y nada los volvía a
+juntar** (reportado en operación: 1 Maruchan en el teléfono, 0 en el panel; la oficina
+sumó 5 y el teléfono pasó a 6). Los ajustes y el corte viajan como diferencia y
+arrastran el error previo. Una causa: el teléfono reinstalado rearma el camión sumando
+cargas y ajustes de toda la historia sin restar las ventas viejas. *Corrección (ADR
+0002 §58)*: `GET /v1/sync/camion` y `cuadrarCamion` en el teléfono, que escribe el
+estado del servidor solo con la cola vacía, el cursor idéntico, sin cuarentena y con
+el mismo camión.
 
 ### 8.3 Lo que se revisó y se queda así
 

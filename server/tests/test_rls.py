@@ -925,3 +925,30 @@ async def test_salud_dice_si_la_base_esta_al_dia_con_el_codigo(cliente_rls, sesi
     finally:
         await sesion.execute(text("UPDATE alembic_version SET version_num = :v"), {"v": real})
         await sesion.commit()
+
+
+@pytest.mark.asyncio
+async def test_la_foto_del_camion_sale_con_el_rol_restringido(cliente_rls, sesion, semilla):
+    """El cuadre lee `change_log`, `existencias` y `sync_cuarentena`: con el rol de
+    producción tiene que poder, o el teléfono nunca se cuadraría y nadie lo notaría
+    (el sincronizador se traga el error a propósito)."""
+    dispositivo = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, registrado_en) "
+            "VALUES (:d, :u, 'Moto G54', 'activo', now())"
+        ),
+        {"d": dispositivo, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+    from tests.conftest import PASSWORD_VENDEDOR
+
+    r = await cliente_rls.post(
+        "/v1/auth/login",
+        json={"codigo": "VEND01", "password": PASSWORD_VENDEDOR,
+              "dispositivo_id": str(dispositivo)},
+    )
+    cab = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    foto = await cliente_rls.get("/v1/sync/camion", headers=cab)
+    assert foto.status_code == 200, foto.text
+    assert foto.json()["almacen_id"] == str(semilla["camion"])

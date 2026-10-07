@@ -4194,3 +4194,46 @@ ya entregada). Hoy cuadran 14 de 14 y 6 de 6; la prueba es para el día que no.
 No se quitó ninguna pantalla: cada una tiene un dueño y un momento en la operación
 (la tabla está en `docs/AUDITORIA-SINCRONIZACION.md` §8.4). Lo que faltaba no eran
 menos pantallas sino quién dijera por dónde empezar.
+
+## 58. El cuadre del camión: el teléfono se pone igual al servidor cuando no hay nada en vuelo
+
+**Decisión (octubre 2026).** Lo reportó la operación: el teléfono decía 1 Maruchan y el
+panel 0; la oficina sumó 5 desde el panel y el teléfono pasó a 6.
+
+Lo que la oficina le hace al camión —un ajuste, el corte del día— viaja al teléfono
+como **diferencia** («súmale 5»), y tiene que ser así: un estado («tiene 5») que llega
+cinco minutos tarde borra las ventas de esos cinco minutos. El precio es que una
+diferencia **no cura nada**: si el teléfono y el servidor ya pensaban distinto, cada
+diferencia posterior se suma encima del error. Ni el corte lo arreglaba, porque su
+ajuste es «lo contado menos lo que tenía el SERVIDOR», aplicado sobre lo que tenía el
+TELÉFONO.
+
+Una causa concreta de que se desvíen, encontrada al revisarlo: un teléfono que se
+reinstala o se vuelve a vincular rearma su camión desde el cursor 0 sumando todas las
+cargas y ajustes de la historia, pero **no resta las ventas viejas** (el aplicador
+ignora las ventas que no tiene). Hay otras —un documento rechazado, una versión vieja
+de la app—, y no hace falta enumerarlas todas para cerrarlas.
+
+### El cuadre
+
+Al terminar cada sincronización, el teléfono pide `GET /v1/sync/camion`: las
+existencias del camión según el servidor y el cursor del último cambio de ese
+teléfono que la foto ya refleja, leídos **en una sola sentencia** (una sola foto de la
+base). Y escribe esas existencias tal cual, en una transacción que primero comprueba:
+
+1. **La cola está vacía**: todo lo que el vendedor hizo ya está en la foto.
+2. **Su cursor es exactamente el de la foto**: todo lo que la foto trae ya se aplicó
+   aquí, y nada de lo aplicado aquí le falta a la foto. Si la foto trae un ajuste que
+   el teléfono no ha traído, sumarlo después lo contaría dos veces.
+3. **El servidor no tiene operaciones de ese teléfono en cuarentena**: esa mercancía
+   ya se entregó en la calle y el servidor todavía la cuenta en el camión.
+4. **Es el mismo camión** que el teléfono tiene asignado.
+
+Si algo no se cumple no se escribe nada: es «todavía no», y la siguiente
+sincronización lo vuelve a intentar. Como las órdenes del equipo, el cuadre nunca tumba
+una sincronización: un servidor sin el endpoint, un vendedor sin camión (409) o una
+respuesta rara se ignoran, porque las ventas ya quedaron entregadas.
+
+Las diferencias se quedan: siguen siendo lo correcto mientras hay operaciones en
+vuelo. El cuadre es lo que garantiza que, en cuanto deja de haberlas, el teléfono y
+el panel vuelven a decir lo mismo.

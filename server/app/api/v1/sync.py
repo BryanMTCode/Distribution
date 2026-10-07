@@ -328,6 +328,99 @@ async def pull(
 
 
 # ---------------------------------------------------------------------------
+# El cuadre del camión
+# ---------------------------------------------------------------------------
+# Lo que la oficina le hace al camión —un ajuste, el corte del día— viaja al
+# teléfono como DIFERENCIA («súmale 5»), nunca como estado («tiene 5»): un estado
+# que llega cinco minutos tarde borraría las ventas de esos cinco minutos.
+#
+# El precio de las diferencias es que no curan nada. Si el teléfono y el servidor
+# llegaron a pensar distinto por cualquier razón —un documento que el servidor
+# rechazó, una versión vieja de la app, un camión reasignado a media tarde—, cada
+# diferencia posterior se suma encima del error y lo arrastra para siempre. Así lo
+# reportó la operación en octubre de 2026: el teléfono decía 1 Maruchan, el panel
+# 0; la oficina sumó 5 y el teléfono pasó a 6.
+#
+# Esto es lo que cura: cuando el teléfono ya entregó todo y ya trajo todo, pide la
+# foto de su camión y la escribe tal cual. En ese instante no hay nada en vuelo de
+# ningún lado, así que el estado ya no puede llegar tarde.
+
+
+class RenglonDelCamion(BaseModel):
+    producto_id: uuid.UUID
+    # Texto de tres decimales, como en el delta de carga (contracts/README §1.4).
+    cantidad: str
+
+
+class FotoDelCamion(BaseModel):
+    almacen_id: uuid.UUID
+    cursor: int = Field(
+        description=(
+            "El último cambio de este teléfono que la foto ya refleja. El teléfono "
+            "solo la aplica si su cursor es exactamente este: si es menor, todavía "
+            "le falta traer un cambio que la foto ya trae dentro y lo sumaría dos veces."
+        )
+    )
+    cuarentena: int = Field(
+        description=(
+            "Operaciones de este teléfono que el servidor rechazó y nadie ha "
+            "resuelto. Mientras haya, la foto no se aplica: esa mercancía ya se "
+            "entregó en la calle y el servidor todavía la cuenta en el camión."
+        )
+    )
+    existencias: list[RenglonDelCamion]
+
+
+@router.get("/camion", response_model=FotoDelCamion)
+async def foto_del_camion(actor: ActorDep, sesion: SesionDep) -> FotoDelCamion:
+    if actor.dispositivo_id is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "el cuadre del camión exige un token emitido para un dispositivo registrado",
+        )
+    if actor.almacen_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "este vendedor no tiene camión asignado")
+
+    # UNA sola sentencia, y no es estilo: en READ COMMITTED cada sentencia ve su
+    # propia foto de la base. Con dos consultas, un ajuste que se confirmara entre
+    # ellas quedaría dentro de las existencias y fuera del cursor —o al revés—, y
+    # el teléfono lo contaría dos veces o ninguna.
+    fila = (
+        await sesion.execute(
+            text(
+                """
+                SELECT
+                  (SELECT COALESCE(max(cursor), 0) FROM change_log
+                    WHERE (ruta_id IS NULL OR ruta_id = ANY(:rutas))
+                      AND (vendedor_id IS NULL OR vendedor_id = :usuario)) AS cursor,
+                  (SELECT count(*) FROM sync_cuarentena
+                    WHERE dispositivo_id = :dev AND estado = 'pendiente') AS cuarentena,
+                  (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                             'producto_id', producto_id,
+                             'cantidad', cantidad::numeric(14, 3)::text)
+                           ORDER BY producto_id), '[]'::jsonb)
+                     FROM existencias
+                    WHERE almacen_id = :camion AND cantidad <> 0) AS existencias
+                """
+            ),
+            {
+                "rutas": list(actor.rutas),
+                "usuario": actor.usuario_id,
+                "dev": actor.dispositivo_id,
+                "camion": actor.almacen_id,
+            },
+        )
+    ).mappings().one()
+
+    return FotoDelCamion(
+        almacen_id=actor.almacen_id,
+        cursor=fila["cursor"],
+        cuarentena=fila["cuarentena"],
+        existencias=[RenglonDelCamion(**r) for r in fila["existencias"]],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Estado
 # ---------------------------------------------------------------------------
 

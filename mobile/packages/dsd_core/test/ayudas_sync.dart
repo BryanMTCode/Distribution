@@ -150,8 +150,19 @@ class TransporteFalso implements Transporte {
   /// 404 a un endpoint que no conoce— no impida sincronizar.
   int? codigoDeOrdenes;
 
+  /// Lo que contesta `/v1/sync/camion`. Nulo = 404, como un servidor anterior
+  /// al cuadre del camión: así las pruebas que no lo guionan no se enteran de
+  /// que existe, y la consulta no consume un guion que era para otra cosa.
+  Map<String, Object?>? fotoDelCamion;
+
   Future<RespuestaHttp> _responder(String ruta) async {
     llamadas.add(ruta);
+
+    if (ruta.startsWith('/v1/sync/camion')) {
+      final foto = fotoDelCamion;
+      if (foto == null) return const RespuestaHttp(404, '{"detail":"Not Found"}');
+      return RespuestaHttp(200, jsonEncode(foto));
+    }
 
     if (ruta.startsWith('/v1/dispositivos/mio')) {
       if (codigoDeOrdenes != null) {

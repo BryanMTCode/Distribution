@@ -1138,6 +1138,32 @@
         }
       }
     },
+    "/v1/sync/camion": {
+      "get": {
+        "tags": [
+          "sincronización"
+        ],
+        "summary": "Foto Del Camion",
+        "operationId": "foto_del_camion_v1_sync_camion_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FotoDelCamion"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/sync/estado": {
       "get": {
         "tags": [
@@ -2245,6 +2271,40 @@
         ],
         "title": "EvaluacionSalida"
       },
+      "FotoDelCamion": {
+        "properties": {
+          "almacen_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Almacen Id"
+          },
+          "cursor": {
+            "type": "integer",
+            "title": "Cursor",
+            "description": "El último cambio de este teléfono que la foto ya refleja. El teléfono solo la aplica si su cursor es exactamente este: si es menor, todavía le falta traer un cambio que la foto ya trae dentro y lo sumaría dos veces."
+          },
+          "cuarentena": {
+            "type": "integer",
+            "title": "Cuarentena",
+            "description": "Operaciones de este teléfono que el servidor rechazó y nadie ha resuelto. Mientras haya, la foto no se aplica: esa mercancía ya se entregó en la calle y el servidor todavía la cuenta en el camión."
+          },
+          "existencias": {
+            "items": {
+              "$ref": "#/components/schemas/RenglonDelCamion"
+            },
+            "type": "array",
+            "title": "Existencias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "almacen_id",
+          "cursor",
+          "cuarentena",
+          "existencias"
+        ],
+        "title": "FotoDelCamion"
+      },
       "FrescuraSalida": {
         "properties": {
           "calculado_en": {
@@ -3304,6 +3364,25 @@
         "title": "ReferenciaSalida",
         "description": "Contra qué se compara el día, y qué tan en serio tomarlo.\n\nEl promedio es de los MISMOS DÍAS DE LA SEMANA anteriores, no de los días\nanteriores: la ruta visita a los mismos clientes cada martes, así que comparar\nel martes contra el lunes mide qué clientes tocaban y no cómo se trabajó.\n\n`suficiente` en `false` significa que no hay historia bastante y que la app\n**no debe dibujar una flecha**: un promedio de un solo día es una anécdota, y\nponer una flecha roja sobre eso es inventarle un argumento a alguien."
       },
+      "RenglonDelCamion": {
+        "properties": {
+          "producto_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Producto Id"
+          },
+          "cantidad": {
+            "type": "string",
+            "title": "Cantidad"
+          }
+        },
+        "type": "object",
+        "required": [
+          "producto_id",
+          "cantidad"
+        ],
+        "title": "RenglonDelCamion"
+      },
       "RenglonRuta": {
         "properties": {
           "ruta_id": {
@@ -3612,6 +3691,28 @@
           "rls": {
             "type": "boolean",
             "title": "Rls"
+          },
+          "esquema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Esquema"
+          },
+          "esquema_esperado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Esquema Esperado"
           }
         },
         "type": "object",

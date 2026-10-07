@@ -1067,6 +1067,105 @@ class AplicadorDeltas {
   }
 
   // -------------------------------------------------------------------------
+  // El cuadre del camión contra el servidor
+  // -------------------------------------------------------------------------
+
+  /// Deja el camión del teléfono EXACTAMENTE como lo tiene el servidor.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// POR QUÉ HACE FALTA
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Lo que la oficina le hace al camión llega como diferencia («súmale 5»), y
+  /// una diferencia no cura nada: si el teléfono y el servidor ya pensaban
+  /// distinto, la suma arrastra el error. Así se vio en la operación: el teléfono
+  /// decía 1 Maruchan, el panel 0; la oficina sumó 5 y el teléfono pasó a 6.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// POR QUÉ AQUÍ SÍ SE PUEDE ESCRIBIR UN ESTADO
+  /// ───────────────────────────────────────────────────────────────────────
+  /// Un estado que llega tarde borra lo que pasó en medio. Por eso solo se aplica
+  /// cuando NO puede haber nada en medio, y las cuatro condiciones se revisan
+  /// dentro de la misma transacción que escribe:
+  ///
+  /// 1. La cola está vacía: todo lo que el vendedor hizo ya está en la foto.
+  /// 2. El cursor del teléfono es el de la foto: todo lo que la foto trae ya se
+  ///    aplicó aquí, y nada de lo aplicado aquí le falta a la foto.
+  /// 3. El servidor no tiene operaciones de este teléfono en cuarentena: esa
+  ///    mercancía ya se entregó en la calle y el servidor todavía la cuenta.
+  /// 4. Es el mismo camión que este teléfono tiene asignado.
+  ///
+  /// Si algo no se cumple no se escribe nada, y la siguiente sincronización lo
+  /// vuelve a intentar. Nunca es un error: es «todavía no».
+  ResultadoCuadre cuadrarCamion(FotoDelCamion foto, {required int cursorLocal}) {
+    if (foto.cuarentena > 0) {
+      return const ResultadoCuadre.pospuesto('hay operaciones en cuarentena');
+    }
+    if (foto.cursor != cursorLocal) {
+      return const ResultadoCuadre.pospuesto('faltan cambios por traer');
+    }
+
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      final pendientes = _db
+          .select("SELECT COUNT(*) AS n FROM outbox WHERE estado = 'pendiente'")
+          .single['n'] as int;
+      if (pendientes > 0) {
+        _db.execute('ROLLBACK');
+        return const ResultadoCuadre.pospuesto('hay operaciones por subir');
+      }
+      final asignado = _db.select(
+        "SELECT valor FROM sync_estado WHERE clave = 'almacen_asignado'",
+      );
+      if (asignado.isNotEmpty && asignado.single['valor'] != foto.almacenId) {
+        _db.execute('ROLLBACK');
+        return const ResultadoCuadre.pospuesto('es otro camión');
+      }
+
+      var corregidos = 0;
+      final locales = {
+        for (final f in _db.select(
+          'SELECT producto_id, cant_actual FROM existencias_camion',
+        ))
+          f['producto_id'] as String: Cantidad.deBase(f['cant_actual'] as num),
+      };
+
+      // Lo que el teléfono tiene: se lleva a lo que dice la foto, o a cero.
+      for (final MapEntry(key: producto, value: local) in locales.entries) {
+        final texto = foto.existencias[producto];
+        final debe = texto == null ? Cantidad.cero : Cantidad.deTexto(texto);
+        if (debe.milesimos == local.milesimos) continue;
+        _db.execute(
+          'UPDATE existencias_camion SET cant_actual = ? WHERE producto_id = ?',
+          [debe.milesimos / 1000, producto],
+        );
+        corregidos++;
+      }
+
+      // Lo que la foto trae y el teléfono no. Solo productos que el catálogo
+      // local ya conoce: uno que todavía no llega se cuadra en la siguiente.
+      for (final MapEntry(key: producto, value: texto) in foto.existencias.entries) {
+        if (locales.containsKey(producto)) continue;
+        final conocido = _db
+            .select('SELECT 1 FROM productos WHERE id = ?', [producto])
+            .isNotEmpty;
+        if (!conocido) continue;
+        _db.execute(
+          'INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual) '
+          'VALUES (?, 0, ?)',
+          [producto, Cantidad.deTexto(texto).milesimos / 1000],
+        );
+        corregidos++;
+      }
+
+      _db.execute('COMMIT');
+      return ResultadoCuadre.aplicado(corregidos);
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  // -------------------------------------------------------------------------
 
   /// Si un `estatus` del servidor significa «sigue en la ruta de este teléfono».
   ///
@@ -1090,4 +1189,23 @@ class AplicadorDeltas {
         final num n => n != 0 ? 1 : 0,
         _ => 0,
       };
+}
+
+/// Cómo terminó un cuadre del camión.
+class ResultadoCuadre {
+  const ResultadoCuadre.aplicado(this.corregidos)
+      : aplicado = true,
+        motivo = null;
+
+  const ResultadoCuadre.pospuesto(this.motivo)
+      : aplicado = false,
+        corregidos = 0;
+
+  final bool aplicado;
+
+  /// Cuántos productos cambiaron. Cero es lo normal: ya estaban cuadrados.
+  final int corregidos;
+
+  /// Por qué no se aplicó todavía.
+  final String? motivo;
 }

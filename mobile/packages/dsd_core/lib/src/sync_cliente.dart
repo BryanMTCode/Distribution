@@ -108,6 +108,41 @@ class RespuestaPull {
   final List<Delta> cambios;
 }
 
+/// Lo que el servidor dice que trae el camión, y desde qué punto lo dice.
+///
+/// Ver `AplicadorDeltas.cuadrarCamion`: se aplica como ESTADO, y por eso solo
+/// cuando el teléfono no tiene nada en vuelo.
+class FotoDelCamion {
+  const FotoDelCamion({
+    required this.almacenId,
+    required this.cursor,
+    required this.cuarentena,
+    required this.existencias,
+  });
+
+  factory FotoDelCamion.deJson(Map<String, Object?> json) => FotoDelCamion(
+        almacenId: json['almacen_id']! as String,
+        cursor: json['cursor']! as int,
+        cuarentena: json['cuarentena']! as int,
+        existencias: {
+          for (final r in ((json['existencias'] ?? const <Object?>[]) as List)
+              .cast<Map<String, Object?>>())
+            r['producto_id']! as String: r['cantidad']! as String,
+        },
+      );
+
+  final String almacenId;
+
+  /// El último cambio de este teléfono que la foto ya refleja.
+  final int cursor;
+
+  /// Operaciones de este teléfono que el servidor rechazó y nadie ha resuelto.
+  final int cuarentena;
+
+  /// producto → cantidad como texto de tres decimales. Lo que no está, es cero.
+  final Map<String, String> existencias;
+}
+
 /// El servidor rechazó el lote completo por estructura (HTTP 422).
 ///
 /// Reenviar lo mismo va a fallar igual, así que reintentar sería un bucle
@@ -187,6 +222,15 @@ class ClienteSync {
     );
     _revisar(respuesta);
     return RespuestaPull.deJson(
+      jsonDecode(respuesta.cuerpo) as Map<String, Object?>,
+    );
+  }
+
+  /// La foto del camión según el servidor. Ver `FotoDelCamion`.
+  Future<FotoDelCamion> fotoDelCamion() async {
+    final respuesta = await _transporte.obtener('/v1/sync/camion');
+    _revisar(respuesta);
+    return FotoDelCamion.deJson(
       jsonDecode(respuesta.cuerpo) as Map<String, Object?>,
     );
   }

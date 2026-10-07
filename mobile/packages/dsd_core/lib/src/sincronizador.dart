@@ -85,6 +85,7 @@ class ResultadoSincronizacion {
     this.cursor = 0,
     this.detalle,
     this.ordenes,
+    this.productosCuadrados = 0,
   });
 
   final FinDeSync fin;
@@ -99,6 +100,11 @@ class ResultadoSincronizacion {
   /// preguntar — sin red, o contra un servidor más viejo que no conoce el
   /// endpoint. Que sea nulo NO detiene la sincronización: ver `sincronizar`.
   final OrdenesDelServidor? ordenes;
+
+  /// Productos del camión que el cuadre contra el servidor corrigió en esta
+  /// corrida. Cero es lo normal; otro número dice que el teléfono se había
+  /// desviado y ya no.
+  final int productosCuadrados;
 
   bool get huboActividad =>
       sobresConfirmados > 0 || sobresEnCuarentena > 0 || deltasAplicados > 0;
@@ -343,6 +349,7 @@ class Sincronizador {
     var aplicados = 0;
     var desconocidos = 0;
     var vueltas = 0;
+    var alDia = false;
 
     while (vueltas < maxTandas) {
       final RespuestaPull delta;
@@ -399,10 +406,30 @@ class Sincronizador {
         // tramo no lo es.
         cursor = delta.cursor;
       }
-      if (!delta.hayMas) break;
+      if (!delta.hayMas) {
+        alDia = true;
+        break;
+      }
     }
 
     final quedaCola = _outbox.resumen().pendientes > 0;
+
+    // ---- CUADRE: el camión, como lo tiene el servidor --------------------
+    //
+    // Solo con todo entregado y todo traído: ver `cuadrarCamion`. Y, como las
+    // órdenes, NUNCA tumba la sincronización —un servidor viejo sin el endpoint,
+    // un vendedor sin camión (409), una respuesta rara—: el cuadre es una
+    // corrección, y las ventas ya quedaron entregadas.
+    var cuadrados = 0;
+    if (alDia && !quedaCola) {
+      try {
+        final foto = await _cliente.fotoDelCamion();
+        cuadrados = _aplicador.cuadrarCamion(foto, cursorLocal: cursor).corregidos;
+      } catch (_) {
+        cuadrados = 0;
+      }
+    }
+
     return ResultadoSincronizacion(
       fin: quedaCola ? FinDeSync.parcial : FinDeSync.completa,
       sobresConfirmados: confirmados,
@@ -410,6 +437,7 @@ class Sincronizador {
       deltasAplicados: aplicados,
       deltasDesconocidos: desconocidos,
       cursor: cursor,
+      productosCuadrados: cuadrados,
       // Las órdenes viajan incluso cuando no hay nada que hacer con ellas: de
       // ahí sale el aviso de «tu acceso vence en 2 días», que no es una orden
       // pero sí algo que el vendedor tiene que ver.
