@@ -158,7 +158,7 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                   ),
                   title: Text('${c.vendedor} · ${c.camion}'),
                   subtitle: Text(
-                    '${c.folio} · ${c.fecha} · ${_estado(c.estado)}\n'
+                    '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
                     '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas',
                   ),
                   isThreeLine: true,
@@ -447,7 +447,10 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                   '${carga.vendedor} · ${carga.camion}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text('Sale de ${carga.bodega} · ${carga.fecha} · ${_estado(carga.estado)}'),
+                Text(
+                  'Sale de ${carga.bodega} · ${diaEnPalabras(carga.fecha)} · '
+                  '${_estado(carga.estado)}',
+                ),
                 const SizedBox(height: 12),
                 if (_error != null) _Aviso(texto: _error!, esError: true),
                 if (carga.mensaje != null && _error == null)
@@ -457,6 +460,19 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                         carga.mensaje!.startsWith('No se agregó'),
                   ),
                 for (final b in carga.bloqueos) _Aviso(texto: b, esError: true),
+                // Por qué no se puede capturar. Sin esto, abrir la carga de un
+                // vendedor que YA la tenía confirmada se veía como «no me deja
+                // cargar», sin un solo botón ni una razón.
+                if (!carga.editable && carga.estado != 'cancelada')
+                  const _Aviso(
+                    key: Key('aviso_carga_ya_confirmada'),
+                    texto: 'Esta carga ya se confirmó: la mercancía salió de la bodega '
+                        'y ya no se edita. Cada vendedor lleva UNA carga por día. Si '
+                        'hoy necesita más mercancía, súbesela con un ajuste de su '
+                        'camión en el panel (Inventario → su camión → Ajustar), o '
+                        'cárgasela mañana.',
+                    esError: true,
+                  ),
                 const SizedBox(height: 8),
                 Text('En la carga', style: Theme.of(context).textTheme.titleSmall),
                 if (carga.renglones.isEmpty)
@@ -486,7 +502,12 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                   if (carga.surtido.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('La bodega no tiene existencias registradas.'),
+                      child: Text(
+                        'La bodega no tiene existencias registradas, así que no hay '
+                        'qué subir. Primero da entrada a la mercancía en el panel '
+                        '(Compras o Entradas).',
+                        key: Key('aviso_bodega_vacia'),
+                      ),
                     ),
                   for (final p in carga.surtido) _renglonDeBodega(p),
                   const SizedBox(height: 24),
@@ -621,7 +642,7 @@ class _EstadoDialogoConfirmar extends State<_DialogoConfirmar> {
 }
 
 class _Aviso extends StatelessWidget {
-  const _Aviso({required this.texto, required this.esError});
+  const _Aviso({super.key, required this.texto, required this.esError});
 
   final String texto;
   final bool esError;
@@ -630,7 +651,7 @@ class _Aviso extends StatelessWidget {
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
     return Container(
-      key: Key(esError ? 'aviso_carga_error' : 'aviso_carga'),
+      key: key == null ? Key(esError ? 'aviso_carga_error' : 'aviso_carga') : null,
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),

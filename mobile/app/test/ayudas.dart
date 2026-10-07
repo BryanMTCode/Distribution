@@ -575,6 +575,8 @@ void sembrarVentaDelDia(
   int sincronizada = 0,
   String estado = 'confirmada',
   String? notaOficina,
+  /// Para sembrar una venta de OTRO día (`YYYY-MM-DD`). Por omisión, hoy.
+  String? fechaOperativa,
 }) {
   final momento = relojDePrueba().toUtc().toIso8601String();
   base.db.execute(
@@ -583,7 +585,7 @@ void sembrarVentaDelDia(
     'nota_oficina) '
     'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [folio, folio.hashCode.abs(), folio, cliente, tipo, estado, total, momento,
-     momento.substring(0, 10), sincronizada, momento, notaOficina],
+     fechaOperativa ?? momento.substring(0, 10), sincronizada, momento, notaOficina],
   );
 }
 

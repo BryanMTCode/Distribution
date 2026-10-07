@@ -21,19 +21,118 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/mi_dia.dart';
 
-class PantallaMiDia extends ConsumerWidget {
+class PantallaMiDia extends ConsumerStatefulWidget {
   const PantallaMiDia({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final dia = ref.watch(miDiaProvider);
+  ConsumerState<PantallaMiDia> createState() => _EstadoMiDia();
+}
+
+/// Cuántos días atrás se puede revisar. Los documentos siguen en el teléfono;
+/// el límite es para que el calendario no ofrezca meses vacíos.
+const _diasHaciaAtras = 90;
+
+class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
+  /// El día que se está revisando. Nulo es hoy. Vive en la pantalla: al salir y
+  /// volver a entrar, «Mi día» abre otra vez en hoy, que es lo que se espera.
+  String? _elegido;
+
+  String _mover(String dia, int dias) =>
+      diaOperativoDe(DateTime.parse(dia).add(Duration(days: dias, hours: 12)));
+
+  void _ir(String dia, String hoy) =>
+      setState(() => _elegido = dia.compareTo(hoy) >= 0 ? null : dia);
+
+  Future<void> _elegirEnCalendario(String diaActual, String hoy) async {
+    final hoyFecha = DateTime.parse(hoy);
+    final elegido = await showDatePicker(
+      context: context,
+      initialDate: DateTime.parse(diaActual),
+      firstDate: hoyFecha.subtract(const Duration(days: _diasHaciaAtras)),
+      // Un día futuro no tiene ventas: no se ofrece.
+      lastDate: hoyFecha,
+      helpText: '¿Qué día quieres revisar?',
+    );
+    if (elegido == null) return;
+    _ir(diaOperativoDe(elegido), hoy);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hoy = ref.watch(diaOperativoProvider);
+    final diaOperativo = _elegido ?? hoy;
+    final esHoy = diaOperativo == hoy;
+    final dia = ref.watch(miDiaDelProvider(diaOperativo));
     final colores = Theme.of(context).colorScheme;
+    final elDia = esHoy ? 'hoy' : 'ese día';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi día')),
+      // El día de los datos, a la vista: «Mi día» a secas no deja ver si el
+      // teléfono ya cambió de día o si lo que se ve es de ayer.
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Mi día'),
+            Text(
+              encabezadoDelDia(diaOperativo, hoy: hoy),
+              key: const Key('dia_de_mi_dia'),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).appBarTheme.foregroundColor,
+                  ),
+            ),
+          ],
+        ),
+        // Moverse de día: uno atrás, uno adelante (hasta hoy), o el calendario.
+        actions: [
+          IconButton(
+            key: const Key('boton_dia_anterior'),
+            tooltip: 'Día anterior',
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _ir(_mover(diaOperativo, -1), hoy),
+          ),
+          IconButton(
+            key: const Key('boton_dia_siguiente'),
+            tooltip: 'Día siguiente',
+            icon: const Icon(Icons.chevron_right),
+            onPressed: esHoy ? null : () => _ir(_mover(diaOperativo, 1), hoy),
+          ),
+          IconButton(
+            key: const Key('boton_calendario_mi_dia'),
+            tooltip: 'Elegir el día',
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () => _elegirEnCalendario(diaOperativo, hoy),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Revisando otro día: que no se confunda con el corte de hoy.
+          if (!esHoy) ...[
+            Card(
+              key: const Key('aviso_otro_dia'),
+              color: colores.tertiaryContainer,
+              child: ListTile(
+                leading: Icon(Icons.history, color: colores.onTertiaryContainer),
+                title: Text(
+                  'Estás revisando el ${diaEnPalabras(diaOperativo)}',
+                  style: TextStyle(color: colores.onTertiaryContainer),
+                ),
+                subtitle: Text(
+                  'No es el corte de hoy.',
+                  style: TextStyle(color: colores.onTertiaryContainer),
+                ),
+                trailing: TextButton(
+                  key: const Key('boton_volver_a_hoy_mi_dia'),
+                  onPressed: () => setState(() => _elegido = null),
+                  child: const Text('Ver hoy'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           // ---------------------------------------------------------------
           // EL NÚMERO QUE IMPORTA, y va solo y grande.
           // ---------------------------------------------------------------
@@ -47,7 +146,7 @@ class PantallaMiDia extends ConsumerWidget {
               child: Column(
                 children: [
                   Text(
-                    'Efectivo que debes entregar',
+                    esHoy ? 'Efectivo que debes entregar' : 'Efectivo de ese día',
                     style: TextStyle(fontSize: 15, color: colores.onPrimaryContainer),
                   ),
                   const SizedBox(height: 8),
@@ -95,7 +194,7 @@ class PantallaMiDia extends ConsumerWidget {
             ),
           const Divider(height: 24),
           _Renglon(
-            etiqueta: 'Total vendido hoy',
+            etiqueta: 'Total vendido $elDia',
             monto: dia.vendido,
             nota: 'contado y crédito juntos',
             negrita: true,
@@ -155,9 +254,9 @@ class PantallaMiDia extends ConsumerWidget {
                         Expanded(
                           child: Text(
                             dia.tocadasPorOficina.length == 1
-                                ? 'La oficina cambió una venta de hoy'
+                                ? 'La oficina cambió una venta de $elDia'
                                 : 'La oficina cambió '
-                                    '${dia.tocadasPorOficina.length} ventas de hoy',
+                                    '${dia.tocadasPorOficina.length} ventas de $elDia',
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
@@ -208,13 +307,16 @@ class PantallaMiDia extends ConsumerWidget {
           ],
 
           const SizedBox(height: 24),
-          Text('Mis ventas de hoy', style: Theme.of(context).textTheme.titleMedium),
+          Text('Mis ventas de $elDia', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
 
           if (dia.ventas.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('Todavía no has vendido hoy.', textAlign: TextAlign.center),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                esHoy ? 'Todavía no has vendido hoy.' : 'Ese día no hubo ventas en este teléfono.',
+                textAlign: TextAlign.center,
+              ),
             )
           else
             for (final venta in dia.ventas)

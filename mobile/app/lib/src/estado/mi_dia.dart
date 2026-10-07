@@ -32,8 +32,19 @@ final diaOperativoProvider = Provider<String>(
 /// octubre 2026: sin esto, el provider se quedaba con la primera lectura y la
 /// venta seguía «sin subir» en rojo hasta cerrar y abrir la app, aunque el
 /// panel ya la tuviera.
-final miDiaProvider = Provider<MiDia>((ref) {
+final miDiaProvider = Provider<MiDia>(
+  (ref) => ref.watch(miDiaDelProvider(ref.watch(diaOperativoProvider))),
+);
+
+/// El corte de CUALQUIER día, para revisar días anteriores desde «Mi día».
+///
+/// Pedido en operación (octubre 2026): «que al vendedor en Mi día lo deje
+/// cambiar de día para revisar días anteriores». El teléfono no borra los
+/// documentos de días pasados, así que el corte de ayer se arma igual que el de
+/// hoy, sin señal. Escucha lo mismo que el de hoy: una venta de ayer que sube
+/// tarde cambia su marca de «sin subir».
+final miDiaDelProvider = Provider.family<MiDia, String>((ref, dia) {
   ref.watch(resumenColaProvider);
   ref.watch(revisionDelCamionProvider);
-  return ref.watch(repoMiDiaProvider).delDia(ref.watch(diaOperativoProvider));
+  return ref.watch(repoMiDiaProvider).delDia(dia);
 });

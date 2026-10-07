@@ -68,6 +68,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         "Hoy",
         [
             ("/panel", "Tablero"),
+            # El tamaño del negocio: clientes, vendedores, artículos, cartera.
+            ("/panel/empresa", "Empresa"),
             ("/panel/desempeno", "Desempeño"),
             # La lista de «¿qué falta para operar?». Se queda después del arranque:
             # dar de alta un vendedor nuevo es arrancar otra vez, en chiquito.
@@ -135,6 +137,7 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
 # nueva en el menú sin renglón aquí truena al dibujar cualquier página.
 PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel": None,
+    "/panel/empresa": "tablero.ver",
     "/panel/desempeno": "tablero.ver",
     "/panel/arranque": None,
     "/panel/plan-visita": "clientes.ver",

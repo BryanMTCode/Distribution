@@ -32,11 +32,9 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../estado/cargas.dart';
 import '../../estado/sesion.dart';
 import '../../datos/repo_tablero.dart';
 import '../../estado/tablero.dart';
-import 'cargas.dart';
 import 'comunes.dart';
 import 'mapa.dart';
 
@@ -61,6 +59,24 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
     });
   }
 
+  Future<void> _elegirDia(BuildContext context) async {
+    final ahora = ref.read(relojProvider)();
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+    final elegido = await showDatePicker(
+      context: context,
+      initialDate: ref.read(fechaDelTableroProvider) ?? hoy,
+      firstDate: hoy.subtract(const Duration(days: 366)),
+      // Un día futuro no tiene cifras: el servidor lo rechaza, y ofrecerlo
+      // invitaría a leer ceros de algo que no ha pasado.
+      lastDate: hoy,
+      helpText: 'Ver el tablero del día',
+    );
+    if (elegido == null) return;
+    ref.read(fechaDelTableroProvider.notifier).state =
+        diaOperativoDe(elegido) == diaOperativoDe(hoy) ? null : elegido;
+    await ref.read(tableroProvider.notifier).cargar();
+  }
+
   @override
   Widget build(BuildContext context) {
     final estado = ref.watch(tableroProvider);
@@ -81,22 +97,30 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
             const Text('Tablero'),
             Text(
               widget.nombre,
-              style: Theme.of(context).textTheme.labelSmall,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).appBarTheme.foregroundColor,
+                  ),
             ),
           ],
         ),
         actions: [
-          // Cargar camiones: solo quien tiene `inventario.cargar` (admin,
-          // supervisor, gerente). El vendedor nunca llega a esta pantalla, y
-          // aunque llegara, el servidor le contesta 403.
-          if (ref.watch(puedeCargarProvider))
+          // Otro día: el tablero sabe pedir cualquier fecha y no había con
+          // qué elegirla. Con un día elegido, el botón de al lado vuelve a hoy.
+          IconButton(
+            key: const Key('boton_elegir_dia'),
+            tooltip: 'Ver otro día',
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () => _elegirDia(context),
+          ),
+          if (ref.watch(fechaDelTableroProvider) != null)
             IconButton(
-              key: const Key('boton_cargas'),
-              tooltip: 'Cargas del camión',
-              icon: const Icon(Icons.local_shipping_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PantallaCargas()),
-              ),
+              key: const Key('boton_volver_a_hoy'),
+              tooltip: 'Volver a hoy',
+              icon: const Icon(Icons.today),
+              onPressed: () {
+                ref.read(fechaDelTableroProvider.notifier).state = null;
+                ref.read(tableroProvider.notifier).cargar();
+              },
             ),
           IconButton(
             key: const Key('boton_refrescar_tablero'),
@@ -120,9 +144,9 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
               child: CircularProgressIndicator(),
             ),
           TableroListo(:final local) =>
-            _Cuerpo(local: local, deLaCopia: false),
+            _Cuerpo(local: local, deLaCopia: false, hoy: ref.watch(relojProvider)()),
           TableroDeLaCopia(:final local) =>
-            _Cuerpo(local: local, deLaCopia: true),
+            _Cuerpo(local: local, deLaCopia: true, hoy: ref.watch(relojProvider)()),
           TableroSinNada(:final motivo) => _SinCifras(
               clave: 'tablero_sin_nada',
               icono: Icons.cloud_off_outlined,
@@ -172,10 +196,11 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
 }
 
 class _Cuerpo extends StatelessWidget {
-  const _Cuerpo({required this.local, required this.deLaCopia});
+  const _Cuerpo({required this.local, required this.deLaCopia, required this.hoy});
 
   final TableroLocal local;
   final bool deLaCopia;
+  final DateTime hoy;
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +217,12 @@ class _Cuerpo extends StatelessWidget {
           deLaCopia: deLaCopia,
         ),
 
-        _Titulo('Hoy'),
+        // El día de las cifras, con su nombre: «Hoy» a secas no dice si se está
+        // viendo hoy o un día que se eligió en el calendario.
+        _Titulo(
+          encabezadoDelDia(diaOperativoDe(t.venta.fecha), hoy: diaOperativoDe(hoy)),
+          clave: const Key('dia_del_tablero'),
+        ),
         _Rejilla(
           children: [
             Tarjeta(
@@ -307,15 +337,17 @@ class _Cuerpo extends StatelessWidget {
 }
 
 class _Titulo extends StatelessWidget {
-  const _Titulo(this.texto);
+  const _Titulo(this.texto, {this.clave});
 
   final String texto;
+  final Key? clave;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: 22, bottom: 10),
         child: Text(
           texto,
+          key: clave,
           style: Theme.of(context)
               .textTheme
               .titleMedium

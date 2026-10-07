@@ -577,3 +577,133 @@ async def ver_mapa(
         recortados=recortados,
         calculado_en=refresco["calculado_en"] if refresco else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Por periodo: lo mismo que el tablero del panel
+# ---------------------------------------------------------------------------
+# Pedido en operación (octubre 2026): «que el gerente pueda ver en la app los
+# datos por días y periodos, y lo de un vendedor en particular: lo mismo que en el
+# dashboard». Las cifras salen de `cifras_del_periodo`, la MISMA función del
+# tablero del panel, y el periodo de `leer_periodo`: «esta semana» empieza el
+# mismo lunes en los dos.
+
+
+class PeriodoDelTablero(BaseModel):
+    clave: str
+    etiqueta: str
+    desde: date
+    hasta: date
+    descripcion: str
+
+
+class CifrasDelPeriodo(BaseModel):
+    contado: Dinero
+    credito: Dinero
+    total: Dinero
+    canceladas: int
+    cobrado: Dinero
+    mermas: int
+    devoluciones: int
+    no_ventas: int
+    clientes_atendidos: int
+    clientes_nuevos: int
+
+
+class VendedorDelPeriodo(BaseModel):
+    id: uuid.UUID
+    codigo: str
+    nombre: str
+    ventas: int
+    importe: Dinero
+    contado: Dinero
+    credito: Dinero
+    cobrado: Dinero
+    mermas: int
+    no_ventas: int
+
+
+class DiaDelPeriodo(BaseModel):
+    fecha: date
+    ventas: int
+    importe: Dinero
+    cobrado: Dinero
+
+
+class TableroDelPeriodo(BaseModel):
+    periodo: PeriodoDelTablero
+    periodos: list[tuple[str, str]]
+    cifras: CifrasDelPeriodo
+    por_vendedor: list[VendedorDelPeriodo]
+    # Vacío en un periodo de un solo día, o de más de dos meses (como el panel).
+    por_dia: list[DiaDelPeriodo]
+
+
+@router.get("/periodo", response_model=TableroDelPeriodo)
+async def ver_periodo(
+    actor: ActorDep,
+    sesion: SesionDep,
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
+) -> TableroDelPeriodo:
+    from app.api.admin.panel import cifras_del_periodo
+    from app.api.admin.periodo import PERIODOS, leer_periodo
+
+    actor.exigir(PERMISO)
+    rango = leer_periodo(periodo, desde, hasta)
+    datos = await cifras_del_periodo(sesion, rango)
+    cifras = datos["cifras"]
+    return TableroDelPeriodo(
+        periodo=PeriodoDelTablero(
+            clave=rango.clave, etiqueta=rango.etiqueta, desde=rango.inicio,
+            hasta=rango.fin, descripcion=rango.descripcion,
+        ),
+        periodos=list(PERIODOS),
+        cifras=CifrasDelPeriodo(
+            **cifras,
+            total=Decimal(cifras["contado"] or 0) + Decimal(cifras["credito"] or 0),
+        ),
+        por_vendedor=[VendedorDelPeriodo(**v) for v in datos["por_vendedor"]],
+        por_dia=[
+            DiaDelPeriodo(**{k: d[k] for k in DiaDelPeriodo.model_fields})
+            for d in datos["por_dia"]
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# La empresa: el tamaño del negocio
+# ---------------------------------------------------------------------------
+class ResumenDeLaEmpresa(BaseModel):
+    clientes_activos: int
+    prospectos: int
+    clientes_inactivos: int
+    clientes_nuevos_mes: int
+    clientes_con_saldo: int
+    vendedores: int
+    vendedores_con_camion: int
+    usuarios_oficina: int
+    rutas: int
+    telefonos: int
+    productos: int
+    productos_sin_precio: int
+    bodegas: int
+    camiones: int
+    piezas_en_bodegas: Cantidad
+    piezas_en_camiones: Cantidad
+    existencias_negativas: int
+    cartera: Dinero
+    cartera_vencida: Dinero
+    vendido_mes: Dinero
+    vendido_anio: Dinero
+
+
+@router.get("/empresa", response_model=ResumenDeLaEmpresa)
+async def ver_empresa(actor: ActorDep, sesion: SesionDep) -> ResumenDeLaEmpresa:
+    """Cuántos clientes, vendedores, artículos… La misma consulta que la pantalla
+    Empresa del panel (`app/api/admin/empresa.py`)."""
+    from app.api.admin.empresa import resumen_de_la_empresa
+
+    actor.exigir(PERMISO)
+    return ResumenDeLaEmpresa(**await resumen_de_la_empresa(sesion))

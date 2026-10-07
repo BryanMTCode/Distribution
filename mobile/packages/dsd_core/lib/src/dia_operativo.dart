@@ -30,3 +30,35 @@ String diaOperativoDe(DateTime instante) {
   final dia = local.day.toString().padLeft(2, '0');
   return '${local.year}-$mes-$dia';
 }
+
+const _diasDeLaSemana = [
+  'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo',
+];
+const _meses = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+  'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/// «martes 7 de octubre»: el día de los datos, dicho como lo dice la gente.
+///
+/// Pedido en operación (octubre 2026): «que en Mi día salga el día del que son
+/// los datos». Una pantalla que dice «Hoy» a secas no deja ver si el teléfono
+/// cambió de día —o si lo que se ve es de ayer—, y con la fecha en número
+/// («2026-10-07») nadie la lee de reojo.
+///
+/// Recibe el día operativo (`YYYY-MM-DD`), que ya es local: no hay zona que
+/// convertir.
+String diaEnPalabras(String diaOperativo) {
+  final d = DateTime.parse(diaOperativo);
+  return '${_diasDeLaSemana[d.weekday - 1]} ${d.day} de ${_meses[d.month - 1]}';
+}
+
+/// «Hoy, martes 7 de octubre» o «Ayer, lunes 6 de octubre»; cualquier otro día,
+/// solo la fecha. Con mayúscula, para encabezado.
+String encabezadoDelDia(String diaOperativo, {required String hoy}) {
+  final fecha = diaEnPalabras(diaOperativo);
+  final ayer = diaOperativoDe(DateTime.parse(hoy).subtract(const Duration(hours: 12)));
+  if (diaOperativo == hoy) return 'Hoy, $fecha';
+  if (diaOperativo == ayer) return 'Ayer, $fecha';
+  return fecha[0].toUpperCase() + fecha.substring(1);
+}

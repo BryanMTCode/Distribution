@@ -189,4 +189,60 @@ void main() {
       expect(find.byKey(const Key('tarjeta_oficina')), findsNothing);
     });
   });
+
+  testWidgets('el vendedor revisa días anteriores y vuelve a hoy', (tester) async {
+    // Pedido en operación: «que en Mi día lo deje cambiar de día para revisar
+    // días anteriores». Los documentos de ayer siguen en el teléfono.
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+        sembrarVentaDelDia(base, folio: 'HOY1', total: 100.00);
+        sembrarVentaDelDia(base, folio: 'AYER1', total: 345.00,
+            fechaOperativa: '2026-09-23');
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirMiDia(tester);
+
+    expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
+    expect(find.byKey(const Key('aviso_otro_dia')), findsNothing);
+    // Hoy no se puede ir a mañana.
+    expect(
+      tester.widget<IconButton>(find.byKey(const Key('boton_dia_siguiente'))).onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byKey(const Key('boton_dia_anterior')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ayer, miércoles 23 de septiembre'), findsOneWidget);
+    expect(find.byKey(const Key('aviso_otro_dia')), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const Key('monto_efectivo'))).data, '\$345.00');
+    expect(find.text('Efectivo de ese día'), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('venta_AYER1')), 200);
+    expect(find.byKey(const Key('venta_AYER1')), findsOneWidget);
+    expect(find.byKey(const Key('venta_HOY1')), findsNothing);
+
+    // Y de vuelta a hoy, con la flecha.
+    await tester.scrollUntilVisible(find.byKey(const Key('monto_efectivo')), -200);
+    await tester.tap(find.byKey(const Key('boton_dia_siguiente')));
+    await tester.pumpAndSettle();
+    expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const Key('monto_efectivo'))).data, '\$100.00');
+  });
+
+  testWidgets('salir de Mi día y volver a entrar abre otra vez en hoy', (tester) async {
+    await montarApp(tester, credencial: credencialDelServidor());
+    await entrarCon(tester, pinCorrecto);
+    await abrirMiDia(tester);
+    await tester.tap(find.byKey(const Key('boton_dia_anterior')));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await abrirMiDia(tester);
+    expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
+  });
 }

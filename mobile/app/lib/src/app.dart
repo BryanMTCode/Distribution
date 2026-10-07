@@ -10,8 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'estado/sesion.dart';
+import 'marca.dart';
 import 'estado/sincronizacion.dart';
-import 'pantallas/gerencia/panel.dart';
+import 'pantallas/gerencia/portal.dart';
 import 'pantallas/equipo_dado_de_baja.dart';
 import 'pantallas/login.dart';
 import 'pantallas/sin_servidor.dart';
@@ -22,14 +23,9 @@ class AppDsd extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'DSD Ruta',
+        title: nombreDeLaEmpresa,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: const Color(0xFF1B5E20),
-          useMaterial3: true,
-          // La app se usa a pleno sol en la calle: texto grande y contraste alto.
-          visualDensity: VisualDensity.comfortable,
-        ),
+        theme: temaDeLaMarca(),
         home: const PortalPorRol(),
       );
 }
@@ -70,12 +66,12 @@ class PortalPorRol extends ConsumerWidget {
       SesionAbierta(:final credencial) => _porRol(credencial),
       // Gerencia entró en línea y no guardó credencial: su teléfono no tiene
       // cartera ni maquinaria offline que proteger. Ver `SesionDeGerencia`.
-      SesionDeGerencia(:final perfil) => PantallaGerencia(nombre: perfil.nombre),
+      SesionDeGerencia(:final perfil) => PortalDeOficina(nombre: perfil.nombre),
     };
   }
 
   Widget _porRol(CredencialLocal credencial) => switch (credencial.rol) {
         'vendedor' || 'supervisor' => const PantallaClientes(),
-        _ => PantallaGerencia(nombre: credencial.nombre),
+        _ => PortalDeOficina(nombre: credencial.nombre),
       };
 }

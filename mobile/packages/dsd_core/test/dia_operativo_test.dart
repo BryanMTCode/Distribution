@@ -43,4 +43,13 @@ void main() {
     // operativa se compara como TEXTO en todas las consultas del día.
     expect(diaOperativoDe(DateTime(2026, 1, 5, 12)), equals('2026-01-05'));
   });
+
+  test('el día se dice con su nombre, y hoy y ayer se nombran', () {
+    expect(diaEnPalabras('2026-10-07'), 'miércoles 7 de octubre');
+    expect(encabezadoDelDia('2026-10-07', hoy: '2026-10-07'), 'Hoy, miércoles 7 de octubre');
+    expect(encabezadoDelDia('2026-10-06', hoy: '2026-10-07'), 'Ayer, martes 6 de octubre');
+    expect(encabezadoDelDia('2026-10-01', hoy: '2026-10-07'), 'Jueves 1 de octubre');
+    // El primero de mes: «ayer» es el último del mes anterior.
+    expect(encabezadoDelDia('2026-09-30', hoy: '2026-10-01'), 'Ayer, miércoles 30 de septiembre');
+  });
 }

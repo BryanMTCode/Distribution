@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'sesion.dart';
 import 'sincronizacion.dart';
+import 'vendedores.dart';
 
 final clienteCargasProvider = Provider<ClienteCargas?>((ref) {
   final transporte = ref.watch(transporteProvider);
@@ -29,14 +30,5 @@ final puedeCargarProvider = Provider<bool>(
 );
 
 /// El error, dicho para quien está en la bodega con el teléfono en la mano.
-String explicarErrorDeCarga(Object error) => switch (error) {
-      CargaRechazada(:final detalle) => detalle,
-      SinPermisoDeCargar() =>
-        'Tu usuario no tiene permiso de cargar camiones. Se da desde el panel.',
-      SesionInvalida() => 'La sesión venció. Sal y vuelve a entrar.',
-      ErrorDeRed(:final mensaje) =>
-        'No se pudo conectar ($mensaje). Cargar el camión necesita señal.',
-      ServidorConProblemas(:final codigo) =>
-        'El servidor contestó con un error (HTTP $codigo).',
-      _ => '$error',
-    };
+/// Es el mismo texto que el resto de la oficina: ver `explicarErrorDeOficina`.
+String explicarErrorDeCarga(Object error) => explicarErrorDeOficina(error);

@@ -17,6 +17,7 @@ import 'dart:convert';
 
 import 'sync_cliente.dart' show SesionInvalida, ServidorConProblemas;
 import 'transporte.dart';
+import 'vendedores_cliente.dart' show ServidorSinEstaFuncion;
 
 /// El servidor dijo que no a algo que la pantalla puede explicar: una carga ya
 /// confirmada, bloqueos sin motivo, un vendedor sin camión. Trae el texto del
@@ -291,6 +292,11 @@ class ClienteCargas {
     if (r.ok) return;
     if (r.codigo == 401) throw SesionInvalida(r.codigo);
     if (r.codigo == 403) throw const SinPermisoDeCargar();
+    // «Not Found» a secas es que la RUTA no existe: el servidor no se ha
+    // actualizado. Sin esto la pantalla decía solo «Not Found».
+    if (r.codigo == 404 && r.cuerpo.contains('"Not Found"')) {
+      throw const ServidorSinEstaFuncion();
+    }
     if (r.codigo >= 400 && r.codigo < 500) {
       throw CargaRechazada(r.codigo, _detalle(r.cuerpo));
     }

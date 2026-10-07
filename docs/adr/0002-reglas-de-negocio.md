@@ -4432,3 +4432,82 @@ solo para los administradores y puestos de arriba, no para los vendedores.»
 el APK nuevo de verdad quedó instalado. Ahora la pantalla de entrada dice abajo
 «Versión 0.1.0+22», y esa misma versión viaja en cada subida, así que el panel la
 muestra en Sincronizaciones. (versionCode 22)
+
+## 69. El portal de la oficina en la app: lo mismo que el dashboard
+
+**Decisión (octubre 2026).** «Que el gerente pueda ver en la app lo mismo que en el
+dashboard: por días, por periodos y por vendedor.» El portal de gerencia del
+teléfono se reorganiza con una barra abajo, como el menú del panel. Cada pestaña
+aparece solo con su permiso:
+
+- **Día** (`tablero.ver`): el tablero de siempre, ahora con **calendario** para
+  ver cualquier día del último año. El tablero ya sabía pedir una fecha; no había
+  con qué elegirla.
+- **Periodo** (`tablero.ver`): hoy, ayer, la semana, la pasada, el mes, el pasado
+  o **fechas a mano**. Lo vendido (contado y crédito), cobrado, clientes, visitas
+  sin venta y mermas; **por vendedor** (tocar uno abre su ficha en ese periodo) y
+  **por día** (tocar uno abre el tablero de ese día). `/v1/tablero/periodo` usa
+  `cifras_del_periodo`, la MISMA función del tablero del panel.
+- **Empresa** (`tablero.ver`): ver §70.
+- **Vendedores** (`ventas.ver_todas`): cada vendedor con lo que vendió y cobró en
+  el periodo, lo que debe en su cuenta y cuándo habló su teléfono. Su ficha trae
+  TODO lo que hizo en orden de hora —ventas, cobros, mermas, visitas, cargas,
+  cortes, su cuenta—, filtrable por tipo; **cada venta se abre** con lo que se le
+  vendió a la tienda; y **su camión** producto por producto, con los negativos
+  marcados. `/v1/vendedores` importa las consultas de la pantalla Vendedores del
+  panel: los dos no pueden decir cosas distintas. El vendedor no tiene
+  `ventas.ver_todas`: no ve a los demás ni el camión de otro.
+- **Cargas** (`inventario.cargar`): §67.
+
+Las pestañas se construyen al abrirse por primera vez: abrir la app no hace cinco
+consultas para mostrar una.
+
+## 70. El resumen de la empresa, en el panel y en la app
+
+**Decisión (octubre 2026).** «Tanto en el dashboard como en la app de gerente
+quiero un resumen de la empresa: cuántos clientes, vendedores, artículos…». Una
+sola consulta (`app/api/admin/empresa.py`) para la pantalla **Empresa** del panel
+(menú Hoy, `/panel/empresa`) y la pestaña Empresa de la app
+(`/v1/tablero/empresa`): clientes activos, prospectos, de baja y nuevos del mes;
+cartera y vencido; vendedores (y cuántos con camión), usuarios de oficina, rutas,
+teléfonos; artículos activos y sin precio; piezas en bodegas y en camiones, y
+renglones en negativo; lo vendido en el mes y en el año. No incluye el valor del
+inventario: el costo es dato reservado de compras.
+
+## 71. El día de los datos, siempre a la vista
+
+**Decisión (octubre 2026).** «Que en Mi día salga el día del que son los datos.»
+`diaEnPalabras` y `encabezadoDelDia` (en `dsd_core`) dicen la fecha como la dice la
+gente: «Hoy, jueves 24 de septiembre», «Ayer, …», o «Del lunes 21 al jueves 24 de
+septiembre». Se muestran en Mi día del vendedor, en el tablero (que antes decía
+«Hoy» aunque se viera otro día), en Periodo, en Vendedores y en las cargas.
+
+## 72. «No me deja cargar»: una carga por vendedor por día, y se explica
+
+**Decisión (octubre 2026).** Cada vendedor lleva UNA carga por día operativo
+(`uq_carga_vendedor_dia`, desde la migración 0004): el corte se cuadra contra esa
+carga. Abrir otra devuelve la que ya existe; si ya estaba confirmada, la app la
+mostraba sin botones y sin una razón. Ahora lo dice, y dice qué hacer: un ajuste
+del camión en el panel si hoy necesita más mercancía, o cargarla mañana. También
+se explica cuando la bodega no tiene existencias, y cuando el servidor todavía no
+tiene la función (una ruta que no existe es «actualiza el servidor», no «Not
+Found»).
+
+## 73. La marca: Distribuciones SE
+
+**Decisión (octubre 2026).** La app lleva la marca de la empresa: el nombre
+**Distribuciones SE** bajo el ícono, el rojo del bordado (`#E0282E`) en barras y
+botones, y el logo —óvalo blanco, «Distribuciones» y «SE» en rojo manuscrito— en
+la pantalla de entrada y como ícono de la app. La letra es Dancing Script (Google
+Fonts, licencia OFL en `mobile/app/assets/fuentes/OFL.txt`), dentro del APK para
+que se vea igual en cualquier teléfono. (versionCode 23)
+
+## 74. «Mi día» deja revisar días anteriores
+
+**Decisión (octubre 2026).** «Que al vendedor en Mi día lo deje cambiar de día para
+revisar días anteriores.» Flechas de día anterior y siguiente (hasta hoy, nunca
+mañana) y un calendario de los últimos 90 días. El teléfono no borra los
+documentos de días pasados, así que el corte de ayer se arma igual que el de hoy y
+sin señal. Mirando otro día, la pantalla lo dice («Estás revisando el …») y el
+efectivo se llama «Efectivo de ese día», para que no se confunda con lo que hay que
+entregar hoy. Salir y volver a entrar abre otra vez en hoy.

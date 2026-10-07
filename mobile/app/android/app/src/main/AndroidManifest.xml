@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <application
-        android:label="Ruta"
+        android:label="Distribuciones SE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

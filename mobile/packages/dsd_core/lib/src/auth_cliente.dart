@@ -65,6 +65,10 @@ class Perfil {
   /// Cargar camiones: admin, supervisor y gerente. Nunca el vendedor —cargarse
   /// su propio camión sería firmar su propia entrega—.
   bool get puedeCargar => puede('inventario.cargar');
+
+  /// Ver a cada vendedor: su camión, sus ventas, su cuenta. La oficina, no el
+  /// vendedor —la venta de los demás no es suya—.
+  bool get puedeVerVendedores => puede('ventas.ver_todas');
 }
 
 /// La sesión en línea recién abierta.

@@ -398,6 +398,12 @@ void main() {
       await tester.tap(find.byKey(const Key('boton_refrescar_tablero')));
       await tester.pumpAndSettle();
 
+      // La barra del portal de abajo ocupa su alto: la tarjeta puede quedar
+      // fuera de la pantalla de prueba, y una lista perezosa no la construye.
+      await tester.scrollUntilVisible(
+        find.textContaining(r'$11,000.00 del día salió a crédito'),
+        200,
+      );
       expect(find.textContaining(r'$11,000.00 del día salió a crédito'),
           findsOneWidget);
       expect(find.textContaining(r'($31,180.00 de contado)'), findsOneWidget);

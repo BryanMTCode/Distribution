@@ -27,6 +27,7 @@ import '../demo.dart';
 import '../estado/alta.dart';
 import '../estado/sesion.dart';
 import '../estado/sincronizacion.dart';
+import '../marca.dart';
 
 class PantallaLogin extends ConsumerStatefulWidget {
   const PantallaLogin({super.key});
@@ -170,9 +171,7 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.local_shipping_outlined, size: 64),
-                  const SizedBox(height: 12),
-                  Text('Ruta', style: Theme.of(context).textTheme.headlineMedium),
+                  const LogoDistribucionesSE(),
 
                   // De quién es este teléfono. Sale de la credencial que dejó la
                   // vinculación, así que aparece sola en cuanto el equipo queda

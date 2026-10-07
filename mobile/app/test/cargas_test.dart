@@ -17,12 +17,13 @@ import 'ayudas.dart';
 
 /// Un servidor de cargas de mentira, con lo justo para recorrer el flujo.
 class _ServidorDeCargas implements Transporte {
-  _ServidorDeCargas({this.bloqueos = const []});
+  _ServidorDeCargas({this.bloqueos = const [], bool yaConfirmada = false})
+      : _estado = yaConfirmada ? 'confirmada' : 'borrador';
 
   final List<String> bloqueos;
   final List<(String, Map<String, Object?>)> posts = [];
   final List<Map<String, Object?>> _renglones = [];
-  String _estado = 'borrador';
+  String _estado;
   bool _abierta = false;
 
   Map<String, Object?> get _detalle => {
@@ -240,5 +241,19 @@ void main() {
 
     expect(find.text('No se puede confirmar: pendientes.'), findsOneWidget);
     expect(find.byKey(const Key('boton_confirmar_carga')), findsOneWidget);
+  });
+
+  testWidgets('si el vendedor ya tiene su carga del día confirmada, se explica',
+      (tester) async {
+    // Reportado en operación: «en la app no me deja cargar al vendedor». Cada
+    // vendedor lleva UNA carga por día; abrir otra devuelve la ya confirmada, y
+    // la pantalla quedaba sin botones y sin una razón.
+    final servidor = _ServidorDeCargas(yaConfirmada: true);
+    await _montar(tester, servidor);
+    await _abrirCarga(tester);
+
+    expect(find.byKey(const Key('aviso_carga_ya_confirmada')), findsOneWidget);
+    expect(textoQueContiene('UNA carga por día'), findsOneWidget);
+    expect(find.byKey(const Key('boton_confirmar_carga')), findsNothing);
   });
 }

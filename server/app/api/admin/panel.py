@@ -254,7 +254,7 @@ async def tablero(
             "faltan_para_operar": faltan_para_operar(await revisar_arranque(sesion)),
             "periodo": rango,
             "periodos": PERIODOS,
-            **await _cifras_del_periodo(sesion, rango),
+            **await cifras_del_periodo(sesion, rango),
         },
         actor=actor,
         seccion="Tablero",
@@ -346,7 +346,9 @@ SELECT d::date AS fecha,
 DIAS_MAXIMOS_POR_DIA = 62
 
 
-async def _cifras_del_periodo(sesion, rango) -> dict:
+async def cifras_del_periodo(sesion, rango) -> dict:
+    """Las cifras del periodo, por vendedor y por día. Las usan el tablero del
+    panel y el de la app (`/v1/tablero/periodo`): los dos dicen lo mismo."""
     parametros = {"desde": rango.inicio, "hasta": rango.fin}
     cifras = dict((await sesion.execute(text(SQL_PERIODO), parametros)).mappings().one())
     por_vendedor = [
