@@ -218,14 +218,16 @@ Future<void> _irA(WidgetTester tester, String pestana) async {
 
 void main() {
   group('la pestaña', () {
-    testWidgets('con todos los permisos: cortes y cargas, existencias, entradas, '
-        'traspasos, cargas y corte', (tester) async {
+    testWidgets('con todos los permisos: existencias, entradas, traspasos, cargas y '
+        'corte', (tester) async {
       await _montar(tester);
       expect(find.byKey(const Key('pantalla_almacen')), findsOneWidget);
-      for (final k in ['pestana_cierres', 'pestana_existencias', 'pestana_entradas',
-          'pestana_traspasos', 'pestana_cargas', 'pestana_cortes']) {
+      for (final k in ['pestana_existencias', 'pestana_entradas', 'pestana_traspasos',
+          'pestana_cargas', 'pestana_cortes']) {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
+      // El corte y la carga del vendedor van cada uno en su pestaña (ADR 0002 §82).
+      expect(find.byKey(const Key('pestana_cierres')), findsNothing);
     });
 
     testWidgets('con solo ver, las listas se ven pero sin botón de nueva', (tester) async {

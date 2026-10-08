@@ -139,12 +139,13 @@ Future<void> _montar(
 }
 
 Future<void> _abrirCarga(WidgetTester tester) async {
-  // Cargas vive en la pestaña Almacén; con `inventario.cargar` salen dos
-  // partes: los cortes y cargas por aceptar, y las cargas a mano.
+  // Cargas vive en la pestaña Almacén; con solo `inventario.cargar` es la única
+  // parte y se muestra directo, sin pestañas. Arriba van las que pidieron los
+  // vendedores (ADR 0002 §82).
   await tester.tap(find.byKey(const Key('nav_almacen')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('pestana_cargas')));
-  await tester.pumpAndSettle();
+  expect(find.byKey(const Key('pestana_cargas')), findsNothing);
+  expect(find.byKey(const Key('seccion_cargas_pedidas')), findsOneWidget);
   expect(find.byKey(const Key('cargas_vacio')), findsOneWidget);
 
   await tester.tap(find.byKey(const Key('boton_nueva_carga')));
