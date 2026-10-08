@@ -282,7 +282,7 @@ async def refrescar(peticion: PeticionRefresh, sesion: SesionDep) -> RespuestaLo
             rol=usuario.rol_codigo,
             permisos=permisos,
         ),
-        dispositivo_id=dispositivo.id if dispositivo else None,
+        dispositivo_id=dispositivo_id,
     )
 
 
