@@ -3,23 +3,17 @@
 /// ─────────────────────────────────────────────────────────────────────────
 /// EL FLUJO (ADR 0002 §82)
 /// ─────────────────────────────────────────────────────────────────────────
-/// 1. **Corte del día.** Cuenta lo que le sobró arriba del camión y el efectivo
-///    que entrega. Sale el ticket con lo vendido, el efectivo y el sobrante.
+/// 1. **Corte del día.** Dice el efectivo que entrega. Lo que le queda en el
+///    camión no lo cuenta: se calcula —lo que traía, más la carga, menos lo que
+///    vendió— y se le muestra. Sale el ticket con lo vendido, el efectivo y lo
+///    que le queda.
 /// 2. **Solicitar carga.** Ahí mismo pide la carga de mañana. Solo hay una al
 ///    día y es para el día siguiente.
-/// 3. La oficina la acepta y le llega con la sincronización: «aceptada», con el
-///    folio, y la mercancía arriba del camión.
+/// 3. La oficina cierra su corte y acepta la carga; le llega con la
+///    sincronización: «aceptada», con el folio, y la mercancía arriba del camión.
 ///
 /// Todo funciona sin señal: el corte y la solicitud se guardan aquí y viajan
 /// por la cola. Los tickets se comparten como texto (WhatsApp).
-///
-/// ─────────────────────────────────────────────────────────────────────────
-/// EL CONTEO ES A CIEGAS
-/// ─────────────────────────────────────────────────────────────────────────
-/// La pantalla no dice cuánto cree el sistema que trae de cada producto. Con
-/// la cifra a la vista el conteo se vuelve un copiado, y el faltante se descubre
-/// el día que alguien cuenta de verdad. La comparación la ve la oficina antes
-/// de aceptar.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -55,42 +49,19 @@ class PantallaCorteDelDia extends ConsumerStatefulWidget {
 class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
   final _efectivo = TextEditingController();
   final _observaciones = TextEditingController();
-  final Map<String, TextEditingController> _conteo = {};
   String? _error;
 
   @override
   void dispose() {
     _efectivo.dispose();
     _observaciones.dispose();
-    for (final c in _conteo.values) {
-      c.dispose();
-    }
     super.dispose();
   }
 
-  TextEditingController _campo(String productoId) =>
-      _conteo.putIfAbsent(productoId, TextEditingController.new);
-
-  void _terminar(ResumenDelDia resumen) {
+  void _terminar() {
     final registro = ref.read(registroDeCierreProvider);
     if (registro == null) return;
 
-    final conteo = <String, Cantidad>{};
-    final faltan = <String>[];
-    for (final p in resumen.productos) {
-      final texto = _campo(p.productoId).text.trim();
-      if (texto.isEmpty) {
-        faltan.add(p.nombre);
-        continue;
-      }
-      conteo[p.productoId] = Cantidad.deEnteros(int.parse(texto));
-    }
-    if (faltan.isNotEmpty) {
-      setState(() => _error = 'Falta contar: ${faltan.take(3).join(', ')}'
-          '${faltan.length > 3 ? ' y ${faltan.length - 3} más' : ''}. '
-          'Si no te quedó nada, escribe 0.');
-      return;
-    }
     final efectivo = leerPesos(_efectivo.text);
     if (efectivo == null) {
       setState(() => _error = 'Escribe cuánto efectivo entregas, por ejemplo 2250.50.');
@@ -98,7 +69,6 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
     }
 
     final corte = registro.hacerCorte(
-      conteo: conteo,
       efectivo: efectivo,
       observaciones: _observaciones.text,
     );
@@ -160,8 +130,10 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
                     key: const Key('corte_efectivo_vendido'),
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  Text('Por transferencia: ${resumen.transferencias.enPesos} '
-                      '(llegó al banco, no a tu bolsa)'),
+                  // Solo efectivo (ADR 0002 §81); una de antes todavía se dice.
+                  if (!resumen.transferencias.esCero)
+                    Text('Por transferencia: ${resumen.transferencias.enPesos} '
+                        '(llegó al banco, no a tu bolsa)'),
                 ],
               ),
             ),
@@ -185,48 +157,25 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
             ),
           ),
           const SizedBox(height: 20),
-          Text('Cuenta lo que te sobró en el camión', style: estilo.titleMedium),
-          const Text('En piezas. Si de algo no te quedó nada, escribe 0.'),
+          Text('Lo que te queda en el camión', style: estilo.titleMedium),
+          const Text('No lo cuentas: es lo que traías, más tu carga, menos lo que '
+              'vendiste.'),
           const SizedBox(height: 8),
           if (resumen.productos.isEmpty)
-            const Aviso('Tu camión no tiene productos registrados: no hay nada que contar.'),
+            const Aviso('Tu camión no tiene productos registrados.'),
           for (final p in resumen.productos)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p.nombre),
-                        Text(
-                          [
-                            p.sku,
-                            if (p.mayor != null)
-                              '${p.mayor!.unidad} de ${p.mayor!.factor.textoCorto}',
-                          ].join(' · '),
-                          style: estilo.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    width: 96,
-                    child: TextField(
-                      key: Key('conteo_${p.sku}'),
-                      controller: _campo(p.productoId),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      textAlign: TextAlign.end,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        border: const OutlineInputBorder(),
-                        suffixText: p.unidadBase,
-                      ),
-                    ),
-                  ),
-                ],
+            ListTile(
+              key: Key('queda_${p.sku}'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(p.nombre),
+              subtitle: Text('Vendiste ${_cuanto(p.vendido, p)}'),
+              trailing: Text(
+                _cuanto(p.queda, p),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: p.queda.esNegativa ? Theme.of(context).colorScheme.error : null,
+                ),
               ),
             ),
           const SizedBox(height: 16),
@@ -243,7 +192,7 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
           const SizedBox(height: 8),
           FilledButton.icon(
             key: const Key('boton_terminar_corte'),
-            onPressed: () => _terminar(resumen),
+            onPressed: _terminar,
             icon: const Icon(Icons.check),
             label: const Text('Terminar el corte'),
           ),
@@ -251,6 +200,21 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
       ),
     );
   }
+}
+
+/// «60 PZA (2 CAJA + 12)»: en piezas, y en bultos cuando alcanza para uno.
+String _cuanto(Cantidad c, LoQueQueda p) {
+  final base = '${c.textoCorto} ${p.unidadBase}';
+  final mayor = p.mayor;
+  if (mayor == null || c.esNegativa) return base;
+  final piezas = c.milesimos / 1000;
+  final factor = mayor.factor.diezmilesimos / 10000;
+  final bultos = (piezas / factor).floor();
+  if (bultos == 0) return base;
+  final resto = piezas - bultos * factor;
+  if (resto == 0) return '$base ($bultos ${mayor.unidad})';
+  final r = resto == resto.roundToDouble() ? '${resto.toInt()}' : resto.toStringAsFixed(1);
+  return '$base ($bultos ${mayor.unidad} + $r)';
 }
 
 // ===========================================================================

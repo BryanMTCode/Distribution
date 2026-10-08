@@ -1,4 +1,4 @@
-"""El cierre del vendedor: corte → solicitud de carga → el gerente acepta (§82).
+"""El cierre del vendedor: corte → solicitud de carga → el gerente resuelve (§82).
 
 ────────────────────────────────────────────────────────────────────────────
 QUÉ DEFIENDEN ESTAS PRUEBAS
@@ -8,11 +8,16 @@ QUÉ DEFIENDEN ESTAS PRUEBAS
    se reintente, y el último del día reemplaza al anterior que nadie vio.
 2. **Una carga al día.** Si ese día ya tiene una aceptada, la nueva entra
    rechazada y el teléfono se entera con el motivo.
-3. **Aceptar hace las dos cosas con las reglas de siempre.** El corte se cierra
-   con lo que contó el vendedor y el efectivo que declaró —el faltante va a su
-   cuenta—; la carga de mañana sale de la bodega principal, se confirma y le
-   llega al teléfono junto con «aceptada» y su folio.
-4. **Quién.** El vendedor no acepta su propio cierre, ni con su token.
+3. **El camión no se cuenta.** Lo que le queda es lo que traía, más la carga,
+   menos lo vendido; al cerrar el corte no hay diferencias de mercancía, y lo
+   único que puede ir a la cuenta del vendedor es el efectivo que no entregó.
+   El conteo que todavía manda un teléfono viejo no cambia nada.
+4. **El corte y la carga se resuelven por separado**, con las reglas de
+   siempre, y en ese orden: con el corte abierto la carga de mañana no sale.
+   La carga sale de la bodega principal, se confirma y le llega al teléfono
+   junto con «aceptada» y su folio.
+5. **Quién.** El vendedor no resuelve su propio cierre, ni con su token.
+6. **La app anterior a la versión +28** sigue pudiendo aceptar los dos juntos.
 """
 
 from __future__ import annotations
@@ -54,23 +59,34 @@ def _ctx(dia, semilla) -> Contexto:
     )
 
 
-async def _corte(sesion, dia, semilla, *, contadas="55", efectivo="2200.00", corte_id=None):
+async def _corte(sesion, dia, semilla, *, contadas=None, efectivo="2200.00", corte_id=None):
+    """El corte como lo manda el teléfono: sin conteo. `contadas` es el de un
+    teléfono anterior a la versión +28, que todavía contaba."""
     corte_id = corte_id or uuid.uuid4()
-    await obtener_manejador("corte.crear")(
-        sesion,
-        _ctx(dia, semilla),
-        corte_id,
-        {
-            "fecha_operativa": dia["dia"].isoformat(),
-            "carga_id": str(dia["carga"]),
-            "efectivo_declarado": efectivo,
-            "observaciones": "Se me rompió una lata",
-            "fecha_dispositivo": MOMENTO,
-            "conteo": [{"producto_id": str(dia["producto"]), "cantidad": f"{contadas}.000"}],
-        },
-    )
+    datos = {
+        "fecha_operativa": dia["dia"].isoformat(),
+        "carga_id": str(dia["carga"]),
+        "efectivo_declarado": efectivo,
+        "observaciones": "Se me rompió una lata",
+        "fecha_dispositivo": MOMENTO,
+    }
+    if contadas is not None:
+        datos["conteo"] = [{"producto_id": str(dia["producto"]), "cantidad": f"{contadas}.000"}]
+    await obtener_manejador("corte.crear")(sesion, _ctx(dia, semilla), corte_id, datos)
     await sesion.commit()
     return corte_id
+
+
+async def _cerrar(cliente, corte_id, cab):
+    r = await cliente.post(f"/v1/cierres/cortes/{corte_id}/cerrar", headers=cab)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def _aceptar(cliente, sid, cab, bultos=None):
+    return await cliente.post(
+        f"/v1/cierres/solicitudes/{sid}/aceptar", json={"bultos": bultos or {}}, headers=cab
+    )
 
 
 async def _solicitud(sesion, dia, semilla, *, corte_id=None, cajas=10, para=None, sid=None):
@@ -119,7 +135,7 @@ async def _deltas(sesion, entidad_id) -> list[dict]:
 # La ingesta
 # ---------------------------------------------------------------------------
 async def test_el_corte_se_guarda_una_vez_y_no_mueve_nada(sesion, semilla, dia):
-    corte_id = await _corte(sesion, dia, semilla)
+    corte_id = await _corte(sesion, dia, semilla, contadas="55")
     # El sobre se reintenta por diseño: la segunda vez no hace nada.
     await _corte(sesion, dia, semilla, corte_id=corte_id, contadas="1")
 
@@ -199,11 +215,8 @@ async def test_una_carga_al_dia_la_segunda_entra_rechazada(cliente, sesion, semi
     corte_id = await _corte(sesion, dia, semilla)
     primera = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
     cab = await _cab(cliente, "GER01")
-    r = await cliente.post(
-        "/v1/cierres/aceptar",
-        json={"corte_id": str(corte_id), "solicitud_id": str(primera)},
-        headers=cab,
-    )
+    await _cerrar(cliente, corte_id, cab)
+    r = await _aceptar(cliente, primera, cab)
     assert r.status_code == 200, r.text
 
     otra = await _solicitud(sesion, dia, semilla, cajas=3)
@@ -222,21 +235,33 @@ async def test_una_carga_al_dia_la_segunda_entra_rechazada(cliente, sesion, semi
 # ---------------------------------------------------------------------------
 # Lo que ve el gerente
 # ---------------------------------------------------------------------------
-async def test_el_gerente_ve_el_corte_junto_con_su_solicitud(cliente, sesion, semilla, dia):
+async def test_el_corte_trae_lo_que_le_queda_al_camion_calculado(cliente, sesion, semilla, dia):
     corte_id = await _corte(sesion, dia, semilla)
-    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
-    r = await cliente.get("/v1/cierres", headers=await _cab(cliente, "GER01"))
+    r = await cliente.get("/v1/cierres/cortes", headers=await _cab(cliente, "GER01"))
     assert r.status_code == 200, r.text
     [cierre] = r.json()["pendientes"]
     assert cierre["vendedor_codigo"] == "VEND01"
+    assert cierre["solicitud"] is None
     corte = cierre["corte"]
     assert corte["id"] == str(corte_id)
     assert corte["efectivo_esperado"] == "2250.00"
     assert corte["diferencia_efectivo"] == "-50.00"
     [renglon] = corte["renglones"]
-    assert (renglon["contada"], renglon["sistema"], renglon["diferencia"]) == (
-        "55.000", "60.000", "-5.000"
+    # Empezó vacío, le cargaron 240, vendió 180: le quedan 60. Nadie contó.
+    assert (renglon["traia"], renglon["cargada"], renglon["vendida"], renglon["queda"]) == (
+        "0.000", "240.000", "180.000", "60.000"
     )
+
+
+async def test_la_carga_pedida_se_ve_aparte_y_dice_que_espera_al_corte(
+    cliente, sesion, semilla, dia
+):
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
+    cab = await _cab(cliente, "GER01")
+    [cierre] = (await cliente.get("/v1/cierres/solicitudes", headers=cab)).json()["pendientes"]
+    assert cierre["corte"] is None
+    assert cierre["corte_por_cerrar"]["id"] == str(corte_id)
     solicitud = cierre["solicitud"]
     assert solicitud["id"] == str(sid)
     assert solicitud["bodega"] == "Bodega"
@@ -246,44 +271,28 @@ async def test_el_gerente_ve_el_corte_junto_con_su_solicitud(cliente, sesion, se
     )
     assert pedido["en_bodega"] == "760.000"
 
-
-async def test_lo_que_el_sistema_tiene_y_no_se_conto_se_ve_antes_de_aceptar(
-    cliente, sesion, semilla, dia
-):
-    await obtener_manejador("corte.crear")(
-        sesion, _ctx(dia, semilla), uuid.uuid4(),
-        {"fecha_operativa": dia["dia"].isoformat(), "efectivo_declarado": "2250.00",
-         "fecha_dispositivo": MOMENTO, "conteo": []},
-    )
-    await sesion.commit()
-    r = await cliente.get("/v1/cierres", headers=await _cab(cliente, "GER01"))
-    [renglon] = r.json()["pendientes"][0]["corte"]["renglones"]
-    assert renglon["contado"] is False
-    assert renglon["diferencia"] == "-60.000"
+    # Con el corte abierto no sale, y se dice qué hacer.
+    r = await _aceptar(cliente, sid, cab)
+    assert r.status_code == 409
+    assert "Primero cierra el corte" in r.json()["detail"]
+    await _cerrar(cliente, corte_id, cab)
+    [cierre] = (await cliente.get("/v1/cierres/solicitudes", headers=cab)).json()["pendientes"]
+    assert cierre["corte_por_cerrar"] is None
 
 
 # ---------------------------------------------------------------------------
-# Aceptar
+# Cerrar el corte
 # ---------------------------------------------------------------------------
-async def test_aceptar_cierra_el_corte_y_confirma_la_carga_de_manana(
+async def test_cerrar_el_corte_deja_el_camion_en_lo_calculado_y_solo_cobra_efectivo(
     cliente, sesion, semilla, dia
 ):
-    corte_id = await _corte(sesion, dia, semilla)
-    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
-    r = await cliente.post(
-        "/v1/cierres/aceptar",
-        json={"corte_id": str(corte_id), "solicitud_id": str(sid)},
-        headers=await _cab(cliente, "GER01"),
-    )
-    assert r.status_code == 200, r.text
-    cuerpo = r.json()
+    # Un teléfono viejo todavía manda que contó 55: no cambia nada.
+    corte_id = await _corte(sesion, dia, semilla, contadas="55")
+    cuerpo = await _cerrar(cliente, corte_id, await _cab(cliente, "GER01"))
     assert "cerrada" in cuerpo["mensaje"]
-    assert "confirmada para el" in cuerpo["mensaje"]
-    assert cuerpo["solicitud"]["estado"] == "aceptada"
-    folio = cuerpo["solicitud"]["carga_folio"]
-    assert folio.startswith("CG-")
+    assert "calcula el sistema" in cuerpo["mensaje"]
+    assert cuerpo["corte"]["estado"] == "cerrado"
 
-    # El corte: cerrado con lo que contó el vendedor y el efectivo que declaró.
     corte = (
         await sesion.execute(text("SELECT * FROM cortes_vendedor WHERE id = :c"),
                              {"c": corte_id})
@@ -295,26 +304,81 @@ async def test_aceptar_cierra_el_corte_y_confirma_la_carga_de_manana(
     ).mappings().one()
     assert liquidacion["estado"] == "cerrada"
     assert liquidacion["efectivo_entregado"] == Decimal("2200.00")
-    contada = (
+    detalle = (
         await sesion.execute(
-            text("SELECT cant_contada FROM liquidacion_detalle WHERE liquidacion_id = :l"),
+            text("SELECT cant_contada, diferencia FROM liquidacion_detalle "
+                 " WHERE liquidacion_id = :l"),
+            {"l": liquidacion["id"]},
+        )
+    ).one()
+    assert (detalle.cant_contada, detalle.diferencia) == (Decimal("60.000"), Decimal("0.000"))
+    # Sin ajustes de inventario: el camión se queda con sus 60.
+    ajustes = (
+        await sesion.execute(
+            text("SELECT count(*) FROM movimientos_inventario WHERE documento_id = :l"),
             {"l": liquidacion["id"]},
         )
     ).scalar_one()
-    assert contada == Decimal("55.000")
-    # El efectivo que no entregó, a su cuenta.
-    efectivo = (
+    assert ajustes == 0
+    # A su cuenta, solo el efectivo que no entregó.
+    cargos = (
         await sesion.execute(
-            text("SELECT importe FROM cuenta_vendedor "
-                 " WHERE liquidacion_id = :l AND origen = 'faltante_efectivo'"),
+            text("SELECT origen, importe FROM cuenta_vendedor WHERE liquidacion_id = :l"),
             {"l": liquidacion["id"]},
         )
-    ).scalar_one()
-    assert efectivo == Decimal("50.00")
+    ).all()
+    assert [(c.origen, c.importe) for c in cargos] == [("faltante_efectivo", Decimal("50.00"))]
     viejo = (
         await sesion.execute(text("SELECT estado FROM cargas WHERE id = :c"), {"c": dia["carga"]})
     ).scalar_one()
     assert viejo == "liquidada"
+
+
+async def test_un_corte_cerrado_no_se_cierra_otra_vez(cliente, sesion, semilla, dia):
+    corte_id = await _corte(sesion, dia, semilla)
+    cab = await _cab(cliente, "GER01")
+    await _cerrar(cliente, corte_id, cab)
+    r = await cliente.post(f"/v1/cierres/cortes/{corte_id}/cerrar", headers=cab)
+    assert r.status_code == 409
+    assert "ya está cerrado" in r.json()["detail"]
+    r = await cliente.post(f"/v1/cierres/cortes/{uuid.uuid4()}/cerrar", headers=cab)
+    assert r.status_code == 404
+
+
+async def test_con_el_telefono_atrasado_no_se_cierra_y_se_puede_reintentar(
+    cliente, sesion, semilla, dia
+):
+    corte_id = await _corte(sesion, dia, semilla)
+    await _reportar_cola(sesion, dia["dispositivo"], 3)
+    cab = await _cab(cliente, "GER01")
+    r = await cliente.post(f"/v1/cierres/cortes/{corte_id}/cerrar", headers=cab)
+    assert r.status_code == 409
+    assert "sin subir" in r.json()["detail"]
+    estado = (
+        await sesion.execute(text("SELECT estado FROM cortes_vendedor WHERE id = :c"),
+                             {"c": corte_id})
+    ).scalar_one()
+    assert estado == "pendiente"
+
+    await _reportar_cola(sesion, dia["dispositivo"], 0)
+    await _cerrar(cliente, corte_id, cab)
+
+
+# ---------------------------------------------------------------------------
+# Aceptar la carga
+# ---------------------------------------------------------------------------
+async def test_aceptar_la_carga_la_confirma_para_manana(cliente, sesion, semilla, dia):
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
+    cab = await _cab(cliente, "GER01")
+    await _cerrar(cliente, corte_id, cab)
+    r = await _aceptar(cliente, sid, cab)
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert "confirmada para el" in cuerpo["mensaje"]
+    assert cuerpo["solicitud"]["estado"] == "aceptada"
+    folio = cuerpo["solicitud"]["carga_folio"]
+    assert folio.startswith("CG-")
 
     # La carga de mañana: confirmada, de la bodega principal, con lo que pidió.
     carga = (
@@ -328,14 +392,14 @@ async def test_aceptar_cierra_el_corte_y_confirma_la_carga_de_manana(
                              {"c": carga["id"]})
     ).scalar_one()
     assert cantidad == Decimal("240.000")
-    # El camión: los 55 contados más los 240 de mañana.
+    # El camión: los 60 que le quedaron más los 240 de mañana.
     camion = (
         await sesion.execute(
             text("SELECT cantidad FROM existencias WHERE almacen_id = :a AND producto_id = :p"),
             {"a": semilla["camion"], "p": dia["producto"]},
         )
     ).scalar_one()
-    assert camion == Decimal("295.000")
+    assert camion == Decimal("300.000")
 
     # Y el teléfono se entera: aceptada, con el folio y lo aceptado.
     [delta] = await _deltas(sesion, sid)
@@ -347,30 +411,18 @@ async def test_aceptar_cierra_el_corte_y_confirma_la_carga_de_manana(
 async def test_el_gerente_corrige_lo_pedido_antes_de_aceptar(cliente, sesion, semilla, dia):
     corte_id = await _corte(sesion, dia, semilla)
     sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id, cajas=10)
-    r = await cliente.post(
-        "/v1/cierres/aceptar",
-        json={"solicitud_id": str(sid), "bultos": {str(dia["producto"]): "4"}},
-        headers=await _cab(cliente, "GER01"),
-    )
+    cab = await _cab(cliente, "GER01")
+    await _cerrar(cliente, corte_id, cab)
+    r = await _aceptar(cliente, sid, cab, {str(dia["producto"]): "4"})
     assert r.status_code == 200, r.text
     assert "Se cambiaron 1 renglón" in r.json()["mensaje"]
-    # El corte se toma de la solicitud aunque no se mande.
-    estado = (
-        await sesion.execute(text("SELECT estado FROM cortes_vendedor WHERE id = :c"),
-                             {"c": corte_id})
-    ).scalar_one()
-    assert estado == "cerrado"
     [pedido] = r.json()["solicitud"]["renglones"]
     assert pedido["cantidad_aceptada"] == "96.000"
 
 
 async def test_quitar_todo_no_crea_una_carga_vacia(cliente, sesion, semilla, dia):
     sid = await _solicitud(sesion, dia, semilla)
-    r = await cliente.post(
-        "/v1/cierres/aceptar",
-        json={"solicitud_id": str(sid), "bultos": {str(dia["producto"]): "0"}},
-        headers=await _cab(cliente, "GER01"),
-    )
+    r = await _aceptar(cliente, sid, await _cab(cliente, "GER01"), {str(dia["producto"]): "0"})
     assert r.status_code == 409
     assert "rechaza la solicitud" in r.json()["detail"]
 
@@ -379,9 +431,9 @@ async def test_aceptar_dos_veces_no_carga_dos_veces(cliente, sesion, semilla, di
     corte_id = await _corte(sesion, dia, semilla)
     sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
     cab = await _cab(cliente, "GER01")
-    cuerpo = {"corte_id": str(corte_id), "solicitud_id": str(sid)}
-    assert (await cliente.post("/v1/cierres/aceptar", json=cuerpo, headers=cab)).status_code == 200
-    r = await cliente.post("/v1/cierres/aceptar", json=cuerpo, headers=cab)
+    await _cerrar(cliente, corte_id, cab)
+    assert (await _aceptar(cliente, sid, cab)).status_code == 200
+    r = await _aceptar(cliente, sid, cab)
     assert r.status_code == 409
     assert "ya está aceptada" in r.json()["detail"]
     cargas = (
@@ -393,35 +445,9 @@ async def test_aceptar_dos_veces_no_carga_dos_veces(cliente, sesion, semilla, di
     assert cargas == 1
 
 
-async def test_con_el_telefono_atrasado_no_se_acepta_y_se_puede_reintentar(
-    cliente, sesion, semilla, dia
-):
-    corte_id = await _corte(sesion, dia, semilla)
-    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
-    await _reportar_cola(sesion, dia["dispositivo"], 3)
-    cab = await _cab(cliente, "GER01")
-    cuerpo = {"corte_id": str(corte_id), "solicitud_id": str(sid)}
-    r = await cliente.post("/v1/cierres/aceptar", json=cuerpo, headers=cab)
-    assert r.status_code == 409
-    assert "sin subir" in r.json()["detail"]
-    # Ni se cerró el corte ni se creó la carga.
-    estado = (
-        await sesion.execute(text("SELECT estado FROM solicitudes_carga WHERE id = :s"),
-                             {"s": sid})
-    ).scalar_one()
-    assert estado == "pendiente"
-
-    await _reportar_cola(sesion, dia["dispositivo"], 0)
-    r = await cliente.post("/v1/cierres/aceptar", json=cuerpo, headers=cab)
-    assert r.status_code == 200, r.text
-
-
 async def test_una_solicitud_de_un_dia_que_ya_paso_no_se_acepta(cliente, sesion, semilla, dia):
     sid = await _solicitud(sesion, dia, semilla, para=date.today() - timedelta(days=1))
-    r = await cliente.post(
-        "/v1/cierres/aceptar", json={"solicitud_id": str(sid)},
-        headers=await _cab(cliente, "GER01"),
-    )
+    r = await _aceptar(cliente, sid, await _cab(cliente, "GER01"))
     assert r.status_code == 409
     assert "ya pasó" in r.json()["detail"]
 
@@ -439,10 +465,7 @@ async def test_si_ese_dia_ya_tiene_carga_no_se_crea_otra(cliente, sesion, semill
     )
     await sesion.commit()
     sid = await _solicitud(sesion, dia, semilla)
-    r = await cliente.post(
-        "/v1/cierres/aceptar", json={"solicitud_id": str(sid)},
-        headers=await _cab(cliente, "GER01"),
-    )
+    r = await _aceptar(cliente, sid, await _cab(cliente, "GER01"))
     assert r.status_code == 409
     assert "CG-MANO" in r.json()["detail"]
     assert "solo hay una carga al día" in r.json()["detail"]
@@ -463,7 +486,8 @@ async def test_rechazar_pide_motivo_y_se_lo_avisa_al_telefono(cliente, sesion, s
     assert delta["motivo"] == "Mañana no sales: es tu descanso"
 
 
-async def test_el_vendedor_no_acepta_su_propio_cierre(cliente, sesion, semilla, dia):
+async def test_el_vendedor_no_resuelve_su_propio_cierre(cliente, sesion, semilla, dia):
+    corte_id = await _corte(sesion, dia, semilla)
     sid = await _solicitud(sesion, dia, semilla)
     r = await cliente.post("/v1/auth/login", json={
         "codigo": "VEND01", "password": PASSWORD_VENDEDOR,
@@ -471,8 +495,41 @@ async def test_el_vendedor_no_acepta_su_propio_cierre(cliente, sesion, semilla, 
     })
     cab = {"Authorization": f"Bearer {r.json()['access_token']}"}
     assert (await cliente.get("/v1/cierres", headers=cab)).status_code == 403
+    assert (await cliente.get("/v1/cierres/cortes", headers=cab)).status_code == 403
+    assert (await cliente.get("/v1/cierres/solicitudes", headers=cab)).status_code == 403
+    r = await cliente.post(f"/v1/cierres/cortes/{corte_id}/cerrar", headers=cab)
+    assert r.status_code == 403
+    assert (await _aceptar(cliente, sid, cab)).status_code == 403
     r = await cliente.post("/v1/cierres/aceptar", json={"solicitud_id": str(sid)}, headers=cab)
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# La app anterior a la versión +28: los dos de un jalón
+# ---------------------------------------------------------------------------
+async def test_la_app_anterior_acepta_los_dos_juntos(cliente, sesion, semilla, dia):
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
+    cab = await _cab(cliente, "GER01")
+    [cierre] = (await cliente.get("/v1/cierres", headers=cab)).json()["pendientes"]
+    assert (cierre["corte"]["id"], cierre["solicitud"]["id"]) == (str(corte_id), str(sid))
+    # Lo que esa app leía como conteo es lo calculado: «cuadra».
+    [renglon] = cierre["corte"]["renglones"]
+    assert (renglon["contada"], renglon["diferencia"]) == ("60.000", "0.000")
+
+    r = await cliente.post(
+        "/v1/cierres/aceptar",
+        json={"corte_id": str(corte_id), "solicitud_id": str(sid)},
+        headers=cab,
+    )
+    assert r.status_code == 200, r.text
+    assert "cerrada" in r.json()["mensaje"]
+    assert "confirmada para el" in r.json()["mensaje"]
+    estado = (
+        await sesion.execute(text("SELECT estado FROM cortes_vendedor WHERE id = :c"),
+                             {"c": corte_id})
+    ).scalar_one()
+    assert estado == "cerrado"
 
 
 async def test_la_carga_a_mano_se_abre_para_manana(cliente, sesion, semilla, dia):
@@ -492,7 +549,7 @@ async def test_la_carga_a_mano_se_abre_para_manana(cliente, sesion, semilla, dia
 # ---------------------------------------------------------------------------
 # El panel
 # ---------------------------------------------------------------------------
-async def test_el_panel_muestra_y_acepta(cliente, sesion, semilla, dia):
+async def test_el_panel_cierra_el_corte_y_despues_acepta_la_carga(cliente, sesion, semilla, dia):
     corte_id = await _corte(sesion, dia, semilla)
     sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
     await _entrar(cliente)
@@ -502,11 +559,20 @@ async def test_el_panel_muestra_y_acepta(cliente, sesion, semilla, dia):
     assert "Juan" in plano or "VEND01" in plano
     assert "faltan $50.00" in plano
     assert "Atún en agua 140 g" in plano
+    assert "Primero cierra su corte" in plano
 
     r = await cliente.post(
-        "/panel/cierres/aceptar",
-        data={"csrf": csrf_del_panel(cliente, r), "corte_id": str(corte_id),
-              "solicitud_id": str(sid), f"bultos_{dia['producto']}": "6"},
+        f"/panel/cierres/cortes/{corte_id}/cerrar",
+        data={"csrf": csrf_del_panel(cliente, r)},
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    assert "cerrada" in solo_texto(r)
+    assert "Primero cierra su corte" not in solo_texto(r)
+
+    r = await cliente.post(
+        f"/panel/cierres/solicitudes/{sid}/aceptar",
+        data={"csrf": csrf_del_panel(cliente, r), f"bultos_{dia['producto']}": "6"},
         follow_redirects=True,
     )
     assert r.status_code == 200

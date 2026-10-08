@@ -84,6 +84,7 @@ class SesionEnLinea {
     required this.perfil,
     this.credencialLocal,
     this.credencialCruda,
+    this.dispositivoId,
   });
 
   factory SesionEnLinea.deJson(Map<String, Object?> json) => SesionEnLinea(
@@ -99,6 +100,7 @@ class SesionEnLinea {
                 json['credencial_local']! as Map<String, Object?>,
               ),
         credencialCruda: json['credencial_local'] as Map<String, Object?>?,
+        dispositivoId: json['dispositivo_id'] as String?,
       );
 
   final String accessToken;
@@ -120,7 +122,21 @@ class SesionEnLinea {
   /// un `aJson` que sería una segunda copia de la forma del contrato — y dos
   /// copias se separan en la primera corrección.
   final Map<String, Object?>? credencialCruda;
+
+  /// El equipo con el que se entró. El que se vincula con la clave corta no
+  /// sabe su id hasta aquí (ADR 0002 §85). Nulo con un servidor anterior.
+  final String? dispositivoId;
 }
+
+/// Lo que se teclea para vincular el teléfono: la clave corta que eligió la
+/// oficina («RUTA4») o, como antes, el id largo del equipo.
+///
+/// Se distinguen por la forma: un id tiene la forma de un UUID; todo lo demás
+/// es una clave. Así el teléfono no le pregunta al vendedor cuál de las dos
+/// trae.
+bool pareceIdDeEquipo(String texto) => RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(texto.trim());
 
 /// El servidor dijo que el código o la contraseña no sirven (401).
 ///
@@ -155,15 +171,19 @@ class ClienteAuth {
 
   final Transporte _transporte;
 
+  /// `claveEquipo` es la clave corta que la oficina le puso al equipo: el
+  /// servidor la cambia por su id y lo devuelve en `SesionEnLinea.dispositivoId`.
   Future<SesionEnLinea> entrar({
     required String codigo,
     required String password,
     String? dispositivoId,
+    String? claveEquipo,
   }) async {
     final respuesta = await _transporte.post('/v1/auth/login', {
       'codigo': codigo,
       'password': password,
       if (dispositivoId != null) 'dispositivo_id': dispositivoId,
+      if (claveEquipo != null) 'clave_equipo': claveEquipo,
     });
     _revisar(respuesta);
     return SesionEnLinea.deJson(

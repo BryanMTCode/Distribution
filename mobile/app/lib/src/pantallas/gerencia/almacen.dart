@@ -4,13 +4,16 @@
 /// traspasar entre almacenes: manejar todo el negocio en modo gerencia». La
 /// pestaña Camiones (cargas y corte) se volvió Almacén, con estas partes:
 ///
-///   · **Cortes y cargas**: lo que mandan los vendedores al terminar el día —su
-///     corte y la carga que piden para mañana— para aceptarlo (ADR 0002 §82).
 ///   · **Existencias**: qué hay en cada bodega y en cada camión.
 ///   · **Entradas**: la mercancía que llega (compra, inventario inicial, ajuste).
 ///   · **Traspasos** de una bodega a otra.
-///   · **Cargas**: subirle mercancía al camión.
-///   · **Corte del día**: contarla al regresar.
+///   · **Cargas**: las que piden los vendedores para mañana, para aceptarlas, y
+///     subirle mercancía al camión a mano.
+///   · **Corte del día**: los cortes que mandan los vendedores, para cerrarlos,
+///     y el corte contando el camión.
+///
+/// La carga y el corte van separados a propósito (ADR 0002 §82): primero se
+/// cierra el corte del vendedor y después se acepta su carga.
 ///
 /// Cada parte aparece solo con su permiso; con una sola, se muestra directo,
 /// sin pestañas. La UI oculta; el servidor prohíbe.
@@ -24,7 +27,6 @@ import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
 import '../../estado/vendedores.dart';
 import 'cargas.dart';
-import 'cierres.dart';
 import 'comunes.dart';
 import 'cortes.dart';
 import 'entradas.dart';
@@ -46,13 +48,6 @@ class PantallaAlmacen extends ConsumerWidget {
     final ver = ref.watch(puedeVerAlmacenProvider);
     // (clave, título, pantalla con o sin barra propia)
     final partes = <(Key, String, Widget Function(bool conBarra))>[
-      // Primero: es lo que el gerente atiende cada tarde.
-      if (ref.watch(puedeCargarProvider))
-        (
-          const Key('pestana_cierres'),
-          'Cortes y cargas',
-          (b) => PantallaCierres(conBarra: b),
-        ),
       if (ver) ...[
         (
           const Key('pestana_existencias'),

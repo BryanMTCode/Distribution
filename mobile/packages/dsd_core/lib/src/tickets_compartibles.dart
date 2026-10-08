@@ -33,7 +33,7 @@ class RenglonDeTicket {
 
   final String nombre;
 
-  /// Lo contado (corte) o lo pedido (carga), en unidad base.
+  /// Lo que queda (corte) o lo pedido (carga), en unidad base.
   final Cantidad cantidadBase;
   final String unidadBase;
 
@@ -75,7 +75,7 @@ class TicketDeCorte {
     required this.efectivoVendido,
     required this.transferencias,
     required this.efectivoEntregado,
-    required this.sobrante,
+    required this.queda,
     this.codigoVendedor,
     this.cargaFolio,
     this.observaciones,
@@ -95,7 +95,8 @@ class TicketDeCorte {
   final Dinero efectivoVendido;
   final Dinero transferencias;
   final Dinero efectivoEntregado;
-  final List<RenglonDeTicket> sobrante;
+  /// Lo que le queda al camión: calculado, no contado.
+  final List<RenglonDeTicket> queda;
   final String? observaciones;
 
   Dinero get vendido => efectivoVendido + transferencias;
@@ -151,7 +152,7 @@ String _hora(DateTime momento) {
 /// Los primeros ocho caracteres del id: basta para encontrarlo y cabe en un renglón.
 String _folioCorto(String id) => id.replaceAll('-', '').substring(0, 8).toUpperCase();
 
-/// El ticket del corte: lo vendido, el efectivo que entrega y lo que le sobró.
+/// El ticket del corte: lo vendido, el efectivo que entrega y lo que le queda.
 String textoDelCorte(TicketDeCorte t) {
   final b = StringBuffer()
     ..writeln(_empresa)
@@ -163,9 +164,15 @@ String textoDelCorte(TicketDeCorte t) {
   b
     ..writeln()
     ..writeln('*VENTAS*')
-    ..writeln('${t.ventas} venta${t.ventas == 1 ? '' : 's'}: ${t.vendido.enPesos}')
-    ..writeln('  Efectivo: ${t.efectivoVendido.enPesos}')
-    ..writeln('  Transferencia: ${t.transferencias.enPesos}')
+    ..writeln('${t.ventas} venta${t.ventas == 1 ? '' : 's'}: ${t.vendido.enPesos}');
+  // Solo efectivo (ADR 0002 §81). Una transferencia de antes del cambio todavía
+  // se dice, para que el efectivo cuadre a la vista.
+  if (!t.transferencias.esCero) {
+    b
+      ..writeln('  Efectivo: ${t.efectivoVendido.enPesos}')
+      ..writeln('  Transferencia: ${t.transferencias.enPesos}');
+  }
+  b
     ..writeln()
     ..writeln('*EFECTIVO QUE ENTREGA*')
     ..writeln(t.efectivoEntregado.enPesos);
@@ -180,8 +187,8 @@ String textoDelCorte(TicketDeCorte t) {
 
   b
     ..writeln()
-    ..writeln('*SOBRANTE EN EL CAMIÓN*');
-  final conAlgo = t.sobrante.where((r) => !r.cantidadBase.esCero).toList();
+    ..writeln('*LE QUEDA EN EL CAMIÓN*');
+  final conAlgo = t.queda.where((r) => !r.cantidadBase.esCero).toList();
   if (conAlgo.isEmpty) {
     b.writeln('Nada: el camión regresó vacío.');
   } else {

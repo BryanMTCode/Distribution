@@ -7,8 +7,8 @@
 /// pasado" —eso es el laboratorio— sino **cómo va el día y qué hay que mover
 /// hoy**:
 ///
-///   · Venta del día, con su desglose efectivo/transferencia (todo es de
-///     contado, ADR 0002 §81).
+///   · Venta del día, con su efectivo (todo es de contado y en efectivo, ADR
+///     0002 §81; una transferencia de antes del cambio se separa si la hay).
 ///   · Avance del mes por ruta contra su objetivo.
 ///   · Transferencias que todavía no se ven en el banco.
 ///   · Efectividad de visita y cuántos no-drops son NUESTROS.
@@ -276,10 +276,12 @@ class _Cuerpo extends StatelessWidget {
             Tarjeta(
               cifra: pesos(t.venta.efectivo, conCentavos: false),
               etiqueta: 'en efectivo',
-              // El efectivo se separa porque es el único que entra al corte:
-              // una transferencia no está en la bolsa del vendedor.
-              detalle: '${pesos(t.venta.transferencia)} por transferencia, '
-                  'que no entra al corte',
+              // Solo efectivo (ADR 0002 §81). Una transferencia de antes del
+              // cambio se separa porque no está en la bolsa del vendedor.
+              detalle: t.venta.transferencia.esCero
+                  ? 'lo que entregan los vendedores en el corte'
+                  : '${pesos(t.venta.transferencia)} por transferencia, '
+                      'que no entra al corte',
             ),
             Tarjeta(
               cifra: '${t.visitas.efectividad.toStringAsFixed(1)}%',

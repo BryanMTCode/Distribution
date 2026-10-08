@@ -225,16 +225,24 @@ class ControladorSesion extends Notifier<Sesion> {
   /// PIN —le faltarán folios y la pantalla de cobro lo dirá— en vez de quedar
   /// fuera de la app con la credencial a medio camino. Pedir folios se reintenta
   /// con señal; recuperar una credencial perdida, no.
+  ///
+  /// ───────────────────────────────────────────────────────────────────────
+  /// LA CLAVE CORTA (ADR 0002 §85)
+  /// ───────────────────────────────────────────────────────────────────────
+  /// `claveDelEquipo` es la clave que eligió la oficina («RUTA4») o, como
+  /// antes, el id largo del equipo. Con la clave, el servidor contesta con el id
+  /// y es ése el que se guarda.
   Future<String?> vincularEquipo({
     required String codigo,
     required String password,
-    required String dispositivoId,
+    required String claveDelEquipo,
   }) async {
-    final id = dispositivoId.trim();
-    if (id.isEmpty) {
-      return 'Falta el identificador del equipo. Lo da la oficina al vincularlo '
-          'en el panel, en Teléfonos.';
+    final tecleado = claveDelEquipo.trim();
+    if (tecleado.isEmpty) {
+      return 'Falta la clave del equipo. Te la da la oficina al vincularlo en el '
+          'panel, en Teléfonos.';
     }
+    final esId = pareceIdDeEquipo(tecleado);
 
     final transporte = ref.read(transporteSinSesionProvider);
     final SesionEnLinea sesion;
@@ -242,7 +250,8 @@ class ControladorSesion extends Notifier<Sesion> {
       sesion = await ClienteAuth(transporte).entrar(
         codigo: codigo.trim(),
         password: password,
-        dispositivoId: id,
+        dispositivoId: esId ? tecleado : null,
+        claveEquipo: esId ? null : tecleado.toUpperCase(),
       );
     } on CredencialesInvalidas {
       return 'Código o contraseña incorrectos.';
@@ -258,6 +267,12 @@ class ControladorSesion extends Notifier<Sesion> {
       return 'El servidor contestó con un error (HTTP ${e.codigo}).';
     }
 
+    final id = esId ? tecleado : sesion.dispositivoId;
+    if (id == null) {
+      // Un servidor anterior a la clave corta no sabe qué hacer con ella.
+      return 'El servidor todavía no reconoce la clave corta. Pide en la oficina '
+          'el identificador largo del equipo (panel, Teléfonos).';
+    }
     final credencial = sesion.credencialCruda;
     if (credencial == null) {
       // El servidor solo manda credencial cuando el login trae un dispositivo

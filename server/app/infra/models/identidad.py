@@ -137,6 +137,8 @@ class Dispositivo(Base):
     ultima_sync_pull_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ultimo_cursor_pull: Mapped[int] = mapped_column(default=0)
     registrado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # La clave corta con la que se vincula el teléfono (migración 0050).
+    clave_vinculo: Mapped[str | None] = mapped_column(Text)
 
     # Profundidad de cola que el propio teléfono reportó (migración 0019).
     cola_pendiente: Mapped[int | None] = mapped_column(default=None)

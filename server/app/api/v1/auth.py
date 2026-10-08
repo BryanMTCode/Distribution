@@ -33,6 +33,12 @@ class PeticionLogin(BaseModel):
     dispositivo_id: uuid.UUID | None = Field(
         default=None, description="UUID generado en el dispositivo; requerido para vendedores"
     )
+    clave_equipo: str | None = Field(
+        default=None,
+        max_length=40,
+        description="La clave corta que la oficina le puso al equipo, en lugar del id "
+        "(ADR 0002 §85). El login contesta con el id para que el teléfono lo guarde.",
+    )
 
 
 class CredencialLocal(BaseModel):
@@ -82,6 +88,9 @@ class RespuestaLogin(BaseModel):
     expira_en_seg: int
     credencial_local: CredencialLocal | None = None
     perfil: Perfil | None = None
+    # El equipo con el que se entró: el teléfono que se vinculó con la clave
+    # corta no sabe su id hasta aquí.
+    dispositivo_id: uuid.UUID | None = None
 
 
 async def _armar_credencial(sesion, usuario: Usuario, permisos: list[str]) -> CredencialLocal:
@@ -124,6 +133,7 @@ async def login(peticion: PeticionLogin, request: Request, sesion: SesionDep) ->
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "credenciales inválidas")
 
     dispositivo = None
+    clave = (peticion.clave_equipo or "").strip().upper()
     if peticion.dispositivo_id is not None:
         dispositivo = await sesion.get(Dispositivo, peticion.dispositivo_id)
         if dispositivo is None:
@@ -131,6 +141,22 @@ async def login(peticion: PeticionLogin, request: Request, sesion: SesionDep) ->
                 status.HTTP_409_CONFLICT,
                 "dispositivo no registrado: regístralo antes de iniciar sesión",
             )
+    elif clave:
+        # La clave corta que eligió la oficina (ADR 0002 §85), sin distinguir
+        # mayúsculas. La de un equipo revocado ya no abre nada.
+        dispositivo = (
+            await sesion.execute(
+                select(Dispositivo).where(
+                    Dispositivo.clave_vinculo == clave, Dispositivo.estado != "revocado"
+                )
+            )
+        ).scalar_one_or_none()
+        if dispositivo is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "esa clave de equipo no existe: revísala con la oficina",
+            )
+    if dispositivo is not None:
         if dispositivo.usuario_id != usuario.id:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "el dispositivo pertenece a otro usuario"
@@ -190,6 +216,7 @@ async def login(peticion: PeticionLogin, request: Request, sesion: SesionDep) ->
             rol=usuario.rol_codigo,
             permisos=permisos,
         ),
+        dispositivo_id=dispositivo.id if dispositivo else None,
     )
 
 
@@ -255,6 +282,7 @@ async def refrescar(peticion: PeticionRefresh, sesion: SesionDep) -> RespuestaLo
             rol=usuario.rol_codigo,
             permisos=permisos,
         ),
+        dispositivo_id=dispositivo.id if dispositivo else None,
     )
 
 

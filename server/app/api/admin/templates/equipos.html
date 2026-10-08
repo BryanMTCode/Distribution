@@ -52,9 +52,9 @@
   {% if sin_equipo %}
     <p class="subtitulo">
       El teléfono de un vendedor <strong>no puede entrar a la app hasta que se
-      vincule aquí</strong>. Al guardar aparece un identificador que se teclea en
-      el teléfono <strong>una sola vez</strong>; de ahí en adelante entra con su
-      PIN, sin señal.
+      vincule aquí</strong>. Elige una clave corta —«RUTA4»— o deja que el panel
+      invente una; se teclea en el teléfono <strong>una sola vez</strong>, y de
+      ahí en adelante entra con su PIN, sin señal.
     </p>
     <form method="post" action="/panel/equipos/registrar" class="tarjeta"
           style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
@@ -76,6 +76,12 @@
           Es lo que se lee en la lista de arriba cuando hay ocho teléfonos. El
           modelo y de quién es.
         </div>
+      </div>
+      <div class="campo" style="margin:0; min-width:160px">
+        <label for="clave">Clave para el teléfono</label>
+        <input type="text" name="clave" id="clave" maxlength="20"
+               placeholder="RUTA4" style="text-transform:uppercase">
+        <div class="ayuda">De 4 a 20 letras o números. Vacía: el panel inventa una.</div>
       </div>
       <button type="submit">Vincular</button>
     </form>
@@ -106,6 +112,8 @@
     <tr>
       <td>
         <strong>{{ e.etiqueta }}</strong>
+        {% if e.clave_vinculo %}<br><span class="sutil">clave</span>
+          <span class="mono" id="clave_{{ e.id }}">{{ e.clave_vinculo }}</span>{% endif %}
         {% if e.modelo %}<br><span class="sutil">{{ e.modelo }}</span>{% endif %}
         {% if e.app_version %}
           <br><span class="sutil mono">app {{ e.app_version }}</span>
@@ -185,6 +193,14 @@
           </form>
 
           {% if e.estado != 'revocado' %}
+          <form method="post" action="/panel/equipos/{{ e.id }}/clave"
+                style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="text" name="clave" maxlength="20" style="width:110px;text-transform:uppercase"
+                   placeholder="{{ e.clave_vinculo or 'nueva clave' }}"
+                   aria-label="Clave para vincular {{ e.etiqueta }}">
+            <button type="submit" class="secundario">{% if e.clave_vinculo %}Cambiar clave{% else %}Poner clave{% endif %}</button>
+          </form>
           <form method="post" action="/panel/equipos/{{ e.id }}/estado"
                 style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
             <input type="hidden" name="csrf" value="{{ csrf }}">

@@ -1,7 +1,13 @@
 /// El corte del día desde el teléfono de la oficina.
 ///
-/// El corte se hace con el camión enfrente: quien cuenta está en el patio con el
-/// teléfono en la mano. Las reglas las pone el servidor y son las del panel:
+/// Arriba, los cortes que mandan los vendedores desde su teléfono: el camión no
+/// se cuenta, se queda con lo que calcula el sistema, y el gerente solo los
+/// cierra (`SeccionCortesDeVendedores`, ADR 0002 §82).
+///
+/// Abajo, el corte contando el camión, para cuando la oficina quiere contar la
+/// mercancía ella misma. Se hace con el camión enfrente: quien cuenta está en el
+/// patio con el teléfono en la mano. Las reglas las pone el servidor y son las
+/// del panel:
 ///
 ///   · Se cuenta lo que se QUEDA arriba del camión. El campo vacío vale cero: lo
 ///     que no se anotó es lo que no está.
@@ -19,6 +25,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import '../../estado/vendedores.dart';
+import 'cierres.dart';
 import 'comunes.dart';
 
 ClienteCortes? _cliente(WidgetRef ref) {
@@ -70,6 +77,9 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   ListaDeCortes? _lista;
   String? _error;
 
+  /// Al deslizar para recargar, la sección de los vendedores se vuelve a leer.
+  int _vuelta = 0;
+
   @override
   void initState() {
     super.initState();
@@ -118,11 +128,16 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
     final l = _lista;
     final estilo = Theme.of(context).textTheme;
     final cuerpo = RefreshIndicator(
-      onRefresh: _cargar,
+      onRefresh: () async {
+        setState(() => _vuelta++);
+        await _cargar();
+      },
       child: ListView(
         key: const Key('lista_cortes'),
         padding: const EdgeInsets.all(16),
         children: [
+          SeccionCortesDeVendedores(key: ValueKey(_vuelta), alCambiar: _cargar),
+          const Divider(height: 32),
           if (_error != null) _Aviso(_error!, esError: true),
           if (l == null && _error == null)
             const Padding(
@@ -130,7 +145,9 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
               child: Center(child: CircularProgressIndicator()),
             ),
           if (l != null) ...[
-            Text('Por cortar', style: estilo.titleMedium),
+            Text('Cortar contando el camión', style: estilo.titleMedium),
+            const Text('Solo si quieres contar la mercancía tú mismo. Si el vendedor '
+                'ya mandó su corte, ciérralo arriba.'),
             if (l.porCortar.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),

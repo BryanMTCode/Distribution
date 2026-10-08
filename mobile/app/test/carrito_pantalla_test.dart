@@ -9,7 +9,6 @@ library;
 import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/datos/servicio_ubicacion.dart';
 import 'package:dsd_app/src/estado/alta.dart';
-import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -151,81 +150,29 @@ void main() {
     });
   });
 
-  group('la forma de pago', () {
-    testWidgets('arranca en efectivo y no habla de crédito', (tester) async {
+  group('solo efectivo', () {
+    testWidgets('no hay forma de pago que elegir ni habla de crédito', (tester) async {
       await abrirPedido(tester, cajas: 1);
-      final segmentos = tester.widget<SegmentedButton<FormaDePago>>(
-        find.byKey(const Key('forma_de_pago')),
-      );
-      expect(segmentos.selected, {FormaDePago.efectivo});
-      // Todo es de contado (ADR 0002 §81): no existe la opción.
-      expect(segmentos.segments.map((s) => s.value),
-          [FormaDePago.efectivo, FormaDePago.transferencia]);
+      // Solo efectivo (ADR 0002 §81): la opción no existe.
+      expect(find.byKey(const Key('forma_de_pago')), findsNothing);
+      expect(textoQueContiene('ransferencia'), findsNothing);
       expect(textoQueContiene('rédito'), findsNothing);
-      expect(find.byKey(const Key('campo_referencia_pago')), findsNothing);
-    });
-
-    testWidgets('por transferencia pide la referencia y avisa que no va al corte',
-        (tester) async {
-      await abrirPedido(tester, cajas: 1);
-      await tester.tap(find.text('Transferencia'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('campo_referencia_pago')), findsOneWidget);
-      expect(textoQueContiene('No viene en tu efectivo del corte'), findsOneWidget);
-
-      await tester.tap(find.text('Efectivo'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('campo_referencia_pago')), findsNothing);
-    });
-  });
-
-  group('el botón de cobrar', () {
-    testWidgets('dice cómo se va a cobrar', (tester) async {
-      await abrirPedido(tester, cajas: 1);
       expect(find.text('Cobrar en efectivo'), findsOneWidget);
-
-      await tester.tap(find.text('Transferencia'));
-      await tester.pumpAndSettle();
-      expect(find.text('Cobrar por transferencia'), findsOneWidget);
     });
 
-    testWidgets('está vivo con cualquier forma de pago: no hay límite que negar',
-        (tester) async {
-      await abrirPedido(tester, cajas: 2);
-      for (final forma in ['Efectivo', 'Transferencia']) {
-        await tester.tap(find.text(forma));
-        await tester.pumpAndSettle();
-        final boton = tester.widget<ButtonStyleButton>(
-          find.byKey(const Key('boton_cobrar')),
-        );
-        expect(boton.onPressed, isNotNull, reason: forma);
-      }
-    });
-
-    testWidgets('la venta por transferencia viaja con su forma y su referencia',
-        (tester) async {
+    testWidgets('la venta viaja en efectivo', (tester) async {
       final base = await abrirPedido(tester, cajas: 1);
-      await tester.tap(find.text('Transferencia'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('campo_referencia_pago')),
-        'SPEI 4471',
-      );
-      await tester.pumpAndSettle();
+      final boton = tester.widget<ButtonStyleButton>(find.byKey(const Key('boton_cobrar')));
+      expect(boton.onPressed, isNotNull);
       await tocar(tester, const Key('boton_cobrar'));
 
-      final venta = base.db
-          .select('SELECT tipo, forma_pago, referencia_pago FROM ventas')
-          .single;
+      final venta = base.db.select('SELECT tipo, forma_pago FROM ventas').single;
       expect(venta['tipo'], 'contado');
-      expect(venta['forma_pago'], 'transferencia');
-      expect(venta['referencia_pago'], 'SPEI 4471');
+      expect(venta['forma_pago'], 'efectivo');
       final sobre = base.db
           .select("SELECT payload FROM outbox WHERE tipo = 'venta.crear'")
           .single['payload'] as String;
-      expect(sobre, contains('"forma_pago":"transferencia"'));
-      expect(sobre, contains('"referencia_pago":"SPEI 4471"'));
+      expect(sobre, contains('"forma_pago":"efectivo"'));
     });
   });
 
@@ -235,8 +182,7 @@ void main() {
       // agregara un campo editable, esta prueba lo atrapa.
       await abrirPedido(tester, cajas: 2);
 
-      // Solo debe haber campos de texto en el catálogo (búsqueda), no aquí. La
-      // referencia de la transferencia solo aparece al elegirla.
+      // Solo debe haber campos de texto en el catálogo (búsqueda), no aquí.
       expect(find.byType(TextField), findsNothing);
       expect(textoQueContiene('Descuento'), findsNothing);
       expect(textoQueContiene('descuento'), findsNothing);

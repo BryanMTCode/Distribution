@@ -4,15 +4,17 @@
 /// ───────────────────────────────────────────────────────────────────────────
 /// QUÉ DEFIENDEN ESTAS PRUEBAS
 /// ───────────────────────────────────────────────────────────────────────────
-/// · **El conteo es a ciegas.** El resumen no trae lo que el sistema cree que
-///   hay: con la cifra a la vista el conteo se vuelve un copiado.
+/// · **El camión no se cuenta.** El resumen trae lo que le queda —el saldo
+///   del camión, que cada venta descontó— y lo vendido hoy; el corte solo pide
+///   el efectivo.
 /// · **El corte y la solicitud viajan por la cola**, con el dinero y las
 ///   cantidades como texto (contracts §1.4) y la solicitud fechada para MAÑANA.
 /// · **La nueva solicitud reemplaza a la pendiente**, como en el servidor.
 /// · **El delta de la oficina** pone «aceptada», el folio y lo aceptado —o el
 ///   motivo del rechazo— para que el ticket lo diga.
 /// · **Los tickets** dicen lo vendido, el efectivo contra lo vendido en efectivo
-///   y el sobrante; el de la carga, lo que pidió y lo que se le cargó.
+///   y lo que le queda; el de la carga, lo que pidió y lo que se le cargó. La
+///   transferencia solo aparece si hubo (ADR 0002 §81: solo efectivo).
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -88,6 +90,13 @@ void main() {
       "INSERT INTO sync_estado (clave, valor) VALUES ('carga_id_activa', 'carga-1')",
     );
     venta('VEND01-000001', 2250);
+    db.execute(
+      'INSERT INTO venta_partidas (id, venta_id, linea, producto_id, unidad_codigo, '
+      'factor_unidad, cantidad, cantidad_base, precio_unitario, tasa_iva, importe) '
+      "VALUES ('vp1', 'VEND01-000001', 1, ?, 'PZA', 1, 180, 180, 12.5, 0, 2250)",
+      [_atun],
+    );
+    // Una transferencia de antes de que fuera solo efectivo.
     venta('VEND01-000002', 500, forma: 'transferencia', sincronizada: 0);
   });
 
@@ -105,19 +114,20 @@ void main() {
       expect(r.cargaId, 'carga-1');
     });
 
-    test('lista lo que hay que contar sin decir cuánto cree el sistema', () {
+    test('dice lo que le queda al camión y lo vendido hoy, sin contar', () {
       final r = registro().resumen();
       expect(r.productos.map((p) => p.nombre), ['Atún en agua 140 g', 'Galletas 200 g']);
-      expect(r.productos.first.mayor?.unidad, 'CAJA');
-      // No hay campo con la cifra del sistema: el conteo es a ciegas.
-      expect(r.productos.first.toString(), isNot(contains('60')));
+      final atun = r.productos.first;
+      expect(atun.mayor?.unidad, 'CAJA');
+      expect(atun.queda, Cantidad.deEnteros(60));
+      expect(atun.vendido, Cantidad.deEnteros(180));
+      expect(r.productos.last.queda, Cantidad.cero);
     });
   });
 
   group('el corte', () {
-    test('se encola con el dinero y el conteo como texto', () {
+    test('se encola con el efectivo como texto y sin conteo', () {
       final corte = registro().hacerCorte(
-        conteo: {_atun: Cantidad.deEnteros(55), _galletas: Cantidad.cero},
         efectivo: Dinero.deTexto('2200.00'),
         observaciones: '  Se me rompió una lata ',
       );
@@ -129,19 +139,13 @@ void main() {
       expect(datos['carga_id'], 'carga-1');
       expect(datos['efectivo_declarado'], '2200.00');
       expect(datos['observaciones'], 'Se me rompió una lata');
-      expect(datos['conteo'], [
-        {'producto_id': _atun, 'cantidad': '55.000'},
-        {'producto_id': _galletas, 'cantidad': '0.000'},
-      ]);
+      expect(datos.containsKey('conteo'), isFalse);
       expect(corte.efectivoEsperado, Dinero.deTexto('2250.00'));
       expect(corte.sincronizado, isFalse);
     });
 
-    test('su ticket dice lo vendido, el faltante de efectivo y el sobrante', () {
-      final corte = registro().hacerCorte(
-        conteo: {_atun: Cantidad.deEnteros(55), _galletas: Cantidad.cero},
-        efectivo: Dinero.deTexto('2200.00'),
-      );
+    test('su ticket dice lo vendido, el faltante de efectivo y lo que le queda', () {
+      final corte = registro().hacerCorte(efectivo: Dinero.deTexto('2200.00'));
       final t = corte.textoTicket;
       expect(t, startsWith('*DISTRIBUCIONES SE*\n*CORTE DEL DÍA*\nJuan Pérez (VEND01)'));
       expect(t, contains('Miércoles 7 de octubre · 18:30'));
@@ -149,26 +153,32 @@ void main() {
       expect(t, contains(r'Efectivo: $2,250.00'));
       expect(t, contains(r'Transferencia: $500.00'));
       expect(t, contains(r'Faltan $50.00 contra lo vendido en efectivo.'));
-      expect(t, contains('• Atún en agua 140 g: 55 PZA'));
-      // Lo que se contó en cero no ensucia el ticket.
+      expect(t, contains('*LE QUEDA EN EL CAMIÓN*'));
+      expect(t, contains('• Atún en agua 140 g: 60 PZA'));
+      // Lo que se acabó no ensucia el ticket.
       expect(t, isNot(contains('Galletas')));
       // Y se guarda para volver a compartirlo igual.
       expect(registro().corteDelDia()!.textoTicket, t);
     });
 
-    test('un conteo negativo es un dedazo y no se guarda', () {
+    test('sin transferencias, el ticket no las menciona', () {
+      db.execute("DELETE FROM ventas WHERE forma_pago = 'transferencia'");
+      final t = registro().hacerCorte(efectivo: Dinero.deTexto('2250.00')).textoTicket;
+      expect(t, contains(r'1 venta: $2,250.00'));
+      expect(t, isNot(contains('Transferencia')));
+      expect(t, contains('Cuadra con lo vendido en efectivo.'));
+    });
+
+    test('un efectivo negativo es un dedazo y no se guarda', () {
       expect(
-        () => registro().hacerCorte(
-          conteo: {_atun: Cantidad.deEnteros(-1)},
-          efectivo: Dinero.cero,
-        ),
+        () => registro().hacerCorte(efectivo: Dinero.deTexto('-1.00')),
         throwsA(isA<CierreNoValido>()),
       );
       expect(operaciones(), isEmpty);
     });
 
     test('al confirmarse el sobre, el corte queda como subido', () {
-      registro().hacerCorte(conteo: {}, efectivo: Dinero.deTexto('2250.00'));
+      registro().hacerCorte(efectivo: Dinero.deTexto('2250.00'));
       final sobre = outbox.siguienteLote().single;
       outbox.confirmar([sobre.operacionId], confirmadoEn: '2026-10-08T02:00:00.000Z');
       outbox.marcarDocumentosConfirmados();
@@ -187,7 +197,7 @@ void main() {
 
     test('es para mañana, amarrada al corte de hoy, con bultos y piezas', () {
       final cierre = registro();
-      final corte = cierre.hacerCorte(conteo: {}, efectivo: Dinero.cero);
+      final corte = cierre.hacerCorte(efectivo: Dinero.cero);
       final s = cierre.pedirCarga(renglones: [cajasDeAtun(10)]);
       expect(s.fechaOperativa, '2026-10-08');
       expect(s.corteId, corte.id);
@@ -334,7 +344,8 @@ void main() {
           'liquidacion_folio': 'LQ-000004', 'nota': null,
           'renglones': [
             {'producto_id': _atun, 'sku': 'ATUN-140', 'nombre': 'Atún', 'unidad_base': 'PZA',
-             'contada': '55.000', 'contado': true, 'sistema': '60.000', 'diferencia': '-5.000'},
+             'traia': '0.000', 'cargada': '240.000', 'vendida': '180.000', 'merma': '0.000',
+             'devuelta': '0.000', 'queda': '60.000'},
           ],
         },
         'solicitud': {
@@ -348,10 +359,13 @@ void main() {
              'cantidad': '240.000', 'cantidad_aceptada': '240.000', 'en_bodega': '520.000'},
           ],
         },
+        'corte_por_cerrar': null,
         'mensaje': 'Listo.',
       });
       expect(c.corte!.diferenciaEfectivo, Dinero.deTexto('-50.00'));
-      expect(c.corte!.conDiferencia.single.diferencia, Cantidad.deEnteros(-5));
+      expect(c.corte!.renglones.single.queda, Cantidad.deEnteros(60));
+      expect(c.corte!.renglones.single.vendida, Cantidad.deEnteros(180));
+      expect(c.cortePorCerrar, isNull);
       final t = c.ticketDeLaCarga!;
       expect(t, contains('*CARGA ACEPTADA*'));
       expect(t, contains('Carga CG-000013 · sale de Bodega'));

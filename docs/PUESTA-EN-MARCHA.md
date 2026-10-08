@@ -634,16 +634,19 @@ rechaza el rol `vendedor` a propósito, porque un vendedor no entra al panel.
 **DÓNDE:** en el **navegador**, **Panel → Teléfonos**.
 
 En «Vincular un teléfono»: elige al vendedor en la lista, ponle una etiqueta que te
-sirva para reconocerlo (`Moto G - Juan`), y guarda.
+sirva para reconocerlo (`Moto G - Juan`), escribe una **clave corta** que tú elijas
+(`RUTA4`, de 4 a 20 letras o números) —o déjala vacía y el panel inventa una de
+seis— y guarda.
 
-**✅ Debes ver** un aviso con el identificador del equipo, parecido a:
+**✅ Debes ver** un aviso con la clave del equipo, parecido a:
 
 ```
-Equipo «Moto G - Juan» vinculado a Juan Pérez.
-Tecléalo en el teléfono una sola vez: 019283ab-...
+Equipo «Moto G - Juan» vinculado a Juan Pérez. En el teléfono, en
+«Clave del equipo», teclea una sola vez: RUTA4
 ```
 
-**Cópialo o anótalo.** Lo vas a teclear en el teléfono en el paso siguiente.
+**Anótala.** La vas a teclear en el teléfono en el paso siguiente. También queda
+escrita en la lista de equipos, y se puede cambiar con «Cambiar clave».
 
 **⚠️ Si el vendedor no aparece en la lista**, es porque ya tiene otro equipo activo
 (solo se permite uno) o porque su rol no es `vendedor`. Revisa el paso 12.
@@ -657,15 +660,16 @@ Tecléalo en el teléfono una sola vez: 019283ab-...
 **DÓNDE:** en el **teléfono**, con la app abierta y **con WiFi o datos**.
 
 1. En la pantalla de entrada, abre **«Vincular este equipo»**.
-2. Teclea el **identificador del paso 13**, el **código del vendedor** y su
-   **contraseña**.
+2. Teclea el **código del vendedor**, su **contraseña** y la **clave del equipo**
+   del paso 13 (`RUTA4`).
 3. Pulsa **«Vincular y entrar»**.
 
 **✅ Debes ver** que la app entra y queda lista para trabajar, con los datos de la
 ruta descargados.
 
-**⚠️ Si dice que el dispositivo no está registrado:** el identificador está mal
-teclado. Son 36 caracteres con guiones; cópialo, no lo transcribas.
+**⚠️ Si dice que esa clave de equipo no existe:** está mal tecleada, o el equipo
+se revocó. Revísala en Panel → Teléfonos. (El identificador largo de antes sigue
+sirviendo en el mismo campo.)
 
 **⚠️ Si dice que no hay conexión:** abre el navegador **del teléfono** en
 `https://api.distribucionesse.com/salud`. Si eso no responde, el problema es la red o el

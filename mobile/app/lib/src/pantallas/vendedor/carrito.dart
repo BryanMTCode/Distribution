@@ -7,9 +7,8 @@
 ///    importe. Es lo que el cliente va a revisar en el papel impreso, y si no
 ///    cuadra en pantalla, el vendedor lo descubre AHORA y no frente al cliente
 ///    con el ticket ya salido.
-/// 2. **Todo es de contado** (ADR 0002 §81): el cliente paga en el acto, en
-///    efectivo o por transferencia. La forma cambia lo que el vendedor entrega
-///    en el corte, no los importes.
+/// 2. **Todo es de contado y en efectivo** (ADR 0002 §81): el cliente paga en
+///    el acto, con billetes. No hay forma de pago que elegir: no existe.
 /// 3. **No hay campo de precio ni de descuento.** El vendedor no otorga
 ///    descuentos (ADR 0002 §7). No está deshabilitado: no existe.
 library;
@@ -102,7 +101,6 @@ class PantallaCarrito extends ConsumerWidget {
                 for (final linea in carrito.lineas) _RenglonLinea(linea: linea),
                 const Divider(height: 1),
                 _Resumen(carrito: carrito),
-                _FormaDePago(carrito: carrito),
               ],
             ),
     );
@@ -316,81 +314,6 @@ class _Resumen extends StatelessWidget {
       );
 }
 
-/// Efectivo o transferencia. Dos botones grandes, no un menú.
-///
-/// La referencia de la transferencia es opcional —no siempre el cliente la tiene
-/// a la mano—, pero si se escribe viaja en la venta y en el ticket: es con lo que
-/// la oficina la encuentra en el estado de cuenta.
-class _FormaDePago extends ConsumerStatefulWidget {
-  const _FormaDePago({required this.carrito});
-
-  final Carrito carrito;
-
-  @override
-  ConsumerState<_FormaDePago> createState() => _EstadoFormaDePago();
-}
-
-class _EstadoFormaDePago extends ConsumerState<_FormaDePago> {
-  late final _referencia = TextEditingController(text: widget.carrito.referenciaPago ?? '');
-
-  @override
-  void dispose() {
-    _referencia.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final control = ref.read(carritoProvider.notifier);
-    final forma = widget.carrito.formaDePago;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Forma de pago', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          SegmentedButton<FormaDePago>(
-            key: const Key('forma_de_pago'),
-            segments: const [
-              ButtonSegment(
-                value: FormaDePago.efectivo,
-                label: Text('Efectivo'),
-                icon: Icon(Icons.payments_outlined),
-              ),
-              ButtonSegment(
-                value: FormaDePago.transferencia,
-                label: Text('Transferencia'),
-                icon: Icon(Icons.account_balance_outlined),
-              ),
-            ],
-            selected: {forma},
-            onSelectionChanged: (s) =>
-                control.cambiarFormaDePago(s.first, referencia: _referencia.text),
-          ),
-          if (forma == FormaDePago.transferencia) ...[
-            const SizedBox(height: 10),
-            TextField(
-              key: const Key('campo_referencia_pago'),
-              controller: _referencia,
-              decoration: const InputDecoration(
-                labelText: 'Clave de rastreo o referencia (opcional)',
-                helperText: 'Con esto la oficina la encuentra en el banco. '
-                    'No viene en tu efectivo del corte.',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (t) =>
-                  control.cambiarFormaDePago(FormaDePago.transferencia, referencia: t),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// El total y el paso siguiente.
 class _BarraCobro extends ConsumerWidget {
   const _BarraCobro({required this.carrito});
@@ -442,11 +365,7 @@ class _BarraCobro extends ConsumerWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.point_of_sale_outlined),
-                label: Text(
-                  carrito.formaDePago == FormaDePago.transferencia
-                      ? 'Cobrar por transferencia'
-                      : 'Cobrar en efectivo',
-                ),
+                label: const Text('Cobrar en efectivo'),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),

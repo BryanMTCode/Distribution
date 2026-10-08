@@ -45,6 +45,8 @@ palabras.
 
 from __future__ import annotations
 
+import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -99,6 +101,7 @@ async def listar(
             text(
                 """
                 SELECT d.id, d.etiqueta, d.modelo, d.app_version, d.estado,
+                       d.clave_vinculo,
                        d.ultima_sync_push_en, d.ultima_sync_pull_en,
                        d.cola_pendiente, d.cola_reportada_en,
                        d.revocado_en, d.revocado_motivo,
@@ -201,6 +204,60 @@ async def listar(
     )
 
 
+# ---------------------------------------------------------------------------
+# La clave corta para vincular (ADR 0002 §85)
+# ---------------------------------------------------------------------------
+# Sin I, O, 0 ni 1: dictada por teléfono o leída de un papel, no se confunden.
+ALFABETO_CLAVE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_CLAVE_VALIDA = re.compile(r"^[A-Z0-9-]{4,20}$")
+
+
+def leer_clave(cruda: str) -> str:
+    """La clave como se guarda: sin espacios y en mayúsculas.
+
+    Lanza `ValueError` con el porqué, para mostrarlo tal cual.
+    """
+    clave = "".join((cruda or "").split()).upper()
+    if not _CLAVE_VALIDA.match(clave):
+        raise ValueError(
+            "La clave lleva de 4 a 20 letras o números, sin acentos ni espacios "
+            "(se vale el guion): «RUTA4», «BRYAN-1»."
+        )
+    return clave
+
+
+async def _clave_ocupada(sesion, clave: str, excepto: uuid.UUID | None = None) -> str | None:
+    """La etiqueta del equipo que ya tiene esa clave, si alguno la tiene."""
+    return (
+        await sesion.execute(
+            text(
+                "SELECT etiqueta FROM dispositivos "
+                " WHERE clave_vinculo = :c AND id IS DISTINCT FROM :e"
+            ),
+            {"c": clave, "e": excepto},
+        )
+    ).scalar_one_or_none()
+
+
+async def _inventar_clave(sesion) -> str:
+    """Seis caracteres que nadie tiene."""
+    while True:
+        clave = "".join(secrets.choice(ALFABETO_CLAVE) for _ in range(6))
+        if await _clave_ocupada(sesion, clave) is None:
+            return clave
+
+
+async def _clave_elegida(sesion, cruda: str, excepto: uuid.UUID | None = None) -> str:
+    """La que escribió la oficina, o una inventada si la dejó vacía."""
+    if not (cruda or "").strip():
+        return await _inventar_clave(sesion)
+    clave = leer_clave(cruda)
+    otro = await _clave_ocupada(sesion, clave, excepto)
+    if otro is not None:
+        raise ValueError(f"La clave «{clave}» ya la tiene «{otro}». Elige otra.")
+    return clave
+
+
 def _volver(aviso: str = "", error: str = "") -> RedirectResponse:
     consulta = f"?aviso={aviso}" if aviso else f"?error={error}" if error else ""
     return RedirectResponse(
@@ -215,6 +272,7 @@ async def registrar(
     sesion: SesionDep,
     vendedor_id: Annotated[str, Form()] = "",
     etiqueta: Annotated[str, Form()] = "",
+    clave: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     """Vincula un teléfono a un vendedor, desde la oficina.
@@ -238,12 +296,15 @@ async def registrar(
     que cualquiera que las consiga pueda enrolar su propio aparato.
 
     ─────────────────────────────────────────────────────────────────────────
-    EL ID LO GENERA EL SERVIDOR AQUÍ, Y SE TECLEA EN EL TELÉFONO
+    EN EL TELÉFONO SE TECLEA UNA CLAVE CORTA, NO EL ID
     ─────────────────────────────────────────────────────────────────────────
-    En la API lo genera el dispositivo —igual que los documentos de campo— y
-    tiene sentido ahí. Aquí no hay dispositivo todavía: el teléfono no existe en
-    el sistema hasta que alguien lo vincula. Así que lo genera el servidor y la
-    pantalla lo muestra para teclearlo una vez en la app.
+    En la API el id lo genera el dispositivo —igual que los documentos de
+    campo— y tiene sentido ahí. Aquí no hay dispositivo todavía: el teléfono no
+    existe en el sistema hasta que alguien lo vincula. Así que el id lo genera
+    el servidor, y lo que se teclea en la app es la clave corta que eligió la
+    oficina —o una de seis que inventa el panel—: los 36 caracteres del id, a
+    mano y en la bodega, se tecleaban mal (ADR 0002 §85). El login cambia la
+    clave por el id.
     """
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
@@ -296,17 +357,22 @@ async def registrar(
             "ese equipo antes de vincular otro: un vendedor opera uno a la vez."
         )
 
+    try:
+        clave_final = await _clave_elegida(sesion, clave)
+    except ValueError as e:
+        return _volver(error=str(e))
+
     # `registrado_en` lo pone la base con `now()`; no se pasa para no tener dos
     # relojes diciendo cuándo ocurrió esto.
     dispositivo = nuevo_id()
     await sesion.execute(
         text(
             """
-            INSERT INTO dispositivos (id, usuario_id, etiqueta, estado)
-            VALUES (:id, :u, :etiqueta, 'activo')
+            INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, clave_vinculo)
+            VALUES (:id, :u, :etiqueta, 'activo', :clave)
             """
         ),
-        {"id": dispositivo, "u": vendedor, "etiqueta": nombre},
+        {"id": dispositivo, "u": vendedor, "etiqueta": nombre, "clave": clave_final},
     )
     await sesion.commit()
 
@@ -316,8 +382,50 @@ async def registrar(
     # endpoint es idempotente —devuelve el rango activo si ya hay uno— así que la
     # app puede pedirlos otra vez cuando le falten.
     return _volver(
-        aviso=f"Equipo «{nombre}» vinculado a {fila['nombre']}. "
-        f"Tecléalo en el teléfono una sola vez: {dispositivo}"
+        aviso=f"Equipo «{nombre}» vinculado a {fila['nombre']}. En el teléfono, en "
+        f"«Clave del equipo», teclea una sola vez: {clave_final}"
+    )
+
+
+@router.post("/{dispositivo_id}/clave")
+async def cambiar_clave(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    dispositivo_id: uuid.UUID,
+    clave: str = Form(""),
+    csrf: str = Form(""),
+) -> RedirectResponse:
+    """Le pone o le cambia la clave corta a un equipo ya registrado.
+
+    Sirve para los que se registraron antes de que hubiera clave, y para el
+    teléfono que se reinstala: se teclea la clave otra vez y vuelve a entrar.
+    Vacía, el panel inventa una.
+    """
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    fila = (
+        await sesion.execute(
+            text("SELECT etiqueta, estado FROM dispositivos WHERE id = :d"),
+            {"d": dispositivo_id},
+        )
+    ).mappings().first()
+    if fila is None:
+        return _volver(error="Ese equipo no existe.")
+    if fila["estado"] == "revocado":
+        return _volver(error="Un equipo revocado ya no se vincula: vincula uno nuevo.")
+    try:
+        nueva = await _clave_elegida(sesion, clave, excepto=dispositivo_id)
+    except ValueError as e:
+        return _volver(error=str(e))
+    await sesion.execute(
+        text("UPDATE dispositivos SET clave_vinculo = :c WHERE id = :d"),
+        {"c": nueva, "d": dispositivo_id},
+    )
+    await sesion.commit()
+    return _volver(
+        aviso=f"La clave de «{fila['etiqueta']}» es {nueva}. En el teléfono va en "
+        "«Clave del equipo»."
     )
 
 
@@ -385,7 +493,11 @@ async def cambiar_estado(
                    revocado_en = CASE WHEN :destino = 'revocado'
                                       THEN COALESCE(revocado_en, :ahora) END,
                    revocado_motivo = CASE WHEN :destino = 'revocado'
-                                          THEN :motivo END
+                                          THEN :motivo END,
+                   -- Revocado, su clave ya no abre nada y queda libre para
+                   -- otro equipo (migración 0050).
+                   clave_vinculo = CASE WHEN :destino = 'revocado'
+                                        THEN NULL ELSE clave_vinculo END
              WHERE id = :d
             """
         ),

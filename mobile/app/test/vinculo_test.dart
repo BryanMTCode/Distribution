@@ -43,10 +43,12 @@ class _ServidorDeVinculo implements Transporte {
   final int codigoLogin;
   final bool foliosSeCaen;
   final List<String> llamadas = [];
+  Map<String, Object?>? login;
 
   @override
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     llamadas.add(ruta);
+    if (ruta == '/v1/auth/login') login = cuerpo;
 
     if (ruta.endsWith('/folios')) {
       if (foliosSeCaen) throw const ErrorDeRed('sin señal');
@@ -86,6 +88,8 @@ class _ServidorDeVinculo implements Transporte {
           'almacen_id': null,
         },
         if (credencial) 'credencial_local': credencialDelServidor(),
+        // Con la clave corta, el servidor contesta con el id del equipo.
+        'dispositivo_id': _idEquipo,
       }),
     );
   }
@@ -152,6 +156,24 @@ void main() {
     // Y el orden de las llamadas: el login primero, los folios después.
     expect(servidor.llamadas.first, equals('/v1/auth/login'));
     expect(servidor.llamadas.last, contains('/folios'));
+  });
+
+  testWidgets('con la clave corta que eligió la oficina, guarda el id que contesta',
+      (tester) async {
+    final servidor = _ServidorDeVinculo();
+    final base = await montarApp(tester, extras: _con(servidor));
+
+    await _vincular(tester, equipo: ' ruta4 ');
+
+    expect(servidor.login!['clave_equipo'], 'RUTA4');
+    expect(servidor.login!.containsKey('dispositivo_id'), isFalse);
+    expect(
+      base.db
+          .select("SELECT valor FROM sync_estado WHERE clave = 'dispositivo_id'")
+          .single['valor'],
+      equals(_idEquipo),
+    );
+    expect(servidor.llamadas.last, '/v1/dispositivos/$_idEquipo/folios');
   });
 
   testWidgets('el campo del login diario acepta letras, no solo números',
@@ -294,7 +316,7 @@ void main() {
     expect(find.textContaining('dispositivo no registrado'), findsOneWidget);
   });
 
-  testWidgets('sin identificador no se llama al servidor', (tester) async {
+  testWidgets('sin clave no se llama al servidor', (tester) async {
     final servidor = _ServidorDeVinculo();
     await montarApp(tester, extras: _con(servidor));
 
@@ -312,11 +334,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(servidor.llamadas, isEmpty);
-    expect(find.textContaining('Falta el identificador'), findsOneWidget);
+    expect(find.textContaining('Falta la clave del equipo'), findsOneWidget);
   });
 }
 
-Future<void> _vincular(WidgetTester tester) async {
+Future<void> _vincular(WidgetTester tester, {String equipo = _idEquipo}) async {
   await tester.tap(find.byKey(const Key('boton_abrir_vinculo')));
   await tester.pumpAndSettle();
   await tester.enterText(
@@ -331,7 +353,7 @@ Future<void> _vincular(WidgetTester tester) async {
     find.byKey(const Key('campo_password_vinculo')),
     pinCorrecto,
   );
-  await tester.enterText(find.byKey(const Key('campo_equipo_vinculo')), _idEquipo);
+  await tester.enterText(find.byKey(const Key('campo_equipo_vinculo')), equipo);
   await tester.tap(find.byKey(const Key('boton_vincular')));
   await tester.pumpAndSettle();
 }

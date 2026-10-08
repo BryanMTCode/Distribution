@@ -16,6 +16,9 @@
 /// convierte a piezas al capturar, y no se confirma encima de un día que no ha
 /// subido salvo diciendo por qué. Esta pantalla solo muestra lo que el servidor
 /// contesta, incluido su mensaje.
+///
+/// Arriba van las cargas que pidieron los vendedores al terminar su día, para
+/// aceptarlas o rechazarlas (`SeccionCargasPedidas`, ADR 0002 §82).
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -23,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/cargas.dart';
+import 'cierres.dart';
 
 /// La lista de cargas abiertas, y el botón para abrir una nueva.
 class PantallaCargas extends ConsumerStatefulWidget {
@@ -38,6 +42,9 @@ class PantallaCargas extends ConsumerStatefulWidget {
 class _EstadoCargas extends ConsumerState<PantallaCargas> {
   List<ResumenDeCarga>? _cargas;
   String? _error;
+
+  /// Al deslizar para recargar, la sección de las cargas pedidas se vuelve a leer.
+  int _vuelta = 0;
 
   @override
   void initState() {
@@ -132,10 +139,18 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
         label: const Text('Nueva carga'),
       ),
       body: RefreshIndicator(
-        onRefresh: _cargar,
+        onRefresh: () async {
+          setState(() => _vuelta++);
+          await _cargar();
+        },
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
+            // Las que pidieron los vendedores van primero: es lo que se atiende
+            // cada tarde (ADR 0002 §82).
+            SeccionCargasPedidas(key: ValueKey(_vuelta), alCambiar: _cargar),
+            const Divider(height: 32),
+            Text('Cargas abiertas', style: Theme.of(context).textTheme.titleMedium),
             if (_error != null) _Aviso(texto: _error!, esError: true),
             if (cargas == null && _error == null)
               const Padding(

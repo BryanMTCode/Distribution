@@ -2,12 +2,13 @@
 ///
 /// Lo que se prueba aquí es el recorrido completo, como lo hace la gente:
 ///
-/// · El vendedor, sin señal: corte (conteo a ciegas + efectivo) → ticket →
-///   solicitar carga → ticket. Los dos viajan por la cola, y el ticket se
-///   comparte como texto.
+/// · El vendedor, sin señal: corte (solo el efectivo; lo que le queda en el
+///   camión se calcula y se le muestra) → ticket → solicitar carga → ticket.
+///   Los dos viajan por la cola, y el ticket se comparte como texto.
 /// · Cuando la oficina acepta, «Mi día» lo dice con el folio.
-/// · El gerente: ve el corte junto con la carga pedida, corrige un renglón,
-///   acepta y comparte el ticket de la carga; o la rechaza con motivo.
+/// · El gerente, por separado: en «Corte del día» cierra el corte del vendedor;
+///   en «Cargas» acepta la carga pedida —corrigiendo un renglón— y comparte el
+///   ticket, o la rechaza con motivo. Con el corte abierto, la carga espera.
 library;
 
 import 'dart:convert';
@@ -64,15 +65,19 @@ void main() {
       expect(find.byKey(const Key('pantalla_corte_del_dia')), findsOneWidget);
       expect(find.byKey(const Key('corte_efectivo_vendido')), findsOneWidget);
       expect(textoQueContiene(r'En efectivo: $2,250.00'), findsOneWidget);
-      // El conteo es a ciegas: no se ve cuánto cree el sistema que trae.
-      expect(textoQueContiene('240'), findsNothing);
+      // El camión no se cuenta: lo que le queda se calcula y se le muestra.
+      expect(find.byKey(const Key('queda_SOPA-70G')), findsOneWidget);
+      expect(textoQueContiene('240 PZA (10 CAJA)'), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(2), reason: 'efectivo y notas, nada más');
 
-      // Sin contar no se termina.
-      await tester.enterText(find.byKey(const Key('campo_efectivo_corte')), '2200');
+      // Sin efectivo no se termina.
       await verYTocar(tester, const Key('boton_terminar_corte'));
-      expect(textoQueContiene('Falta contar: Sopa de fideo 70 g'), findsOneWidget);
+      expect(textoQueContiene('Escribe cuánto efectivo entregas'), findsOneWidget);
 
-      await tester.enterText(find.byKey(const Key('conteo_SOPA-70G')), '230');
+      await tester.enterText(find.byKey(const Key('campo_efectivo_corte')), '2200');
+      // Escribir sube la lista hasta el campo: el botón queda abajo, sin construir.
+      await tester.scrollUntilVisible(find.byKey(const Key('boton_terminar_corte')), 200,
+          scrollable: find.byType(Scrollable).first);
       await verYTocar(tester, const Key('boton_terminar_corte'));
 
       // El ticket del corte.
@@ -80,7 +85,8 @@ void main() {
       final ticket = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
       expect(ticket, contains('*CORTE DEL DÍA*'));
       expect(ticket, contains(r'Faltan $50.00 contra lo vendido en efectivo.'));
-      expect(ticket, contains('• Sopa de fideo 70 g: 230 PZA'));
+      expect(ticket, contains('*LE QUEDA EN EL CAMIÓN*'));
+      expect(ticket, contains('• Sopa de fideo 70 g: 10 CAJA'));
       await verYTocar(tester, const Key('boton_compartir_ticket'));
       expect(compartidor.compartidos.single, ticket);
 
@@ -102,6 +108,10 @@ void main() {
           .map((f) => f['tipo'] as String)
           .toList();
       expect(tipos, containsAllInOrder(['corte.crear', 'solicitud_carga.crear']));
+      final corte = base.db
+          .select("SELECT payload FROM outbox WHERE tipo = 'corte.crear'")
+          .single['payload'] as String;
+      expect(corte, isNot(contains('conteo')));
     });
 
     testWidgets('cuando la oficina acepta, Mi día dice el folio de la carga', (tester) async {
@@ -147,34 +157,74 @@ void main() {
   });
 
   group('el gerente', () {
-    testWidgets('ve el corte con la carga, corrige un renglón, acepta y comparte',
+    Future<void> abrirPestana(WidgetTester tester, Key pestana) async {
+      await tester.tap(find.byKey(const Key('nav_almacen')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(pestana));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('en «Corte del día» cierra el corte: lo que le queda, calculado',
+        (tester) async {
+      final servidor = _ServidorDeCierres();
+      await _montarGerente(tester, servidor, _CompartidorDePrueba());
+      await abrirPestana(tester, const Key('pestana_cortes'));
+
+      expect(find.byKey(const Key('corte_vendedor_VEND01')), findsOneWidget);
+      expect(textoQueContiene(r'faltan $50.00'), findsOneWidget);
+      // La carga no está aquí: va en su pestaña.
+      expect(find.byKey(const Key('carga_pedida_VEND01')), findsNothing);
+      await tester.tap(find.byKey(const Key('corte_vendedor_VEND01')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pantalla_corte_vendedor')), findsOneWidget);
+      expect(textoQueContiene('Traía 0 · cargó 240 · vendió 180'), findsOneWidget);
+      expect(textoQueContiene('60 PZA'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('boton_cerrar_corte_vendedor')));
+      await tester.tap(find.byKey(const Key('boton_cerrar_corte_vendedor')));
+      await tester.pumpAndSettle();
+
+      expect(servidor.posts.single.$1, '/v1/cierres/cortes/k1/cerrar');
+      expect(textoQueContiene('Liquidación LQ-000004 cerrada'), findsOneWidget);
+      // Cerrado, ya no está por cerrar.
+      expect(find.byKey(const Key('corte_vendedor_VEND01')), findsNothing);
+    });
+
+    testWidgets('en «Cargas», con el corte abierto la carga espera', (tester) async {
+      final servidor = _ServidorDeCierres(corteAbierto: true);
+      await _montarGerente(tester, servidor, _CompartidorDePrueba());
+      await abrirPestana(tester, const Key('pestana_cargas'));
+
+      expect(textoQueContiene('Espera su corte'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('carga_pedida_VEND01')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('espera_corte')), findsOneWidget);
+      final boton = tester.widget<ButtonStyleButton>(
+        find.byKey(const Key('boton_aceptar_carga')),
+      );
+      expect(boton.onPressed, isNull);
+    });
+
+    testWidgets('en «Cargas» corrige un renglón, acepta y comparte el ticket',
         (tester) async {
       final servidor = _ServidorDeCierres();
       final compartidor = _CompartidorDePrueba();
       await _montarGerente(tester, servidor, compartidor);
+      await abrirPestana(tester, const Key('pestana_cargas'));
 
-      await tester.tap(find.byKey(const Key('nav_almacen')));
+      expect(find.byKey(const Key('corte_vendedor_VEND01')), findsNothing);
+      await tester.tap(find.byKey(const Key('carga_pedida_VEND01')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('cierre_VEND01')), findsOneWidget);
-      expect(textoQueContiene(r'faltan $50.00'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('cierre_VEND01')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('pantalla_cierre')), findsOneWidget);
-      expect(textoQueContiene('NO LO CONTÓ'), findsOneWidget);
+      expect(find.byKey(const Key('pantalla_carga_pedida')), findsOneWidget);
       await tester.enterText(find.byKey(const Key('aceptar_ATUN-140')), '8');
-      await tester.ensureVisible(find.byKey(const Key('boton_aceptar_cierre')));
-      await tester.tap(find.byKey(const Key('boton_aceptar_cierre')));
+      await tester.ensureVisible(find.byKey(const Key('boton_aceptar_carga')));
+      await tester.tap(find.byKey(const Key('boton_aceptar_carga')));
       await tester.pumpAndSettle();
 
       final (ruta, cuerpo) = servidor.posts.single;
-      expect(ruta, '/v1/cierres/aceptar');
-      expect(cuerpo, {
-        'corte_id': 'k1',
-        'solicitud_id': '0198a2f4-aaaa-7000-8000-000000000001',
-        // Solo lo que cambió: lo demás se acepta como se pidió.
-        'bultos': {'p1': '8'},
-      });
+      expect(ruta, '/v1/cierres/solicitudes/0198a2f4-aaaa-7000-8000-000000000001/aceptar');
+      // Solo lo que cambió: lo demás se acepta como se pidió.
+      expect(cuerpo, {'bultos': {'p1': '8'}});
       final t = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
       expect(t, contains('*CARGA ACEPTADA*'));
       expect(t, contains('• Atún en agua 140 g: 8 CAJA (pidió 10 CAJA)'));
@@ -187,9 +237,8 @@ void main() {
     testWidgets('rechaza con motivo', (tester) async {
       final servidor = _ServidorDeCierres();
       await _montarGerente(tester, servidor, _CompartidorDePrueba());
-      await tester.tap(find.byKey(const Key('nav_almacen')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('cierre_VEND01')));
+      await abrirPestana(tester, const Key('pestana_cargas'));
+      await tester.tap(find.byKey(const Key('carga_pedida_VEND01')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('boton_rechazar_solicitud')));
       await tester.tap(find.byKey(const Key('boton_rechazar_solicitud')));
@@ -230,27 +279,43 @@ Future<void> _montarGerente(
 }
 
 class _ServidorDeCierres implements Transporte {
-  final List<(String, Map<String, Object?>)> posts = [];
+  _ServidorDeCierres({this.corteAbierto = false});
 
-  Map<String, Object?> _cierre({String estado = 'pendiente', String? aceptadas}) => {
-        'vendedor_id': 'v1', 'vendedor_codigo': 'VEND01', 'vendedor': 'Juan Pérez',
-        'camion': 'Camión 01',
+  /// Si el vendedor todavía debe su corte cuando se ve su carga.
+  final bool corteAbierto;
+  final List<(String, Map<String, Object?>)> posts = [];
+  bool _corteCerrado = false;
+
+  static const _vendedor = {
+    'vendedor_id': 'v1', 'vendedor_codigo': 'VEND01', 'vendedor': 'Juan Pérez',
+    'camion': 'Camión 01',
+  };
+
+  Map<String, Object?> _corte({String estado = 'pendiente'}) => {
+        ..._vendedor,
+        'solicitud': null,
+        'corte_por_cerrar': null,
         'corte': {
-          'id': 'k1', 'fecha_operativa': '2026-09-24',
-          'estado': estado == 'pendiente' ? 'pendiente' : 'cerrado',
+          'id': 'k1', 'fecha_operativa': '2026-09-24', 'estado': estado,
           'efectivo_declarado': '2200.00', 'efectivo_esperado': '2250.00',
           'diferencia_efectivo': '-50.00', 'observaciones': null,
           'recibido_en': '2026-09-25T01:30:00Z', 'resuelto_en': null,
-          'liquidacion_folio': null, 'nota': null,
+          'liquidacion_folio': estado == 'cerrado' ? 'LQ-000004' : null, 'nota': null,
           'renglones': [
             {'producto_id': 'p1', 'sku': 'ATUN-140', 'nombre': 'Atún en agua 140 g',
-             'unidad_base': 'PZA', 'contada': '55.000', 'contado': true,
-             'sistema': '60.000', 'diferencia': '-5.000'},
-            {'producto_id': 'p2', 'sku': 'GALL', 'nombre': 'Galletas', 'unidad_base': 'PZA',
-             'contada': '0.000', 'contado': false, 'sistema': '4.000',
-             'diferencia': '-4.000'},
+             'unidad_base': 'PZA', 'traia': '0.000', 'cargada': '240.000',
+             'vendida': '180.000', 'merma': '0.000', 'devuelta': '0.000',
+             'queda': '60.000'},
           ],
         },
+      };
+
+  Map<String, Object?> _solicitud({String estado = 'pendiente', String? aceptadas}) => {
+        ..._vendedor,
+        'corte': null,
+        'corte_por_cerrar': corteAbierto && estado == 'pendiente'
+            ? {'id': 'k1', 'fecha_operativa': '2026-09-24'}
+            : null,
         'solicitud': {
           'id': '0198a2f4-aaaa-7000-8000-000000000001', 'fecha_operativa': '2026-09-25',
           'estado': estado, 'observaciones': null, 'recibido_en': '2026-09-25T01:31:00Z',
@@ -267,8 +332,14 @@ class _ServidorDeCierres implements Transporte {
 
   @override
   Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
-    if (ruta == '/v1/cierres') {
-      return RespuestaHttp(200, jsonEncode({'pendientes': [_cierre()], 'recientes': []}));
+    if (ruta == '/v1/cierres/cortes') {
+      return RespuestaHttp(200, jsonEncode({
+        'pendientes': [if (!_corteCerrado) _corte()],
+        'recientes': [if (_corteCerrado) _corte(estado: 'cerrado')],
+      }));
+    }
+    if (ruta == '/v1/cierres/solicitudes') {
+      return RespuestaHttp(200, jsonEncode({'pendientes': [_solicitud()], 'recientes': []}));
     }
     return const RespuestaHttp(503, '{"detail":"no importa aquí"}');
   }
@@ -276,12 +347,20 @@ class _ServidorDeCierres implements Transporte {
   @override
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     posts.add((ruta, cuerpo));
-    if (ruta == '/v1/cierres/aceptar') {
+    if (ruta == '/v1/cierres/cortes/k1/cerrar') {
+      _corteCerrado = true;
       return RespuestaHttp(200, jsonEncode({
-        ..._cierre(estado: 'aceptada', aceptadas: '192.000'),
-        'mensaje': 'Liquidación LQ-000004 cerrada. Carga CG-000013 confirmada para el 25/09.',
+        ..._corte(estado: 'cerrado'),
+        'mensaje': 'Liquidación LQ-000004 cerrada. El camión se queda con lo que '
+            'calcula el sistema.',
       }));
     }
-    return RespuestaHttp(200, jsonEncode(_cierre(estado: 'rechazada')));
+    if (ruta.endsWith('/aceptar')) {
+      return RespuestaHttp(200, jsonEncode({
+        ..._solicitud(estado: 'aceptada', aceptadas: '192.000'),
+        'mensaje': 'Carga CG-000013 confirmada para el 25/09.',
+      }));
+    }
+    return RespuestaHttp(200, jsonEncode(_solicitud(estado: 'rechazada')));
   }
 }

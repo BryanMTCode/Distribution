@@ -1,18 +1,21 @@
-"""El cierre del vendedor: lo que la oficina ve y lo que pasa al aceptarlo.
+"""El cierre del vendedor: lo que la oficina ve y lo que pasa al resolverlo.
 
 ────────────────────────────────────────────────────────────────────────────
 EL FLUJO (ADR 0002 §82)
 ────────────────────────────────────────────────────────────────────────────
-1. El vendedor hace su corte en el teléfono (`corte.crear`): cuenta lo que le
-   sobró y el efectivo que entrega. Sale su ticket.
+1. El vendedor hace su corte en el teléfono (`corte.crear`): el efectivo que
+   entrega. **No cuenta el camión**: lo que le queda lo calcula el sistema —lo
+   que traía, más lo que se le cargó, menos lo que vendió—. Sale su ticket.
 2. Pide la carga del día siguiente (`solicitud_carga.crear`).
-3. El gerente ve el corte junto con la solicitud y **acepta**:
-   · el corte se cierra con las funciones del corte de siempre
-     (`abrir_corte`, `guardar_conteo`, `guardar_arqueo`, `cerrar_corte`): lo
-     que falte va a la cuenta del vendedor, a costo;
-   · se crea y se confirma la carga de mañana con las de la carga de siempre
-     (`_bloqueos_para_cargar`, `mover_y_confirmar`): sale de la bodega
-     principal y le llega al teléfono en su siguiente sincronización.
+3. El gerente resuelve las dos cosas POR SEPARADO, cada una en su lugar:
+   · **cierra el corte** (`cerrar_corte_del_vendedor`) con las funciones del
+     corte de siempre (`abrir_corte`, `guardar_arqueo`, `cerrar_corte` con
+     `conteo_automatico`): sin diferencias de mercancía, así que lo único que
+     puede ir a la cuenta del vendedor es el efectivo que no entregó;
+   · **acepta la carga** (`aceptar_solicitud`) con las de la carga de siempre
+     (`_bloqueos_para_cargar`, `mover_y_confirmar`): sale de la bodega principal
+     y le llega al teléfono en su siguiente sincronización. Primero el corte: con
+     el de hoy abierto, la carga de mañana no sale.
 
 Solo hay UNA carga al día, y es para el día siguiente.
 
@@ -26,7 +29,7 @@ cortes con la regla vieja.
 ────────────────────────────────────────────────────────────────────────────
 SE PUEDE REINTENTAR
 ────────────────────────────────────────────────────────────────────────────
-Las funciones del corte confirman por partes, así que aceptar no es una sola
+Las funciones del corte confirman por partes, así que cerrar no es una sola
 transacción. Está escrito para que reintentar sea seguro: un corte ya cerrado
 no se vuelve a cerrar, y la carga en borrador que quedó de un intento fallido
 se reutiliza. La solicitud se marca aceptada en la MISMA transacción que mueve
@@ -46,11 +49,12 @@ from app.api.admin.comun import CapturaInvalida, dinero
 from app.api.admin.liquidaciones import (
     CorteNoExiste,
     CorteRechazado,
+    _con_inicial,
     _efectivo_esperado,
+    _renglones_calculados,
     abrir_corte,
     cerrar_corte,
     guardar_arqueo,
-    guardar_conteo,
 )
 from app.domain.importes import CantidadInvalida, cantidad_base
 
@@ -60,7 +64,7 @@ class CierreNoExiste(Exception):
 
 
 class CierreRechazado(Exception):
-    """No se puede aceptar ahora, y el mensaje dice por qué (409)."""
+    """No se puede resolver ahora, y el mensaje dice por qué (409)."""
 
 
 async def bodega_principal(sesion) -> dict | None:
@@ -86,12 +90,65 @@ async def bodega_principal(sesion) -> dict | None:
 # ---------------------------------------------------------------------------
 # Lectura
 # ---------------------------------------------------------------------------
-async def cierres(sesion, *, dias_recientes: int = 7) -> dict:
-    """Lo pendiente de aceptar y lo resuelto en los últimos días.
+async def lista_de_cortes(sesion, *, dias_recientes: int = 7) -> dict:
+    """Los cortes por cerrar y los que se cerraron en los últimos días.
 
-    Cada «cierre» es lo que el gerente revisa de un jalón: el corte de un
-    vendedor y la carga que pidió con él. Puede faltar uno de los dos —el primer
-    día no hay corte; un vendedor que mañana descansa no pide carga—.
+    Cada elemento es un «cierre» con solo el corte: la carga se ve aparte.
+    """
+    pendientes = (
+        await sesion.execute(
+            text("SELECT id FROM cortes_vendedor WHERE estado = 'pendiente' "
+                 " ORDER BY fecha_operativa, recibido_en")
+        )
+    ).scalars().all()
+    cerrados = (
+        await sesion.execute(
+            text("SELECT id FROM cortes_vendedor "
+                 " WHERE estado = 'cerrado' AND resuelto_en >= :desde "
+                 " ORDER BY resuelto_en DESC LIMIT 50"),
+            {"desde": datetime.now(UTC) - timedelta(days=dias_recientes)},
+        )
+    ).scalars().all()
+    return {
+        "pendientes": [await _armar(sesion, corte_id=c, solicitud_id=None) for c in pendientes],
+        "recientes": [await _armar(sesion, corte_id=c, solicitud_id=None) for c in cerrados],
+    }
+
+
+async def lista_de_solicitudes(sesion, *, dias_recientes: int = 7) -> dict:
+    """Las cargas pedidas por aceptar y las resueltas en los últimos días.
+
+    Cada elemento es un «cierre» con solo la solicitud, y con
+    `corte_por_cerrar` si el vendedor todavía debe su corte: esa carga espera.
+    """
+    pendientes = (
+        await sesion.execute(
+            text("SELECT id FROM solicitudes_carga WHERE estado = 'pendiente' "
+                 " ORDER BY fecha_operativa, recibido_en")
+        )
+    ).scalars().all()
+    resueltas = (
+        await sesion.execute(
+            text(
+                "SELECT id FROM solicitudes_carga "
+                " WHERE estado IN ('aceptada', 'rechazada') AND resuelta_en >= :desde "
+                " ORDER BY resuelta_en DESC LIMIT 50"
+            ),
+            {"desde": datetime.now(UTC) - timedelta(days=dias_recientes)},
+        )
+    ).scalars().all()
+    return {
+        "pendientes": [await _armar(sesion, corte_id=None, solicitud_id=s) for s in pendientes],
+        "recientes": [await _armar(sesion, corte_id=None, solicitud_id=s) for s in resueltas],
+    }
+
+
+async def cierres(sesion, *, dias_recientes: int = 7) -> dict:
+    """El corte y la carga de cada vendedor, juntos.
+
+    Así los revisaba la app del gerente anterior a la versión +28; se queda para
+    que la que todavía no se actualiza siga funcionando. Las pantallas de ahora
+    usan `lista_de_cortes` y `lista_de_solicitudes`.
     """
     cortes_pendientes = (
         await sesion.execute(
@@ -153,9 +210,14 @@ async def cierres(sesion, *, dias_recientes: int = 7) -> dict:
 
 
 async def un_cierre(
-    sesion, *, corte_id: uuid.UUID | None = None, solicitud_id: uuid.UUID | None = None
+    sesion,
+    *,
+    corte_id: uuid.UUID | None = None,
+    solicitud_id: uuid.UUID | None = None,
+    solo: bool = False,
 ) -> dict:
-    if solicitud_id is not None and corte_id is None:
+    """Un cierre. Con `solo`, la solicitud sin buscarle su corte."""
+    if solicitud_id is not None and corte_id is None and not solo:
         corte_id = await _corte_vigente(
             sesion,
             (
@@ -217,7 +279,27 @@ async def _armar(
         "camion": vendedor["camion"],
         "corte": corte,
         "solicitud": solicitud,
+        "corte_por_cerrar": (
+            await _corte_por_cerrar(sesion, vendedor_id, solicitud["fecha_operativa"])
+            if solicitud is not None and solicitud["estado"] == "pendiente"
+            else None
+        ),
     }
+
+
+async def _corte_por_cerrar(sesion, vendedor_id: uuid.UUID, antes_de: date) -> dict | None:
+    """El corte que el vendedor mandó y nadie ha cerrado: la carga espera por él."""
+    fila = (
+        await sesion.execute(
+            text(
+                "SELECT id, fecha_operativa FROM cortes_vendedor "
+                " WHERE vendedor_id = :v AND estado = 'pendiente' AND fecha_operativa < :d "
+                " ORDER BY fecha_operativa LIMIT 1"
+            ),
+            {"v": vendedor_id, "d": antes_de},
+        )
+    ).mappings().first()
+    return dict(fila) if fila else None
 
 
 async def _corte(sesion, corte_id: uuid.UUID) -> dict | None:
@@ -236,28 +318,6 @@ async def _corte(sesion, corte_id: uuid.UUID) -> dict | None:
     if c is None:
         return None
     esperado = await _efectivo_esperado(sesion, c["vendedor_id"], c["fecha_operativa"])
-    # Lo contado contra lo que el sistema cree que trae el camión AHORA: es lo
-    # que el cierre va a comparar. Entran también los productos que el sistema
-    # tiene y el vendedor no contó, porque al cerrar valen cero —un faltante— y
-    # el gerente tiene que verlos ANTES de aceptar, no en el aviso de después.
-    renglones = (
-        await sesion.execute(
-            text(
-                """
-                SELECT p.id AS producto_id, p.sku, p.nombre, p.unidad_base,
-                       k.cantidad AS contada, COALESCE(e.cantidad, 0) AS sistema
-                  FROM productos p
-                  LEFT JOIN corte_vendedor_conteo k
-                         ON k.producto_id = p.id AND k.corte_id = :c
-                  LEFT JOIN existencias e
-                         ON e.producto_id = p.id AND e.almacen_id = :camion
-                 WHERE k.corte_id IS NOT NULL OR COALESCE(e.cantidad, 0) <> 0
-                 ORDER BY p.nombre
-                """
-            ),
-            {"c": corte_id, "camion": c["camion_id"]},
-        )
-    ).mappings().all()
     return {
         "id": c["id"],
         "vendedor_id": c["vendedor_id"],
@@ -271,20 +331,129 @@ async def _corte(sesion, corte_id: uuid.UUID) -> dict | None:
         "resuelto_en": c["resuelto_en"],
         "liquidacion_folio": c["liquidacion_folio"],
         "nota": c["nota"],
-        "renglones": [
-            {
-                "producto_id": r["producto_id"],
-                "sku": r["sku"],
-                "nombre": r["nombre"],
-                "unidad_base": r["unidad_base"],
-                "contada": r["contada"] if r["contada"] is not None else Decimal(0),
-                "contado": r["contada"] is not None,
-                "sistema": r["sistema"],
-                "diferencia": (r["contada"] or Decimal(0)) - r["sistema"],
-            }
-            for r in renglones
-        ],
+        "renglones": await _lo_que_queda(sesion, dict(c)),
     }
+
+
+async def _lo_que_queda(sesion, corte: dict) -> list[dict]:
+    """Producto por producto: lo que traía, lo cargado, lo vendido y lo que le queda.
+
+    Nadie lo cuenta (ADR 0002 §82): ya cerrado, es lo que quedó escrito en su
+    liquidación; por cerrar, es el cálculo que va a hacer el cierre —el mismo
+    `_renglones_calculados`—, al momento: una venta que sincroniza tarde ya
+    cuenta.
+    """
+    liquidacion_id = corte["liquidacion_id"]
+    if liquidacion_id is None:
+        carga = await _carga_del_corte(sesion, corte)
+        if carga is not None and carga["estado"] == "liquidada":
+            liquidacion_id = (
+                await sesion.execute(
+                    text("SELECT id FROM liquidaciones WHERE carga_id = :c"), {"c": carga["id"]}
+                )
+            ).scalar_one_or_none()
+        elif carga is not None:
+            return await _con_nombres(
+                sesion,
+                [
+                    {**r, "traia": r["inicial"], "queda": r["en_camion"]}
+                    for r in _con_inicial(await _renglones_calculados(sesion, carga["id"]))
+                ],
+            )
+    if liquidacion_id is not None:
+        filas = (
+            await sesion.execute(
+                text(
+                    "SELECT producto_id, cant_inicial AS traia, cant_cargada AS cargada, "
+                    "       cant_vendida AS vendida, cant_merma AS merma, "
+                    "       cant_devuelta AS devuelta, cant_contada AS queda "
+                    "  FROM liquidacion_detalle WHERE liquidacion_id = :l"
+                ),
+                {"l": liquidacion_id},
+            )
+        ).mappings().all()
+        return await _con_nombres(sesion, [dict(f) for f in filas])
+    # Sin carga que cortar: lo que el camión tiene.
+    filas = (
+        await sesion.execute(
+            text(
+                "SELECT e.producto_id, e.cantidad AS traia, e.cantidad AS queda "
+                "  FROM existencias e JOIN usuarios u ON u.almacen_id = e.almacen_id "
+                " WHERE u.id = :v AND e.cantidad <> 0"
+            ),
+            {"v": corte["vendedor_id"]},
+        )
+    ).mappings().all()
+    return await _con_nombres(sesion, [dict(f) for f in filas])
+
+
+async def _con_nombres(sesion, filas: list[dict]) -> list[dict]:
+    if not filas:
+        return []
+    productos = {
+        p["id"]: p
+        for p in (
+            await sesion.execute(
+                text("SELECT id, sku, nombre, unidad_base FROM productos WHERE id = ANY(:ids)"),
+                {"ids": [f["producto_id"] for f in filas]},
+            )
+        ).mappings()
+    }
+    renglones = []
+    for f in filas:
+        p = productos[f["producto_id"]]
+        queda = Decimal(f["queda"])
+        renglones.append(
+            {
+                "producto_id": f["producto_id"],
+                "sku": p["sku"],
+                "nombre": p["nombre"],
+                "unidad_base": p["unidad_base"],
+                "traia": Decimal(f["traia"]),
+                "cargada": Decimal(f.get("cargada") or 0),
+                "vendida": Decimal(f.get("vendida") or 0),
+                "merma": Decimal(f.get("merma") or 0),
+                "devuelta": Decimal(f.get("devuelta") or 0),
+                "queda": queda,
+                # La app del gerente anterior a la versión +28 esperaba un conteo
+                # del vendedor: se le da lo calculado, que es lo que se cierra.
+                "contada": queda,
+                "contado": True,
+                "sistema": queda,
+                "diferencia": Decimal(0),
+            }
+        )
+    return sorted(renglones, key=lambda r: r["nombre"])
+
+
+async def _carga_del_corte(sesion, corte: dict) -> dict | None:
+    """La carga que el corte cierra.
+
+    La que dijo el teléfono, si es del camión y sigue viva; si no —el teléfono
+    no supo qué carga traía, o la de su payload no sirve—, la última que el
+    camión tiene sin cortar hasta ese día.
+    """
+    carga = None
+    if corte["carga_id"] is not None:
+        carga = (
+            await sesion.execute(
+                text("SELECT id, folio, estado FROM cargas WHERE id = :c"),
+                {"c": corte["carga_id"]},
+            )
+        ).mappings().first()
+    if carga is None or carga["estado"] not in ("confirmada", "en_ruta", "liquidada"):
+        carga = (
+            await sesion.execute(
+                text(
+                    "SELECT id, folio, estado FROM cargas "
+                    " WHERE vendedor_id = :v AND estado IN ('confirmada', 'en_ruta') "
+                    "   AND fecha_operativa <= :d "
+                    " ORDER BY fecha_operativa DESC LIMIT 1"
+                ),
+                {"v": corte["vendedor_id"], "d": corte["fecha_operativa"]},
+            )
+        ).mappings().first()
+    return dict(carga) if carga else None
 
 
 async def _solicitud(sesion, solicitud_id: uuid.UUID) -> dict | None:
@@ -342,8 +511,61 @@ async def _solicitud(sesion, solicitud_id: uuid.UUID) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Aceptar
+# Cerrar el corte y aceptar la carga: cada uno por su lado
 # ---------------------------------------------------------------------------
+async def cerrar_corte_del_vendedor(sesion, corte_id: uuid.UUID, *, quien: uuid.UUID) -> str:
+    """Cierra el corte que mandó el vendedor. Devuelve el aviso para la pantalla."""
+    corte = (
+        await sesion.execute(text("SELECT * FROM cortes_vendedor WHERE id = :c"), {"c": corte_id})
+    ).mappings().first()
+    if corte is None:
+        raise CierreNoExiste("Ese corte no existe.")
+    if corte["estado"] == "reemplazado":
+        raise CierreRechazado(
+            "Ese corte lo reemplazó otro más reciente del mismo vendedor: cierra ése."
+        )
+    if corte["estado"] != "pendiente":
+        raise CierreRechazado(f"Ese corte ya está {corte['estado']}.")
+    return await _cerrar_el_corte(sesion, dict(corte), quien)
+
+
+async def aceptar_solicitud(
+    sesion,
+    solicitud_id: uuid.UUID,
+    *,
+    quien: uuid.UUID,
+    bultos: dict[str, str] | None = None,
+) -> str:
+    """Crea y confirma la carga que pidió el vendedor.
+
+    `bultos` corrige lo pedido renglón por renglón (de id de producto a cuántos
+    bultos de la MISMA presentación que pidió); un «0» quita el renglón. Lo que
+    no viene se acepta tal cual se pidió. Devuelve el aviso para la pantalla.
+    """
+    solicitud = (
+        await sesion.execute(
+            text("SELECT * FROM solicitudes_carga WHERE id = :s"), {"s": solicitud_id}
+        )
+    ).mappings().first()
+    if solicitud is None:
+        raise CierreNoExiste("Esa solicitud de carga no existe.")
+    if solicitud["estado"] != "pendiente":
+        raise CierreRechazado(f"Esa solicitud ya está {solicitud['estado']}.")
+    debe = await _corte_por_cerrar(sesion, solicitud["vendedor_id"], solicitud["fecha_operativa"])
+    if debe is not None:
+        nombre = (
+            await sesion.execute(
+                text("SELECT nombre FROM usuarios WHERE id = :v"),
+                {"v": solicitud["vendedor_id"]},
+            )
+        ).scalar_one()
+        raise CierreRechazado(
+            f"Primero cierra el corte de {nombre} del {debe['fecha_operativa']:%d/%m} "
+            "(en «Corte del día»): con su día abierto, la carga de mañana no sale."
+        )
+    return await _crear_la_carga(sesion, dict(solicitud), quien, bultos or {})
+
+
 async def aceptar(
     sesion,
     *,
@@ -352,11 +574,10 @@ async def aceptar(
     quien: uuid.UUID,
     bultos: dict[str, str] | None = None,
 ) -> str:
-    """Cierra el corte (si lo hay) y crea la carga pedida (si la hay).
+    """Cierra el corte (si lo hay) y acepta la carga pedida (si la hay), de un jalón.
 
-    `bultos` corrige lo pedido renglón por renglón (de id de producto a cuántos
-    bultos de la MISMA presentación que pidió); un «0» quita el renglón. Lo que
-    no viene se acepta tal cual se pidió. Devuelve el aviso para la pantalla.
+    Así lo pedía la app del gerente anterior a la versión +28; se queda para que
+    la que todavía no se actualiza siga funcionando.
     """
     if corte_id is None and solicitud_id is None:
         raise CierreRechazado("No hay nada que aceptar.")
@@ -394,35 +615,13 @@ async def aceptar(
     if corte is not None and corte["estado"] == "pendiente":
         avisos.append(await _cerrar_el_corte(sesion, dict(corte), quien))
     if solicitud is not None:
-        avisos.append(await _crear_la_carga(sesion, dict(solicitud), quien, bultos or {}))
+        avisos.append(await aceptar_solicitud(sesion, solicitud["id"], quien=quien, bultos=bultos))
     return " ".join(avisos)
 
 
 async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
     """El corte del vendedor, cerrado con las funciones del corte de siempre."""
-    carga = None
-    if corte["carga_id"] is not None:
-        carga = (
-            await sesion.execute(
-                text("SELECT id, folio, estado FROM cargas WHERE id = :c"),
-                {"c": corte["carga_id"]},
-            )
-        ).mappings().first()
-    if carga is None or carga["estado"] not in ("confirmada", "en_ruta", "liquidada"):
-        # El teléfono no supo qué carga traía (o la de su payload no sirve): la
-        # última que el camión tiene sin cortar hasta ese día.
-        carga = (
-            await sesion.execute(
-                text(
-                    "SELECT id, folio, estado FROM cargas "
-                    " WHERE vendedor_id = :v AND estado IN ('confirmada', 'en_ruta') "
-                    "   AND fecha_operativa <= :d "
-                    " ORDER BY fecha_operativa DESC LIMIT 1"
-                ),
-                {"v": corte["vendedor_id"], "d": corte["fecha_operativa"]},
-            )
-        ).mappings().first()
-
+    carga = await _carga_del_corte(sesion, corte)
     if carga is None:
         await _marcar_corte(sesion, corte["id"], quien, None,
                             nota="no había carga abierta que liquidar")
@@ -452,34 +651,8 @@ async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
 
     try:
         liquidacion_id = await abrir_corte(sesion, carga["id"])
-        renglones = (
-            await sesion.execute(
-                text(
-                    "SELECT id, producto_id FROM liquidacion_detalle "
-                    " WHERE liquidacion_id = :l"
-                ),
-                {"l": liquidacion_id},
-            )
-        ).mappings().all()
-        conteo = {
-            r["producto_id"]: r["cantidad"]
-            for r in (
-                await sesion.execute(
-                    text(
-                        "SELECT producto_id, cantidad FROM corte_vendedor_conteo "
-                        " WHERE corte_id = :c"
-                    ),
-                    {"c": corte["id"]},
-                )
-            ).mappings()
-        }
-        # El renglón que el vendedor no contó vale cero, como en el panel.
-        await guardar_conteo(
-            sesion,
-            liquidacion_id,
-            {str(r["id"]): format(conteo.get(r["producto_id"], Decimal(0)), "f")
-             for r in renglones},
-        )
+        # Nadie cuenta el camión: lo que le queda es lo que el sistema calcula
+        # (`conteo_automatico`), y lo único que el vendedor declara es el efectivo.
         await guardar_arqueo(
             sesion,
             liquidacion_id,
@@ -489,25 +662,14 @@ async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
         # La confirmación de «el teléfono terminó de subir» la da el corte mismo:
         # viaja en la cola DESPUÉS de todo lo que el vendedor hizo ese día.
         aviso = await cerrar_corte(
-            sesion, liquidacion_id, quien=quien, confirmo_sincronizado=True
+            sesion, liquidacion_id, quien=quien, confirmo_sincronizado=True,
+            conteo_automatico=True,
         )
     except (CorteNoExiste, CorteRechazado, CapturaInvalida) as e:
         raise CierreRechazado(f"El corte no se pudo cerrar: {e}") from e
 
-    sueltos = set(conteo) - {r["producto_id"] for r in renglones}
-    await _marcar_corte(
-        sesion, corte["id"], quien, liquidacion_id,
-        nota=(
-            f"{len(sueltos)} producto(s) contados que el camión no tenía en el "
-            "sistema no entraron al corte" if sueltos else None
-        ),
-    )
+    await _marcar_corte(sesion, corte["id"], quien, liquidacion_id, nota=None)
     await sesion.commit()
-    if sueltos:
-        aviso += (
-            f" OJO: el vendedor contó {len(sueltos)} producto(s) que el sistema no "
-            "tenía en su camión; no entraron al corte. Revísalos con un ajuste."
-        )
     return aviso
 
 

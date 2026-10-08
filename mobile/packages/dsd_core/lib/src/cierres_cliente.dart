@@ -1,8 +1,9 @@
 /// Los cierres de los vendedores, para la app del gerente (`/v1/cierres`).
 ///
 /// El vendedor manda su corte y la carga que pide para mañana; el gerente los
-/// ve juntos y los acepta: el corte se cierra y la carga se confirma (ADR 0002
-/// §82). Necesita red, como el resto de la oficina.
+/// resuelve POR SEPARADO (ADR 0002 §82): cierra el corte —el camión no se
+/// cuenta, se queda con lo que calcula el sistema— y, ya cerrado, acepta la
+/// carga. Necesita red, como el resto de la oficina.
 library;
 
 import 'dart:convert';
@@ -19,42 +20,45 @@ Dinero _d(Object? v) => Dinero.deTexto(v! as String);
 Cantidad _c(Object? v) => Cantidad.deTexto(v! as String);
 DateTime? _momento(Object? v) => v == null ? null : DateTime.parse(v as String).toLocal();
 
-/// Un producto del corte: lo que contó el vendedor contra lo que el sistema cree.
-class RenglonContado {
-  const RenglonContado({
+/// Un producto del corte: lo que traía, lo cargado, lo vendido y lo que le
+/// queda. Calculado: nadie lo cuenta.
+class RenglonDelCamion {
+  const RenglonDelCamion({
     required this.productoId,
     required this.sku,
     required this.nombre,
     required this.unidadBase,
-    required this.contada,
-    required this.contado,
-    required this.sistema,
-    required this.diferencia,
+    required this.traia,
+    required this.cargada,
+    required this.vendida,
+    required this.merma,
+    required this.devuelta,
+    required this.queda,
   });
 
-  factory RenglonContado.deJson(Map<String, Object?> j) => RenglonContado(
+  factory RenglonDelCamion.deJson(Map<String, Object?> j) => RenglonDelCamion(
         productoId: j['producto_id']! as String,
         sku: j['sku']! as String,
         nombre: j['nombre']! as String,
         unidadBase: j['unidad_base']! as String,
-        contada: _c(j['contada']),
-        contado: j['contado']! as bool,
-        sistema: _c(j['sistema']),
-        diferencia: _c(j['diferencia']),
+        traia: _c(j['traia']),
+        cargada: _c(j['cargada']),
+        vendida: _c(j['vendida']),
+        merma: _c(j['merma']),
+        devuelta: _c(j['devuelta']),
+        queda: _c(j['queda']),
       );
 
   final String productoId;
   final String sku;
   final String nombre;
   final String unidadBase;
-  final Cantidad contada;
-
-  /// Falso si el vendedor no lo contó: al cerrar vale cero, o sea faltante.
-  final bool contado;
-  final Cantidad sistema;
-
-  /// Negativo es faltante: lo que se le cobra.
-  final Cantidad diferencia;
+  final Cantidad traia;
+  final Cantidad cargada;
+  final Cantidad vendida;
+  final Cantidad merma;
+  final Cantidad devuelta;
+  final Cantidad queda;
 }
 
 class CorteRecibido {
@@ -85,7 +89,7 @@ class CorteRecibido {
         nota: j['nota'] as String?,
         renglones: [
           for (final r in (j['renglones'] as List?) ?? const [])
-            RenglonContado.deJson((r as Map).cast()),
+            RenglonDelCamion.deJson((r as Map).cast()),
         ],
       );
 
@@ -103,11 +107,9 @@ class CorteRecibido {
   final DateTime recibidoEn;
   final String? liquidacionFolio;
   final String? nota;
-  final List<RenglonContado> renglones;
+  final List<RenglonDelCamion> renglones;
 
   bool get pendiente => estado == 'pendiente';
-  List<RenglonContado> get conDiferencia =>
-      renglones.where((r) => !r.diferencia.esCero).toList();
 }
 
 class RenglonSolicitado {
@@ -219,7 +221,7 @@ class SolicitudRecibida {
   bool get aceptada => estado == 'aceptada';
 }
 
-/// Lo que el gerente revisa de un jalón: el corte de un vendedor y lo que pidió.
+/// El corte de un vendedor, o la carga que pidió: lo que el gerente resuelve.
 class CierreDeVendedor {
   const CierreDeVendedor({
     required this.vendedorId,
@@ -228,6 +230,7 @@ class CierreDeVendedor {
     this.camion,
     this.corte,
     this.solicitud,
+    this.cortePorCerrar,
     this.mensaje,
   });
 
@@ -240,6 +243,9 @@ class CierreDeVendedor {
         solicitud: j['solicitud'] == null
             ? null
             : SolicitudRecibida.deJson((j['solicitud']! as Map).cast()),
+        cortePorCerrar: j['corte_por_cerrar'] == null
+            ? null
+            : ((j['corte_por_cerrar']! as Map)['fecha_operativa']! as String),
         mensaje: j['mensaje'] as String?,
       );
 
@@ -249,6 +255,10 @@ class CierreDeVendedor {
   final String? camion;
   final CorteRecibido? corte;
   final SolicitudRecibida? solicitud;
+
+  /// El día (`YYYY-MM-DD`) del corte que el vendedor todavía debe: mientras no
+  /// se cierre, su carga no se puede aceptar.
+  final String? cortePorCerrar;
   final String? mensaje;
 
   /// Una llave estable para la pantalla.
@@ -298,24 +308,28 @@ class ClienteCierres {
 
   final Transporte _transporte;
 
-  Future<Cierres> lista() async {
-    final r = await _transporte.obtener('/v1/cierres');
+  /// Los cortes por cerrar y los cerrados esta semana.
+  Future<Cierres> cortes() => _lista('/v1/cierres/cortes');
+
+  /// Las cargas pedidas por aceptar y las resueltas esta semana.
+  Future<Cierres> solicitudes() => _lista('/v1/cierres/solicitudes');
+
+  Future<CierreDeVendedor> cerrarCorte(String corteId) =>
+      _post('/v1/cierres/cortes/$corteId/cerrar', const {});
+
+  /// Crea y confirma la carga. `bultos` corrige lo pedido (de id de producto a
+  /// bultos de la misma presentación; «0» lo quita).
+  Future<CierreDeVendedor> aceptarSolicitud(
+    String solicitudId, {
+    Map<String, String> bultos = const {},
+  }) =>
+      _post('/v1/cierres/solicitudes/$solicitudId/aceptar', {'bultos': bultos});
+
+  Future<Cierres> _lista(String ruta) async {
+    final r = await _transporte.obtener(ruta);
     _revisar(r);
     return Cierres.deJson((jsonDecode(r.cuerpo) as Map).cast());
   }
-
-  /// Cierra el corte y confirma la carga. `bultos` corrige lo pedido (de id de
-  /// producto a bultos de la misma presentación; «0» lo quita).
-  Future<CierreDeVendedor> aceptar({
-    String? corteId,
-    String? solicitudId,
-    Map<String, String> bultos = const {},
-  }) =>
-      _post('/v1/cierres/aceptar', {
-        'corte_id': corteId,
-        'solicitud_id': solicitudId,
-        'bultos': bultos,
-      });
 
   Future<CierreDeVendedor> rechazar(String solicitudId, {required String motivo}) =>
       _post('/v1/cierres/solicitudes/$solicitudId/rechazar', {'motivo': motivo});

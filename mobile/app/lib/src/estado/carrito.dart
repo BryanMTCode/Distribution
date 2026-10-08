@@ -120,7 +120,9 @@ class ControladorCarrito extends Notifier<Carrito> {
     // los mismos precios que se le cotizaron al cliente—.
     final borrador = ref.read(repoBorradorProvider).leer();
     if (borrador != null && borrador.clienteId == clienteId) {
-      return borrador.carrito;
+      // Solo efectivo (ADR 0002 §81): un borrador de antes del cambio pudo
+      // quedar en transferencia, y ya no hay dónde verlo ni cambiarlo.
+      return borrador.carrito.conFormaDePago(FormaDePago.efectivo);
     }
     return const Carrito();
   }
@@ -167,12 +169,6 @@ class ControladorCarrito extends Notifier<Carrito> {
   void vaciar() {
     state = state.vaciar();
     ref.read(repoBorradorProvider).limpiar();
-  }
-
-  /// Efectivo o transferencia: todo se paga en el acto (ADR 0002 §81).
-  void cambiarFormaDePago(FormaDePago forma, {String? referencia}) {
-    state = state.conFormaDePago(forma, referencia: referencia);
-    _persistir();
   }
 
   /// Un rechazo **no** modifica el carrito: se publica para que la pantalla lo

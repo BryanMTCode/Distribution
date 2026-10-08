@@ -4645,6 +4645,15 @@ vencida. El vendedor sigue sin poder dar descuentos (§7).
 
 (migración 0039_solo_contado; versionCode 26)
 
+**Enmienda: solo efectivo (octubre 2026, versionCode 28).** «No se paga con
+transferencia, solo efectivo». El carrito ya no tiene forma de pago que elegir:
+toda venta nueva es en efectivo, y un borrador de antes del cambio que quedó en
+transferencia se cobra en efectivo. La transferencia desaparece de «Mi día», del
+corte, de su ticket y del tablero **cuando es cero**; una de antes del cambio se
+sigue mostrando aparte, para que el efectivo cuadre a la vista. El servidor
+sigue aceptando una venta por transferencia que llegue de un teléfono anterior
+—la mercancía ya salió— y la oficina la revisa en *Transferencias* como antes.
+
 ## 82. El cierre del vendedor: corte → solicitud de carga → aceptación
 
 **Decisión (octubre 2026, retroalimentación del piloto).** El fin del día es un
@@ -4696,6 +4705,37 @@ La oficina sigue pudiendo cortar a mano desde «Corte del día»; si lo hace, el
 corte del vendedor queda como constancia.
 
 (migración 0040_cierre_del_vendedor; versionCode 27)
+
+**Enmienda: el camión no se cuenta, y el corte y la carga van por separado
+(octubre 2026, versionCode 28).** «¿Por qué el vendedor dice cuánto le queda, si
+empieza con la carga y le resta lo que vende?». Cambia lo siguiente:
+
+- **El vendedor no cuenta.** Su corte solo pide el efectivo y las notas. Lo que
+  le queda en el camión se calcula —lo que traía, más la carga, menos lo
+  vendido, que es el saldo que cada venta ya descontó— y se le muestra, con lo
+  vendido hoy, producto por producto. El ticket dice «LE QUEDA EN EL CAMIÓN».
+  `corte.crear` ya no trae `conteo`; el de un teléfono anterior se guarda como
+  constancia y no se usa.
+- **El cierre es automático.** Cerrar el corte del vendedor usa
+  `cerrar_corte(conteo_automatico=True)`: lo contado es lo calculado, así que no
+  hay diferencias de mercancía ni ajustes, y lo único que puede ir a la cuenta
+  del vendedor es el efectivo que no entregó (y las mermas a su cargo). El
+  gerente ve, por producto, lo que traía, lo cargado, lo vendido y lo que queda.
+- **El corte y la carga se resuelven por separado.** En la app del gerente, el
+  corte va en Almacén → **Corte del día** («Cortes de los vendedores», con
+  «Cerrar el corte») y la carga pedida en Almacén → **Cargas** («Cargas que
+  pidieron los vendedores», con aceptar —corrigiendo renglones— o rechazar). La
+  pestaña combinada «Cortes y cargas» desaparece. En el panel, la misma página
+  tiene las dos secciones con sus propios botones. API: `GET /v1/cierres/cortes`,
+  `POST /v1/cierres/cortes/{id}/cerrar`, `GET /v1/cierres/solicitudes`,
+  `POST /v1/cierres/solicitudes/{id}/aceptar`; `GET /v1/cierres` y
+  `POST /v1/cierres/aceptar` se quedan para la app anterior.
+- **Primero el corte.** Con un corte del vendedor sin cerrar, su carga de mañana
+  no se acepta y se dice por qué («Primero cierra el corte…»); la lista lo
+  marca. Aceptar la carga ya solo exige `inventario.cargar`; cerrar el corte,
+  `inventario.liquidar`.
+- El corte contando el camión, a mano, sigue en «Corte del día» para cuando la
+  oficina quiera contar ella misma.
 
 ## 83. La compra a proveedor desde el teléfono del gerente, aunque no haya señal
 
@@ -4751,3 +4791,23 @@ solo campo y se reparte en los dos. Escribir en un campo vuelve la ubicación
 
 (migración 0042_ubicacion_del_cliente; versionCode 27)
 
+## 85. La clave corta para vincular el teléfono
+
+**Decisión (octubre 2026, retroalimentación del piloto).** Para vincular un
+teléfono había que teclear en él el id del equipo: 36 caracteres, a mano, en la
+bodega. «Las que salen son muy largas y difíciles de agregar».
+
+- **La oficina elige la clave** al vincular el equipo en el panel (Teléfonos):
+  de 4 a 20 letras, números o guion —«RUTA4», «BRYAN-1»—. Si la deja vacía, el
+  panel inventa una de seis sin I, O, 0 ni 1, para que no se confundan al
+  dictarla. Se guarda en mayúsculas (`dispositivos.clave_vinculo`) y no se
+  repite. Se puede poner o cambiar después, también a los equipos que ya
+  estaban; al revocar un equipo su clave se borra y queda libre.
+- **En el teléfono** el campo se llama «Clave del equipo». El login la manda
+  como `clave_equipo` junto con el usuario y la contraseña del vendedor, y el
+  servidor contesta con `dispositivo_id`, que es lo que el teléfono guarda. El
+  id largo sigue sirviendo: el teléfono lo reconoce por su forma.
+- **No es un secreto.** Sin la contraseña del vendedor, y sin ser SU equipo, no
+  abre nada; solo tiene que ser única.
+
+(migración 0043_clave_del_equipo; versionCode 28)

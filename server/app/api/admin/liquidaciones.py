@@ -745,9 +745,20 @@ async def cerrar(
 
 
 async def cerrar_corte(
-    sesion, liquidacion_id: uuid.UUID, *, quien: uuid.UUID, confirmo_sincronizado: bool
+    sesion,
+    liquidacion_id: uuid.UUID,
+    *,
+    quien: uuid.UUID,
+    confirmo_sincronizado: bool,
+    conteo_automatico: bool = False,
 ) -> str:
-    """Cierra el corte (ver `cerrar` para el porqué) y devuelve el aviso."""
+    """Cierra el corte (ver `cerrar` para el porqué) y devuelve el aviso.
+
+    Con `conteo_automatico` nadie contó: lo que queda en el camión es lo que el
+    sistema calcula —lo que traía, más lo que se le cargó, menos lo que vendió—,
+    así que no hay diferencias de mercancía ni ajustes, y solo cuenta el efectivo.
+    Es el corte del vendedor desde su teléfono (ADR 0002 §82).
+    """
     cabecera = (
         await sesion.execute(
             text(
@@ -789,6 +800,17 @@ async def cerrar_corte(
     # «lo contado menos el saldo vivo del camión», que es el único número
     # defendible frente al vendedor. Ver `saldo_inicial`.
     await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
+    if conteo_automatico:
+        # Lo contado es lo calculado: la diferencia de cada renglón queda en cero.
+        await sesion.execute(
+            text(
+                "UPDATE liquidacion_detalle "
+                "   SET cant_contada = cant_inicial + cant_cargada - cant_vendida "
+                "                      - cant_merma + cant_devuelta "
+                " WHERE liquidacion_id = :l"
+            ),
+            {"l": liquidacion_id},
+        )
 
     # Y el efectivo esperado, por la misma razón: ahora de esto sale un cargo a
     # una persona (la cuenta del vendedor), y una venta que sincronizó después
@@ -954,7 +976,12 @@ async def cerrar_corte(
     await sesion.commit()
 
     aviso = f"Liquidación {cabecera['folio']} cerrada. "
-    if con_diferencia:
+    if conteo_automatico:
+        aviso += (
+            "El camión se queda con lo que calcula el sistema: lo que traía, más la "
+            "carga, menos lo vendido. "
+        )
+    elif con_diferencia:
         aviso += f"{con_diferencia} producto(s) con diferencia. "
     else:
         aviso += "Cuadró producto por producto. "
@@ -968,12 +995,13 @@ async def cerrar_corte(
             f"Se escribieron {ajustes} ajuste(s) para dejar el camión en lo contado "
             f"({' y '.join(partes)}). "
         )
-    else:
+    elif not conteo_automatico:
         aviso += "El camión se queda con lo contado, sin ajustes. "
-    aviso += (
-        "La mercancía se queda arriba del camión: el teléfono recibe el saldo "
-        "corregido en la siguiente sincronización."
-    )
+    if not conteo_automatico:
+        aviso += (
+            "La mercancía se queda arriba del camión: el teléfono recibe el saldo "
+            "corregido en la siguiente sincronización."
+        )
     if cargos.total > 0:
         partes = []
         if cargos.mercancia:

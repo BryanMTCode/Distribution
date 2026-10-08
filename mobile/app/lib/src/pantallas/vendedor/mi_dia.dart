@@ -171,15 +171,16 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
             monto: dia.efectivo,
             nota: 'dinero que trae en la bolsa',
           ),
-          // Lo que NO es efectivo, y se muestra justamente para que no se cuente.
-          // Un vendedor que suma la transferencia al dinero cree que le falta en
-          // la caja.
-          _Renglon(
-            etiqueta: 'Ventas por transferencia',
-            monto: dia.transferencias,
-            nota: 'llegó al banco, no a tu bolsa',
-            apagado: true,
-          ),
+          // Solo efectivo (ADR 0002 §81). Una transferencia de antes del cambio
+          // se sigue mostrando aparte, justamente para que no se cuente: un
+          // vendedor que la suma al dinero cree que le falta en la caja.
+          if (!dia.transferencias.esCero)
+            _Renglon(
+              etiqueta: 'Ventas por transferencia',
+              monto: dia.transferencias,
+              nota: 'llegó al banco, no a tu bolsa',
+              apagado: true,
+            ),
           const Divider(height: 24),
           _Renglon(
             etiqueta: 'Total vendido $elDia',

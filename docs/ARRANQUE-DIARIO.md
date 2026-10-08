@@ -433,15 +433,17 @@ pantalla es solo para cuadrar el dinero que no llegó en la mano.
 
 **Cortes y cargas por aceptar** — <http://127.0.0.1:8000/panel/cierres>
 
-1. Cada vendedor que hizo su corte en el teléfono aparece con **su corte y la carga que pidió para
-   mañana**, juntos (ADR 0002 §82).
-2. Revisa el efectivo («Entrega $X de $Y · faltan $Z») y el conteo: un producto que el sistema tiene
-   y el vendedor **no contó** sale como «no lo contó» y cuenta como faltante.
+Dos secciones, cada una con sus botones (ADR 0002 §82). **Primero el corte, después la carga.**
+
+1. **Cortes por cerrar.** Cada vendedor que hizo su corte en el teléfono, con el efectivo («Entrega
+   $X de $Y · faltan $Z») y, por producto, lo que **traía, cargó, vendió y le queda**. Nadie lo
+   contó: es el cálculo. **Cerrar el corte** deja el camión en ese cálculo, sin ajustes; lo que falte
+   de efectivo va a su cuenta. Si el teléfono tiene algo sin subir, no deja y dice por qué.
+2. **Cargas por aceptar.** La que pidió cada vendedor para mañana. Mientras su corte siga abierto,
+   sale el aviso «Primero cierra su corte» y el botón no responde.
 3. En «Se carga», deja vacío para cargar lo que pidió; escribe otro número para cambiarlo, o 0 para
-   quitarlo.
-4. **Aceptar** cierra el corte (lo que falte va a su cuenta, a costo) y confirma la carga de mañana
-   desde la bodega principal. Si el teléfono tiene algo sin subir, no deja y dice por qué.
-5. **Rechazar** pide motivo: le llega al vendedor y puede mandar otra.
+   quitarlo. **Aceptar** confirma la carga de mañana desde la bodega principal.
+4. **Rechazar** pide motivo: le llega al vendedor y puede mandar otra.
 
 **Inventario** — <http://127.0.0.1:8000/panel/inventario>
 
@@ -852,16 +854,30 @@ indistinguible de «no fui».
 ### Corte del día y solicitud de carga — en «Mi día», al terminar la ruta
 
 1. En **Mi día** (solo hoy) aparece «**Cierre del día**» → **Hacer el corte del día**.
-2. Comprueba que **no** se ve cuánto cree el sistema que traes de cada producto: el conteo es a
-   ciegas. Deja uno vacío e intenta terminar — **no debe pasar** («Falta contar: …, escribe 0»).
-3. Escribe el efectivo que entregas y termina. Sale el **ticket del corte**: lo vendido en efectivo y
-   por transferencia, «Faltan/Sobran $X contra lo vendido en efectivo» y el sobrante del camión.
+2. **No hay nada que contar** (ADR 0002 §82): la pantalla muestra «Lo que te queda en el camión»
+   —lo que traías, más tu carga, menos lo que vendiste— y lo vendido hoy, producto por producto.
+   Solo pide el efectivo: intenta terminar sin escribirlo — **no debe pasar**.
+3. Escribe el efectivo que entregas y termina. Sale el **ticket del corte**: lo vendido, «Faltan/Sobran
+   $X contra lo vendido en efectivo» y «LE QUEDA EN EL CAMIÓN». No dice nada de transferencias.
 4. **Compartir** abre la hoja del teléfono (WhatsApp, correo). El texto llega con negritas en WhatsApp.
 5. **Solicitar carga para mañana**: busca productos y escribe cuántas cajas. Envía. Sale el ticket de
    la solicitud, «Pendiente: la revisa la oficina».
-6. Todo esto funciona **sin señal**. Al sincronizar viaja a la oficina; cuando la acepten, Mi día dice
-   «Carga de mañana ACEPTADA: CG-…» y el ticket cambia a «CARGA ACEPTADA», con lo que de verdad se
-   cargó si la oficina cambió algo.
+6. Todo esto funciona **sin señal**. Al sincronizar viaja a la oficina; cuando cierren tu corte y
+   acepten la carga, Mi día dice «Carga de mañana ACEPTADA: CG-…» y el ticket cambia a «CARGA
+   ACEPTADA», con lo que de verdad se cargó si la oficina cambió algo.
+
+### Cerrar cortes y aceptar cargas — app de Gerencia → Almacén
+
+1. **Corte del día** → arriba, «Cortes de los vendedores». Abre uno: el efectivo y lo que le queda en
+   el camión (traía, cargó, vendió). **Cerrar el corte**.
+2. **Cargas** → arriba, «Cargas que pidieron los vendedores». Si su corte sigue abierto dice «Espera
+   su corte» y no deja aceptar. Ya cerrado: corrige un renglón si hace falta y **Aceptar y confirmar
+   la carga**. Sale el ticket para compartir. **Rechazar** pide motivo.
+
+### Cobrar — solo efectivo
+
+En el carrito **no hay forma de pago que elegir**: el botón dice «Cobrar en efectivo» (ADR 0002 §81).
+Mi día y el tablero ya no muestran transferencias cuando no las hay.
 
 ### Perfil y ubicación del cliente — menú ⋮ de la visita
 
@@ -953,6 +969,12 @@ producción. Qué validar:
 4. **Cancelar la orden.** Funciona mientras el teléfono no la haya ejecutado.
 5. **Lo que NO hace revocar.** Revocar mata los tokens y no toca la copia del
    teléfono. Es la confusión que más cuesta, y la pantalla lo dice.
+
+6. **La clave del equipo** (ADR 0002 §85). Al vincular un teléfono escribe una clave corta —«RUTA4»—
+   o déjala vacía y el panel inventa una de seis. Sale en la lista, debajo de la etiqueta, y se puede
+   cambiar con «Cambiar clave». En el teléfono va en **«Clave del equipo»**, junto con el código y la
+   contraseña del vendedor; ya no hace falta teclear el identificador largo (aunque sigue sirviendo).
+   Una clave repetida o con acentos no se guarda, y se dice por qué.
 
 El flujo completo con el teléfono en la mano está en
 [`docs/SEGURIDAD-OPERATIVA.md`](SEGURIDAD-OPERATIVA.md) §2.

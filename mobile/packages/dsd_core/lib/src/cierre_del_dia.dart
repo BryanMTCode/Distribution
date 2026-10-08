@@ -3,14 +3,14 @@
 /// ─────────────────────────────────────────────────────────────────────────
 /// EL FLUJO
 /// ─────────────────────────────────────────────────────────────────────────
-/// 1. **Corte del día.** El vendedor cuenta lo que le sobró arriba del camión y
-///    el efectivo que entrega. Sale un ticket con lo vendido, el efectivo y el
-///    sobrante, para compartirlo por WhatsApp.
+/// 1. **Corte del día.** El vendedor declara el efectivo que entrega. Sale un
+///    ticket con lo vendido, el efectivo y lo que le queda en el camión, para
+///    compartirlo por WhatsApp.
 /// 2. **Solicitar carga.** Inmediatamente después pide la carga del día
 ///    siguiente. Solo hay UNA carga al día, y es para mañana.
-/// 3. La oficina revisa el corte junto con la solicitud y la acepta: cierra el
-///    corte y confirma la carga. Al teléfono le llega por delta
-///    ('solicitud_carga') con el folio, y la mercancía como cualquier carga.
+/// 3. La oficina cierra el corte y, ya cerrado, acepta la carga. Al teléfono le
+///    llega por delta ('solicitud_carga') con el folio, y la mercancía como
+///    cualquier carga.
 ///
 /// Todo se hace SIN señal: el corte y la solicitud se escriben aquí y viajan
 /// por la cola en el orden en que se hicieron —el corte detrás de todas las
@@ -18,12 +18,13 @@
 /// los duplique.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// EL CONTEO ES A CIEGAS
+/// EL CAMIÓN NO SE CUENTA
 /// ─────────────────────────────────────────────────────────────────────────
-/// `ResumenDelDia.productos` NO trae cuánto cree el sistema que hay de cada
-/// cosa. Un conteo con la cifra a la vista se vuelve un copiado, y entonces el
-/// corte ya no dice nada: el faltante se descubre el día que alguien cuenta
-/// de verdad. La comparación la ve la oficina antes de aceptar.
+/// Lo que le queda es lo que traía, más lo que le cargaron, menos lo que
+/// vendió: el saldo de `existencias_camion`, que cada venta ya descontó. Se le
+/// muestra al vendedor tal cual, y la oficina cierra con el mismo cálculo del
+/// lado del servidor. Pedido de la dirección (octubre 2026): «¿por qué el
+/// vendedor dice cuánto le queda, si el sistema ya lo sabe?».
 library;
 
 import 'package:sqlite3/sqlite3.dart';
@@ -43,13 +44,15 @@ class Presentacion {
   final Factor factor;
 }
 
-/// Un producto que el vendedor tiene que contar al cerrar.
-class ProductoPorContar {
-  const ProductoPorContar({
+/// Lo que le queda al camión de un producto: calculado, no contado.
+class LoQueQueda {
+  const LoQueQueda({
     required this.productoId,
     required this.nombre,
     required this.sku,
     required this.unidadBase,
+    required this.queda,
+    required this.vendido,
     this.presentaciones = const [],
   });
 
@@ -57,9 +60,15 @@ class ProductoPorContar {
   final String nombre;
   final String sku;
   final String unidadBase;
+
+  /// El saldo del camión, en unidad base.
+  final Cantidad queda;
+
+  /// Lo vendido hoy, en unidad base.
+  final Cantidad vendido;
   final List<Presentacion> presentaciones;
 
-  /// La presentación más grande que no es la base: para contar «2 cajas y 3».
+  /// La presentación más grande que no es la base: para leer «2 cajas y 3».
   Presentacion? get mayor {
     Presentacion? mejor;
     for (final p in presentaciones) {
@@ -93,8 +102,8 @@ class ResumenDelDia {
   /// la cola, pero el vendedor tiene que saber que la oficina no los ve aún.
   final int sinSincronizar;
 
-  /// Lo que hay que contar, sin la cifra del sistema (ver la nota de arriba).
-  final List<ProductoPorContar> productos;
+  /// Lo que le queda al camión, producto por producto (ver la nota de arriba).
+  final List<LoQueQueda> productos;
   final String? cargaId;
 
   Dinero get vendido => efectivo + transferencias;
@@ -148,10 +157,7 @@ class RenglonPedido {
 }
 
 enum MotivoNoCierre {
-  /// Un producto contado en negativo: es un dedazo.
-  conteoNegativo('conteo_negativo'),
-
-  /// Efectivo negativo: también.
+  /// Efectivo negativo: es un dedazo.
   efectivoNegativo('efectivo_negativo'),
 
   /// Una solicitud sin un solo renglón no pide nada.
@@ -292,19 +298,28 @@ class RegistroDeCierre {
         .select(
           '''
           SELECT e.producto_id, COALESCE(p.nombre, e.producto_id) AS nombre,
-                 COALESCE(p.sku, '') AS sku, COALESCE(p.unidad_base, 'PZA') AS unidad_base
+                 COALESCE(p.sku, '') AS sku, COALESCE(p.unidad_base, 'PZA') AS unidad_base,
+                 e.cant_actual AS queda,
+                 COALESCE((SELECT SUM(vp.cantidad_base)
+                             FROM venta_partidas vp JOIN ventas v ON v.id = vp.venta_id
+                            WHERE vp.producto_id = e.producto_id
+                              AND v.fecha_operativa = ? AND v.estado = 'confirmada'), 0)
+                   AS vendido
             FROM existencias_camion e
             LEFT JOIN productos p ON p.id = e.producto_id
            WHERE e.cant_actual <> 0 OR e.cant_cargada <> 0
            ORDER BY nombre
           ''',
+          [dia],
         )
         .map(
-          (f) => ProductoPorContar(
+          (f) => LoQueQueda(
             productoId: f['producto_id'] as String,
             nombre: f['nombre'] as String,
             sku: f['sku'] as String,
             unidadBase: f['unidad_base'] as String,
+            queda: Cantidad.deBase(f['queda'] as num),
+            vendido: Cantidad.deBase(f['vendido'] as num),
             presentaciones: _presentacionesDe(f['producto_id'] as String),
           ),
         )
@@ -472,24 +487,17 @@ class RegistroDeCierre {
 
   /// Guarda el corte, lo encola y devuelve su ticket.
   ///
-  /// `conteo` va de id de producto a lo contado, en unidad base. Lo que no
-  /// viene vale cero, como en el corte de la oficina.
+  /// Lo único que declara el vendedor es el efectivo: lo que le queda en el
+  /// camión es el saldo calculado (ver la nota de arriba).
   CorteDelVendedor hacerCorte({
-    required Map<String, Cantidad> conteo,
     required Dinero efectivo,
     String? observaciones,
   }) {
     if (efectivo.esNegativo) {
       throw const CierreNoValido(MotivoNoCierre.efectivoNegativo);
     }
-    for (final e in conteo.entries) {
-      if (e.value.esNegativa) {
-        throw CierreNoValido(MotivoNoCierre.conteoNegativo, e.key);
-      }
-    }
 
     final resumen = this.resumen();
-    final nombres = {for (final p in resumen.productos) p.productoId: p};
     final instante = _ahora();
     final momento = instante.toUtc().toIso8601String();
     final corteId = _nuevoUuid();
@@ -507,14 +515,16 @@ class RegistroDeCierre {
         transferencias: resumen.transferencias,
         efectivoEntregado: efectivo,
         observaciones: nota.isEmpty ? null : nota,
-        sobrante: [
-          for (final e in conteo.entries)
+        queda: [
+          for (final p in resumen.productos)
             RenglonDeTicket(
-              nombre: nombres[e.key]?.nombre ?? _nombreDe(e.key),
-              cantidadBase: e.value,
-              unidadBase: nombres[e.key]?.unidadBase ?? 'PZA',
+              nombre: p.nombre,
+              cantidadBase: p.queda,
+              unidadBase: p.unidadBase,
+              unidad: p.mayor?.unidad,
+              factor: p.mayor?.factor,
             ),
-        ]..sort((a, b) => a.nombre.compareTo(b.nombre)),
+        ],
       ),
     );
 
@@ -533,10 +543,6 @@ class RegistroDeCierre {
             'efectivo_declarado': efectivo.texto,
             'observaciones': nota.isEmpty ? null : nota,
             'fecha_dispositivo': momento,
-            'conteo': [
-              for (final e in conteo.entries)
-                {'producto_id': e.key, 'cantidad': e.value.texto},
-            ],
           },
         ),
       ],
@@ -565,13 +571,6 @@ class RegistroDeCierre {
             momento,
           ],
         );
-        for (final e in conteo.entries) {
-          db.execute(
-            'INSERT INTO corte_vendedor_conteo (corte_id, producto_id, nombre, cantidad) '
-            'VALUES (?, ?, ?, ?)',
-            [corteId, e.key, nombres[e.key]?.nombre, e.value.milesimos / 1000],
-          );
-        }
       },
     );
 
@@ -671,11 +670,6 @@ class RegistroDeCierre {
     );
 
     return solicitud(solicitudId)!;
-  }
-
-  String _nombreDe(String productoId) {
-    final filas = _db.select('SELECT nombre FROM productos WHERE id = ?', [productoId]);
-    return filas.isEmpty ? productoId : filas.single['nombre'] as String;
   }
 
   static Dinero _dinero(Object? valor) =>

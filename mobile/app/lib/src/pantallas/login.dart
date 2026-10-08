@@ -89,7 +89,7 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
     final problema = await ref.read(sesionProvider.notifier).vincularEquipo(
           codigo: _codigo.text,
           password: _password.text,
-          dispositivoId: _equipo.text,
+          claveDelEquipo: _equipo.text,
         );
     if (!mounted) return;
     setState(() {
@@ -380,10 +380,13 @@ class _EstadoLogin extends ConsumerState<PantallaLogin> {
                       key: const Key('campo_equipo_vinculo'),
                       controller: _equipo,
                       textInputAction: TextInputAction.go,
+                      textCapitalization: TextCapitalization.characters,
+                      autocorrect: false,
                       onSubmitted: (_) => _verificando ? null : _vincular(),
                       decoration: const InputDecoration(
-                        labelText: 'Identificador del equipo',
-                        helperText: 'Lo da la oficina: panel → Teléfonos',
+                        labelText: 'Clave del equipo',
+                        hintText: 'RUTA4',
+                        helperText: 'Te la da la oficina: panel → Teléfonos',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.qr_code_2_outlined),
                       ),

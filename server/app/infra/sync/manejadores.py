@@ -1413,10 +1413,14 @@ async def _almacen_de_transito(
 async def crear_corte(
     sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
 ) -> None:
-    """El vendedor declara su corte: lo que contó arriba del camión y su efectivo.
+    """El vendedor declara su corte: el efectivo que entrega.
+
+    El camión no se cuenta: lo que le queda lo calcula el sistema al cerrar
+    (ADR 0002 §82). La app anterior a la versión +28 todavía manda un `conteo`;
+    se guarda como constancia y el cierre no lo usa.
 
     Si ese mismo día ya había mandado otro que nadie ha visto, el nuevo lo
-    reemplaza: es el vendedor corrigiendo su conteo antes de entregar, y lo que
+    reemplaza: es el vendedor corrigiendo su corte antes de entregar, y lo que
     vale es lo último que dijo. Uno que la oficina ya cerró no se toca.
     """
     ya = await sesion.execute(
@@ -1432,11 +1436,10 @@ async def crear_corte(
         raise ErrorDeManejador(
             CodigoError.PAYLOAD_INVALIDO, "el efectivo entregado no puede ser negativo"
         )
-    conteo = datos.get("conteo")
+    conteo = datos.get("conteo") or []
     if not isinstance(conteo, list):
         raise ErrorDeManejador(
-            CodigoError.PAYLOAD_INVALIDO,
-            "el corte trae su conteo, aunque sea vacío: sin él no se sabe qué sobró",
+            CodigoError.PAYLOAD_INVALIDO, "el conteo del corte viene mal formado"
         )
 
     notas: list[str] = []

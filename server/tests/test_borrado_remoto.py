@@ -647,7 +647,7 @@ async def test_la_pantalla_ofrece_vincular_a_un_vendedor_sin_equipo(cliente, sem
     assert "VEND01" in texto
 
 
-async def test_vincular_crea_el_equipo_y_muestra_el_id(cliente, sesion, semilla):
+async def test_vincular_crea_el_equipo_y_muestra_su_clave(cliente, sesion, semilla):
     await _entrar(cliente)
     r = await cliente.post(
         "/panel/equipos/registrar",
@@ -663,7 +663,7 @@ async def test_vincular_crea_el_equipo_y_muestra_el_id(cliente, sesion, semilla)
     fila = (
         await sesion.execute(
             text(
-                "SELECT id, etiqueta, estado FROM dispositivos "
+                "SELECT id, etiqueta, estado, clave_vinculo FROM dispositivos "
                 " WHERE usuario_id = :v"
             ),
             {"v": semilla["vendedor"]},
@@ -672,9 +672,11 @@ async def test_vincular_crea_el_equipo_y_muestra_el_id(cliente, sesion, semilla)
     assert fila["etiqueta"] == "Moto G54 — Juan"
     assert fila["estado"] == "activo"
 
-    # El id tiene que llegar a la pantalla: es lo que se teclea en el teléfono, y
-    # si no se muestra el paso queda a medias y nadie sabe qué poner.
-    assert str(fila["id"]) in r.headers["location"]
+    # La clave tiene que llegar a la pantalla: es lo que se teclea en el
+    # teléfono, y si no se muestra el paso queda a medias y nadie sabe qué poner.
+    # Sin elegirla, el panel inventa una de seis (ADR 0002 §85).
+    assert len(fila["clave_vinculo"]) == 6
+    assert fila["clave_vinculo"] in r.headers["location"]
 
 
 async def test_el_id_del_equipo_es_uuid7(cliente, sesion, semilla):
