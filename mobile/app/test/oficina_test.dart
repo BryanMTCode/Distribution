@@ -47,7 +47,7 @@ class _ServidorDeOficina implements Transporte {
             {
               'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'activo': true,
               'camion': 'Camión 01', 'rutas': 'R04', 'ventas': 3, 'importe': '2250.00',
-              'cobrado': '100.00', 'no_ventas': 1, 'mermas': 0,
+              'efectivo': '100.00', 'no_ventas': 1, 'mermas': 0,
               'ultimo_contacto': null, 'saldo_cuenta': '35.00',
             },
           ],
@@ -107,45 +107,41 @@ class _ServidorDeOficina implements Transporte {
           'periodo': _periodo(clave, desde, hasta),
           'periodos': _periodos,
           'cifras': {
-            'contado': '2000.00', 'credito': '250.00', 'total': '2250.00',
-            'canceladas': 0, 'cobrado': '100.00', 'mermas': 0, 'devoluciones': 0,
+            'efectivo': '2000.00', 'transferencias': '250.00', 'total': '2250.00',
+            'canceladas': 0, 'mermas': 0, 'devoluciones': 0,
             'no_ventas': 1, 'clientes_atendidos': 2, 'clientes_nuevos': 0,
           },
           'por_vendedor': [
             {'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'ventas': 3,
-             'importe': '2250.00', 'contado': '2000.00', 'credito': '250.00',
-             'cobrado': '100.00', 'mermas': 0, 'no_ventas': 1},
+             'importe': '2250.00', 'efectivo': '2000.00', 'transferencias': '250.00',
+             'mermas': 0, 'no_ventas': 1},
           ],
           'por_dia': [
-            {'fecha': '2026-09-24', 'ventas': 3, 'importe': '2250.00', 'cobrado': '100.00'},
-            {'fecha': '2026-09-23', 'ventas': 0, 'importe': '0.00', 'cobrado': '0.00'},
+            {'fecha': '2026-09-24', 'ventas': 3, 'importe': '2250.00', 'efectivo': '2000.00'},
+            {'fecha': '2026-09-23', 'ventas': 0, 'importe': '0.00', 'efectivo': '0.00'},
           ],
         },
       '/v1/tablero/empresa' => {
           'clientes_activos': 120, 'prospectos': 4, 'clientes_inactivos': 2,
-          'clientes_nuevos_mes': 6, 'clientes_con_saldo': 30, 'vendedores': 5,
+          'clientes_nuevos_mes': 6, 'vendedores': 5,
           'vendedores_con_camion': 4, 'usuarios_oficina': 3, 'rutas': 5,
           'telefonos': 5, 'productos': 210, 'productos_sin_precio': 1, 'bodegas': 1,
           'camiones': 5, 'piezas_en_bodegas': '4800.000',
           'piezas_en_camiones': '960.000', 'existencias_negativas': 0,
-          'cartera': '15000.00', 'cartera_vencida': '0.00',
           'vendido_mes': '98000.00', 'vendido_anio': '980000.00',
         },
       '/v1/oficina/clientes' => {
           'filtro': parametros?['filtro'] ?? 'todos',
           'recortado': false,
-          'conteos': {'todos': 2, 'con_saldo': 1, 'vencidos': 1, 'bloqueados': 0,
-                      'prospectos': 0},
+          'conteos': {'todos': 2, 'prospectos': 0, 'sin_ubicacion': 1},
           'clientes': [
-            {'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'Ruta 4',
-             'estatus': 'activo', 'bloqueado': false, 'telefono': null,
-             'saldo': '400.00', 'saldo_vencido': '400.00', 'facturas_vencidas': 1,
-             'ultima_compra': '2026-09-24'},
-            if (parametros?['filtro'] != 'vencidos')
-              {'id': 'cl2', 'codigo': 'CLI-2', 'nombre': 'Al Corriente', 'ruta': 'Ruta 4',
-               'estatus': 'activo', 'bloqueado': false, 'telefono': null,
-               'saldo': '0.00', 'saldo_vencido': '0.00', 'facturas_vencidas': 0,
-               'ultima_compra': null},
+            if (parametros?['filtro'] != 'sin_ubicacion')
+              {'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'Ruta 4',
+               'estatus': 'activo', 'telefono': null, 'con_ubicacion': true,
+               'ultima_compra': '2026-09-24'},
+            {'id': 'cl2', 'codigo': 'CLI-2', 'nombre': 'Sin Pin', 'ruta': 'Ruta 4',
+             'estatus': 'activo', 'telefono': null, 'con_ubicacion': false,
+             'ultima_compra': null},
           ],
         },
       '/v1/oficina/clientes/cl1' => _fichaCliente(),
@@ -165,31 +161,24 @@ class _ServidorDeOficina implements Transporte {
   }
 
   final List<(String, Map<String, Object?>)> posts = [];
-  bool bloqueado = false;
   String contada = '0.000';
   bool cerrado = false;
 
   Map<String, Object?> _fichaCliente({String? mensaje}) => {
         'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'razon_social': null,
         'contacto': 'Doña Mary', 'telefono': '6691234567', 'direccion': 'Juárez 10',
-        'ruta': 'Ruta 4', 'estatus': 'activo', 'permite_credito': true,
-        'limite_credito': '5000.00', 'dias_credito': 7, 'bloqueado': bloqueado,
-        'bloqueo_motivo': bloqueado ? 'Debe tres notas' : null,
-        'saldo': '400.00', 'disponible': '4600.00', 'saldo_vencido': '400.00',
-        'por_confirmar': '0.00', 'comprado_mes': '2750.00', 'comprado_anio': '2750.00',
-        'cuentas': [
-          {'venta_id': 'venta-1', 'folio': 'VEND01-000009', 'fecha_emision': '2026-09-04',
-           'fecha_vencimiento': '2026-09-11', 'importe_original': '500.00',
-           'importe_pagado': '100.00', 'saldo': '400.00', 'vencida': true,
-           'dias_vencida': 13},
-        ],
+        'referencias': 'Portón verde', 'ruta': 'Ruta 4', 'estatus': 'activo',
+        'lat': '23.2494100', 'lng': '-106.4111400', 'ubicacion_origen': 'gps',
+        'ubicacion_capturada_en': '2026-09-20T17:00:00Z',
+        'comprado_mes': '2750.00', 'comprado_anio': '2750.00',
         'ventas': [
           {'id': 'venta-1', 'folio': 'VEND01-000001', 'fecha': '2026-09-24',
-           'momento': null, 'tipo': 'contado', 'estado': 'confirmada',
-           'total': '2250.00', 'vendedor': 'Juan Pérez'},
+           'momento': null, 'tipo': 'contado', 'forma_pago': 'transferencia',
+           'estado': 'confirmada', 'total': '2250.00', 'vendedor': 'Juan Pérez'},
+          {'id': 'venta-0', 'folio': 'VEND01-000000', 'fecha': '2026-09-02',
+           'momento': null, 'tipo': 'credito', 'forma_pago': null,
+           'estado': 'confirmada', 'total': '500.00', 'vendedor': 'Juan Pérez'},
         ],
-        'cobros': <Object?>[],
-        'puede_bloquear': true,
         'mensaje': mensaje,
       };
 
@@ -218,9 +207,6 @@ class _ServidorDeOficina implements Transporte {
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     posts.add((ruta, cuerpo));
     switch (ruta) {
-      case '/v1/oficina/clientes/cl1/bloqueo':
-        bloqueado = cuerpo['bloquear']! as bool;
-        return RespuestaHttp(200, jsonEncode(_fichaCliente(mensaje: 'Listo.')));
       case '/v1/cortes':
         return RespuestaHttp(200, jsonEncode(_corte()));
       case '/v1/cortes/lq1/conteo':
@@ -305,7 +291,8 @@ void main() {
 
       expect(find.byKey(const Key('pantalla_vendedores')), findsOneWidget);
       expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
-      expect(textoQueContiene(r'3 venta(s) · $2,250.00'), findsOneWidget);
+      expect(textoQueContiene(r'3 venta(s) · $2,250.00 · $100.00 en efectivo'),
+          findsOneWidget);
       expect(textoQueContiene(r'Debe $35.00'), findsOneWidget);
     });
 
@@ -450,42 +437,41 @@ void main() {
   });
 
   group('clientes', () {
-    testWidgets('la lista pone arriba al que debe, y filtra los vencidos', (tester) async {
+    testWidgets('la lista no habla de deudas, y filtra los que no tienen ubicación',
+        (tester) async {
       final servidor = await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_clientes')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsOneWidget);
-      expect(textoQueContiene(r'Debe $400.00'), findsOneWidget);
       expect(textoQueContiene('nunca ha comprado'), findsOneWidget);
+      expect(textoQueContiene('Debe'), findsNothing);
+      expect(find.byKey(const Key('filtro_cliente_vencidos')), findsNothing);
 
-      await tester.ensureVisible(find.byKey(const Key('filtro_cliente_vencidos')));
+      await tester.ensureVisible(find.byKey(const Key('filtro_cliente_sin_ubicacion')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('filtro_cliente_vencidos')));
+      await tester.tap(find.byKey(const Key('filtro_cliente_sin_ubicacion')));
       await tester.pumpAndSettle();
-      expect(servidor.pedidas.last.$2, {'filtro': 'vencidos'});
-      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsNothing);
+      expect(servidor.pedidas.last.$2, {'filtro': 'sin_ubicacion'});
+      expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsNothing);
+      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsOneWidget);
     });
 
-    testWidgets('su ficha: estado de cuenta, compras y bloquear con motivo', (tester) async {
-      final servidor = await _montar(tester);
+    testWidgets('su ficha: ubicación y compras con su forma de pago', (tester) async {
+      await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_clientes')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('cliente_oficina_CLI-1')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('pantalla_ficha_cliente')), findsOneWidget);
-      expect(find.text(r'Debe $400.00'), findsOneWidget);
-      expect(textoQueContiene('Vencida hace 13 día(s)'), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('boton_bloqueo_cliente')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('campo_motivo_bloqueo')), 'Debe tres notas');
-      await tester.tap(find.byKey(const Key('boton_bloquear_de_verdad')));
-      await tester.pumpAndSettle();
-
-      expect(servidor.posts.last.$2, {'bloquear': true, 'motivo': 'Debe tres notas'});
-      expect(textoQueContiene('Crédito BLOQUEADO: Debe tres notas'), findsOneWidget);
+      expect(textoQueContiene(r'Compró $2,750.00 este mes'), findsOneWidget);
+      expect(textoQueContiene('23.249410, -106.411140 (GPS)'), findsOneWidget);
+      expect(textoQueContiene('transferencia'), findsOneWidget);
+      // La venta a crédito del piloto sigue en su historia, dicha como tal.
+      expect(textoQueContiene('crédito (piloto)'), findsOneWidget);
+      expect(textoQueContiene('Debe'), findsNothing);
+      expect(find.byKey(const Key('boton_bloqueo_cliente')), findsNothing);
     });
   });
 

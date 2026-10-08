@@ -59,7 +59,7 @@ async def _gerente(cliente, sesion, semilla) -> dict:
 
 @pytest.fixture
 async def dia_con_operacion(sesion, semilla) -> dict:
-    """Una venta de contado, una a crédito, un no-drop y un cobro en efectivo."""
+    """Una venta en efectivo, una por transferencia por confirmar y un no-drop."""
     dispositivo = uuid.uuid4()
     hoy = date.today()
     ahora = datetime.now(UTC)
@@ -115,18 +115,24 @@ async def dia_con_operacion(sesion, semilla) -> dict:
             "u": semilla["vendedor"], "r": semilla["ruta"], "t": ahora, "dia": hoy,
         },
     )
+    # Hace 40 días —otro mes, y fuera de los mismos días de la semana que sirven
+    # de referencia—, para que la transferencia por confirmar sea un pendiente de
+    # AHORA y no una cifra del día ni del mes.
     await sesion.execute(
         text(
             """
-            INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
-                                cliente_id, vendedor_id, importe, forma_pago,
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, ruta_id, almacen_id, tipo,
+                                forma_pago, pago_estado, subtotal, total,
                                 fecha_dispositivo, fecha_operativa)
-            VALUES (:id, :d, 3, 'VEND01-A000003', :c, :u, 500.25, 'efectivo', :t, :dia)
+            VALUES (:v, :d, 3, 'VEND01-000003', :c, :u, :r, :a, 'contado',
+                    'transferencia', 'por_confirmar', 500.25, 500.25, :t, :ayer)
             """
         ),
         {
-            "id": uuid.uuid4(), "d": dispositivo, "c": clientes["Mary"],
-            "u": semilla["vendedor"], "t": ahora, "dia": hoy,
+            "v": uuid.uuid4(), "d": dispositivo, "c": clientes["Mary"],
+            "u": semilla["vendedor"], "r": semilla["ruta"], "a": semilla["camion"],
+            "t": ahora, "ayer": hoy - timedelta(days=40),
         },
     )
     await sesion.execute(
@@ -190,12 +196,11 @@ async def test_el_dinero_viaja_como_cadena_con_dos_decimales(
     cuerpo = (await cliente.get("/v1/tablero", headers=await _cab(cliente))).json()
     for valor in (
         cuerpo["venta"]["total"],
-        cuerpo["venta"]["contado"],
-        cuerpo["venta"]["credito"],
+        cuerpo["venta"]["efectivo"],
+        cuerpo["venta"]["transferencia"],
         cuerpo["venta"]["ticket_promedio"],
         cuerpo["visitas"]["drop_size"],
-        cuerpo["cobranza"]["cobrado_hoy"],
-        cuerpo["cobranza"]["saldo_vencido"],
+        cuerpo["por_confirmar"]["importe"],
     ):
         assert isinstance(valor, str), valor
         assert valor.count(".") == 1 and len(valor.split(".")[1]) == 2, valor
@@ -216,7 +221,13 @@ async def test_el_tablero_resume_el_dia(cliente, sesion, semilla, dia_con_operac
     assert cuerpo["visitas"]["efectividad"] == "50.0"
     # El no-drop es 'AGOTADO_EN_CAMION': categoría 'producto', o sea NUESTRO.
     assert cuerpo["visitas"]["no_drops_nuestros"] == 1
-    assert cuerpo["cobranza"]["cobrado_efectivo"] == "500.25"
+    # Todo es de contado (ADR 0002 §81): el día por forma de pago.
+    assert (cuerpo["venta"]["efectivo"], cuerpo["venta"]["transferencia"]) == (
+        "1234.56", "0.00"
+    )
+    # Lo que espera al banco es de AHORA, no del día: la de hace 40 días cuenta.
+    assert cuerpo["por_confirmar"] == {"cuantas": 1, "importe": "500.25"}
+    assert "cobranza" not in cuerpo
 
 
 async def test_el_drop_size_se_mide_sobre_las_visitas_que_vendieron(
@@ -383,10 +394,9 @@ async def test_un_equipo_sin_sincronizar_vuelve_la_cifra_un_piso(
 async def test_cada_bloque_trae_su_propia_marca(
     cliente, sesion, semilla, dia_con_operacion
 ):
-    """La cartera es un SALDO: su antigüedad no es la del día operativo."""
     cuerpo = (await cliente.get("/v1/tablero", headers=await _cab(cliente))).json()
     assert cuerpo["venta"]["calculado_en"] is not None
-    assert cuerpo["cobranza"]["calculado_en"] is not None
+    assert cuerpo["visitas"]["calculado_en"] is not None
     assert cuerpo["mermas"]["calculado_en"] is not None
 
 
@@ -485,7 +495,7 @@ async def _historia(sesion, vendedor, dias, venta):
             text(
                 """
                 INSERT INTO tablero_dia (fecha, vendedor_id, venta_total,
-                                         venta_contado, documentos_venta, visitas,
+                                         venta_efectivo, documentos_venta, visitas,
                                          visitas_con_venta, calculado_en)
                 VALUES (:f, :v, :venta, :venta, 1, 1, 1, now())
                 ON CONFLICT (fecha, vendedor_id) DO UPDATE

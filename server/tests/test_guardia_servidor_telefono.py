@@ -10,7 +10,7 @@ El servidor (Python + PostgreSQL) y el teléfono (Dart) se hablan por nombres:
   `AplicadorDeltas._aplicarUno`. Un nombre que el teléfono no conoce no truena:
   cae en `deltas_desconocidos`, el cursor avanza y el dato **no se aplica
   nunca**. Para la oficina el cambio se guardó; para el vendedor nunca pasó.
-· El teléfono manda operaciones con un `tipo` —'venta.crear', 'cobro.crear'— y
+· El teléfono manda operaciones con un `tipo` —'venta.crear', 'merma.crear'— y
   el servidor busca su manejador. Un tipo sin manejador va a cuarentena: la venta
   ocurrió en la calle y el servidor no la registra.
 
@@ -138,7 +138,7 @@ def test_todo_lo_que_manda_el_telefono_el_servidor_lo_sabe_procesar():
     from app.infra.sync import manejadores
 
     tipos = _tipos_que_manda_el_telefono()
-    assert {"venta.crear", "cobro.crear"} <= tipos, (
+    assert {"venta.crear", "merma.crear"} <= tipos, (
         f"la lectura del código Dart no encontró lo básico: {sorted(tipos)}"
     )
 

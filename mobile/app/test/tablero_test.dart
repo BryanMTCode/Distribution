@@ -60,8 +60,8 @@ Map<String, Object?> tableroDelServidor({
       'venta': {
         'fecha': '2026-09-24',
         'total': total,
-        'contado': '31180.00',
-        'credito': '11000.00',
+        'efectivo': '31180.00',
+        'transferencia': '11000.00',
         'documentos': 34,
         'ticket_promedio': '1240.59',
         'calculado_en': calculadoEn,
@@ -76,15 +76,7 @@ Map<String, Object?> tableroDelServidor({
         'drop_size': '1240.59',
         'calculado_en': calculadoEn,
       },
-      'cobranza': {
-        'cobrado_hoy': '18450.75',
-        'cobrado_efectivo': '15200.00',
-        'saldo_total': '312890.40',
-        'saldo_vencido': '48220.10',
-        'facturas_vencidas': 27,
-        'clientes_vencidos': 14,
-        'calculado_en': calculadoEn,
-      },
+      'por_confirmar': {'cuantas': 3, 'importe': '4500.00'},
       'mermas': {
         'documentos': 2,
         'unidades': '12.500',
@@ -100,7 +92,7 @@ Map<String, Object?> tableroDelServidor({
           'visitas': 30,
           'con_venta': 18,
           'no_drops': 12,
-          'cobrado': '9000.00',
+          'efectivo': '9000.00',
           'efectividad': '60.0',
         },
         if (vendedorSinMovimiento)
@@ -113,7 +105,7 @@ Map<String, Object?> tableroDelServidor({
             'visitas': 0,
             'con_venta': 0,
             'no_drops': 0,
-            'cobrado': '0.00',
+            'efectivo': '0.00',
             'efectividad': '0.0',
             if (luisSinSincronizar) ...{
               'ultimo_push': '2026-09-23T21:40:00.000Z',
@@ -277,8 +269,15 @@ void main() {
         tester,
         TransporteDeGerencia(tablero: tableroDelServidor()),
       );
-      expect(find.textContaining(r'$15,200.00 en efectivo'), findsOneWidget);
-      expect(find.textContaining('arqueo'), findsOneWidget);
+      // Todo es de contado (ADR 0002 §81): la venta se parte en lo que
+      // trae el vendedor en la bolsa y lo que se busca en el banco.
+      expect(find.text(r'$31,180'), findsOneWidget);
+      expect(find.text('en efectivo'), findsOneWidget);
+      expect(
+        find.textContaining(r'$11,000.00 por transferencia, que no entra al corte'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('crédito'), findsNothing);
     });
 
     testWidgets('los no-drops nuestros se marcan como lo accionable',
@@ -292,17 +291,22 @@ void main() {
       expect(find.textContaining('De 24 no-drops'), findsOneWidget);
     });
 
-    testWidgets('el vencido de cartera se marca', (tester) async {
+    testWidgets('las transferencias por confirmar se avisan, y no hay cartera',
+        (tester) async {
       await montarTablero(
         tester,
         TransporteDeGerencia(tablero: tableroDelServidor()),
       );
-      await tester.scrollUntilVisible(find.text('vencido'), 200, scrollable: _listaDeCifras);
-      expect(find.text(r'$48,220'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('transferencias_por_confirmar')),
+        200,
+        scrollable: _listaDeCifras,
+      );
       expect(
-        find.textContaining('27 documentos de 14 clientes'),
+        find.textContaining(r'3 transferencias por $4,500.00 esperan'),
         findsOneWidget,
       );
+      expect(find.text('Cartera'), findsNothing);
     });
   });
 
@@ -395,7 +399,7 @@ void main() {
     testWidgets('la copia conserva TODAS las cifras, no solo la primera',
         (tester) async {
       // La copia se guarda reserializando el objeto a la forma del contrato, y
-      // ahí caben los errores que no se ven: cambiar contado por crédito,
+      // ahí caben los errores que no se ven: cambiar efectivo por transferencia,
       // perder un decimal, dejar un campo fuera. Se afirman cifras de los
       // cuatro bloques y de los dos renglones, una por una.
       final transporte = TransporteDeGerencia(tablero: tableroDelServidor());
@@ -404,23 +408,19 @@ void main() {
       await tester.tap(find.byKey(const Key('boton_refrescar_tablero')));
       await tester.pumpAndSettle();
 
+      expect(find.text(r'$31,180'), findsOneWidget);
+      expect(find.textContaining(r'$11,000.00 por transferencia'), findsOneWidget);
+      expect(find.text('58.6%'), findsOneWidget);
+      expect(find.textContaining('34 de 58 visitas'), findsOneWidget);
+
       // La barra del portal de abajo ocupa su alto: la tarjeta puede quedar
       // fuera de la pantalla de prueba, y una lista perezosa no la construye.
       await tester.scrollUntilVisible(
-        find.textContaining(r'$11,000.00 del día salió a crédito'),
+        find.byKey(const Key('transferencias_por_confirmar')),
         200,
         scrollable: _listaDeCifras,
       );
-      expect(find.textContaining(r'$11,000.00 del día salió a crédito'),
-          findsOneWidget);
-      expect(find.textContaining(r'($31,180.00 de contado)'), findsOneWidget);
-      expect(find.text('58.6%'), findsOneWidget);
-      expect(find.textContaining('34 de 58 visitas'), findsOneWidget);
-      expect(find.textContaining(r'$15,200.00 en efectivo'), findsOneWidget);
-
-      await tester.scrollUntilVisible(find.text('vencido'), 200, scrollable: _listaDeCifras);
-      expect(find.text(r'$48,220'), findsOneWidget);
-      expect(find.text(r'$312,890'), findsOneWidget);
+      expect(find.textContaining(r'3 transferencias por $4,500.00'), findsOneWidget);
 
       await tester.scrollUntilVisible(find.byKey(const Key('ruta_R04')), 200, scrollable: _listaDeCifras);
       expect(find.textContaining('42.5% de'), findsOneWidget);

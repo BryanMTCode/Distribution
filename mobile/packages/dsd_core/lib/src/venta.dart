@@ -51,6 +51,7 @@ import 'dia_operativo.dart';
 import 'carrito.dart';
 import 'dinero.dart';
 import 'folios.dart';
+import 'forma_de_pago.dart';
 import 'outbox.dart';
 import 'precio.dart';
 import 'sobre.dart';
@@ -86,9 +87,6 @@ class IdentidadDeVenta {
 enum MotivoNoVenta {
   /// No hay nada que vender.
   carritoVacio('carrito_vacio'),
-
-  /// El crédito del cliente no lo permite. Se puede cambiar a contado.
-  creditoRechazado('credito_rechazado'),
 
   /// El servidor no ha asignado folios a este equipo. Hay que sincronizar.
   sinRangoDeFolios('sin_rango_de_folios'),
@@ -159,7 +157,8 @@ class VentaGuardada {
     required this.folioLocal,
     required this.visitaId,
     required this.clienteId,
-    required this.aCredito,
+    required this.formaDePago,
+    this.referenciaPago,
     required this.subtotal,
     required this.total,
     required this.lineas,
@@ -176,7 +175,10 @@ class VentaGuardada {
   final String folioLocal;
   final String visitaId;
   final String clienteId;
-  final bool aCredito;
+
+  /// Cómo pagó: efectivo o transferencia, en el acto (ADR 0002 §81).
+  final FormaDePago formaDePago;
+  final String? referenciaPago;
   final Dinero subtotal;
   final Dinero total;
   final List<LineaCarrito> lineas;
@@ -217,17 +219,15 @@ class CierreDeVenta {
 
   /// Cierra la venta. O pasa todo, o no pasa nada.
   ///
-  /// [creditoPermitido] lo decide el llamador con el estado de crédito ya
-  /// compuesto desde la cola local. Se pasa el veredicto y no el estado porque
-  /// **la pantalla ya se lo mostró al vendedor**: recalcularlo aquí podría dar
-  /// otra respuesta que el vendedor nunca vio.
+  /// La forma de pago viaja en el carrito: toda venta se paga en el acto, en
+  /// efectivo o por transferencia (ADR 0002 §81). Ya no hay veredicto de crédito
+  /// que pedirle a la pantalla.
   /// Lanza `VentaRechazada` si una regla de la calle lo impide, y `CierreRoto`
   /// si falla el equipo. **No lanza nada más**: quien llama tiene un botón
   /// girando y necesita una respuesta siempre, incluso para fallar.
   VentaGuardada cerrar(
     Carrito carrito, {
     required String clienteId,
-    required bool creditoPermitido,
     Ubicacion? ubicacion,
     String? visitaId,
     String? observaciones,
@@ -236,7 +236,6 @@ class CierreDeVenta {
       return _cerrar(
         carrito,
         clienteId: clienteId,
-        creditoPermitido: creditoPermitido,
         ubicacion: ubicacion,
         visitaId: visitaId,
         observaciones: observaciones,
@@ -255,16 +254,12 @@ class CierreDeVenta {
   VentaGuardada _cerrar(
     Carrito carrito, {
     required String clienteId,
-    required bool creditoPermitido,
     Ubicacion? ubicacion,
     String? visitaId,
     String? observaciones,
   }) {
     if (carrito.estaVacio) {
       throw const VentaRechazada(MotivoNoVenta.carritoVacio);
-    }
-    if (carrito.aCredito && !creditoPermitido) {
-      throw const VentaRechazada(MotivoNoVenta.creditoRechazado);
     }
 
     // Se lee de la base, no de un campo: ver la nota del encabezado sobre huecos
@@ -327,7 +322,9 @@ class CierreDeVenta {
             'almacen_id': _identidad.almacenId,
             'ruta_id': _identidad.rutaId,
             'carga_id': _identidad.cargaId,
-            'tipo': carrito.aCredito ? 'credito' : 'contado',
+            'tipo': 'contado',
+            'forma_pago': carrito.formaDePago.codigo,
+            if (carrito.referenciaPago != null) 'referencia_pago': carrito.referenciaPago,
             'lista_precios_id': primera.listaPreciosId,
             'lista_precios_version': primera.listaPreciosVersion,
             'subtotal': carrito.subtotal.texto,
@@ -357,13 +354,14 @@ class CierreDeVenta {
             '''
             INSERT INTO ventas (id, folio_consecutivo, folio_local, visita_id,
                                 cliente_id, carga_id, tipo, estado,
+                                forma_pago, referencia_pago,
                                 lista_precios_id, lista_precios_version,
                                 subtotal, descuento, impuestos, total,
                                 lat, lng, ubicacion_precision_m,
                                 fecha_dispositivo, fecha_operativa,
                                 impreso, reimpresiones, sincronizada, creado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmada', ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, 0, 0, 0, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'contado', 'confirmada', ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
             ''',
             [
               ventaId,
@@ -372,7 +370,8 @@ class CierreDeVenta {
               visita,
               clienteId,
               _identidad.cargaId,
-              carrito.aCredito ? 'credito' : 'contado',
+              carrito.formaDePago.codigo,
+              carrito.referenciaPago,
               primera.listaPreciosId,
               primera.listaPreciosVersion,
               _aReal(carrito.subtotal),
@@ -499,7 +498,8 @@ class CierreDeVenta {
       folioLocal: folioLocal,
       visitaId: visita,
       clienteId: clienteId,
-      aCredito: carrito.aCredito,
+      formaDePago: carrito.formaDePago,
+      referenciaPago: carrito.referenciaPago,
       subtotal: carrito.subtotal,
       total: carrito.total,
       lineas: carrito.lineas,

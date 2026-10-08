@@ -13,6 +13,7 @@ import 'dart:convert';
 
 import 'dia_operativo.dart';
 import 'dinero.dart';
+import 'forma_de_pago.dart';
 import 'sync_cliente.dart' show SesionInvalida, ServidorConProblemas;
 import 'transporte.dart';
 
@@ -68,7 +69,7 @@ class VendedorEnLista {
     required this.rutas,
     required this.ventas,
     required this.importe,
-    required this.cobrado,
+    required this.efectivo,
     required this.noVentas,
     required this.mermas,
     required this.ultimoContacto,
@@ -84,7 +85,7 @@ class VendedorEnLista {
         rutas: j['rutas'] as String?,
         ventas: (j['ventas']! as num).toInt(),
         importe: Dinero.deTexto(j['importe']! as String),
-        cobrado: Dinero.deTexto(j['cobrado']! as String),
+        efectivo: Dinero.deTexto(j['efectivo']! as String),
         noVentas: (j['no_ventas']! as num).toInt(),
         mermas: (j['mermas']! as num).toInt(),
         ultimoContacto: _fecha(j['ultimo_contacto']),
@@ -99,7 +100,8 @@ class VendedorEnLista {
   final String? rutas;
   final int ventas;
   final Dinero importe;
-  final Dinero cobrado;
+  /// Lo vendido en efectivo: lo que entrega en el corte.
+  final Dinero efectivo;
   final int noVentas;
   final int mermas;
   final DateTime? ultimoContacto;
@@ -357,6 +359,8 @@ class VentaVista {
     required this.estado,
     required this.total,
     required this.partidas,
+    this.formaDePago,
+    this.pagoEstado,
   });
 
   factory VentaVista.deJson(Map<String, Object?> j) => VentaVista(
@@ -369,6 +373,10 @@ class VentaVista {
         estado: j['estado']! as String,
         total: Dinero.deTexto(j['total']! as String),
         partidas: _lista(j['partidas'], PartidaVista.deJson),
+        formaDePago: j['forma_pago'] == null
+            ? null
+            : FormaDePago.deCodigo(j['forma_pago'] as String?),
+        pagoEstado: j['pago_estado'] as String?,
       );
 
   final String? folio;
@@ -377,6 +385,12 @@ class VentaVista {
   final String vendedor;
   final String cliente;
   final String tipo;
+
+  /// Nula en las ventas a crédito del piloto y con un servidor anterior.
+  final FormaDePago? formaDePago;
+
+  /// 'confirmado' | 'por_confirmar' | 'rechazado'.
+  final String? pagoEstado;
   final String estado;
   final Dinero total;
   final List<PartidaVista> partidas;

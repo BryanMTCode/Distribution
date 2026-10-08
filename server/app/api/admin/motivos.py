@@ -43,7 +43,7 @@ PERMISO_VER = PERMISO_EFECTIVIDAD
 
 CATEGORIAS = (
     ("cliente", "Del cliente (cerrado, sin dinero)"),
-    ("operacion", "De la operación (crédito agotado)"),
+    ("operacion", "De la operación (llegó tarde, faltó surtido)"),
     ("producto", "Del producto (no lo traía, le pareció caro)"),
     ("vendedor", "Del vendedor (no alcanzó a visitarlo)"),
 )

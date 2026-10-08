@@ -114,13 +114,12 @@ TABLAS_VOLATILES = [
     "pilotos",
     # Los modelos de lectura del tablero (Fase 7) van PRIMERO y explícitamente.
     #
-    # `tablero_refrescos` y `tablero_cartera` no tienen llave foránea a nada, así
+    # `tablero_refrescos` no tiene llave foránea a nada, así
     # que el CASCADE de las otras tablas no se los lleva: sin esto, el renglón que
     # dejó una prueba sobrevive a la siguiente, y la prueba de "el tablero nunca
     # se ha calculado" ve la hora de la corrida anterior. Es el mismo defecto que
     # las cachés globales de Streamlit en la Fase 8, con otra cara.
     "tablero_refrescos",
-    "tablero_cartera",
     "tablero_mes_ruta",
     "tablero_dia",
     "objetivos_ruta",
@@ -302,3 +301,27 @@ async def semilla(sesion: AsyncSession) -> dict[str, uuid.UUID]:
         await sesion.execute(text("SELECT id FROM listas_precios WHERE codigo = 'GENERAL'"))
     ).scalar_one()
     return ids
+
+
+def csrf_del_panel(cliente, respuesta=None) -> str:
+    """El token del formulario, o el calculado desde la cookie.
+
+    El cálculo de respaldo existe para las pantallas que no dibujan ningún
+    formulario: sin él, un 403 no distinguiría "falta permiso" de "falta CSRF", que
+    es justo lo que esas pruebas quieren separar.
+    """
+    marca = 'name="csrf" value="'
+    if respuesta is not None and marca in respuesta.text:
+        inicio = respuesta.text.index(marca) + len(marca)
+        return respuesta.text[inicio : respuesta.text.index('"', inicio)]
+
+    import hashlib
+    import hmac
+
+    from app.core.config import obtener_config
+
+    return hmac.new(
+        obtener_config().jwt_secreto.encode(),
+        f"csrf:{cliente.cookies.get('dsd_panel', '')}".encode(),
+        hashlib.sha256,
+    ).hexdigest()

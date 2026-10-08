@@ -4,7 +4,7 @@
 <h1>Vendedores</h1>
 <p class="subtitulo">
   Lo que hizo cada uno en el periodo. Abre uno para ver <strong>todos sus
-  movimientos</strong> en orden: ventas, cobros, mermas, visitas, cargas, cortes y su
+  movimientos</strong> en orden: ventas, mermas, visitas, cargas, cortes y su
   cuenta.
 </p>
 
@@ -20,7 +20,7 @@
         <th>Camión · rutas</th>
         <th class="numero">Ventas</th>
         <th class="numero">Importe</th>
-        <th class="numero">Cobrado</th>
+        <th class="numero">Efectivo</th>
         <th class="numero">Sin venta</th>
         <th class="numero">Mermas</th>
         <th class="numero">Debe (cuenta)</th>
@@ -40,7 +40,7 @@
         </td>
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
-        <td class="numero">{{ v.cobrado|dinero }}</td>
+        <td class="numero">{{ v.efectivo|dinero }}</td>
         <td class="numero">{{ v.no_ventas }}</td>
         <td class="numero">{{ v.mermas }}</td>
         <td class="numero">

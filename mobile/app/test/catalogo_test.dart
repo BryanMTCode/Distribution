@@ -18,10 +18,6 @@ Future<void> abrirCatalogo(
   void Function(BaseLocal base)? sembrarExtra,
   bool conListaEnCliente = true,
   double existenciaSopa = 240,
-  bool permiteCredito = true,
-  double limite = 5000,
-  double saldoCache = 0,
-  bool bloqueado = false,
   bool conCarga = true,
 }) async {
   await montarApp(
@@ -32,10 +28,6 @@ Future<void> abrirCatalogo(
         base,
         conListaEnCliente: conListaEnCliente,
         existenciaSopa: conCarga ? existenciaSopa : 0,
-        permiteCredito: permiteCredito,
-        limite: limite,
-        saldoCache: saldoCache,
-        bloqueado: bloqueado,
       );
       if (!conCarga) {
         base.db.execute('DELETE FROM existencias_camion');

@@ -11,7 +11,7 @@ El marco marca el ancho real: una línea que lo rebase
 lleva ">" en vez de "|" y es un defecto de diseño.
 
 ------------------------------------------------------------
-CONTADO — cuatro renglones, uno con nombre largo
+EFECTIVO — cuatro renglones, uno con nombre largo
 849 bytes
 ------------------------------------------------------------
 +--------------------------------+
@@ -44,7 +44,7 @@ CONTADO — cuatro renglones, uno con nombre largo
 |--------------------------------|
 |      T O T A L   1 0 2 2 . 5 0 |
 |                                |
-|Forma de pago            CONTADO|
+|Pago                    EFECTIVO|
 |                                |
 |      DOCUMENTO NO FISCAL       |
 |  Aclaraciones al 55 1234 5678  |
@@ -56,8 +56,8 @@ CONTADO — cuatro renglones, uno con nombre largo
 +--------------------------------+
 
 ------------------------------------------------------------
-CREDITO — con firma de recibido y sin saldo impreso
-787 bytes
+TRANSFERENCIA — con su clave de rastreo completa
+693 bytes
 ------------------------------------------------------------
 +--------------------------------+
 |     Distribuidora El Ñandú     |
@@ -82,16 +82,9 @@ CREDITO — con firma de recibido y sin saldo impreso
 |--------------------------------|
 |      T O T A L   1 3 3 6 . 5 0 |
 |                                |
-|Forma de pago            CREDITO|
-|                                |
-|Esta venta queda a crédito por  |
-|1336.50.                        |
-|Consulta tu saldo con tu        |
-|vendedor.                       |
-|                                |
-|                                |
-|    _______________________     |
-|        Recibi conforme         |
+|Pago               TRANSFERENCIA|
+|Ref.                            |
+|BNET01002610080000123456789012  |
 |                                |
 |      DOCUMENTO NO FISCAL       |
 |  Aclaraciones al 55 1234 5678  |
@@ -139,7 +132,7 @@ REIMPRESION — los bytes del original, con aviso de copia
 |--------------------------------|
 |      T O T A L   1 0 2 2 . 5 0 |
 |                                |
-|Forma de pago            CONTADO|
+|Pago                    EFECTIVO|
 |                                |
 |      DOCUMENTO NO FISCAL       |
 |  Aclaraciones al 55 1234 5678  |

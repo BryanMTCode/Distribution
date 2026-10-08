@@ -25,7 +25,7 @@ from sqlalchemy import text
 
 from app.core.seguridad import hashear_password
 from tests.conftest import PASSWORD_VENDEDOR
-from tests.test_panel_cobranza import _csrf
+from tests.conftest import csrf_del_panel as _csrf
 from tests.test_plan_visita import _cliente, _entrar
 
 pytestmark = pytest.mark.asyncio

@@ -54,9 +54,6 @@
       </div>
     </div>
     <button type="submit">Confirmar y asignar código</button>
-    <span class="sutil" style="margin-left:10px">
-      El crédito se decide aparte, más abajo.
-    </span>
   </form>
 </div>
 {% endif %}
@@ -88,43 +85,11 @@
 {% endif %}
 
 {# ------------------------------------------------------------------------ #}
-{# Cartera: solo lectura, y se explica por qué.                             #}
-{# ------------------------------------------------------------------------ #}
-<h2>Cartera</h2>
-<div class="tarjetas">
-  <div class="tarjeta">
-    <div class="numero">{{ saldo_texto }}</div>
-    <div class="etiqueta">Saldo</div>
-  </div>
-  <div class="tarjeta">
-    <div class="numero">{{ disponible_texto }}</div>
-    <div class="etiqueta">Disponible para crédito</div>
-  </div>
-  {% if cartera and cartera.facturas_vencidas %}
-  <div class="tarjeta alerta">
-    <div class="numero">{{ cartera.facturas_vencidas }}</div>
-    <div class="etiqueta">
-      Vencidas
-      {% if cartera.vencimiento_mas_antiguo %}
-        · la más vieja del {{ cartera.vencimiento_mas_antiguo.strftime('%d/%m/%Y') }}
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-</div>
-<p class="sutil">
-  El saldo no se edita: sale de las cuentas por cobrar. Un campo editable de saldo
-  sería una segunda verdad que tarde o temprano contradice a la primera, y entonces
-  nadie sabe cuál de las dos cobrar. Se corrige con un cargo o un pago, que dejan
-  rastro.
-</p>
-
-{# ------------------------------------------------------------------------ #}
 {# Condiciones comerciales                                                  #}
 {# ------------------------------------------------------------------------ #}
 {% if puede_editar %}
 <h2>Condiciones comerciales</h2>
-<form method="post" action="/panel/clientes/{{ cliente.id }}/credito"
+<form method="post" action="/panel/clientes/{{ cliente.id }}/condiciones"
       style="max-width:680px;background:var(--papel);border:1px solid var(--linea);
              border-radius:10px;padding:20px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -145,64 +110,9 @@
     </div>
   </div>
 
-  <div class="campo">
-    <label>
-      <input type="checkbox" name="permite_credito" value="1"
-             {% if cliente.permite_credito %}checked{% endif %}>
-      Autorizado para llevar a crédito
-    </label>
-  </div>
-
-  <div class="rejilla">
-    <div class="campo">
-      <label for="limite_credito">Límite de crédito</label>
-      <input type="text" id="limite_credito" name="limite_credito" inputmode="decimal"
-             value="{{ '%.2f'|format(cliente.limite_credito) }}" style="width:100%">
-      <div class="ayuda">
-        Bajarlo <strong>no perdona la deuda</strong>: el saldo sigue igual y lo que
-        se va a cero es el disponible.
-      </div>
-    </div>
-    <div class="campo">
-      <label for="dias_credito">Días de plazo</label>
-      <input type="text" id="dias_credito" name="dias_credito" inputmode="numeric"
-             value="{{ cliente.dias_credito }}" style="width:100%">
-      <div class="ayuda">Máximo {{ dias_maximo }}.</div>
-    </div>
-  </div>
-
-  <button type="submit">Guardar condiciones</button>
+  <button type="submit">Guardar la lista de precios</button>
 </form>
 
-<h2>Bloqueo</h2>
-<form method="post" action="/panel/clientes/{{ cliente.id }}/bloqueo"
-      style="max-width:680px;background:var(--papel);border:1px solid var(--linea);
-             border-radius:10px;padding:20px">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  {% if cliente.bloqueado %}
-    <div class="aviso-caja error" style="margin-bottom:14px">
-      Bloqueado: {{ cliente.bloqueo_motivo or 'sin motivo capturado' }}
-    </div>
-    <button type="submit" class="secundario">Desbloquear</button>
-  {% else %}
-    <div class="campo">
-      <label for="motivo">Motivo del bloqueo</label>
-      <input type="text" id="motivo" name="motivo" style="width:100%"
-             placeholder="Cheque devuelto, adeudo vencido…">
-      <div class="ayuda">
-        Viaja al teléfono. El vendedor va a preguntar por qué no le puede vender, y
-        «bloqueado» sin más no le sirve.
-      </div>
-    </div>
-    <button type="submit" class="peligro" name="bloquear" value="1">
-      Bloquear el crédito
-    </button>
-    <span class="sutil" style="margin-left:10px">
-      Sigue pudiendo comprar de contado. Para cerrarle la venta por completo,
-      márcalo inactivo abajo.
-    </span>
-  {% endif %}
-</form>
 {% endif %}
 
 {# ------------------------------------------------------------------------ #}
@@ -339,7 +249,7 @@
       </select>
       <div class="ayuda">
         <strong>Inactivo</strong> es la baja: desaparece de la ruta y no se borra.
-        Tiene ventas y cartera, y puede tener una venta de esta mañana que todavía
+        Tiene ventas, y puede tener una venta de esta mañana que todavía
         no sincroniza.
       </div>
     </div>

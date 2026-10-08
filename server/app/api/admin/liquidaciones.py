@@ -632,8 +632,8 @@ async def arqueo(
     """El arqueo: lo que trae en la bolsa contra lo que el sistema esperaba.
 
     `efectivo_esperado` se recalcula aquí a propósito, en vez de usar el que se
-    guardó al abrir: entre abrir y cerrar pueden haber entrado ventas de contado y
-    cobros que el teléfono sincronizó tarde. Usar el número viejo haría aparecer un
+    guardó al abrir: entre abrir y cerrar pueden haber entrado ventas en efectivo
+    que el teléfono sincronizó tarde. Usar el número viejo haría aparecer un
     faltante de efectivo del tamaño exacto de lo que llegó en medio.
     """
     actor.exigir(PERMISO)
@@ -698,8 +698,8 @@ async def guardar_arqueo(
         )
     else:
         aviso = (
-            f"Sobran {dinero(falta)}. Suele ser un cobro que el teléfono todavía "
-            "no sincronizó."
+            f"Sobran {dinero(falta)}. Suele ser una venta que el teléfono todavía "
+            "no sincronizó, o una transferencia que se capturó como efectivo."
         )
     return aviso
 
@@ -791,7 +791,7 @@ async def cerrar_corte(
     await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
 
     # Y el efectivo esperado, por la misma razón: ahora de esto sale un cargo a
-    # una persona (la cuenta del vendedor), y un cobro que sincronizó después
+    # una persona (la cuenta del vendedor), y una venta que sincronizó después
     # del arqueo no puede quedar fuera de la cuenta. `diferencia_efectivo` es
     # columna generada y se recalcula sola.
     await sesion.execute(
@@ -1251,24 +1251,21 @@ def _con_inicial(renglones: list[dict]) -> list[dict]:
 
 
 async def _efectivo_esperado(sesion, vendedor_id, fecha_operativa) -> Decimal:
-    """Ventas de contado más cobros en efectivo del día.
+    """Las ventas del día pagadas en efectivo.
 
-    Las ventas a crédito NO suman: no se cobró nada. Y de los cobros solo los de
-    forma `efectivo` — una transferencia no viene en la bolsa.
+    La operación es de contado (ADR 0002 §81): toda venta se pagó al entregar.
+    La transferencia no viene en la bolsa —se confirma contra el banco en
+    Transferencias—, así que no suma aquí.
     """
     fila = (
         await sesion.execute(
             text(
                 """
-                SELECT
-                  COALESCE((SELECT sum(total) FROM ventas
-                             WHERE vendedor_id = :v AND fecha_operativa = :d
-                               AND estado = 'confirmada' AND tipo = 'contado'), 0)
-                  +
-                  COALESCE((SELECT sum(importe) FROM cobros
-                             WHERE vendedor_id = :v AND fecha_operativa = :d
-                               AND estado = 'confirmado' AND forma_pago = 'efectivo'), 0)
-                  AS esperado
+                SELECT COALESCE(sum(total), 0) AS esperado
+                  FROM ventas
+                 WHERE vendedor_id = :v AND fecha_operativa = :d
+                   AND estado = 'confirmada' AND tipo = 'contado'
+                   AND forma_pago = 'efectivo'
                 """
             ),
             {"v": vendedor_id, "d": fecha_operativa},

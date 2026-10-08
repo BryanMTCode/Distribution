@@ -311,12 +311,10 @@ SELECT
   (SELECT count(*) FROM traspasos t
      JOIN almacenes o ON o.id = t.almacen_origen_id AND o.tipo = 'camion'
     WHERE t.estado = 'propuesto') AS devoluciones,
-  (SELECT count(*) FROM cobros WHERE estado = 'por_confirmar') AS por_confirmar,
   (SELECT count(*) FROM ventas
-    WHERE requiere_revision AND estado = 'confirmada') AS ventas_revision,
-  (SELECT count(*) FROM cobros
-    WHERE requiere_revision AND estado IN ('confirmado', 'por_confirmar'))
-    AS cobros_revision
+    WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada') AS por_confirmar,
+  (SELECT count(*) FROM ventas
+    WHERE requiere_revision AND estado = 'confirmada') AS ventas_revision
 """
 
 
@@ -384,22 +382,16 @@ async def pendientes_de_hoy(sesion, actor) -> list[Pendiente]:
         Pendiente(
             "Al cierre",
             f["por_confirmar"],
-            "transferencia(s) o cheque(s) por confirmar contra el banco: hasta entonces "
-            "no bajan la deuda del cliente.",
-            "/panel/cobranza/por-confirmar",
+            "transferencia(s) por confirmar contra el banco: hasta entonces la caja "
+            "del día no cuadra.",
+            "/panel/transferencias",
         ),
         Pendiente(
             "Al cierre",
             f["ventas_revision"],
-            "venta(s) marcada(s) para revisión: crédito excedido, precio viejo, fuera "
-            "de geocerca.",
+            "venta(s) marcada(s) para revisión: precio viejo, fuera de geocerca, "
+            "sin ubicación.",
             "/panel/ventas",
-        ),
-        Pendiente(
-            "Al cierre",
-            f["cobros_revision"],
-            "cobro(s) marcado(s) para revisión.",
-            "/panel/cobranza?solo_revision=1",
         ),
     ]
 

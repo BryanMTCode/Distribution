@@ -114,7 +114,6 @@ void main() {
       final guardada = cierre().cerrar(
         carritoDe(1, 1),
         clienteId: 'cli-1',
-        creditoPermitido: false,
       );
       expect(guardada.folioConsecutivo, equals(1));
       expect(quedan(), equals(0));
@@ -129,7 +128,6 @@ void main() {
       final guardada = cierre().cerrar(
         carritoDe(1, 0.9999999999999998),
         clienteId: 'cli-1',
-        creditoPermitido: false,
       );
 
       expect(guardada.folioConsecutivo, equals(1));
@@ -142,7 +140,6 @@ void main() {
       final guardada = cierre().cerrar(
         carritoDe(1, 1.0000000000000002),
         clienteId: 'cli-1',
-        creditoPermitido: false,
       );
       expect(guardada.folioConsecutivo, equals(1));
       // Sin el redondeo al escribir, aquí quedaría 2.2e-16 arriba del camión: un
@@ -158,7 +155,6 @@ void main() {
           // es la guarda del cierre, no la del carrito.
           carritoDe(2, 2),
           clienteId: 'cli-1',
-          creditoPermitido: false,
         ),
         throwsA(isA<VentaRechazada>()
             .having((e) => e.motivo, 'motivo', MotivoNoVenta.sinExistencia)),
@@ -176,7 +172,7 @@ void main() {
         existencias: ExistenciasCamion({'p-sopa': Cantidad.deBase(0.5)}),
       );
       expect(r.aceptado, isTrue);
-      cierre().cerrar(r.carrito, clienteId: 'cli-1', creditoPermitido: false);
+      cierre().cerrar(r.carrito, clienteId: 'cli-1');
       expect(quedan(), equals(0));
     });
   });

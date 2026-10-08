@@ -153,8 +153,8 @@ async def tablero(
     el volumen crezca, que es cuando más se necesita.
 
     Las cifras de ventas y dinero son del PERIODO elegido (hoy por omisión). Los
-    pendientes y los estados —la cuarentena, lo que espera al banco, la cartera
-    vencida— son de ahora: no tiene sentido preguntar cuánta cuarentena había el
+    pendientes y los estados —la cuarentena, lo que espera al banco— son de
+    ahora: no tiene sentido preguntar cuánta cuarentena había el
     mes pasado, sino cuánta hay que atender.
     """
     rango = leer_periodo(periodo, desde, hasta)
@@ -181,44 +181,29 @@ async def tablero(
                     WHERE fecha_operativa BETWEEN :desde AND :hasta
                       AND estado = 'confirmada')
                     AS importe_hoy,
-                  (SELECT count(*) FROM cobros
-                    WHERE requiere_revision AND estado IN ('confirmado', 'por_confirmar'))
-                    AS cobros_en_revision,
-                  -- Lo que espera al banco: no baja ninguna deuda hasta que alguien
-                  -- lo confirme, así que un número que crece es crédito congelado.
-                  (SELECT count(*) FROM cobros WHERE estado = 'por_confirmar')
-                    AS cobros_por_confirmar,
-                  (SELECT COALESCE(sum(importe), 0) FROM cobros
-                    WHERE estado = 'por_confirmar') AS importe_por_confirmar,
-                  -- EFECTIVO A ENTREGAR = VENTAS DE CONTADO + COBROS EN EFECTIVO.
+                  -- Lo que espera al banco: ventas pagadas por transferencia que
+                  -- la oficina no ha visto. Un número que crece es dinero que nadie
+                  -- ha cuadrado.
+                  (SELECT count(*) FROM ventas
+                    WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada')
+                    AS transferencias_por_confirmar,
+                  (SELECT COALESCE(sum(total), 0) FROM ventas
+                    WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada')
+                    AS importe_por_confirmar,
+                  -- EFECTIVO A ENTREGAR = VENTAS PAGADAS EN EFECTIVO.
                   --
-                  -- Faltaba el primer término, y con él el caso más común de una
-                  -- ruta: una venta de contado es dinero que el vendedor trae en la
-                  -- bolsa y tiene que entregar. Con solo los cobros, un día entero
-                  -- de ventas de contado mostraba «$0.00 efectivo a entregar hoy»
-                  -- junto a las ventas ya sincronizadas en el mismo tablero.
-                  --
-                  -- Esta cuenta tiene que dar LO MISMO que `_efectivo_esperado` de
+                  -- Tiene que dar LO MISMO que `_efectivo_esperado` de
                   -- `liquidaciones.py`, que es la que decide el arqueo. Si las dos
-                  -- no coinciden, el tablero promete un número y la liquidación
-                  -- cobra otro — y el vendedor discute con razón.
+                  -- no coinciden, el tablero promete un número y el corte cobra
+                  -- otro — y el vendedor discute con razón.
                   --
-                  -- Las ventas a CRÉDITO no suman: no se cobró nada. Y de los
-                  -- cobros, solo los de forma `efectivo`: una transferencia entra al
-                  -- sistema pero no a la bolsa, y sumarla haría que la caja nunca
-                  -- cuadre y que el descuadre se atribuyera a quien no fue.
-                  (
-                    (SELECT COALESCE(sum(total), 0) FROM ventas
-                      WHERE fecha_operativa BETWEEN :desde AND :hasta
-                        AND estado = 'confirmada' AND tipo = 'contado')
-                    +
-                    (SELECT COALESCE(sum(importe), 0) FROM cobros
-                      WHERE fecha_operativa BETWEEN :desde AND :hasta
-                        AND estado = 'confirmado' AND forma_pago = 'efectivo')
-                  ) AS efectivo_hoy,
-                  (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
-                    WHERE estado IN ('abierta', 'parcial')
-                      AND fecha_vencimiento < CURRENT_DATE) AS cartera_vencida,
+                  -- La operación es de contado (ADR 0002 §81): toda venta se pagó
+                  -- al entregar. La transferencia entra al sistema pero no a la
+                  -- bolsa, y sumarla haría que la caja nunca cuadre.
+                  (SELECT COALESCE(sum(total), 0) FROM ventas
+                    WHERE fecha_operativa BETWEEN :desde AND :hasta
+                      AND estado = 'confirmada' AND tipo = 'contado'
+                      AND forma_pago = 'efectivo') AS efectivo_hoy,
                   (SELECT count(*) FROM productos WHERE activo) AS productos,
                   (SELECT count(*) FROM clientes WHERE estatus <> 'inactivo') AS clientes,
                   (SELECT count(*) FROM clientes WHERE estatus = 'prospecto')
@@ -239,11 +224,6 @@ async def tablero(
     indicadores["importe_hoy"] = dinero(fila["importe_hoy"])
     indicadores["efectivo_hoy"] = dinero(fila["efectivo_hoy"])
     indicadores["importe_por_confirmar"] = dinero(fila["importe_por_confirmar"])
-    # La bandera va aparte del texto: si la plantilla comparara el número ya
-    # formateado contra "$0.00", el día que cambie el separador de miles la alerta
-    # se encendería sola y nadie sabría por qué.
-    indicadores["hay_cartera_vencida"] = Decimal(fila["cartera_vencida"] or 0) > 0
-    indicadores["cartera_vencida"] = dinero(fila["cartera_vencida"])
 
     return render(
         peticion,
@@ -261,16 +241,18 @@ async def tablero(
     )
 
 
+# Toda venta se pagó al entregar (ADR 0002 §81): lo vendido ES lo cobrado, y lo
+# que interesa es en qué forma — el efectivo se entrega en el corte, la
+# transferencia se confirma contra el banco.
 SQL_PERIODO = """
 SELECT
-  (SELECT COALESCE(sum(total) FILTER (WHERE tipo = 'contado'), 0) FROM ventas
-    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada') AS contado,
-  (SELECT COALESCE(sum(total) FILTER (WHERE tipo = 'credito'), 0) FROM ventas
-    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada') AS credito,
+  (SELECT COALESCE(sum(total) FILTER (WHERE forma_pago = 'efectivo'), 0) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada') AS efectivo,
+  (SELECT COALESCE(sum(total) FILTER (WHERE forma_pago = 'transferencia'), 0) FROM ventas
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada')
+    AS transferencias,
   (SELECT count(*) FROM ventas
     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'cancelada') AS canceladas,
-  (SELECT COALESCE(sum(importe), 0) FROM cobros
-    WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmado') AS cobrado,
   (SELECT count(*) FROM mermas
     WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente')
     AS mermas,
@@ -293,15 +275,10 @@ WITH v AS (
     SELECT vendedor_id,
            count(*) AS ventas,
            sum(total) AS importe,
-           sum(total) FILTER (WHERE tipo = 'contado') AS contado,
-           sum(total) FILTER (WHERE tipo = 'credito') AS credito
+           sum(total) FILTER (WHERE forma_pago = 'efectivo') AS efectivo,
+           sum(total) FILTER (WHERE forma_pago = 'transferencia') AS transferencias
       FROM ventas
      WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmada'
-     GROUP BY vendedor_id
-), c AS (
-    SELECT vendedor_id, sum(importe) AS cobrado
-      FROM cobros
-     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'confirmado'
      GROUP BY vendedor_id
 ), m AS (
     SELECT vendedor_id, count(*) AS mermas
@@ -316,16 +293,15 @@ WITH v AS (
 )
 SELECT u.id, u.codigo, u.nombre,
        COALESCE(v.ventas, 0) AS ventas, COALESCE(v.importe, 0) AS importe,
-       COALESCE(v.contado, 0) AS contado, COALESCE(v.credito, 0) AS credito,
-       COALESCE(c.cobrado, 0) AS cobrado, COALESCE(m.mermas, 0) AS mermas,
-       COALESCE(n.no_ventas, 0) AS no_ventas
+       COALESCE(v.efectivo, 0) AS efectivo,
+       COALESCE(v.transferencias, 0) AS transferencias,
+       COALESCE(m.mermas, 0) AS mermas, COALESCE(n.no_ventas, 0) AS no_ventas
   FROM usuarios u
   LEFT JOIN v ON v.vendedor_id = u.id
-  LEFT JOIN c ON c.vendedor_id = u.id
   LEFT JOIN m ON m.vendedor_id = u.id
   LEFT JOIN n ON n.vendedor_id = u.id
  WHERE u.rol_codigo = 'vendedor'
-   AND (u.activo OR v.ventas IS NOT NULL OR c.cobrado IS NOT NULL)
+   AND (u.activo OR v.ventas IS NOT NULL)
  ORDER BY COALESCE(v.importe, 0) DESC, u.codigo
 """
 
@@ -335,8 +311,9 @@ SELECT d::date AS fecha,
                   WHERE fecha_operativa = d::date AND estado = 'confirmada'), 0) AS ventas,
        COALESCE((SELECT sum(total) FROM ventas
                   WHERE fecha_operativa = d::date AND estado = 'confirmada'), 0) AS importe,
-       COALESCE((SELECT sum(importe) FROM cobros
-                  WHERE fecha_operativa = d::date AND estado = 'confirmado'), 0) AS cobrado
+       COALESCE((SELECT sum(total) FROM ventas
+                  WHERE fecha_operativa = d::date AND estado = 'confirmada'
+                    AND forma_pago = 'efectivo'), 0) AS efectivo
   FROM generate_series(CAST(:desde AS date), CAST(:hasta AS date), interval '1 day') d
  ORDER BY 1 DESC
 """
@@ -552,8 +529,11 @@ async def reprocesar_cuarentena_web(
 # Cómo se le explica a la oficina cada motivo. El código es para el sistema; esto
 # es para la persona que tiene que decidir qué hacer.
 EXPLICACION_MOTIVOS = {
-    "excede_limite_credito": "Pasó su límite de crédito",
-    "cliente_bloqueado": "El cliente estaba bloqueado",
+    # La operación es de contado (ADR 0002 §81). Estas dos solo aparecen en
+    # ventas del piloto, cuando había crédito.
+    "excede_limite_credito": "Pasó su límite de crédito (piloto)",
+    "cliente_bloqueado": "El cliente estaba bloqueado (piloto)",
+    "venta_a_credito": "Venta a crédito de un teléfono sin actualizar: hay que cobrarla",
     "precio_desactualizado": "Vendió con un precio que ya cambió",
     "sin_lista_de_precios": "No trae lista de precios",
     "fuera_de_geocerca": "Lejos del domicilio registrado",
@@ -583,6 +563,7 @@ async def ventas(
             text(
                 f"""
                 SELECT v.id, v.folio_local, v.folio_servidor, v.total, v.tipo,
+                       v.forma_pago, v.pago_estado,
                        v.fecha_operativa, v.fecha_dispositivo, v.requiere_revision,
                        v.revision_motivos, v.distancia_cliente_m, v.desfase_reloj_seg,
                        v.estado, v.corregida_en,

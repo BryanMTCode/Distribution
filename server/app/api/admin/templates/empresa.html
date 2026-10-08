@@ -19,13 +19,6 @@
     <div class="etiqueta">prospectos</div>
     <div class="sutil" style="margin-top:6px">{{ r.clientes_inactivos }} dado(s) de baja</div>
   </a>
-  <a class="tarjeta {% if r.cartera_vencida > 0 %}aviso{% endif %}" style="text-decoration:none;color:inherit" href="/panel/cobranza">
-    <div class="numero">{{ r.cartera|dinero }}</div>
-    <div class="etiqueta">por cobrar</div>
-    <div class="sutil" style="margin-top:6px">
-      {{ r.clientes_con_saldo }} cliente(s) con saldo · vencido {{ r.cartera_vencida|dinero }}
-    </div>
-  </a>
 </div>
 
 <h2>Gente y rutas</h2>

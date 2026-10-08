@@ -121,7 +121,7 @@
     <div class="numero">{{ resumen.venta_total }}</div>
     <div class="etiqueta">vendido</div>
     <div class="sutil" style="margin-top:6px">
-      {{ resumen.venta_contado }} contado · {{ resumen.venta_credito }} crédito
+      {{ resumen.venta_efectivo }} en efectivo · {{ resumen.venta_transferencia }} por transferencia
       <div style="margin-top:4px">
         {% if referencia.lectura == 'incompleta' %}
           {{ referencia.variacion }}% contra {{ referencia.promedio }}, pero
@@ -178,18 +178,18 @@
     <div class="numero">{{ resumen.efectivo_a_entregar }}</div>
     <div class="etiqueta">efectivo a entregar</div>
     <div class="sutil" style="margin-top:6px">
-      Ventas de contado más cobros en efectivo. Es la misma cuenta que el arqueo
-      de la <a href="/panel/liquidaciones">liquidación</a>.
+      Ventas pagadas en efectivo. Es la misma cuenta que el arqueo del
+      <a href="/panel/liquidaciones">corte del día</a>.
     </div>
   </div>
 
-  <div class="tarjeta">
-    <div class="numero">{{ resumen.cobrado_total }}</div>
-    <div class="etiqueta">cobrado</div>
+  <a class="tarjeta" href="/panel/transferencias" style="text-decoration:none;color:inherit">
+    <div class="numero">{{ resumen.venta_transferencia }}</div>
+    <div class="etiqueta">por transferencia</div>
     <div class="sutil" style="margin-top:6px">
-      {{ resumen.cobrado_efectivo }} en efectivo; el resto no entra a la bolsa.
+      No entra a la bolsa: se confirma contra el banco.
     </div>
-  </div>
+  </a>
 
   <div class="tarjeta {% if resumen.mermas_documentos %}aviso{% endif %}">
     <div class="numero">{{ resumen.mermas_documentos }}</div>

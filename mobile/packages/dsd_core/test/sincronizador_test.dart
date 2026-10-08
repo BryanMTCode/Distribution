@@ -300,10 +300,10 @@ void main() {
     expect(contar('deltas_desconocidos'), equals(1));
   });
 
-  test('el delta de cartera es lo que hace funcionar el crédito local',
+  test('un delta de cartera del piloto se aplica al espejo sin romper nada',
       () async {
-    // Sin él, el dispositivo recibiría el límite pero nunca el saldo, y le
-    // diría al vendedor que un cliente endeudado tiene toda su línea libre.
+    // Ya no hay crédito (ADR 0002 §81), pero un servidor con historia todavía
+    // puede publicar uno. Se aplica al espejo y nada lo lee para vender.
     final transporte = TransporteFalso([
       Responde.pull(cambios: [
         deltaCliente(1, 'c1'),
@@ -320,16 +320,9 @@ void main() {
     expect(fila['saldo_cache'], equals(4800.0));
     expect(fila['limite_credito'], equals(5000.0));
     expect(fila['saldo_cache_en'], equals(ahoraFijo));
-
-    // Y la regla de crédito ya lo ve.
-    final repo = RepoDePrueba(db);
-    expect(repo.disponible('c1'), equals('200.00'));
   });
 
-  test('LA CARTERA TRAE LO POR CONFIRMAR, Y NO LO RESTA DEL CRÉDITO', () async {
-    // Una transferencia sin confirmar no libera línea (migración 0038 del
-    // servidor): el saldo llega completo y lo pagado viaja aparte, para que el
-    // vendedor no le vuelva a cobrar.
+  test('la cartera del piloto trae lo por confirmar', () async {
     final transporte = TransporteFalso([
       Responde.pull(cambios: [
         deltaCliente(1, 'c1'),
@@ -344,8 +337,6 @@ void main() {
     ).first;
     expect(fila['saldo_cache'], equals(4800.0));
     expect(fila['por_confirmar'], equals(800.0));
-    expect(RepoDePrueba(db).disponible('c1'), equals('200.00'),
-        reason: 'los 800 por confirmar no liberan línea');
 
     // La oficina lo confirmó: el saldo baja y lo por confirmar vuelve a cero.
     final despues = TransporteFalso([
@@ -359,7 +350,6 @@ void main() {
       ['c1'],
     ).first;
     expect(confirmada['por_confirmar'], equals(0.0));
-    expect(RepoDePrueba(db).disponible('c1'), equals('1000.00'));
   });
 
   test('una cartera de un servidor viejo, sin por_confirmar, deja cero', () async {
@@ -609,27 +599,4 @@ void main() {
     expect(r.huboActividad, isFalse);
     expect(r.fin, equals(FinDeSync.completa));
   });
-}
-
-/// Mínimo repositorio para comprobar que la regla de crédito ve el saldo que
-/// dejó el delta de cartera.
-class RepoDePrueba {
-  RepoDePrueba(this.db);
-
-  final Database db;
-
-  String disponible(String clienteId) {
-    final f = db.select(
-      'SELECT limite_credito, saldo_cache, permite_credito, bloqueado '
-      'FROM clientes WHERE id = ?',
-      [clienteId],
-    ).first;
-    final estado = EstadoCredito(
-      limite: Dinero.deTexto((f['limite_credito'] as num).toStringAsFixed(2)),
-      saldoConfirmado: Dinero.deTexto((f['saldo_cache'] as num).toStringAsFixed(2)),
-      permiteCredito: (f['permite_credito'] as int) == 1,
-      bloqueado: (f['bloqueado'] as int) == 1,
-    );
-    return estado.disponible.texto;
-  }
 }

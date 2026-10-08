@@ -168,8 +168,8 @@ class VentaDelDia {
   const VentaDelDia({
     required this.fecha,
     required this.total,
-    required this.contado,
-    required this.credito,
+    required this.efectivo,
+    required this.transferencia,
     required this.documentos,
     required this.ticketPromedio,
     required this.calculadoEn,
@@ -179,8 +179,10 @@ class VentaDelDia {
   factory VentaDelDia.deJson(Map<String, Object?> json) => VentaDelDia(
         fecha: DateTime.parse(json['fecha']! as String),
         total: _dinero(json['total']),
-        contado: _dinero(json['contado']),
-        credito: _dinero(json['credito']),
+        // Una copia guardada antes del contado (ADR 0002 §81) trae 'contado' y
+        // no 'efectivo': se lee como efectivo para no tirar la copia.
+        efectivo: _dinero(json['efectivo'] ?? json['contado'] ?? '0.00'),
+        transferencia: _dinero(json['transferencia'] ?? '0.00'),
         documentos: json['documentos']! as int,
         ticketPromedio: _dinero(json['ticket_promedio']),
         calculadoEn: _momentoOpcional(json['calculado_en']),
@@ -189,8 +191,11 @@ class VentaDelDia {
 
   final DateTime fecha;
   final Dinero total;
-  final Dinero contado;
-  final Dinero credito;
+
+  /// Todo es de contado (ADR 0002 §81): lo vendido por forma de pago. El
+  /// efectivo se entrega en el corte; la transferencia se confirma en el banco.
+  final Dinero efectivo;
+  final Dinero transferencia;
   final int documentos;
   final Dinero ticketPromedio;
   final DateTime? calculadoEn;
@@ -235,40 +240,20 @@ class VisitasDelDia {
   int get perdidas => visitas - conVenta;
 }
 
-class CobranzaDelDia {
-  const CobranzaDelDia({
-    required this.cobradoHoy,
-    required this.cobradoEfectivo,
-    required this.saldoTotal,
-    required this.saldoVencido,
-    required this.facturasVencidas,
-    required this.clientesVencidos,
-    required this.calculadoEn,
-  });
+/// Lo que espera al banco AHORA, de cualquier día: un pendiente, no un flujo.
+class TransferenciasPorConfirmar {
+  const TransferenciasPorConfirmar({required this.cuantas, required this.importe});
 
-  factory CobranzaDelDia.deJson(Map<String, Object?> json) => CobranzaDelDia(
-        cobradoHoy: _dinero(json['cobrado_hoy']),
-        cobradoEfectivo: _dinero(json['cobrado_efectivo']),
-        saldoTotal: _dinero(json['saldo_total']),
-        saldoVencido: _dinero(json['saldo_vencido']),
-        facturasVencidas: json['facturas_vencidas']! as int,
-        clientesVencidos: json['clientes_vencidos']! as int,
-        calculadoEn: _momentoOpcional(json['calculado_en']),
+  factory TransferenciasPorConfirmar.deJson(Map<String, Object?> json) =>
+      TransferenciasPorConfirmar(
+        cuantas: json['cuantas']! as int,
+        importe: _dinero(json['importe']),
       );
 
-  final Dinero cobradoHoy;
+  static const ninguna = TransferenciasPorConfirmar(cuantas: 0, importe: Dinero.cero);
 
-  /// El efectivo va aparte porque es el único que entra al arqueo de la
-  /// liquidación: una transferencia no está en la bolsa de nadie.
-  final Dinero cobradoEfectivo;
-  final Dinero saldoTotal;
-  final Dinero saldoVencido;
-  final int facturasVencidas;
-  final int clientesVencidos;
-
-  /// La cartera es un SALDO, no un flujo: su antigüedad es la del cálculo y no
-  /// la del día operativo que se está viendo.
-  final DateTime? calculadoEn;
+  final int cuantas;
+  final Dinero importe;
 }
 
 class MermasDelDia {
@@ -299,7 +284,7 @@ class RenglonVendedor {
     required this.visitas,
     required this.conVenta,
     required this.noDrops,
-    required this.cobrado,
+    required this.efectivo,
     required this.efectividad,
     this.referencia = ReferenciaDelDia.sinDatos,
     this.ultimoPush,
@@ -316,7 +301,7 @@ class RenglonVendedor {
         visitas: json['visitas']! as int,
         conVenta: json['con_venta']! as int,
         noDrops: json['no_drops']! as int,
-        cobrado: _dinero(json['cobrado']),
+        efectivo: _dinero(json['efectivo'] ?? json['cobrado'] ?? '0.00'),
         efectividad: _porcentaje(json['efectividad']),
         referencia: ReferenciaDelDia.deJson(json['referencia']),
         ultimoPush: _momentoOpcional(json['ultimo_push']),
@@ -334,7 +319,8 @@ class RenglonVendedor {
   final int visitas;
   final int conVenta;
   final int noDrops;
-  final Dinero cobrado;
+  /// Lo vendido en efectivo: lo que entrega en el corte.
+  final Dinero efectivo;
   final double efectividad;
 
   /// Su propio mismo día de la semana.
@@ -357,7 +343,7 @@ class RenglonVendedor {
   ///
   /// Ojo: un vendedor `sinSincronizar` también se ve sin actividad, y NO es lo
   /// mismo. La pantalla pregunta primero por la sincronía.
-  bool get sinActividad => visitas == 0 && cobrado.esCero;
+  bool get sinActividad => visitas == 0 && venta.esCero;
 }
 
 /// Cómo va una ruta contra su objetivo del mes.
@@ -457,7 +443,7 @@ class Tablero {
     required this.frescura,
     required this.venta,
     required this.visitas,
-    required this.cobranza,
+    required this.porConfirmar,
     required this.mermas,
     required this.vendedores,
     required this.avance,
@@ -467,8 +453,11 @@ class Tablero {
         frescura: Frescura.deJson(json['frescura']! as Map<String, Object?>),
         venta: VentaDelDia.deJson(json['venta']! as Map<String, Object?>),
         visitas: VisitasDelDia.deJson(json['visitas']! as Map<String, Object?>),
-        cobranza:
-            CobranzaDelDia.deJson(json['cobranza']! as Map<String, Object?>),
+        porConfirmar: json['por_confirmar'] == null
+            ? TransferenciasPorConfirmar.ninguna
+            : TransferenciasPorConfirmar.deJson(
+                (json['por_confirmar']! as Map).cast<String, Object?>(),
+              ),
         mermas: MermasDelDia.deJson(json['mermas']! as Map<String, Object?>),
         vendedores: ((json['vendedores'] ?? const <Object?>[]) as List)
             .cast<Map<String, Object?>>()
@@ -480,7 +469,7 @@ class Tablero {
   final Frescura frescura;
   final VentaDelDia venta;
   final VisitasDelDia visitas;
-  final CobranzaDelDia cobranza;
+  final TransferenciasPorConfirmar porConfirmar;
   final MermasDelDia mermas;
   final List<RenglonVendedor> vendedores;
   final AvanceDelMes avance;

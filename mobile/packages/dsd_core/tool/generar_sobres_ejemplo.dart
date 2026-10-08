@@ -123,6 +123,7 @@ List<SobreLocal> construirSobres() => [
               'cliente_id': _clienteDeLaVenta,
               'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
               'tipo': 'contado',
+              'forma_pago': 'efectivo',
               'lista_precios_id': _listaDePrecios,
               'lista_precios_version': 7,
               // 2 cajas a 296.0000 = 592.00, más 3 piezas a 12.3333 = 37.00.
@@ -168,14 +169,11 @@ List<SobreLocal> construirSobres() => [
         ],
       ),
 
-      // Caso 5: LA COBRANZA — una venta a crédito y, en el MISMO sobre, el cobro
-      // que la abona. Es el escenario del día de cobranza cuando el cliente
-      // liquida en el momento, y prueba lo que ningún otro caso prueba: que el
-      // servidor aplique el FIFO **sobre una factura que acaba de crear en la
-      // misma transacción**.
-      //
-      // Si el orden se rompiera, el cobro no encontraría a qué aplicarse y los
-      // $400 quedarían como saldo a favor de un cliente que sí debía.
+      // Caso 5: LA TRANSFERENCIA — una venta pagada en el acto por transferencia,
+      // con su clave de rastreo. Todo es de contado (ADR 0002 §81): el servidor
+      // la registra «por confirmar» y la oficina la busca en el banco con esa
+      // referencia. Si el nombre del campo divergiera, la venta entraría como
+      // efectivo y el corte le pediría al vendedor un dinero que no trae.
       SobreLocal(
         operacionId: '019283b0-0005-7000-8000-000000000005',
         secuencia: 4,
@@ -189,7 +187,9 @@ List<SobreLocal> construirSobres() => [
               'folio_local': 'VEND01-000125',
               'cliente_id': _clienteDeLaVenta,
               'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
-              'tipo': 'credito',
+              'tipo': 'contado',
+              'forma_pago': 'transferencia',
+              'referencia_pago': 'SPEI 4471',
               'lista_precios_id': _listaDePrecios,
               'lista_precios_version': 7,
               'subtotal': '592.00',
@@ -212,28 +212,6 @@ List<SobreLocal> construirSobres() => [
                   'importe': '592.00',
                 },
               ],
-            },
-          ),
-          OperacionLocal(
-            tipo: 'cobro.crear',
-            entidadId: '019283e2-0001-7000-8000-000000000001',
-            datos: {
-              'folio_consecutivo': 31,
-              'folio_local': 'VEND01-000031',
-              'cliente_id': _clienteDeLaVenta,
-              'dispositivo_id': '019283f0-0001-7000-8000-000000000001',
-              'visita_id': '019283c0-0005-7000-8000-000000000005',
-              // Abona parte: deja la factura en 'parcial' con $192.00. Un cobro
-              // que liquidara exacto no distinguiría el caso parcial del total.
-              'importe': '400.00',
-              'forma_pago': 'efectivo',
-              // Lo que el teléfono CREÍA que debía. Forense: el servidor no lo
-              // usa para decidir nada.
-              'saldo_cache_disp': '592.00',
-              'lat': '19.4326000',
-              'lng': '-99.1332000',
-              'fecha_dispositivo': '2026-09-29T18:12:00.000Z',
-              'fecha_operativa': '2026-09-29',
             },
           ),
         ],

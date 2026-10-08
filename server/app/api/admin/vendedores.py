@@ -32,7 +32,6 @@ PERMISO_VER = "ventas.ver_todas"
 # El orden es el del día: lo que pasa en la calle primero, lo de la oficina después.
 TIPOS: tuple[tuple[str, str], ...] = (
     ("venta", "Ventas"),
-    ("cobro", "Cobros"),
     ("merma", "Mermas, devoluciones y cambios"),
     ("no_venta", "Visitas sin venta"),
     ("cliente", "Clientes dados de alta"),
@@ -51,7 +50,13 @@ SQL_MOVIMIENTOS = """
 WITH movimientos AS (
     SELECT v.fecha_dispositivo AS momento, v.fecha_operativa AS fecha, 'venta' AS tipo,
            v.folio_local AS folio, c.nombre_comercial AS cliente,
-           CASE v.tipo WHEN 'credito' THEN 'A crédito' ELSE 'De contado' END
+           CASE WHEN v.tipo = 'credito' THEN 'A crédito (piloto)'
+                WHEN v.forma_pago = 'transferencia' THEN
+                  'Por transferencia'
+                  || CASE v.pago_estado WHEN 'por_confirmar' THEN ' · por confirmar'
+                                        WHEN 'rechazado' THEN ' · no llegó'
+                                        ELSE '' END
+                ELSE 'En efectivo' END
              || CASE WHEN v.corregida_en IS NOT NULL THEN ' · corregida en la oficina'
                      ELSE '' END AS detalle,
            v.total AS importe, v.estado, v.requiere_revision AS marca,
@@ -60,14 +65,6 @@ WITH movimientos AS (
       LEFT JOIN clientes c ON c.id = v.cliente_id
      WHERE v.vendedor_id = :v AND v.fecha_operativa BETWEEN :desde AND :hasta
 
-    UNION ALL
-    SELECT k.fecha_dispositivo, k.fecha_operativa, 'cobro', k.folio_local,
-           c.nombre_comercial, 'Abono en ' || replace(k.forma_pago, '_', ' '),
-           k.importe, replace(k.estado, '_', ' '), k.requiere_revision,
-           '/panel/cobranza/' || k.id, k.id::text
-      FROM cobros k
-      LEFT JOIN clientes c ON c.id = k.cliente_id
-     WHERE k.vendedor_id = :v AND k.fecha_operativa BETWEEN :desde AND :hasta
 
     UNION ALL
     SELECT m.fecha_dispositivo, m.fecha_operativa, 'merma', m.folio_local,
@@ -170,9 +167,12 @@ SELECT u.id, u.codigo, u.nombre, u.activo,
        (SELECT COALESCE(sum(v.total), 0) FROM ventas v
          WHERE v.vendedor_id = u.id AND v.estado = 'confirmada'
            AND v.fecha_operativa BETWEEN :desde AND :hasta) AS importe,
-       (SELECT COALESCE(sum(k.importe), 0) FROM cobros k
-         WHERE k.vendedor_id = u.id AND k.estado = 'confirmado'
-           AND k.fecha_operativa BETWEEN :desde AND :hasta) AS cobrado,
+       -- Lo que tiene que entregar en la mano: la transferencia se confirma
+       -- contra el banco, no en el corte.
+       (SELECT COALESCE(sum(v.total), 0) FROM ventas v
+         WHERE v.vendedor_id = u.id AND v.estado = 'confirmada'
+           AND v.forma_pago = 'efectivo'
+           AND v.fecha_operativa BETWEEN :desde AND :hasta) AS efectivo,
        (SELECT count(*) FROM no_drops n
          WHERE n.vendedor_id = u.id
            AND n.fecha_operativa BETWEEN :desde AND :hasta) AS no_ventas,
@@ -243,8 +243,8 @@ async def movimientos_del_vendedor(sesion, vendedor, rango: Periodo, tipo: str =
             await sesion.execute(
                 text(
                     SQL_MOVIMIENTOS
-                    # El importe solo de lo que cuenta: una venta cancelada o una
-                    # transferencia sin confirmar no son dinero.
+                    # El importe solo de lo que cuenta: una venta cancelada no es
+                    # dinero.
                     + "SELECT tipo, count(*) AS cuantos, "
                     "       COALESCE(sum(importe) FILTER ("
                     "         WHERE estado IS NULL OR estado IN ('confirmada', 'confirmado', "

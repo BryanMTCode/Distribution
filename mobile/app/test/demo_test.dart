@@ -93,41 +93,25 @@ void main() {
       sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
 
       final clientes = base.db.select(
-        'SELECT nombre_comercial, permite_credito, bloqueado, limite_credito, '
-        'saldo_cache FROM clientes ORDER BY secuencia',
+        'SELECT nombre_comercial, lat, lng FROM clientes ORDER BY secuencia',
       );
       expect(clientes, hasLength(5));
-
-      // Los cuatro estados de crédito que la lista tiene que distinguir.
-      expect(clientes.any((c) => c['permite_credito'] == 0), isTrue,
-          reason: 'falta un cliente de solo contado');
-      expect(clientes.any((c) => c['bloqueado'] == 1), isTrue,
-          reason: 'falta un cliente bloqueado');
-      expect(
-        clientes.any((c) =>
-            c['permite_credito'] == 1 &&
-            (c['saldo_cache'] as num) >= (c['limite_credito'] as num)),
-        isTrue,
-        reason: 'falta un cliente con el crédito agotado',
-      );
-      expect(
-        clientes.any((c) =>
-            c['permite_credito'] == 1 &&
-            (c['saldo_cache'] as num) < (c['limite_credito'] as num)),
-        isTrue,
-        reason: 'falta un cliente con crédito disponible',
-      );
+      // Todos con ubicación: la venta los busca por geocerca.
+      expect(clientes.every((c) => c['lat'] != null && c['lng'] != null), isTrue);
     });
 
-    test('incluye una venta encolada para ver el crédito ya descontado', () {
+    test('incluye una transferencia encolada para verla aparte del efectivo', () {
       final base = BaseLocal.enMemoria();
       addTearDown(base.cerrar);
       sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
 
       final ventas = base.db.select(
-        "SELECT cliente_id, total FROM ventas WHERE sincronizada = 0 AND tipo = 'credito'",
+        'SELECT tipo, forma_pago FROM ventas WHERE sincronizada = 0',
       );
       expect(ventas, isNotEmpty);
+      // Todo es de contado (ADR 0002 §81).
+      expect(ventas.every((v) => v['tipo'] == 'contado'), isTrue);
+      expect(ventas.any((v) => v['forma_pago'] == 'transferencia'), isTrue);
     });
 
     test('sembrar dos veces no duplica', () {

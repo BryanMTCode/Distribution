@@ -13,7 +13,6 @@ from fastapi.responses import RedirectResponse
 from app.api.admin import arranque as panel_arranque
 from app.api.admin import cargas as panel_cargas
 from app.api.admin import clientes as panel_clientes
-from app.api.admin import cobranza as panel_cobranza
 from app.api.admin import compras as panel_compras
 from app.api.admin import cuenta_vendedores as panel_cuenta_vendedores
 from app.api.admin import desempeno as panel_desempeno
@@ -33,6 +32,7 @@ from app.api.admin import plan_visita as panel_plan_visita
 from app.api.admin import productos as panel_productos
 from app.api.admin import salidas as panel_salidas
 from app.api.admin import sincronizaciones as panel_sincronizaciones
+from app.api.admin import transferencias as panel_transferencias
 from app.api.admin import vendedores as panel_vendedores
 from app.api.admin import ventas as panel_ventas
 from app.api.admin.sesion_web import SinSesionWeb
@@ -139,9 +139,9 @@ def crear_app() -> FastAPI:
     app.include_router(panel_salidas.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_ventas.router)
+    app.include_router(panel_transferencias.router)
     app.include_router(panel_liquidaciones.router)
     app.include_router(panel_plan_visita.router)
-    app.include_router(panel_cobranza.router)
     app.include_router(panel_cuenta_vendedores.router)
     app.include_router(panel_vendedores.router)
     app.include_router(panel_empresa.router)

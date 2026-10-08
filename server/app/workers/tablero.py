@@ -24,7 +24,6 @@ from app.domain.tablero import (
     MAXIMO_DIAS_POR_CORRIDA,
     SQL_BORRAR_DIA,
     SQL_BORRAR_MES_RUTA,
-    SQL_CARTERA,
     SQL_DIA_VENDEDOR,
     SQL_DIAS_SUCIOS,
     SQL_ESTADO_DEL_MUNDO,
@@ -37,7 +36,6 @@ log = logging.getLogger("dsd.tablero")
 
 __all__ = [
     "dias_a_recalcular",
-    "recalcular_cartera",
     "recalcular_dia",
     "recalcular_mes",
     "asegurar_fresco",
@@ -100,19 +98,14 @@ async def recalcular_mes(sesion: AsyncSession, periodo: date) -> int:
     ).scalar_one()
 
 
-async def recalcular_cartera(sesion: AsyncSession) -> None:
-    """La cartera entera. Es un saldo, así que no se recalcula "por día"."""
-    await sesion.execute(text(SQL_CARTERA))
-
-
 async def recalcular_todo(sesion: AsyncSession, hoy: date | None = None) -> dict:
-    """Una corrida completa: días rancios, sus meses, la cartera y el sello.
+    """Una corrida completa: días rancios, sus meses y el sello.
 
     Hace **commit al final**, en una sola transacción. Al contrario que el
     refresh de la analítica —que commitea por vista porque cada una tarda
     segundos y sirve por separado— aquí las cifras se leen juntas en una sola
-    pantalla: un commit parcial dejaría la venta del día ya actualizada y la
-    cobranza de hace media hora, y nadie podría explicar la diferencia.
+    pantalla: un commit parcial dejaría la venta del día ya actualizada y el
+    mes de hace media hora, y nadie podría explicar la diferencia.
     """
     arranque = time.monotonic()
     # El worker y `asegurar_fresco` (la pantalla que lo pide) no pueden borrar e
@@ -127,8 +120,6 @@ async def recalcular_todo(sesion: AsyncSession, hoy: date | None = None) -> dict
     # treinta días rancios del mismo mes repetiría el mismo mes treinta veces.
     for periodo in sorted({inicio_de_mes(d) for d in dias}, reverse=True):
         await recalcular_mes(sesion, periodo)
-
-    await recalcular_cartera(sesion)
 
     mundo = (await sesion.execute(text(SQL_ESTADO_DEL_MUNDO))).mappings().one()
     duracion_ms = int((time.monotonic() - arranque) * 1000)

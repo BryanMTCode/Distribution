@@ -63,13 +63,18 @@ void main() {
   ExistenciasCamion camion({int sopa = 240}) =>
       ExistenciasCamion({'p-sopa': Cantidad.deEnteros(sopa)});
 
-  Carrito conCajas(int cuantas, {bool aCredito = false, int enCamion = 240}) {
+  Carrito conCajas(
+    int cuantas, {
+    FormaDePago forma = FormaDePago.efectivo,
+    String? referencia,
+    int enCamion = 240,
+  }) {
     final r = const Carrito().agregar(
       caja(),
       Cantidad.deEnteros(cuantas),
       existencias: camion(sopa: enCamion),
     );
-    return r.carrito.conFormaDePago(aCredito: aCredito);
+    return r.carrito.conFormaDePago(forma, referencia: referencia);
   }
 
   setUp(() {
@@ -106,8 +111,8 @@ void main() {
     // la siguiente venta tomaba un folio ya usado y el vendedor veía «No se
     // guardó la venta» cada vez.
     test('el mismo rango con lo consumido atrasado no retrocede el contador', () {
-      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
-      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1');
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1');
 
       folios.guardar(
         RangoFolios(tipo: 'venta', desde: 1, hasta: 500, consumidoHasta: 0),
@@ -115,17 +120,17 @@ void main() {
       );
 
       final tercera =
-          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       expect(tercera.folioConsecutivo, equals(3));
     });
 
     test('aunque el contador guardado esté atrás, manda el último folio escrito', () {
-      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       // Como lo dejaba la versión anterior: el contador rebobinado a mano.
       db.execute("UPDATE folios_rangos SET consumido_hasta = 0 WHERE tipo = 'venta'");
 
       final siguiente =
-          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       expect(siguiente.folioConsecutivo, equals(2));
       expect(db.select('SELECT COUNT(*) AS n FROM ventas').single['n'], equals(2));
     });
@@ -136,7 +141,7 @@ void main() {
         asignadoEn: '2026-10-07T09:00:00.000Z',
       );
       final venta =
-          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       expect(venta.folioConsecutivo, equals(501));
     });
   });
@@ -146,7 +151,6 @@ void main() {
       final guardada = cierre().cerrar(
         conCajas(2),
         clienteId: 'cli-1',
-        creditoPermitido: true,
       );
 
       expect(guardada.folioConsecutivo, equals(1));
@@ -157,6 +161,7 @@ void main() {
       final venta = db.select('SELECT * FROM ventas').single;
       expect(venta['folio_local'], equals('VEND01-000001'));
       expect(venta['tipo'], equals('contado'));
+      expect(venta['forma_pago'], equals('efectivo'));
       expect(venta['estado'], equals('confirmada'));
       expect(venta['sincronizada'], equals(0));
       expect(venta['total'], equals(592.0));
@@ -194,7 +199,7 @@ void main() {
       // versión anterior lo rellenaba mutando el payload dentro de la
       // transacción, y eso solo funcionaba por el orden interno de `encolar`:
       // reordenar dos líneas habría mandado al servidor ventas con folio 0.
-      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1');
 
       final sobre = outbox.siguienteLote().single;
       final operacion = (sobre.payload['operaciones'] as List).first as Map;
@@ -204,6 +209,9 @@ void main() {
       expect(datos['folio_local'], equals('VEND01-000001'));
       expect(datos['total'], equals('296.00'));
       expect(datos['tipo'], equals('contado'));
+      expect(datos['forma_pago'], equals('efectivo'));
+      // Sin transferencia, no viaja referencia de banco.
+      expect(datos.containsKey('referencia_pago'), isFalse);
       expect(datos['lista_precios_version'], equals(7));
 
       final partidas = datos['partidas'] as List;
@@ -217,7 +225,7 @@ void main() {
     });
 
     test('el hash del sobre corresponde a su contenido', () {
-      cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       final sobre = outbox.siguienteLote().single;
 
       // El mismo hash que va a recalcular el servidor. Si no coincidiera, el
@@ -232,7 +240,7 @@ void main() {
       c = c.agregar(caja(), Cantidad.deEnteros(2), existencias: camion()).carrito;
       c = c.agregar(pieza(), Cantidad.deEnteros(3), existencias: camion()).carrito;
 
-      cierre().cerrar(c, clienteId: 'cli-1', creditoPermitido: true);
+      cierre().cerrar(c, clienteId: 'cli-1');
 
       // 2×24 + 3 = 51 unidades base.
       final existencia =
@@ -241,26 +249,33 @@ void main() {
       expect(db.select('SELECT * FROM venta_partidas'), hasLength(2));
     });
 
-    test('a crédito queda marcada como crédito y sin sincronizar', () {
-      // Es la fila que baja el disponible que ve el vendedor en la lista, antes
-      // de que el servidor sepa nada.
-      cierre().cerrar(
-        conCajas(1, aCredito: true),
+    test('por transferencia viaja con su referencia y queda de contado', () {
+      // Todo es de contado (ADR 0002 §81): la transferencia es una forma de
+      // pagar en el acto, no un crédito.
+      final g = cierre().cerrar(
+        conCajas(1, forma: FormaDePago.transferencia, referencia: 'SPEI 4471'),
         clienteId: 'cli-1',
-        creditoPermitido: true,
       );
+      expect(g.formaDePago, FormaDePago.transferencia);
+      expect(g.referenciaPago, 'SPEI 4471');
 
       final venta = db.select(
-        "SELECT tipo, sincronizada FROM ventas WHERE tipo = 'credito'",
+        'SELECT tipo, forma_pago, referencia_pago, sincronizada FROM ventas',
       ).single;
-      expect(venta['sincronizada'], equals(0));
+      expect(
+        [venta['tipo'], venta['forma_pago'], venta['referencia_pago'], venta['sincronizada']],
+        ['contado', 'transferencia', 'SPEI 4471', 0],
+      );
+      final datos = ((outbox.siguienteLote().single.payload['operaciones'] as List).first
+          as Map)['datos'] as Map;
+      expect(datos['forma_pago'], 'transferencia');
+      expect(datos['referencia_pago'], 'SPEI 4471');
     });
 
     test('el geosello se guarda con su precisión', () {
       cierre().cerrar(
         conCajas(1),
         clienteId: 'cli-1',
-        creditoPermitido: true,
         ubicacion: Ubicacion(
           lat: 20.6597,
           lng: -103.3496,
@@ -278,7 +293,7 @@ void main() {
       // Dentro de un mercado techado no hay satélite, y la venta ocurre de todos
       // modos. Exigir coordenadas sería impedir vender.
       final guardada =
-          cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+          cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       expect(guardada.ubicacion, isNull);
 
       final venta = db.select('SELECT lat FROM ventas').single;
@@ -288,8 +303,8 @@ void main() {
 
   group('los folios', () {
     test('avanzan uno por venta', () {
-      final a = cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
-      final b = cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      final a = cierre().cerrar(conCajas(1), clienteId: 'cli-1');
+      final b = cierre().cerrar(conCajas(1), clienteId: 'cli-1');
 
       expect(a.folioConsecutivo, equals(1));
       expect(b.folioConsecutivo, equals(2));
@@ -301,7 +316,7 @@ void main() {
       db.execute('DELETE FROM folios_rangos');
 
       expect(
-        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1'),
         throwsA(
           isA<VentaRechazada>().having(
             (e) => e.motivo,
@@ -321,7 +336,7 @@ void main() {
       );
 
       expect(
-        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1'),
         throwsA(
           isA<VentaRechazada>()
               .having((e) => e.motivo, 'motivo', MotivoNoVenta.sinFolios),
@@ -335,7 +350,7 @@ void main() {
         RangoFolios(tipo: 'venta', desde: 1, hasta: 60, consumidoHasta: 20),
         asignadoEn: '2026-09-29T07:00:00.000Z',
       );
-      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1');
 
       // Quedarse sin folios a media ruta significa no poder vender.
       expect(g.foliosRestantes, equals(39));
@@ -350,7 +365,7 @@ void main() {
       db.execute("UPDATE existencias_camion SET cant_actual = 10");
 
       expect(
-        () => cierre().cerrar(conCajas(2), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(conCajas(2), clienteId: 'cli-1'),
         throwsA(
           isA<VentaRechazada>()
               .having((e) => e.motivo, 'motivo', MotivoNoVenta.sinExistencia),
@@ -374,13 +389,13 @@ void main() {
       // explicar en una auditoría; un duplicado es peor.
       db.execute("UPDATE existencias_camion SET cant_actual = 10");
       expect(
-        () => cierre().cerrar(conCajas(2), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(conCajas(2), clienteId: 'cli-1'),
         throwsA(isA<VentaRechazada>()),
       );
 
       db.execute("UPDATE existencias_camion SET cant_actual = 240");
       final buena =
-          cierre().cerrar(conCajas(2), clienteId: 'cli-1', creditoPermitido: true);
+          cierre().cerrar(conCajas(2), clienteId: 'cli-1');
 
       expect(buena.folioConsecutivo, equals(1));
       expect(buena.folioLocal, equals('VEND01-000001'));
@@ -390,7 +405,7 @@ void main() {
       db.execute('DELETE FROM existencias_camion');
 
       expect(
-        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(conCajas(1), clienteId: 'cli-1'),
         throwsA(isA<VentaRechazada>()),
       );
       expect(db.select('SELECT * FROM ventas'), isEmpty);
@@ -401,7 +416,7 @@ void main() {
   group('lo que no se puede cerrar', () {
     test('un carrito vacío', () {
       expect(
-        () => cierre().cerrar(const Carrito(), clienteId: 'cli-1', creditoPermitido: true),
+        () => cierre().cerrar(const Carrito(), clienteId: 'cli-1'),
         throwsA(
           isA<VentaRechazada>()
               .having((e) => e.motivo, 'motivo', MotivoNoVenta.carritoVacio),
@@ -409,30 +424,6 @@ void main() {
       );
     });
 
-    test('a crédito cuando el crédito no lo permite', () {
-      expect(
-        () => cierre().cerrar(
-          conCajas(1, aCredito: true),
-          clienteId: 'cli-1',
-          creditoPermitido: false,
-        ),
-        throwsA(
-          isA<VentaRechazada>()
-              .having((e) => e.motivo, 'motivo', MotivoNoVenta.creditoRechazado),
-        ),
-      );
-      expect(db.select('SELECT * FROM ventas'), isEmpty);
-    });
-
-    test('de contado sí se cierra aunque el crédito esté negado', () {
-      // Negar la venta de contado no cobra la deuda vieja y sí pierde la nueva.
-      final g = cierre().cerrar(
-        conCajas(1),
-        clienteId: 'cli-1',
-        creditoPermitido: false,
-      );
-      expect(g.folioConsecutivo, equals(1));
-    });
   });
 
   group('la impresión', () {
@@ -440,7 +431,7 @@ void main() {
       // Decisión de negocio: el vendedor toca "Imprimir" DESPUÉS de que la venta
       // se guardó. Si fuera automática y la impresora estuviera sin papel, la
       // venta ya estaría escrita y no habría dónde reintentar.
-      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       expect(db.select('SELECT impreso FROM ventas').single['impreso'], equals(0));
 
       cierre().marcarImpresa(g.id, ticket: [27, 64, 72, 79, 76, 65]);
@@ -454,7 +445,7 @@ void main() {
     test('la segunda cuenta como reimpresión y no cambia el ticket', () {
       // Una reimpresión tiene que salir IDÉNTICA al original —marcada como
       // copia—, así que el payload congelado no se vuelve a calcular.
-      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1', creditoPermitido: true);
+      final g = cierre().cerrar(conCajas(1), clienteId: 'cli-1');
       cierre().marcarImpresa(g.id, ticket: [1, 2, 3]);
       cierre().marcarImpresa(g.id, ticket: [9, 9, 9]);
       cierre().marcarImpresa(g.id, ticket: [9, 9, 9]);

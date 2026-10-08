@@ -85,14 +85,16 @@ void main() {
     expect(vuelto.carrito.total, equals(Dinero.deTexto('296.00')));
   });
 
-  test('conserva la forma de pago', () {
+  test('conserva la forma de pago y la referencia', () {
     final c = const Carrito()
-        .conFormaDePago(aCredito: true)
+        .conFormaDePago(FormaDePago.transferencia, referencia: 'SPEI 4471')
         .agregar(caja(), Cantidad.deEnteros(1), existencias: camion())
         .carrito;
 
     repo.guardar('cli-1', c, ahora: '2026-09-29T10:00:00.000Z');
-    expect(repo.leer()!.carrito.aCredito, isTrue);
+    final vuelto = repo.leer()!.carrito;
+    expect(vuelto.formaDePago, FormaDePago.transferencia);
+    expect(vuelto.referenciaPago, 'SPEI 4471');
   });
 
   test('guardar un carrito vacío borra el borrador', () {
@@ -133,8 +135,8 @@ void main() {
     // descarta y se empieza de cero: es lo mismo que pasaría sin borrador, y
     // mucho mejor que una app que no abre.
     db.execute(
-      "INSERT INTO carrito_borrador (id, cliente_id, a_credito, lineas_json, "
-      "actualizado_en) VALUES (1, 'cli-1', 0, '{no es json', '2026-09-29')",
+      "INSERT INTO carrito_borrador (id, cliente_id, lineas_json, "
+      "actualizado_en) VALUES (1, 'cli-1', '{no es json', '2026-09-29')",
     );
 
     expect(repo.leer(), isNull);
@@ -147,8 +149,8 @@ void main() {
 
   test('un borrador con una línea incompleta tampoco tumba la app', () {
     db.execute(
-      "INSERT INTO carrito_borrador (id, cliente_id, a_credito, lineas_json, "
-      "actualizado_en) VALUES (1, 'cli-1', 0, "
+      "INSERT INTO carrito_borrador (id, cliente_id, lineas_json, "
+      "actualizado_en) VALUES (1, 'cli-1', "
       "'[{\"cantidad\":\"1.000\"}]', '2026-09-29')",
     );
     expect(repo.leer(), isNull);

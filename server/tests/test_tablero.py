@@ -11,8 +11,9 @@ este dé un número que *parece* bien:
    mismo día son UNA visita. La misma definición que `fact_visitas` y que la
    pantalla de efectividad; si las tres no coinciden, las tres son inservibles.
 
-2. **Perder al vendedor que solo cobró.** Un `JOIN` desde ventas desaparecería
-   del tablero al vendedor que no vendió nada — justo el que hay que ver.
+2. **Perder al vendedor que no vendió.** Un `JOIN` desde ventas desaparecería
+   del tablero al vendedor que solo registró visitas sin venta — justo el que
+   hay que ver.
 
 3. **Dejar vivo un renglón cuyo documento se canceló.** Con
    `ON CONFLICT DO UPDATE`, el vendedor cuya única venta se canceló seguiría en
@@ -42,7 +43,6 @@ from sqlalchemy import text
 from app.domain.tablero import Avance, Frescura, inicio_de_mes
 from app.workers.tablero import (
     dias_a_recalcular,
-    recalcular_cartera,
     recalcular_dia,
     recalcular_mes,
     recalcular_todo,
@@ -59,7 +59,8 @@ from app.workers.tablero import (
 # ---------------------------------------------------------------------------
 @pytest.fixture
 async def jornada(sesion, semilla) -> dict:
-    """Un día real: 4 clientes, 3 ventas (una partida en dos), 2 no-drops, cobros.
+    """Un día real: 4 clientes, 3 ventas (una partida en dos, una por
+    transferencia), 2 no-drops.
 
     Las cifras están elegidas para que cada error dé un número distinto:
 
@@ -97,17 +98,17 @@ async def jornada(sesion, semilla) -> dict:
 
     folio = [0]
 
-    async def venta(a_quien, total, *, tipo="contado", dia=None, con_ruta=True, lat=None):
+    async def venta(a_quien, total, *, forma="efectivo", dia=None, con_ruta=True, lat=None):
         folio[0] += 1
         vid = uuid.uuid4()
         await sesion.execute(
             text(
                 """
                 INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
-                                    cliente_id, vendedor_id, ruta_id, almacen_id, tipo,
-                                    subtotal, total, lat, lng,
+                                    cliente_id, vendedor_id, ruta_id, almacen_id,
+                                    forma_pago, subtotal, total, lat, lng,
                                     fecha_dispositivo, fecha_operativa)
-                VALUES (:v, :d, :f, :fl, :c, :u, :r, :a, :tipo,
+                VALUES (:v, :d, :f, :fl, :c, :u, :r, :a, :forma,
                         :total, :total, :lat, :lng, :ahora, :dia)
                 """
             ),
@@ -120,7 +121,7 @@ async def jornada(sesion, semilla) -> dict:
                 "u": semilla["vendedor"],
                 "r": semilla["ruta"] if con_ruta else None,
                 "a": semilla["camion"],
-                "tipo": tipo,
+                "forma": forma,
                 "total": total,
                 "lat": lat,
                 "lng": -103.3440 if lat is not None else None,
@@ -154,39 +155,12 @@ async def jornada(sesion, semilla) -> dict:
             },
         )
 
-    async def cobro(a_quien, importe, forma="efectivo", dia=None):
-        folio[0] += 1
-        await sesion.execute(
-            text(
-                """
-                INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
-                                    cliente_id, vendedor_id, importe, forma_pago,
-                                    fecha_dispositivo, fecha_operativa)
-                VALUES (:id, :d, :f, :fl, :c, :u, :imp, :forma, :ahora, :dia)
-                """
-            ),
-            {
-                "id": uuid.uuid4(),
-                "d": dispositivo,
-                "f": folio[0],
-                "fl": f"VEND01-A{folio[0]:06d}",
-                "c": a_quien,
-                "u": semilla["vendedor"],
-                "imp": importe,
-                "forma": forma,
-                "ahora": ahora,
-                "dia": dia or hoy,
-            },
-        )
-
     # Mary compró y el pedido se partió en DOS remisiones: una visita.
     await venta(clientes["Mary"], Decimal("500.00"), lat=20.6740)
     await venta(clientes["Mary"], Decimal("500.00"))
-    await venta(clientes["Puente"], Decimal("1200.00"), tipo="credito")
+    await venta(clientes["Puente"], Decimal("1200.00"), forma="transferencia")
     await no_drop(clientes["Esquina"], "CERRADO")            # del cliente
     await no_drop(clientes["Pinos"], "AGOTADO_EN_CAMION")    # nuestro
-    await cobro(clientes["Mary"], Decimal("300.00"))
-    await cobro(clientes["Puente"], Decimal("450.00"), forma="transferencia")
     await sesion.commit()
 
     return {
@@ -195,7 +169,6 @@ async def jornada(sesion, semilla) -> dict:
         "dia": hoy,
         "venta": venta,
         "no_drop": no_drop,
-        "cobro": cobro,
     }
 
 
@@ -212,12 +185,11 @@ async def test_el_dia_se_resume_por_vendedor(sesion, semilla, jornada):
     ).mappings().one()
 
     assert Decimal(fila["venta_total"]) == Decimal("2200.00")
-    assert Decimal(fila["venta_contado"]) == Decimal("1000.00")
-    assert Decimal(fila["venta_credito"]) == Decimal("1200.00")
+    # El efectivo se separa porque es el único que entra al arqueo; la
+    # transferencia se confirma contra el banco.
+    assert Decimal(fila["venta_efectivo"]) == Decimal("1000.00")
+    assert Decimal(fila["venta_transferencia"]) == Decimal("1200.00")
     assert fila["documentos_venta"] == 3
-    assert Decimal(fila["cobrado_total"]) == Decimal("750.00")
-    # El efectivo se separa porque es el único que entra al arqueo.
-    assert Decimal(fila["cobrado_efectivo"]) == Decimal("300.00")
 
 
 async def test_una_visita_es_un_cliente_no_un_documento(sesion, semilla, jornada):
@@ -275,7 +247,7 @@ async def test_los_no_drops_nuestros_se_separan_de_los_del_cliente(
     assert fila["no_drops_nuestros"] == 1
 
 
-async def test_el_vendedor_que_solo_cobro_aparece(sesion, semilla, jornada):
+async def test_el_vendedor_que_no_vendio_aparece(sesion, semilla, jornada):
     """Un JOIN desde ventas lo desaparecería: es el que hay que ver."""
     otro = uuid.uuid4()
     dispositivo = uuid.uuid4()
@@ -299,10 +271,10 @@ async def test_el_vendedor_que_solo_cobro_aparece(sesion, semilla, jornada):
     await sesion.execute(
         text(
             """
-            INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
-                                cliente_id, vendedor_id, importe, forma_pago,
-                                fecha_dispositivo, fecha_operativa)
-            VALUES (:id, :d, 1, 'VEND02-A000001', :c, :u, 900, 'efectivo', now(), :dia)
+            INSERT INTO no_drops (id, dispositivo_id, folio_consecutivo, cliente_id,
+                                  vendedor_id, motivo_codigo, lat, lng,
+                                  fecha_dispositivo, fecha_operativa)
+            VALUES (:id, :d, 1, :c, :u, 'CERRADO', 20.6736, -103.3440, now(), :dia)
             """
         ),
         {
@@ -318,15 +290,13 @@ async def test_el_vendedor_que_solo_cobro_aparece(sesion, semilla, jornada):
 
     fila = (
         await sesion.execute(
-            text("SELECT venta_total, cobrado_total, visitas FROM tablero_dia "
+            text("SELECT venta_total, no_drops, visitas FROM tablero_dia "
                  " WHERE fecha = :f AND vendedor_id = :v"),
             {"f": jornada["dia"], "v": otro},
         )
     ).mappings().one()
     assert Decimal(fila["venta_total"]) == Decimal("0.00")
-    assert Decimal(fila["cobrado_total"]) == Decimal("900.00")
-    # Un cobro NO es una visita: la visita es una venta o un no-drop.
-    assert fila["visitas"] == 0
+    assert (fila["no_drops"], fila["visitas"]) == (1, 1)
 
 
 async def test_un_dia_sin_operacion_deja_renglon_en_cero_para_hoy(sesion, semilla):
@@ -385,7 +355,7 @@ async def test_cancelar_la_unica_venta_borra_el_renglon(sesion, semilla, jornada
             {"f": jornada["dia"], "v": semilla["vendedor"]},
         )
     ).mappings().one()
-    # Sigue existiendo porque hubo no-drops y cobros, pero sin venta.
+    # Sigue existiendo porque hubo no-drops, pero sin venta.
     assert Decimal(fila["venta_total"]) == Decimal("0.00")
     assert fila["visitas"] == 2   # los dos no-drops
 
@@ -471,7 +441,7 @@ async def test_cancelar_una_venta_deja_rancio_el_dia(sesion, semilla, jornada):
 
 
 # ---------------------------------------------------------------------------
-# El mes por ruta y la cartera
+# El mes por ruta
 # ---------------------------------------------------------------------------
 async def test_el_mes_por_ruta_suma_y_cuenta_dias(sesion, semilla, jornada):
     hoy = date.today()
@@ -528,40 +498,6 @@ async def test_el_mes_por_ruta_deja_fuera_lo_que_no_trae_ruta(sesion, semilla, j
         )
     ).scalar_one()
     assert Decimal(total) == Decimal("3199.00")
-
-
-async def test_la_cartera_se_reparte_en_tramos_de_antiguedad(sesion, semilla, jornada):
-    hoy = date.today()
-    venta_id = await jornada["venta"](
-        jornada["clientes"]["Mary"], Decimal("1000.00"), tipo="credito"
-    )
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO cuentas_por_cobrar (venta_id, cliente_id, importe_original,
-                                            importe_pagado, fecha_emision,
-                                            fecha_vencimiento, estado)
-            VALUES (:v, :c, 1000, 0, :emision, :vence, 'abierta')
-            """
-        ),
-        {
-            "v": venta_id,
-            "c": jornada["clientes"]["Mary"],
-            "emision": hoy - timedelta(days=30),
-            "vence": hoy - timedelta(days=20),
-        },
-    )
-    await sesion.commit()
-    await recalcular_cartera(sesion)
-
-    fila = (
-        await sesion.execute(text("SELECT * FROM tablero_cartera WHERE id"))
-    ).mappings().one()
-    assert Decimal(fila["saldo_total"]) == Decimal("1000.00")
-    assert Decimal(fila["saldo_vencido"]) == Decimal("1000.00")
-    assert Decimal(fila["vencido_16_30"]) == Decimal("1000.00")
-    assert Decimal(fila["vencido_1_15"]) == Decimal("0.00")
-    assert fila["clientes_vencidos"] == 1
 
 
 # ---------------------------------------------------------------------------

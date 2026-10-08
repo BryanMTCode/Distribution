@@ -41,7 +41,8 @@ PresentacionVendible _presentacion({
     );
 
 VentaGuardada _venta({
-  required bool aCredito,
+  required FormaDePago forma,
+  String? referencia,
   required List<LineaCarrito> lineas,
   int foliosRestantes = 376,
 }) {
@@ -53,7 +54,8 @@ VentaGuardada _venta({
     folioLocal: 'VEND01-000124',
     visitaId: 'vis-1',
     clienteId: 'cli-1',
-    aCredito: aCredito,
+    formaDePago: forma,
+    referenciaPago: referencia,
     subtotal: suma,
     total: suma,
     lineas: lineas,
@@ -68,7 +70,7 @@ List<(String, List<int>)> _casos() {
   // Una venta de contado, mezclando caja y pieza, con el precio de 4 decimales
   // que hace que 24 piezas valgan 296.00 y no 295.92.
   final contado = _venta(
-    aCredito: false,
+    forma: FormaDePago.efectivo,
     lineas: [
       LineaCarrito(
         presentacion: _presentacion(
@@ -110,8 +112,9 @@ List<(String, List<int>)> _casos() {
     ],
   );
 
-  final credito = _venta(
-    aCredito: true,
+  final transferencia = _venta(
+    forma: FormaDePago.transferencia,
+    referencia: 'BNET01002610080000123456789012',
     lineas: [
       LineaCarrito(
         presentacion: _presentacion(
@@ -138,10 +141,10 @@ List<(String, List<int>)> _casos() {
       ticketDeVenta(contado, negocio: _negocio, visita: visita);
 
   return [
-    ('CONTADO — cuatro renglones, uno con nombre largo', original),
+    ('EFECTIVO — cuatro renglones, uno con nombre largo', original),
     (
-      'CREDITO — con firma de recibido y sin saldo impreso',
-      ticketDeVenta(credito, negocio: _negocio, visita: visita)
+      'TRANSFERENCIA — con su clave de rastreo completa',
+      ticketDeVenta(transferencia, negocio: _negocio, visita: visita)
     ),
     (
       'REIMPRESION — los bytes del original, con aviso de copia',

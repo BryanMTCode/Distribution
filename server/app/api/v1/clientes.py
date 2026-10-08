@@ -1,4 +1,9 @@
-"""Clientes y su situación de crédito."""
+"""Clientes: la lista de la ruta, el alta y sus condiciones.
+
+La operación es de contado (ADR 0002 §81): aquí ya no hay crédito, cartera ni
+evaluación de crédito. Las columnas de crédito de `clientes` se quedan en la base
+como historia del piloto, sin que nada las lea.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, text
 
 from app.api.deps import ROLES_DE_OFICINA, ActorDep, SesionDep
-from app.api.esquemas import Dinero, EntradaBase, EsquemaBase
-from app.domain.credito import EstadoCredito, evaluar_venta
+from app.api.esquemas import EntradaBase, EsquemaBase
 from app.domain.identificadores import nuevo_id
 from app.infra.models import Cliente
 
@@ -29,10 +33,6 @@ class ClienteSalida(EsquemaBase):
     lat: Decimal | None
     lng: Decimal | None
     ubicacion_origen: str | None
-    permite_credito: bool
-    limite_credito: Dinero
-    dias_credito: int
-    bloqueado: bool
     estatus: str
     origen_alta: str
     requiere_revision: bool
@@ -105,10 +105,9 @@ async def listar_clientes(
 class ClienteEntrada(EntradaBase):
     """Alta de cliente.
 
-    Nótese lo que NO está aquí: `limite_credito`, `permite_credito` y
-    `bloqueado`. Las condiciones comerciales son propiedad del servidor y se
-    fijan con `clientes.administrar`, no al dar de alta desde la calle. Un
-    cliente nuevo nace sin línea de crédito.
+    Las condiciones comerciales (lista de precios, ruta, estatus) son propiedad
+    del servidor y se fijan con `clientes.administrar`, no al dar de alta desde
+    la calle.
     """
 
     id: uuid.UUID | None = Field(
@@ -176,7 +175,8 @@ async def crear_cliente(
         ubicacion_precision_m=entrada.ubicacion_precision_m,
         ubicacion_origen=entrada.ubicacion_origen,
         ubicacion_capturada_en=ahora if entrada.lat is not None else None,
-        # Un cliente nuevo nace SIN crédito. La línea la abre la oficina.
+        # Las columnas de crédito son historia del piloto (ADR 0002 §81): un
+        # cliente nuevo nace sin él, y nada lo abre.
         permite_credito=False,
         limite_credito=Decimal("0"),
         dias_credito=0,
@@ -196,11 +196,6 @@ async def crear_cliente(
 class CondicionesEntrada(EntradaBase):
     """Condiciones comerciales: propiedad exclusiva del servidor."""
 
-    permite_credito: bool | None = None
-    limite_credito: Decimal | None = Field(default=None, ge=0)
-    dias_credito: int | None = Field(default=None, ge=0, le=180)
-    bloqueado: bool | None = None
-    bloqueo_motivo: str | None = None
     lista_precios_id: uuid.UUID | None = None
     ruta_id: uuid.UUID | None = None
     secuencia: int | None = Field(default=None, ge=0)
@@ -221,103 +216,9 @@ async def fijar_condiciones(
         "prospecto", "activo", "inactivo", "baja"
     ):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"estatus inválido: {estatus}")
-    if cambios.get("bloqueado") and not cambios.get("bloqueo_motivo", cliente.bloqueo_motivo):
-        # Un bloqueo sin motivo es una decisión que nadie puede revisar después.
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "bloquear a un cliente exige un motivo"
-        )
 
     for campo, valor in cambios.items():
         setattr(cliente, campo, valor)
     cliente.actualizado_en = datetime.now(UTC)
     await sesion.commit()
     return ClienteSalida.model_validate(cliente)
-
-
-# ---------------------------------------------------------------------------
-# Crédito
-# ---------------------------------------------------------------------------
-
-class Cartera(BaseModel):
-    cliente_id: uuid.UUID
-    nombre_comercial: str
-    permite_credito: bool
-    bloqueado: bool
-    limite_credito: Dinero
-    saldo: Dinero
-    disponible: Dinero
-    credito_agotado: bool
-    facturas_abiertas: int
-    facturas_vencidas: int
-    saldo_vencido: Dinero
-
-
-async def _cartera(sesion, cliente_id: uuid.UUID) -> dict:
-    fila = (
-        await sesion.execute(
-            text("SELECT * FROM v_cartera_cliente WHERE cliente_id = :id"), {"id": cliente_id}
-        )
-    ).mappings().first()
-    if fila is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "cliente no encontrado")
-    return dict(fila)
-
-
-@router.get("/{cliente_id}/cartera", response_model=Cartera)
-async def ver_cartera(cliente_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> Cartera:
-    actor.exigir("cobranza.ver")
-    fila = await _cartera(sesion, cliente_id)
-    if fila["ruta_id"] is not None and not actor.alcanza_ruta(fila["ruta_id"]):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ese cliente está fuera de tu alcance")
-    return Cartera(**{k: v for k, v in fila.items() if k in Cartera.model_fields})
-
-
-class EvaluacionEntrada(EntradaBase):
-    total: Decimal = Field(ge=0, description="Total de la venta propuesta")
-    a_credito: bool = True
-    # Lo que el dispositivo trae en la cola sin sincronizar. Sin esto, cinco
-    # ventas a crédito de la misma mañana pasarían todas el límite.
-    cargos_pendientes: Decimal = Field(default=Decimal("0"), ge=0)
-    abonos_pendientes: Decimal = Field(default=Decimal("0"), ge=0)
-
-
-class EvaluacionSalida(BaseModel):
-    permitida: bool
-    motivo: str
-    disponible: Dinero
-    excedente: Dinero
-
-
-@router.post("/{cliente_id}/credito/evaluar", response_model=EvaluacionSalida)
-async def evaluar_credito(
-    cliente_id: uuid.UUID, entrada: EvaluacionEntrada, actor: ActorDep, sesion: SesionDep
-) -> EvaluacionSalida:
-    """Aplica la regla de crédito del dominio con los datos reales del servidor.
-
-    El dispositivo tiene su propia copia de esta regla para bloquear offline —
-    que es el único momento en que bloquear sirve, porque la mercancía todavía
-    no sale. Este endpoint existe para que ambas implementaciones se puedan
-    contrastar contra la misma entrada.
-    """
-    actor.exigir("cobranza.ver")
-    fila = await _cartera(sesion, cliente_id)
-    if fila["ruta_id"] is not None and not actor.alcanza_ruta(fila["ruta_id"]):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ese cliente está fuera de tu alcance")
-
-    estado = EstadoCredito(
-        limite=Decimal(fila["limite_credito"]),
-        # El saldo de la vista puede ser negativo (saldo a favor); el dominio
-        # espera un no-negativo y trata el favor como línea disponible.
-        saldo_confirmado=max(Decimal("0"), Decimal(fila["saldo"])),
-        permite_credito=fila["permite_credito"],
-        bloqueado=fila["bloqueado"],
-        cargos_pendientes=entrada.cargos_pendientes,
-        abonos_pendientes=entrada.abonos_pendientes,
-    )
-    resultado = evaluar_venta(estado, entrada.total, a_credito=entrada.a_credito)
-    return EvaluacionSalida(
-        permitida=resultado.permitida,
-        motivo=resultado.motivo.value,
-        disponible=resultado.disponible,
-        excedente=resultado.excedente,
-    )

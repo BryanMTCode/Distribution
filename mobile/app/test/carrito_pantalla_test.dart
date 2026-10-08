@@ -2,40 +2,39 @@
 ///
 /// Lo que se cuida aquí es lo que el cliente va a revisar en el papel impreso:
 /// que la aritmética de cada renglón esté a la vista, que el total cuadre con la
-/// suma de los renglones, y que el crédito diga **el número que resuelve la
-/// situación** ("necesita abonar $192.00") en vez de "operación no permitida".
+/// suma de los renglones, y que la forma de pago diga a dónde va el dinero:
+/// todo es de contado (ADR 0002 §81), en efectivo o por transferencia.
 library;
 
 import 'package:dsd_app/src/datos/base_local.dart';
+import 'package:dsd_app/src/datos/servicio_ubicacion.dart';
+import 'package:dsd_app/src/estado/alta.dart';
+import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'ayudas.dart';
 
 /// Entra, abre la visita, agrega y va al pedido.
-Future<void> abrirPedido(
+Future<BaseLocal> abrirPedido(
   WidgetTester tester, {
   int cajas = 1,
   int piezas = 0,
-  bool permiteCredito = true,
-  double limite = 5000,
-  double saldoCache = 0,
-  bool bloqueado = false,
   void Function(BaseLocal base)? sembrarExtra,
 }) async {
-  await montarApp(
+  final base = await montarApp(
     tester,
     credencial: credencialDelServidor(),
     sembrar: (base) {
-      sembrarEscenarioDeVenta(
-        base,
-        permiteCredito: permiteCredito,
-        limite: limite,
-        saldoCache: saldoCache,
-        bloqueado: bloqueado,
-      );
+      sembrarEscenarioDeVenta(base);
+      sembrarParaCobrar(base);
       sembrarExtra?.call(base);
     },
+    extras: [
+      servicioUbicacionProvider.overrideWithValue(
+        ServicioUbicacionFalso.siempre(const GpsSinLectura()),
+      ),
+    ],
   );
   await entrarCon(tester, pinCorrecto);
   await tocar(tester, const Key('cliente_cliente-1'));
@@ -55,6 +54,7 @@ Future<void> abrirPedido(
     );
   }
   await tocar(tester, const Key('boton_ver_carrito'));
+  return base;
 }
 
 void main() {
@@ -152,130 +152,80 @@ void main() {
   });
 
   group('la forma de pago', () {
-    testWidgets('arranca en contado', (tester) async {
+    testWidgets('arranca en efectivo y no habla de crédito', (tester) async {
       await abrirPedido(tester, cajas: 1);
-      expect(find.byKey(const Key('forma_de_pago')), findsOneWidget);
-      // De contado no hay nada que evaluar: procede siempre.
-      expect(find.byKey(const Key('credito_ok')), findsNothing);
-      expect(find.byKey(const Key('credito_bloquea')), findsNothing);
-    });
-
-    testWidgets('a crédito con línea suficiente dice cuánto le queda',
-        (tester) async {
-      await abrirPedido(tester, cajas: 1, limite: 5000);
-      await tocar(tester, const Key('forma_de_pago'));
-      await tester.tap(find.text('Crédito'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('credito_ok')), findsOneWidget);
-      // 5000 - 296 = 4704.
-      expect(textoQueContiene('\$4704.00'), findsOneWidget);
-    });
-
-    testWidgets('al pasarse del límite dice CUÁNTO FALTA ABONAR',
-        (tester) async {
-      // Límite 500, saldo 100, una caja de 296... no se pasa. Con dos sí:
-      // 100 + 592 = 692 sobre 500 ⇒ faltan 192.
-      await abrirPedido(tester, cajas: 2, limite: 500, saldoCache: 100);
-      await tester.tap(find.text('Crédito'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('credito_bloquea')), findsOneWidget);
-      // El número que resuelve la situación. "No permitido" deja al vendedor sin
-      // salida frente al cliente.
-      expect(textoQueContiene('abonar \$192.00'), findsOneWidget);
-      // Y le ofrece la salida que sí existe.
-      expect(textoQueContiene('de contado'), findsOneWidget);
-    });
-
-    testWidgets('un cliente bloqueado no puede a crédito, pero sí de contado',
-        (tester) async {
-      await abrirPedido(tester, cajas: 1, bloqueado: true);
-      await tester.tap(find.text('Crédito'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('credito_bloquea')), findsOneWidget);
-      expect(textoQueContiene('bloqueó su crédito'), findsOneWidget);
-
-      // De contado la venta procede: negarla no cobra la deuda vieja y sí
-      // pierde la venta nueva.
-      await tester.tap(find.text('Contado'));
-      await tester.pumpAndSettle();
-      final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_cobrar')),
-      );
-      expect(boton.onPressed, isNotNull);
-    });
-
-    testWidgets('un cliente de solo contado no puede ni elegir crédito',
-        (tester) async {
-      // Ofrecer una opción que va a fallar es hacerle perder tiempo frente al
-      // cliente.
-      await abrirPedido(tester, cajas: 1, permiteCredito: false);
-      expect(find.byKey(const Key('nota_solo_contado')), findsOneWidget);
-
-      final segmentos = tester.widget<SegmentedButton<bool>>(
+      final segmentos = tester.widget<SegmentedButton<FormaDePago>>(
         find.byKey(const Key('forma_de_pago')),
       );
-      final credito = segmentos.segments.firstWhere((s) => s.value == true);
-      expect(credito.enabled, isFalse);
+      expect(segmentos.selected, {FormaDePago.efectivo});
+      // Todo es de contado (ADR 0002 §81): no existe la opción.
+      expect(segmentos.segments.map((s) => s.value),
+          [FormaDePago.efectivo, FormaDePago.transferencia]);
+      expect(textoQueContiene('rédito'), findsNothing);
+      expect(find.byKey(const Key('campo_referencia_pago')), findsNothing);
     });
 
-    testWidgets('una venta a crédito encolada ya bajó el disponible',
+    testWidgets('por transferencia pide la referencia y avisa que no va al corte',
         (tester) async {
-      // Límite 3000, saldo 900, y una venta de 1500 que aún no sincroniza.
-      // Disponible real: 600. Una caja de 296 pasa; el aviso lo confirma.
-      await abrirPedido(
-        tester,
-        cajas: 1,
-        limite: 3000,
-        saldoCache: 900,
-        sembrarExtra: (base) => sembrarVentaACreditoPendiente(
-          base,
-          clienteId: 'cliente-1',
-          total: 1500,
-        ),
-      );
-      await tester.tap(find.text('Crédito'));
+      await abrirPedido(tester, cajas: 1);
+      await tester.tap(find.text('Transferencia'));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('credito_ok')), findsOneWidget);
-      // 3000 - 900 - 1500 - 296 = 304.
-      expect(textoQueContiene('\$304.00'), findsOneWidget);
+      expect(find.byKey(const Key('campo_referencia_pago')), findsOneWidget);
+      expect(textoQueContiene('No viene en tu efectivo del corte'), findsOneWidget);
+
+      await tester.tap(find.text('Efectivo'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('campo_referencia_pago')), findsNothing);
     });
   });
 
   group('el botón de cobrar', () {
-    testWidgets('dice qué va a pasar según la forma de pago', (tester) async {
-      // "Cobrar" y "Registrar a crédito" son dos cosas distintas: en una entra
-      // dinero y en la otra se agranda una deuda.
+    testWidgets('dice cómo se va a cobrar', (tester) async {
       await abrirPedido(tester, cajas: 1);
-      expect(find.text('Cobrar de contado'), findsOneWidget);
+      expect(find.text('Cobrar en efectivo'), findsOneWidget);
 
-      await tester.tap(find.text('Crédito'));
+      await tester.tap(find.text('Transferencia'));
       await tester.pumpAndSettle();
-      expect(find.text('Registrar a crédito'), findsOneWidget);
+      expect(find.text('Cobrar por transferencia'), findsOneWidget);
     });
 
-    testWidgets('con el crédito pasado del límite, está muerto', (tester) async {
-      await abrirPedido(tester, cajas: 2, limite: 500, saldoCache: 100);
-      await tester.tap(find.text('Crédito'));
-      await tester.pumpAndSettle();
-
-      final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_cobrar')),
-      );
-      expect(boton.onPressed, isNull);
-    });
-
-    testWidgets('de contado está vivo aunque el crédito esté negado',
+    testWidgets('está vivo con cualquier forma de pago: no hay límite que negar',
         (tester) async {
-      // Negar la venta de contado no cobra la deuda vieja y sí pierde la nueva.
-      await abrirPedido(tester, cajas: 1, permiteCredito: false);
-      final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_cobrar')),
+      await abrirPedido(tester, cajas: 2);
+      for (final forma in ['Efectivo', 'Transferencia']) {
+        await tester.tap(find.text(forma));
+        await tester.pumpAndSettle();
+        final boton = tester.widget<ButtonStyleButton>(
+          find.byKey(const Key('boton_cobrar')),
+        );
+        expect(boton.onPressed, isNotNull, reason: forma);
+      }
+    });
+
+    testWidgets('la venta por transferencia viaja con su forma y su referencia',
+        (tester) async {
+      final base = await abrirPedido(tester, cajas: 1);
+      await tester.tap(find.text('Transferencia'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('campo_referencia_pago')),
+        'SPEI 4471',
       );
-      expect(boton.onPressed, isNotNull);
+      await tester.pumpAndSettle();
+      await tocar(tester, const Key('boton_cobrar'));
+
+      final venta = base.db
+          .select('SELECT tipo, forma_pago, referencia_pago FROM ventas')
+          .single;
+      expect(venta['tipo'], 'contado');
+      expect(venta['forma_pago'], 'transferencia');
+      expect(venta['referencia_pago'], 'SPEI 4471');
+      final sobre = base.db
+          .select("SELECT payload FROM outbox WHERE tipo = 'venta.crear'")
+          .single['payload'] as String;
+      expect(sobre, contains('"forma_pago":"transferencia"'));
+      expect(sobre, contains('"referencia_pago":"SPEI 4471"'));
     });
   });
 
@@ -285,7 +235,8 @@ void main() {
       // agregara un campo editable, esta prueba lo atrapa.
       await abrirPedido(tester, cajas: 2);
 
-      // Solo debe haber campos de texto en el catálogo (búsqueda), no aquí.
+      // Solo debe haber campos de texto en el catálogo (búsqueda), no aquí. La
+      // referencia de la transferencia solo aparece al elegirla.
       expect(find.byType(TextField), findsNothing);
       expect(textoQueContiene('Descuento'), findsNothing);
       expect(textoQueContiene('descuento'), findsNothing);

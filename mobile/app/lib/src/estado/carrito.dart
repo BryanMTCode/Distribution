@@ -169,8 +169,9 @@ class ControladorCarrito extends Notifier<Carrito> {
     ref.read(repoBorradorProvider).limpiar();
   }
 
-  void cambiarFormaDePago({required bool aCredito}) {
-    state = state.conFormaDePago(aCredito: aCredito);
+  /// Efectivo o transferencia: todo se paga en el acto (ADR 0002 §81).
+  void cambiarFormaDePago(FormaDePago forma, {String? referencia}) {
+    state = state.conFormaDePago(forma, referencia: referencia);
     _persistir();
   }
 
@@ -191,13 +192,6 @@ class ControladorCarrito extends Notifier<Carrito> {
 final carritoProvider = NotifierProvider<ControladorCarrito, Carrito>(
   ControladorCarrito.new,
 );
-
-/// La evaluación de crédito del carrito actual contra el cliente de la visita.
-final evaluacionProvider = Provider<ResultadoCredito?>((ref) {
-  final cliente = ref.watch(clienteDeLaVisitaProvider);
-  if (cliente == null) return null;
-  return ref.watch(carritoProvider).evaluar(cliente.credito);
-});
 
 /// Cuánto queda **disponible de verdad** de un producto: lo que trae el camión
 /// menos lo que ya está en el carrito.
@@ -328,7 +322,6 @@ class ControladorCobro extends Notifier<EstadoCobro> {
   void cobrar({Ubicacion? ubicacion}) {
     final cierre = ref.read(cierreDeVentaProvider);
     final clienteId = ref.read(clienteEnVisitaProvider);
-    final evaluacion = ref.read(evaluacionProvider);
     if (cierre == null || clienteId == null) {
       state = const CobroSinIdentidad();
       return;
@@ -341,7 +334,6 @@ class ControladorCobro extends Notifier<EstadoCobro> {
       venta = cierre.cerrar(
         ref.read(carritoProvider),
         clienteId: clienteId,
-        creditoPermitido: evaluacion?.permitida ?? false,
         ubicacion: ubicacion,
       );
     } on VentaRechazada catch (e) {
@@ -368,8 +360,8 @@ class ControladorCobro extends Notifier<EstadoCobro> {
       // El carrito ya es un documento: se vacía para que nadie lo cobre dos
       // veces tocando atrás.
       ref.read(carritoProvider.notifier).vaciar();
-      // La lista de clientes y la cola cambiaron: el disponible del cliente
-      // bajó y hay un sobre nuevo por enviar.
+      // La lista de clientes y la cola cambiaron: el cliente ya está visitado
+      // y hay un sobre nuevo por enviar.
       ref.invalidate(clientesProvider);
       ref.invalidate(resumenColaProvider);
       elCamionCambio(ref);

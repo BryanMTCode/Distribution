@@ -35,8 +35,6 @@ SELECT
   (SELECT count(*) FROM clientes WHERE estatus = 'inactivo') AS clientes_inactivos,
   (SELECT count(*) FROM clientes
     WHERE creado_en >= date_trunc('month', CURRENT_DATE)) AS clientes_nuevos_mes,
-  (SELECT count(DISTINCT cliente_id) FROM cuentas_por_cobrar
-    WHERE estado IN ('abierta', 'parcial')) AS clientes_con_saldo,
   -- Gente y rutas
   (SELECT count(*) FROM usuarios WHERE activo AND rol_codigo = 'vendedor') AS vendedores,
   (SELECT count(*) FROM usuarios u JOIN almacenes a ON a.id = u.almacen_id
@@ -65,12 +63,7 @@ SELECT
   (SELECT count(*) FROM existencias e
      JOIN almacenes a ON a.id = e.almacen_id
     WHERE a.tipo IN ('bodega', 'camion') AND e.cantidad < 0) AS existencias_negativas,
-  -- Dinero
-  (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
-    WHERE estado IN ('abierta', 'parcial')) AS cartera,
-  (SELECT COALESCE(sum(saldo), 0) FROM cuentas_por_cobrar
-    WHERE estado IN ('abierta', 'parcial')
-      AND fecha_vencimiento < CURRENT_DATE) AS cartera_vencida,
+  -- Dinero. Todo es de contado (ADR 0002 §81): no hay cartera que contar.
   (SELECT COALESCE(sum(total), 0) FROM ventas
     WHERE estado = 'confirmada'
       AND fecha_operativa >= date_trunc('month', CURRENT_DATE)) AS vendido_mes,

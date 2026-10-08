@@ -1,14 +1,13 @@
 /// Los clientes, desde el teléfono de la oficina.
 ///
 /// Pedido en operación (octubre 2026): «agrega lo de los clientes en la app del
-/// gerente». Lo que la oficina pregunta de una tienda:
+/// gerente». Todo es de contado (ADR 0002 §81), así que lo que la oficina
+/// pregunta de una tienda ya no es cuánto debe:
 ///
-///   · ¿Quién me debe, y quién ya se pasó del plazo? La lista abre con lo que
-///     más urge cobrar arriba, y filtra por con saldo, vencidos, bloqueados.
-///   · ¿Qué me debe esta tienda, nota por nota, y desde cuándo?
-///   · ¿Qué compra? Sus ventas —cada una se abre con lo que se le vendió— y sus
-///     abonos.
-///   · Bloquear o desbloquear su crédito, con motivo (quien tenga el permiso).
+///   · ¿Dónde está? Los que no tienen ubicación se filtran aparte: sin ella el
+///     vendedor no tiene geocerca y el mapa no los dibuja.
+///   · ¿Qué compra y cómo paga? Sus ventas —cada una se abre con lo que se le
+///     vendió— con su forma de pago.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -27,10 +26,8 @@ ClienteClientesDeOficina? _cliente(WidgetRef ref) {
 
 const _filtros = [
   ('todos', 'Todos'),
-  ('con_saldo', 'Con saldo'),
-  ('vencidos', 'Vencidos'),
-  ('bloqueados', 'Bloqueados'),
   ('prospectos', 'Prospectos'),
+  ('sin_ubicacion', 'Sin ubicación'),
 ];
 
 class PantallaClientesDeOficina extends ConsumerStatefulWidget {
@@ -144,34 +141,21 @@ class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
                 child: ListTile(
                   key: Key('cliente_oficina_${c.codigo ?? c.id}'),
                   leading: Icon(
-                    c.bloqueado ? Icons.block : Icons.storefront_outlined,
-                    color: c.bloqueado || c.saldoVencido.centavos > 0 ? colores.error : null,
+                    c.conUbicacion ? Icons.storefront_outlined : Icons.location_off_outlined,
+                    color: c.conUbicacion ? null : colores.error,
                   ),
                   title: Text(c.nombre),
                   subtitle: Text(
                     [
                       c.ruta ?? 'sin ruta',
                       if (c.estatus == 'prospecto') 'prospecto',
-                      if (c.bloqueado) 'crédito bloqueado',
+                      if (!c.conUbicacion) 'sin ubicación',
                       c.ultimaCompra == null
                           ? 'nunca ha comprado'
                           : 'última compra: ${diaEnPalabras(c.ultimaCompra!)}',
                     ].join(' · '),
                   ),
-                  trailing: c.saldo.centavos == 0
-                      ? const Icon(Icons.chevron_right)
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('Debe ${pesos(c.saldo)}'),
-                            if (c.saldoVencido.centavos > 0)
-                              Text(
-                                'vencido ${pesos(c.saldoVencido)}',
-                                style: TextStyle(color: colores.error, fontSize: 12),
-                              ),
-                          ],
-                        ),
+                  trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     await Navigator.of(context).push(
                       MaterialPageRoute(
@@ -204,7 +188,6 @@ class PantallaFichaDeCliente extends ConsumerStatefulWidget {
 class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
   FichaDelCliente? _f;
   String? _error;
-  bool _ocupado = false;
 
   @override
   void initState() {
@@ -215,35 +198,17 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
   Future<void> _hacer(Future<FichaDelCliente> Function(ClienteClientesDeOficina) accion) async {
     final cliente = _cliente(ref);
     if (cliente == null) return;
-    setState(() => _ocupado = true);
     try {
       final f = await accion(cliente);
       if (!mounted) return;
       setState(() {
         _f = f;
         _error = null;
-        _ocupado = false;
       });
     } on Object catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = explicarErrorDeOficina(e);
-        _ocupado = false;
-      });
+      setState(() => _error = explicarErrorDeOficina(e));
     }
-  }
-
-  Future<void> _cambiarBloqueo(FichaDelCliente f) async {
-    if (f.bloqueado) {
-      await _hacer((c) => c.bloquear(f.id, bloquear: false));
-      return;
-    }
-    final motivo = await showDialog<String>(
-      context: context,
-      builder: (_) => const _DialogoBloqueo(),
-    );
-    if (motivo == null) return;
-    await _hacer((c) => c.bloquear(f.id, bloquear: true, motivo: motivo));
   }
 
   @override
@@ -285,71 +250,28 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
             if (f.direccion != null) Text(f.direccion!),
             const SizedBox(height: 12),
             Card(
-              key: const Key('tarjeta_credito_cliente'),
+              key: const Key('tarjeta_cliente_compras'),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Debe ${pesos(f.saldo)}', style: estilo.headlineSmall),
-                    if (f.saldoVencido.centavos > 0)
-                      Text(
-                        'Vencido: ${pesos(f.saldoVencido)}',
-                        style: TextStyle(color: colores.error, fontWeight: FontWeight.w600),
-                      ),
-                    if (f.porConfirmar.centavos > 0)
-                      Text('${pesos(f.porConfirmar)} en transferencias por confirmar'),
-                    const SizedBox(height: 4),
+                    Text('Compró ${pesos(f.compradoMes)} este mes', style: estilo.titleMedium),
+                    Text('${pesos(f.compradoAnio)} este año', style: estilo.bodySmall),
+                    const SizedBox(height: 8),
                     Text(
-                      !f.permiteCredito
-                          ? 'Sin crédito: solo de contado.'
-                          : 'Crédito: ${pesos(f.limiteCredito)}'
-                              '${f.diasCredito == null ? '' : ' a ${f.diasCredito} días'}'
-                              ' · disponible ${pesos(f.disponible)}',
+                      f.conUbicacion
+                          ? 'Ubicación: ${f.lat!.toStringAsFixed(6)}, ${f.lng!.toStringAsFixed(6)}'
+                              '${f.ubicacionOrigen == 'gps' ? ' (GPS)' : f.ubicacionOrigen == 'manual' ? ' (a mano)' : ''}'
+                          : 'Sin ubicación: el vendedor no tiene geocerca para esta tienda.',
+                      key: const Key('ubicacion_cliente_oficina'),
+                      style: TextStyle(color: f.conUbicacion ? null : colores.error),
                     ),
-                    if (f.bloqueado)
-                      Text(
-                        'Crédito BLOQUEADO${f.bloqueoMotivo == null ? '' : ': ${f.bloqueoMotivo}'}',
-                        style: TextStyle(color: colores.error, fontWeight: FontWeight.w600),
-                      ),
-                    Text(
-                      'Compró ${pesos(f.compradoMes)} este mes · ${pesos(f.compradoAnio)} este año',
-                      style: estilo.bodySmall,
-                    ),
-                    if (f.puedeBloquear) ...[
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        key: const Key('boton_bloqueo_cliente'),
-                        onPressed: _ocupado ? null : () => _cambiarBloqueo(f),
-                        icon: Icon(f.bloqueado ? Icons.lock_open : Icons.block),
-                        label: Text(f.bloqueado ? 'Desbloquear el crédito' : 'Bloquear el crédito'),
-                      ),
-                    ],
+                    if (f.referencias != null) Text(f.referencias!, style: estilo.bodySmall),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text('Lo que debe, nota por nota', style: estilo.titleMedium),
-            if (f.cuentas.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('No debe nada.'),
-              ),
-            for (final c in f.cuentas)
-              ListTile(
-                key: Key('cuenta_${c.folio ?? c.ventaId}'),
-                contentPadding: EdgeInsets.zero,
-                title: Text('${c.folio ?? 'Nota'} · ${diaEnPalabras(c.emision)}'),
-                subtitle: Text(
-                  c.vencida
-                      ? 'Vencida hace ${c.diasVencida} día(s) · pagó ${pesos(c.pagado)} de ${pesos(c.original)}'
-                      : 'Vence el ${diaEnPalabras(c.vencimiento)} · pagó ${pesos(c.pagado)} de ${pesos(c.original)}',
-                  style: TextStyle(color: c.vencida ? colores.error : null),
-                ),
-                trailing: Text(pesos(c.saldo)),
-                onTap: () => _verVenta(c.ventaId),
-              ),
             const Divider(height: 32),
             Text('Sus compras', style: estilo.titleMedium),
             if (f.ventas.isEmpty)
@@ -362,29 +284,14 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
                 key: Key('compra_${v.folio ?? v.id}'),
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.receipt_long_outlined),
-                title: Text('${diaEnPalabras(v.fecha)} · ${v.tipo == 'credito' ? 'crédito' : 'contado'}'),
+                // Las ventas a crédito del piloto no tienen forma de pago.
+                title: Text('${diaEnPalabras(v.fecha)} · '
+                    '${v.formaDePago?.etiqueta.toLowerCase() ?? 'crédito (piloto)'}'),
                 subtitle: Text(
                   '${v.folio ?? ''} · ${v.vendedor}${v.estado == 'confirmada' ? '' : ' · ${v.estado}'}',
                 ),
                 trailing: Text(pesos(v.total)),
                 onTap: () => _verVenta(v.id),
-              ),
-            const Divider(height: 32),
-            Text('Sus abonos', style: estilo.titleMedium),
-            if (f.cobros.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Sin abonos.'),
-              ),
-            for (final k in f.cobros)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.payments_outlined),
-                title: Text('${diaEnPalabras(k.fecha)} · ${k.formaPago}'),
-                subtitle: Text(
-                  '${k.folio ?? ''} · ${k.vendedor} · ${k.estado.replaceAll('_', ' ')}',
-                ),
-                trailing: Text(pesos(k.importe)),
               ),
             const SizedBox(height: 24),
           ],
@@ -395,52 +302,5 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
 
   void _verVenta(String ventaId) => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => PantallaVentaVista(ventaId: ventaId)),
-      );
-}
-
-/// El motivo del bloqueo. El vendedor va a preguntar por qué no le puede fiar.
-class _DialogoBloqueo extends StatefulWidget {
-  const _DialogoBloqueo();
-
-  @override
-  State<_DialogoBloqueo> createState() => _EstadoDialogoBloqueo();
-}
-
-class _EstadoDialogoBloqueo extends State<_DialogoBloqueo> {
-  final _motivo = TextEditingController();
-
-  @override
-  void dispose() {
-    _motivo.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Bloquear el crédito'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Podrá seguir comprando de contado. Al vendedor le llega el motivo.'),
-            const SizedBox(height: 8),
-            TextField(
-              key: const Key('campo_motivo_bloqueo'),
-              controller: _motivo,
-              maxLength: 300,
-              decoration: const InputDecoration(
-                labelText: '¿Por qué?',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-          FilledButton(
-            key: const Key('boton_bloquear_de_verdad'),
-            onPressed: () => Navigator.of(context).pop(_motivo.text.trim()),
-            child: const Text('Bloquear'),
-          ),
-        ],
       );
 }

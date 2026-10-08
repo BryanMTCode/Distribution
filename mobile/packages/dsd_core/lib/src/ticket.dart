@@ -18,21 +18,18 @@
 /// ─────────────────────────────────────────────────────────────────────────
 /// LO QUE NO SE IMPRIME, Y POR QUÉ
 /// ─────────────────────────────────────────────────────────────────────────
-/// **El saldo del cliente no va en el ticket.** El saldo que trae el teléfono
-/// puede tener horas (§0.3: "tiempo real es tiempo real de lo sincronizado").
-/// Imprimir un saldo viejo en un papel que el cliente conserva es crear una
-/// disputa: él va a sostener el número impreso y la oficina el suyo. Se imprime
-/// lo que SÍ es un hecho de esta venta —su importe y que fue a crédito— y la
-/// consulta del saldo queda donde se puede actualizar.
+/// **No hay saldo que imprimir.** La operación es de contado (ADR 0002 §81):
+/// toda venta se paga al entregar, y el papel dice cómo —efectivo o
+/// transferencia, con su referencia—.
 ///
 /// **No dice "factura" en ningún lado.** Es una remisión no fiscal (ADR 0002
 /// §4), y el papel lo declara para que nadie la presente como comprobante
 /// fiscal.
 library;
 
-import 'cobro.dart';
 import 'dinero.dart';
 import 'escpos.dart';
+import 'forma_de_pago.dart';
 import 'venta.dart';
 
 /// Los datos del negocio que van en el encabezado.
@@ -217,27 +214,11 @@ void _totales(ConstructorEscPos t, VentaGuardada venta) {
     ..alinear(Alineacion.izquierda)
     ..linea();
 
-  t.dosColumnas(
-    'Forma de pago',
-    venta.aCredito ? 'CREDITO' : 'CONTADO',
-  );
-
-  if (venta.aCredito) {
-    // El saldo NO se imprime: el del teléfono puede tener horas, y un saldo
-    // viejo en un papel que el cliente conserva es una disputa esperando. Lo que
-    // sí es un hecho de esta venta es su importe y la firma de recibido.
-    t
-      ..linea()
-      ..parrafo('Esta venta queda a crédito por ${venta.total.texto}.')
-      // `parrafo` y no `linea`: son 34 columnas y el papel tiene 32. Con `linea`
-      // la impresora continuaba el texto en el renglón siguiente y corría el
-      // resto del ticket. Lo encontró la vista previa versionada, no una prueba:
-      // la de desbordes solo cubría la venta de contado.
-      ..parrafo('Consulta tu saldo con tu vendedor.')
-      ..linea()
-      ..linea()
-      ..centrado('_______________________')
-      ..centrado('Recibi conforme');
+  t.dosColumnas('Pago', venta.formaDePago.etiqueta.toUpperCase());
+  if (venta.formaDePago == FormaDePago.transferencia && venta.referenciaPago != null) {
+    // `parrafo` y no `dosColumnas`: una clave de rastreo SPEI tiene hasta 30
+    // caracteres y el papel 32. Cortada, la oficina no la encuentra en el banco.
+    t.parrafo('Ref. ${venta.referenciaPago}');
   }
 }
 
@@ -310,130 +291,3 @@ List<int> reimpresion(
 
 /// Un importe con su signo de pesos, para el papel.
 String conPesos(Dinero d) => '\$${d.texto}';
-
-/// ───────────────────────────────────────────────────────────────────────────
-/// EL RECIBO DE COBRO
-/// ───────────────────────────────────────────────────────────────────────────
-/// Un cobro en efectivo sin papel es la palabra del vendedor contra la del
-/// cliente. Este recibo es la única prueba que el cliente tiene hasta que el
-/// cobro sincronice, y puede pasar un día entero.
-///
-/// **El saldo resultante NO se imprime**, por la misma razón que no se imprime en
-/// la remisión (§11 del ADR 0002): el teléfono no sabe el saldo real. Solo trae
-/// una caché que puede tener horas y que además no incluye los cobros que otros
-/// equipos hicieron hoy. Imprimir "le quedan $1,500" en un papel que el cliente
-/// conserva es crear una disputa donde él sostiene el número impreso y la oficina
-/// el suyo.
-///
-/// Lo que sí es un hecho de este cobro —cuánto entregó, cuándo, a quién, con qué
-/// folio— es exactamente lo que va en el papel.
-List<int> ticketDeCobro(
-  CobroGuardado cobro, {
-  required DatosDelNegocio negocio,
-  required DatosDeLaVisita visita,
-  int columnas = columnas58mm,
-  TablaDeCodigos tabla = TablaDeCodigos.pc437,
-  int copia = 0,
-}) {
-  final t = ConstructorEscPos(columnas: columnas, tabla: tabla)..inicializar();
-
-  _encabezado(t, negocio, copia: copia);
-
-  // El folio en tamaño doble: es lo que el cliente dicta por teléfono cuando algo
-  // se aclara, y lo que la oficina busca.
-  t
-    ..alinear(Alineacion.centro)
-    ..negrita(true)
-    ..tamano(ancho: 2, alto: 1)
-    ..linea(cobro.folioLocal)
-    ..tamano()
-    ..linea('RECIBO DE PAGO')
-    ..negrita(false)
-    ..alinear(Alineacion.izquierda)
-    ..separador();
-
-  t.dosColumnas('Fecha', _fechaLegible(cobro.fechaDispositivo));
-  t.dosColumnas('Recibió', visita.nombreVendedor);
-  t.linea();
-
-  t
-    ..negrita(true)
-    ..parrafo(visita.nombreCliente)
-    ..negrita(false);
-  if (visita.codigoCliente != null) t.linea('Cliente ${visita.codigoCliente}');
-
-  t.separador();
-
-  // El importe en tamaño doble: es el número que el cliente revisa primero, y el
-  // único que de verdad importa de este papel.
-  t
-    ..alinear(Alineacion.derecha)
-    ..negrita(true)
-    ..tamano(ancho: 2, alto: 2)
-    ..linea('PAGO ${cobro.importe.texto}')
-    ..tamano()
-    ..negrita(false)
-    ..alinear(Alineacion.izquierda)
-    ..linea();
-
-  t.dosColumnas('Forma de pago', cobro.formaDePago.etiqueta.toUpperCase());
-  if (cobro.referencia != null) {
-    // `parrafo` y no `linea`: una referencia bancaria puede pasar de 32 columnas,
-    // y con `linea` la impresora continuaría el texto en el renglón siguiente y
-    // correría el resto del ticket.
-    t.parrafo('Ref. ${cobro.referencia}');
-  }
-
-  // Sin saldo, y se dice por qué: el vendedor no tiene que inventar una
-  // explicación cuando el cliente pregunta cuánto le queda.
-  //
-  // Lo que no es efectivo se abona hasta que la oficina lo ve en el banco
-  // (migración 0038 del servidor), y el papel lo dice: un recibo que promete un
-  // abono inmediato es la disputa del día que el cheque rebote.
-  t.linea();
-  if (cobro.formaDePago.entraAlArqueo) {
-    t.parrafo('Este pago se abona a tu cuenta.');
-  } else {
-    t
-      ..parrafo('Se abona a tu cuenta cuando la oficina confirme el depósito.')
-      ..parrafo('Mientras tanto tu crédito no cambia.');
-  }
-  t
-    ..parrafo('Consulta tu saldo con tu vendedor.')
-    ..linea()
-    ..linea()
-    ..centrado('_______________________')
-    ..centrado('Recibi el pago');
-
-  _pieDeCobro(t, cobro, negocio);
-  t.avanzar(4);
-  return t.bytes;
-}
-
-void _pieDeCobro(
-  ConstructorEscPos t,
-  CobroGuardado cobro,
-  DatosDelNegocio negocio,
-) {
-  t
-    ..linea()
-    ..alinear(Alineacion.centro)
-    ..negrita(true)
-    ..linea('DOCUMENTO NO FISCAL')
-    ..negrita(false);
-
-  if (negocio.leyendaFinal != null) t.parrafo(negocio.leyendaFinal!);
-
-  t
-    ..linea('Folio del equipo: ${cobro.folioConsecutivo}')
-    ..alinear(Alineacion.izquierda);
-}
-
-/// Lo que se manda a la impresora para reimprimir un recibo de cobro.
-List<int> reimpresionDeCobro(
-  List<int> reciboOriginal,
-  int numeroDeCopia, {
-  int columnas = columnas58mm,
-  TablaDeCodigos tabla = TablaDeCodigos.pc437,
-}) =>
-    reimpresion(reciboOriginal, numeroDeCopia, columnas: columnas, tabla: tabla);

@@ -163,10 +163,6 @@ class _ClienteDemo {
     this.id,
     this.nombre, {
     required this.secuencia,
-    this.limite = 0,
-    this.saldo = 0,
-    this.permiteCredito = false,
-    this.bloqueado = false,
     this.metrosAlNorte = 0,
     this.metrosAlEste = 0,
     this.ventaPendiente = 0,
@@ -176,30 +172,25 @@ class _ClienteDemo {
   final String id;
   final String nombre;
   final int secuencia;
-  final double limite;
-  final double saldo;
-  final bool permiteCredito;
-  final bool bloqueado;
 
   /// Desplazamiento respecto del punto de referencia. Sirve para que el aviso
   /// de posible duplicado se pueda disparar de verdad en campo.
   final double metrosAlNorte;
   final double metrosAlEste;
 
-  /// Venta a crédito sin sincronizar, para ver el disponible ya descontado.
+  /// Venta por transferencia sin sincronizar: se ve en «Mi día» separada del
+  /// efectivo y en la barra de lo que falta por subir.
   final double ventaPendiente;
   final String? direccion;
 }
 
-/// Los casos que vale la pena ver en pantalla, no una lista de relleno.
+/// Los casos que vale la pena ver en pantalla, no una lista de relleno. Todo es
+/// de contado (ADR 0002 §81): ya no hay estados de crédito que distinguir.
 const _clientesDemo = [
   _ClienteDemo(
     'demo-01',
     'Abarrotes Doña Mary',
     secuencia: 1,
-    permiteCredito: true,
-    limite: 5000,
-    saldo: 1200,
     direccion: 'Av. Hidalgo 145, Centro',
     metrosAlNorte: 25,
   ),
@@ -207,11 +198,6 @@ const _clientesDemo = [
     'demo-02',
     'La Esquina de Ñoño 🏪',
     secuencia: 2,
-    permiteCredito: true,
-    limite: 3000,
-    saldo: 900,
-    // Con una venta encolada: el disponible en pantalla ya debe estar
-    // descontado sin haber sincronizado nada.
     ventaPendiente: 1500,
     direccion: 'Morelos 22',
     metrosAlNorte: 45,
@@ -221,9 +207,6 @@ const _clientesDemo = [
     'demo-03',
     'Tienda del Mercado, local 12',
     secuencia: 3,
-    permiteCredito: true,
-    limite: 1000,
-    saldo: 1000, // crédito agotado
     direccion: 'Mercado Juárez',
     metrosAlNorte: 300,
   ),
@@ -231,9 +214,6 @@ const _clientesDemo = [
     'demo-04',
     'Miscelánea El Buen Precio',
     secuencia: 4,
-    permiteCredito: true,
-    limite: 2000,
-    bloqueado: true,
     direccion: 'Calle 5 de Mayo 8',
     metrosAlNorte: 600,
   ),
@@ -241,7 +221,7 @@ const _clientesDemo = [
     'demo-05',
     'Cremería Los Compadres',
     secuencia: 5,
-    direccion: 'Sin crédito, solo contado',
+    direccion: 'Ángel Flores 30',
     metrosAlNorte: 900,
   ),
 ];
@@ -272,15 +252,11 @@ void sembrarDemo(
       '''
       INSERT INTO clientes (id, codigo, nombre_comercial, direccion, secuencia,
                             lat, lng, ubicacion_origen, lista_precios_id,
-                            permite_credito,
-                            limite_credito, saldo_cache, saldo_cache_en,
-                            bloqueado, es_local, sincronizado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'gps', 'demo-lista-general', ?, ?, ?, ?, ?, 0, 1)
+                            es_local, sincronizado)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'gps', 'demo-lista-general', 0, 1)
       ON CONFLICT(id) DO UPDATE SET
         lat = excluded.lat,
-        lng = excluded.lng,
-        saldo_cache = excluded.saldo_cache,
-        saldo_cache_en = excluded.saldo_cache_en
+        lng = excluded.lng
       ''',
       [
         c.id,
@@ -290,11 +266,6 @@ void sembrarDemo(
         c.secuencia,
         punto.lat,
         punto.lng,
-        c.permiteCredito ? 1 : 0,
-        c.limite,
-        c.saldo,
-        ahora,
-        c.bloqueado ? 1 : 0,
       ],
     );
 
@@ -302,9 +273,9 @@ void sembrarDemo(
       db.execute(
         '''
         INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo,
-                            estado, total, fecha_dispositivo, fecha_operativa,
-                            sincronizada, creado_en)
-        VALUES (?, ?, ?, ?, 'credito', 'confirmada', ?, ?, ?, 0, ?)
+                            forma_pago, estado, total, fecha_dispositivo,
+                            fecha_operativa, sincronizada, creado_en)
+        VALUES (?, ?, ?, ?, 'contado', 'transferencia', 'confirmada', ?, ?, ?, 0, ?)
         ON CONFLICT(id) DO NOTHING
         ''',
         [

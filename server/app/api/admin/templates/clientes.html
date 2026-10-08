@@ -3,10 +3,9 @@
 {% block contenido %}
 <h1>Clientes</h1>
 <p class="subtitulo">
-  Un negocio dado de alta en la calle nace <strong>prospecto</strong>: sin código,
-  sin lista de precios y sin crédito. Eso es a propósito — el vendedor no se
-  autoriza su propia cartera. <strong>Pero alguien aquí tiene que terminarlo</strong>,
-  o cada venta a ese cliente entra marcada.
+  Un negocio dado de alta en la calle nace <strong>prospecto</strong>: sin código
+  y sin lista de precios. <strong>Alguien aquí tiene que terminarlo</strong>, o cada
+  venta a ese cliente entra marcada. Todo es de contado.
 </p>
 
 {% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
@@ -28,10 +27,6 @@
           class="{% if filtro != 'todos' %}secundario{% endif %}">
     Todos ({{ conteos.activos }})
   </button>
-  <button type="submit" name="filtro" value="bloqueados"
-          class="{% if filtro != 'bloqueados' %}secundario{% endif %}">
-    Bloqueados ({{ conteos.bloqueados }})
-  </button>
   <button type="submit" name="filtro" value="inactivos"
           class="{% if filtro != 'inactivos' %}secundario{% endif %}">Inactivos</button>
 </form>
@@ -43,8 +38,7 @@
       <tr>
         <th>Negocio</th>
         <th>Ruta</th>
-        <th>Crédito</th>
-        <th class="numero">Saldo</th>
+        <th>Lista y ubicación</th>
         <th>Estado</th>
         {% if puede_editar %}<th></th>{% endif %}
       </tr>
@@ -66,21 +60,11 @@
           {% endif %}
         </td>
         <td class="sutil">
-          {% if f.permite_credito %}
-            hasta ${{ '%.2f'|format(f.limite_credito) }}
-          {% else %}
-            solo contado
-          {% endif %}
-          {% if not f.lista_precios %}
+          {% if f.lista_precios %}{{ f.lista_precios }}{% else %}
             <div style="color:var(--alerta)">sin lista de precios</div>
           {% endif %}
-        </td>
-        <td class="numero">
-          ${{ '%.2f'|format(f.saldo) }}
-          {% if f.vencidas %}
-            <div class="sutil" style="color:var(--alerta)">
-              {{ f.vencidas }} vencida{% if f.vencidas != 1 %}s{% endif %}
-            </div>
+          {% if not f.con_ubicacion %}
+            <div style="color:var(--aviso)">sin ubicación</div>
           {% endif %}
         </td>
         <td>
@@ -89,10 +73,6 @@
           {% endif %}
           {% if f.requiere_revision %}
             <span class="etiqueta-motivo">{{ f.revision_motivo or 'Revisar' }}</span>
-          {% endif %}
-          {% if f.bloqueado %}
-            <span class="etiqueta-motivo" style="background:var(--alerta-suave);
-                  color:var(--alerta)">Bloqueado</span>
           {% endif %}
           {% if f.origen_alta == 'campo' %}
             <div class="sutil">alta en ruta · {{ f.creado_en.strftime('%d/%m/%Y') }}</div>
@@ -115,8 +95,6 @@
     Nada que coincida con «{{ q }}».
   {% elif filtro == 'pendientes' %}
     Ningún prospecto esperando. Todo lo que levantó la ruta ya está confirmado.
-  {% elif filtro == 'bloqueados' %}
-    Ningún cliente bloqueado.
   {% else %}
     Todavía no hay clientes.
   {% endif %}

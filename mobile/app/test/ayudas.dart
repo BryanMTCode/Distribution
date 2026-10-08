@@ -55,23 +55,18 @@ void sembrarCliente(
   required String nombre,
   int? secuencia,
   String? codigo,
-  bool permiteCredito = true,
-  double limite = 5000,
-  double saldoCache = 0,
-  bool bloqueado = false,
   bool esLocal = false,
   double? lat,
   double? lng,
+  String? ubicacionOrigen,
 }) {
   base.db.execute(
     '''
-    INSERT INTO clientes (id, codigo, nombre_comercial, secuencia, permite_credito,
-                          limite_credito, saldo_cache, saldo_cache_en, bloqueado,
-                          es_local, sincronizado, lat, lng)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '2026-09-24T07:00:00.000Z', ?, ?, 1, ?, ?)
+    INSERT INTO clientes (id, codigo, nombre_comercial, secuencia, es_local,
+                          sincronizado, lat, lng, ubicacion_origen)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     ''',
-    [id, codigo, nombre, secuencia, permiteCredito ? 1 : 0, limite, saldoCache,
-     bloqueado ? 1 : 0, esLocal ? 1 : 0, lat, lng],
+    [id, codigo, nombre, secuencia, esLocal ? 1 : 0, lat, lng, ubicacionOrigen],
   );
 }
 
@@ -162,10 +157,6 @@ void sembrarEscenarioDeVenta(
   BaseLocal base, {
   String clienteId = 'cliente-1',
   String nombreCliente = 'Abarrotes Doña Mary',
-  bool permiteCredito = true,
-  double limite = 5000,
-  double saldoCache = 0,
-  bool bloqueado = false,
   double existenciaSopa = 240,
   bool conListaEnCliente = true,
 }) {
@@ -176,10 +167,6 @@ void sembrarEscenarioDeVenta(
     nombre: nombreCliente,
     secuencia: 1,
     codigo: 'C-001',
-    permiteCredito: permiteCredito,
-    limite: limite,
-    saldoCache: saldoCache,
-    bloqueado: bloqueado,
   );
   if (conListaEnCliente) {
     base.db.execute(
@@ -247,56 +234,6 @@ class BaseLocalDePrueba {
   sql.Row unaFila(String consulta) => base.db.select(consulta).single;
 }
 
-/// Venta a crédito encolada y sin sincronizar. Es la que tiene que bajar el
-/// disponible que ve el vendedor.
-void sembrarVentaACreditoPendiente(
-  BaseLocal base, {
-  required String clienteId,
-  required double total,
-  int consecutivo = 1,
-}) {
-  base.db.execute(
-    '''
-    INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo,
-                        estado, total, fecha_dispositivo, fecha_operativa,
-                        sincronizada, creado_en)
-    VALUES (?, ?, ?, ?, 'credito', 'confirmada', ?,
-            '2026-09-24T10:00:00.000Z', '2026-09-24', 0, '2026-09-24T10:00:00.000Z')
-    ''',
-    [
-      'venta-$consecutivo',
-      consecutivo,
-      'VEND01-${consecutivo.toString().padLeft(6, '0')}',
-      clienteId,
-      total,
-    ],
-  );
-}
-
-void sembrarCobroPendiente(
-  BaseLocal base, {
-  required String clienteId,
-  required double importe,
-  int consecutivo = 1,
-}) {
-  base.db.execute(
-    '''
-    INSERT INTO cobros (id, folio_consecutivo, folio_local, cliente_id, importe,
-                        forma_pago, estado, fecha_dispositivo, fecha_operativa,
-                        sincronizado, creado_en)
-    VALUES (?, ?, ?, ?, ?, 'efectivo', 'confirmado',
-            '2026-09-24T11:00:00.000Z', '2026-09-24', 0, '2026-09-24T11:00:00.000Z')
-    ''',
-    [
-      'cobro-$consecutivo',
-      consecutivo,
-      'VEND01-C${consecutivo.toString().padLeft(5, '0')}',
-      clienteId,
-      importe,
-    ],
-  );
-}
-
 /// Encola sobres con el payload REAL que viaja al servidor.
 ///
 /// Un payload de relleno (`{}`) haría pasar pruebas que en producción
@@ -362,20 +299,6 @@ void sembrarFolios(
     asignadoEn: '2026-09-24T07:00:00.000Z',
   );
 }
-
-void sembrarFoliosDeCobro(
-  BaseLocal base, {
-  int desde = 1,
-  int hasta = 500,
-  int consumidoHasta = 0,
-}) =>
-    sembrarFolios(
-      base,
-      tipo: 'cobro',
-      desde: desde,
-      hasta: hasta,
-      consumidoHasta: consumidoHasta,
-    );
 
 /// Los catálogos cerrados de motivos, como los dejaría un delta del servidor.
 ///
@@ -560,7 +483,7 @@ String textoDe(WidgetTester tester, Key clave) =>
 /// instante UTC— para que la pantalla y el dato coincidan.
 /// El reloj de las pruebas, en un solo lugar.
 ///
-/// Lo usan el override del provider Y los sembradores de ventas y cobros: si cada
+/// Lo usan el override del provider Y los sembradores de ventas: si cada
 /// uno tuviera su propia constante, un sembrador podría estampar una fecha
 /// operativa distinta de la que la pantalla consulta y la prueba fallaría por una
 /// razón que no tiene nada que ver con lo que prueba.
@@ -571,6 +494,7 @@ void sembrarVentaDelDia(
   required String folio,
   required double total,
   String tipo = 'contado',
+  String formaPago = 'efectivo',
   String cliente = 'c1',
   int sincronizada = 0,
   String estado = 'confirmada',
@@ -581,29 +505,12 @@ void sembrarVentaDelDia(
   final momento = relojDePrueba().toUtc().toIso8601String();
   base.db.execute(
     'INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, '
-    'estado, total, fecha_dispositivo, fecha_operativa, sincronizada, creado_en, '
-    'nota_oficina) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [folio, folio.hashCode.abs(), folio, cliente, tipo, estado, total, momento,
-     fechaOperativa ?? momento.substring(0, 10), sincronizada, momento, notaOficina],
-  );
-}
-
-/// Un cobro del día de hoy.
-void sembrarCobroDelDia(
-  BaseLocal base, {
-  required String folio,
-  required double importe,
-  String forma = 'efectivo',
-  String cliente = 'c1',
-}) {
-  final momento = relojDePrueba().toUtc().toIso8601String();
-  base.db.execute(
-    'INSERT INTO cobros (id, folio_consecutivo, folio_local, cliente_id, importe, '
-    "forma_pago, estado, fecha_dispositivo, fecha_operativa, creado_en) "
-    "VALUES (?, ?, ?, ?, ?, ?, 'confirmado', ?, ?, ?)",
-    [folio, folio.hashCode.abs(), folio, cliente, importe, forma, momento,
-     momento.substring(0, 10), momento],
+    'forma_pago, estado, total, fecha_dispositivo, fecha_operativa, sincronizada, '
+    'creado_en, nota_oficina) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [folio, folio.hashCode.abs(), folio, cliente, tipo, formaPago, estado, total,
+     momento, fechaOperativa ?? momento.substring(0, 10), sincronizada, momento,
+     notaOficina],
   );
 }
 

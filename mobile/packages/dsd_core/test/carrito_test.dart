@@ -279,48 +279,37 @@ void main() {
   });
 
   group('la forma de pago', () {
-    EstadoCredito conLinea({int limite = 1000, int saldo = 0}) => EstadoCredito(
-          limite: Dinero.dePesos(limite),
-          saldoConfirmado: Dinero.dePesos(saldo),
-        );
-
-    test('de contado procede aunque el cliente deba hasta la camisa', () {
-      final c = const Carrito()
-          .agregar(_caja(), Cantidad.deEnteros(2), existencias: _camion())
-          .carrito;
-
-      final r = c.evaluar(conLinea(limite: 100, saldo: 5000));
-      expect(r.permitida, isTrue);
-      expect(r.motivo, equals(MotivoCredito.contadoSiemprePermitido));
-    });
-
-    test('a crédito se bloquea al pasar el límite, y dice cuánto falta', () {
-      final c = const Carrito()
-          .agregar(_caja(), Cantidad.deEnteros(2), existencias: _camion())
-          .carrito
-          .conFormaDePago(aCredito: true);
-
-      final r = c.evaluar(conLinea(limite: 500, saldo: 100));
-      expect(r.permitida, isFalse);
-      expect(r.motivo, equals(MotivoCredito.excedeLimite));
-      // 100 + 592 = 692, sobre un límite de 500 ⇒ faltan 192.
-      expect(r.excedente, equals(Dinero.deTexto('192.00')));
+    test('nace en efectivo: todo es de contado', () {
+      expect(const Carrito().formaDePago, FormaDePago.efectivo);
+      expect(const Carrito().referenciaPago, isNull);
     });
 
     test('cambiar la forma de pago no toca los importes', () {
-      final contado = const Carrito()
+      final efectivo = const Carrito()
           .agregar(_caja(), Cantidad.deEnteros(2), existencias: _camion())
           .carrito;
-      final credito = contado.conFormaDePago(aCredito: true);
+      final transferencia =
+          efectivo.conFormaDePago(FormaDePago.transferencia, referencia: ' SPEI 1 ');
 
-      expect(credito.total, equals(contado.total));
-      expect(credito.cuantasLineas, equals(contado.cuantasLineas));
+      expect(transferencia.total, equals(efectivo.total));
+      expect(transferencia.cuantasLineas, equals(efectivo.cuantasLineas));
+      expect(transferencia.referenciaPago, 'SPEI 1');
     });
 
-    test('el carrito vacío no tiene nada que evaluar', () {
-      const c = Carrito();
-      expect(c.total, equals(Dinero.cero));
-      expect(c.evaluar(conLinea()).permitida, isTrue);
+    test('al volver a efectivo, la referencia del banco se borra', () {
+      final c = const Carrito()
+          .conFormaDePago(FormaDePago.transferencia, referencia: 'SPEI 1')
+          .conFormaDePago(FormaDePago.efectivo, referencia: 'SPEI 1');
+      expect(c.referenciaPago, isNull);
+    });
+
+    test('agregar y quitar conservan la forma de pago', () {
+      final c = const Carrito()
+          .conFormaDePago(FormaDePago.transferencia, referencia: 'X')
+          .agregar(_pieza(), Cantidad.deEnteros(1), existencias: _camion())
+          .carrito;
+      expect(c.formaDePago, FormaDePago.transferencia);
+      expect(c.quitar(c.lineas.single.llave).referenciaPago, 'X');
     });
   });
 
@@ -336,12 +325,13 @@ void main() {
       expect(conUno.cuantasLineas, equals(1));
     });
 
-    test('vaciar conserva la forma de pago elegida', () {
+    test('vaciar regresa a efectivo: la forma de pago es de ese cliente', () {
       final c = const Carrito()
-          .conFormaDePago(aCredito: true)
+          .conFormaDePago(FormaDePago.transferencia, referencia: 'X')
           .agregar(_pieza(), Cantidad.deEnteros(1), existencias: _camion())
           .carrito;
-      expect(c.vaciar().aCredito, isTrue);
+      expect(c.vaciar().formaDePago, FormaDePago.efectivo);
+      expect(c.vaciar().referenciaPago, isNull);
       expect(c.vaciar().estaVacio, isTrue);
     });
   });

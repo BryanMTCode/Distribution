@@ -201,7 +201,9 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
             const SizedBox(height: 4),
             Center(
               child: Text(
-                v.aCredito ? 'A crédito' : 'De contado',
+                v.formaDePago == FormaDePago.transferencia
+                    ? 'Por transferencia${v.referenciaPago == null ? '' : ' · ${v.referenciaPago}'}'
+                    : 'En efectivo',
                 style: TextStyle(color: colores.onSurfaceVariant),
               ),
             ),

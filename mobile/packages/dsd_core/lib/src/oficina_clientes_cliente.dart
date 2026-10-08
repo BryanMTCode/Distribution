@@ -1,19 +1,23 @@
 /// Los clientes para la oficina: el cliente de `/v1/oficina/clientes`.
 ///
-/// No es la cartera de ruta que el vendedor baja para vender sin señal: es la
-/// vista de la oficina sobre TODOS los clientes —quién debe, desde cuándo, qué
-/// compra— y el bloqueo del crédito. Necesita red, como el tablero.
+/// No es la lista de ruta que el vendedor baja para vender sin señal: es la vista
+/// de la oficina sobre TODOS los clientes —dónde están, qué compran y cómo pagan—.
+/// Todo es de contado (ADR 0002 §81): aquí no hay saldo ni crédito. Necesita red,
+/// como el tablero.
 library;
 
 import 'dart:convert';
 
 import 'cargas_cliente.dart' show CargaRechazada;
 import 'dinero.dart';
+import 'forma_de_pago.dart';
 import 'sync_cliente.dart' show SesionInvalida, ServidorConProblemas;
 import 'transporte.dart';
 import 'vendedores_cliente.dart' show ServidorSinEstaFuncion, SinPermisoDeVendedores;
 
 Dinero _d(Object? v) => Dinero.deTexto(v! as String);
+
+double? _coordenada(Object? v) => v == null ? null : double.parse(v.toString());
 
 class ClienteDeOficina {
   const ClienteDeOficina({
@@ -22,11 +26,8 @@ class ClienteDeOficina {
     required this.nombre,
     required this.ruta,
     required this.estatus,
-    required this.bloqueado,
     required this.telefono,
-    required this.saldo,
-    required this.saldoVencido,
-    required this.facturasVencidas,
+    required this.conUbicacion,
     required this.ultimaCompra,
   });
 
@@ -36,11 +37,8 @@ class ClienteDeOficina {
         nombre: j['nombre']! as String,
         ruta: j['ruta'] as String?,
         estatus: j['estatus']! as String,
-        bloqueado: j['bloqueado']! as bool,
         telefono: j['telefono'] as String?,
-        saldo: _d(j['saldo']),
-        saldoVencido: _d(j['saldo_vencido']),
-        facturasVencidas: (j['facturas_vencidas']! as num).toInt(),
+        conUbicacion: j['con_ubicacion']! as bool,
         ultimaCompra: j['ultima_compra'] as String?,
       );
 
@@ -49,11 +47,10 @@ class ClienteDeOficina {
   final String nombre;
   final String? ruta;
   final String estatus;
-  final bool bloqueado;
   final String? telefono;
-  final Dinero saldo;
-  final Dinero saldoVencido;
-  final int facturasVencidas;
+
+  /// Sin coordenadas el vendedor no tiene geocerca y el mapa no lo dibuja.
+  final bool conUbicacion;
 
   /// `YYYY-MM-DD`, o nulo si nunca ha comprado.
   final String? ultimaCompra;
@@ -85,44 +82,8 @@ class ListaDeClientesDeOficina {
   final List<ClienteDeOficina> clientes;
   final bool recortado;
 
-  /// Cuántos hay en cada filtro: todos, con_saldo, vencidos, bloqueados, prospectos.
+  /// Cuántos hay en cada filtro: todos, prospectos, sin_ubicacion.
   final Map<String, int> conteos;
-}
-
-class CuentaAbierta {
-  const CuentaAbierta({
-    required this.ventaId,
-    required this.folio,
-    required this.emision,
-    required this.vencimiento,
-    required this.original,
-    required this.pagado,
-    required this.saldo,
-    required this.vencida,
-    required this.diasVencida,
-  });
-
-  factory CuentaAbierta.deJson(Map<String, Object?> j) => CuentaAbierta(
-        ventaId: j['venta_id']! as String,
-        folio: j['folio'] as String?,
-        emision: j['fecha_emision']! as String,
-        vencimiento: j['fecha_vencimiento']! as String,
-        original: _d(j['importe_original']),
-        pagado: _d(j['importe_pagado']),
-        saldo: _d(j['saldo']),
-        vencida: j['vencida']! as bool,
-        diasVencida: (j['dias_vencida']! as num).toInt(),
-      );
-
-  final String ventaId;
-  final String? folio;
-  final String emision;
-  final String vencimiento;
-  final Dinero original;
-  final Dinero pagado;
-  final Dinero saldo;
-  final bool vencida;
-  final int diasVencida;
 }
 
 class VentaDelCliente {
@@ -131,6 +92,7 @@ class VentaDelCliente {
     required this.folio,
     required this.fecha,
     required this.tipo,
+    required this.formaDePago,
     required this.estado,
     required this.total,
     required this.vendedor,
@@ -141,6 +103,9 @@ class VentaDelCliente {
         folio: j['folio'] as String?,
         fecha: j['fecha']! as String,
         tipo: j['tipo']! as String,
+        formaDePago: j['forma_pago'] == null
+            ? null
+            : FormaDePago.deCodigo(j['forma_pago'] as String?),
         estado: j['estado']! as String,
         total: _d(j['total']),
         vendedor: j['vendedor']! as String,
@@ -149,36 +114,14 @@ class VentaDelCliente {
   final String id;
   final String? folio;
   final String fecha;
+
+  /// 'contado'; 'credito' solo en las ventas del piloto.
   final String tipo;
+
+  /// Nula solo en las ventas a crédito del piloto.
+  final FormaDePago? formaDePago;
   final String estado;
   final Dinero total;
-  final String vendedor;
-}
-
-class CobroDelCliente {
-  const CobroDelCliente({
-    required this.folio,
-    required this.fecha,
-    required this.importe,
-    required this.formaPago,
-    required this.estado,
-    required this.vendedor,
-  });
-
-  factory CobroDelCliente.deJson(Map<String, Object?> j) => CobroDelCliente(
-        folio: j['folio'] as String?,
-        fecha: j['fecha']! as String,
-        importe: _d(j['importe']),
-        formaPago: j['forma_pago']! as String,
-        estado: j['estado']! as String,
-        vendedor: j['vendedor']! as String,
-      );
-
-  final String? folio;
-  final String fecha;
-  final Dinero importe;
-  final String formaPago;
-  final String estado;
   final String vendedor;
 }
 
@@ -196,28 +139,21 @@ class FichaDelCliente {
   String? get contacto => _j['contacto'] as String?;
   String? get telefono => _j['telefono'] as String?;
   String? get direccion => _j['direccion'] as String?;
+  String? get referencias => _j['referencias'] as String?;
   String? get ruta => _j['ruta'] as String?;
   String get estatus => _j['estatus']! as String;
-  bool get permiteCredito => _j['permite_credito']! as bool;
-  Dinero get limiteCredito => _d(_j['limite_credito']);
-  int? get diasCredito => (_j['dias_credito'] as num?)?.toInt();
-  bool get bloqueado => _j['bloqueado']! as bool;
-  String? get bloqueoMotivo => _j['bloqueo_motivo'] as String?;
-  Dinero get saldo => _d(_j['saldo']);
-  Dinero get disponible => _d(_j['disponible']);
-  Dinero get saldoVencido => _d(_j['saldo_vencido']);
-  Dinero get porConfirmar => _d(_j['por_confirmar']);
+
+  /// Dónde está: lo que usa la geocerca de la venta y el mapa del tablero.
+  double? get lat => _coordenada(_j['lat']);
+  double? get lng => _coordenada(_j['lng']);
+
+  /// 'gps' si se tomó parado en el negocio; 'manual' si se escribió o corrigió.
+  String? get ubicacionOrigen => _j['ubicacion_origen'] as String?;
+  bool get conUbicacion => lat != null && lng != null;
   Dinero get compradoMes => _d(_j['comprado_mes']);
   Dinero get compradoAnio => _d(_j['comprado_anio']);
-  List<CuentaAbierta> get cuentas =>
-      [for (final c in _j['cuentas']! as List) CuentaAbierta.deJson((c as Map).cast())];
   List<VentaDelCliente> get ventas =>
       [for (final v in _j['ventas']! as List) VentaDelCliente.deJson((v as Map).cast())];
-  List<CobroDelCliente> get cobros =>
-      [for (final k in _j['cobros']! as List) CobroDelCliente.deJson((k as Map).cast())];
-
-  /// Si este usuario puede bloquear el crédito (`clientes.administrar`).
-  bool get puedeBloquear => _j['puede_bloquear']! as bool;
   String? get mensaje => _j['mensaje'] as String?;
 }
 
@@ -237,15 +173,6 @@ class ClienteClientesDeOficina {
 
   Future<FichaDelCliente> ficha(String id) async {
     final r = await _transporte.obtener('/v1/oficina/clientes/$id');
-    _revisar(r);
-    return FichaDelCliente.deJson((jsonDecode(r.cuerpo) as Map).cast());
-  }
-
-  Future<FichaDelCliente> bloquear(String id, {required bool bloquear, String motivo = ''}) async {
-    final r = await _transporte.post(
-      '/v1/oficina/clientes/$id/bloqueo',
-      {'bloquear': bloquear, 'motivo': motivo},
-    );
     _revisar(r);
     return FichaDelCliente.deJson((jsonDecode(r.cuerpo) as Map).cast());
   }

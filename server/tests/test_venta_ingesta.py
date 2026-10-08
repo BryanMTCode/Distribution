@@ -32,13 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.sync.sobres import CodigoError
 from app.infra.sync.manejadores import (
-    MOTIVO_CLIENTE_BLOQUEADO,
-    MOTIVO_EXCEDE_CREDITO,
     MOTIVO_LEJOS_DEL_CLIENTE,
     MOTIVO_PRECIO_DESACTUALIZADO,
     MOTIVO_RELOJ_DESFASADO,
     MOTIVO_SIN_GEOSELLO,
     MOTIVO_SIN_LISTA,
+    MOTIVO_VENTA_A_CREDITO,
     Contexto,
     ErrorDeManejador,
     obtener_manejador,
@@ -256,44 +255,72 @@ async def test_el_vendedor_no_puede_declararse_otro(
 # ---------------------------------------------------------------------------
 
 
-async def test_pasarse_del_limite_de_credito_se_marca_y_la_venta_entra(
+async def test_una_venta_en_efectivo_entra_confirmada(sesion: AsyncSession, escenario: dict):
+    """Solo contado (ADR 0002 §81): el efectivo está en la mano, no espera a nadie."""
+    venta_id = await aplicar(sesion, escenario, payload(escenario, forma_pago="efectivo"))
+    await sesion.commit()
+
+    venta = await leer_venta(sesion, venta_id)
+    assert (venta["tipo"], venta["forma_pago"], venta["pago_estado"]) == (
+        "contado", "efectivo", "confirmado"
+    )
+    assert venta["requiere_revision"] is False
+
+
+async def test_una_transferencia_entra_por_confirmar_con_su_referencia(
     sesion: AsyncSession, escenario: dict
 ):
-    """El caso más tentador de rechazar, y el que más daño haría.
-
-    El teléfono ya bloqueó lo que podía bloquear, con el saldo que tenía. Si el
-    saldo real era mayor, la mercancía ya salió igual: rechazarla aquí borra el
-    registro de una deuda que existe.
-    """
-    await sesion.execute(
-        text("UPDATE clientes SET limite_credito = 100 WHERE id = :c"),
-        {"c": escenario["cliente"]},
+    """No viene en la bolsa: la oficina la confirma contra el banco."""
+    venta_id = await aplicar(
+        sesion,
+        escenario,
+        payload(escenario, forma_pago="transferencia", referencia_pago="SPEI 4471"),
     )
     await sesion.commit()
 
+    venta = await leer_venta(sesion, venta_id)
+    assert (venta["forma_pago"], venta["pago_estado"], venta["referencia_pago"]) == (
+        "transferencia", "por_confirmar", "SPEI 4471"
+    )
+
+
+async def test_un_telefono_sin_actualizar_vende_en_efectivo(
+    sesion: AsyncSession, escenario: dict
+):
+    """La app vieja no manda la forma de pago: su contado era siempre efectivo."""
+    venta_id = await aplicar(sesion, escenario, payload(escenario))
+    await sesion.commit()
+    venta = await leer_venta(sesion, venta_id)
+    assert (venta["forma_pago"], venta["pago_estado"]) == ("efectivo", "confirmado")
+
+
+async def test_una_venta_a_credito_tardia_entra_marcada_y_sin_deuda(
+    sesion: AsyncSession, escenario: dict
+):
+    """§0.1: la mercancía ya salió y la venta se registra. Pero ya no hay crédito:
+    no nace cuenta por cobrar, y la oficina la ve marcada para ir a cobrarla."""
     venta_id = await aplicar(sesion, escenario, payload(escenario, tipo="credito"))
     await sesion.commit()
 
     venta = await leer_venta(sesion, venta_id)
-    assert venta["requiere_revision"] is True
-    assert MOTIVO_EXCEDE_CREDITO in venta["revision_motivos"]
-    assert venta["total"] == Decimal("592.00"), "la venta tiene que existir igual"
+    assert venta["tipo"] == "credito"
+    assert venta["forma_pago"] is None
+    assert MOTIVO_VENTA_A_CREDITO in venta["revision_motivos"]
+    deudas = (
+        await sesion.execute(
+            text("SELECT count(*) FROM cuentas_por_cobrar WHERE venta_id = :v"),
+            {"v": venta_id},
+        )
+    ).scalar_one()
+    assert deudas == 0
 
 
-async def test_un_cliente_bloqueado_a_credito_se_marca_y_entra(
+async def test_una_forma_de_pago_desconocida_va_a_cuarentena(
     sesion: AsyncSession, escenario: dict
 ):
-    await sesion.execute(
-        text("UPDATE clientes SET bloqueado = true WHERE id = :c"),
-        {"c": escenario["cliente"]},
-    )
-    await sesion.commit()
-
-    venta_id = await aplicar(sesion, escenario, payload(escenario, tipo="credito"))
-    await sesion.commit()
-
-    venta = await leer_venta(sesion, venta_id)
-    assert MOTIVO_CLIENTE_BLOQUEADO in venta["revision_motivos"]
+    with pytest.raises(ErrorDeManejador) as e:
+        await aplicar(sesion, escenario, payload(escenario, forma_pago="cheque"))
+    assert e.value.codigo == CodigoError.PAYLOAD_INVALIDO
 
 
 async def test_un_precio_viejo_se_marca_y_NO_se_corrige(
@@ -467,14 +494,9 @@ async def test_varios_motivos_se_acumulan_sin_repetirse(
 ):
     """La oficina necesita ver TODO lo que hay que revisar de una venta, no el
     primer problema que apareció."""
-    datos = payload(escenario, tipo="credito")
+    datos = payload(escenario, tipo="credito", lista_precios_id=None)
     datos.pop("lat")
     datos.pop("lng")
-    await sesion.execute(
-        text("UPDATE clientes SET limite_credito = 1, bloqueado = true WHERE id = :c"),
-        {"c": escenario["cliente"]},
-    )
-    await sesion.commit()
 
     venta_id = await aplicar(sesion, escenario, datos)
     await sesion.commit()
@@ -482,8 +504,8 @@ async def test_varios_motivos_se_acumulan_sin_repetirse(
     venta = await leer_venta(sesion, venta_id)
     motivos = venta["revision_motivos"]
     assert MOTIVO_SIN_GEOSELLO in motivos
-    assert MOTIVO_CLIENTE_BLOQUEADO in motivos
-    assert MOTIVO_EXCEDE_CREDITO in motivos
+    assert MOTIVO_SIN_LISTA in motivos
+    assert MOTIVO_VENTA_A_CREDITO in motivos
     assert len(motivos) == len(set(motivos)), "los motivos se repitieron"
 
 

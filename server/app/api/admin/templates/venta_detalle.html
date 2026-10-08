@@ -111,7 +111,13 @@
       <tr>
         <td colspan="{{ 5 if not abierta_para_editar else 6 }}" class="numero">
           <strong>Total {{ total_texto }}</strong>
-          <span class="sutil">· {{ v.tipo }}</span>
+          <span class="sutil" id="forma_de_pago">·
+            {% if v.tipo == 'credito' %}crédito (piloto, cuando había crédito)
+            {% else %}{{ v.forma_pago }}{% if v.referencia_pago %} {{ v.referencia_pago }}{% endif %}
+              {% if v.pago_estado == 'por_confirmar' %}· <a href="/panel/transferencias">por confirmar</a>
+              {% elif v.pago_estado == 'rechazado' %}· <span style="color:var(--alerta)">no llegó: {{ v.pago_resolucion_nota }}</span>
+              {% endif %}
+            {% endif %}</span>
         </td>
       </tr>
     </tfoot>

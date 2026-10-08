@@ -42,6 +42,7 @@ ENTIDADES = {
     "precio": "precios",
     "lista_precios": "listas de precios",
     "cliente": "clientes",
+    # Del piloto, cuando había crédito (ADR 0002 §81).
     "cartera": "saldos de clientes",
     "carga": "cargas",
     "venta": "ventas",
@@ -55,7 +56,8 @@ ENTIDADES = {
 
 OPERACIONES = {
     "venta.crear": "Venta",
-    "cobro.crear": "Cobro",
+    # Del piloto, cuando había abonos: el servidor ya no los recibe.
+    "cobro.crear": "Cobro (piloto)",
     "merma.crear": "Merma, devolución o cambio",
     "no_drop.crear": "Visita sin venta",
     "cliente.crear": "Alta de cliente",
@@ -65,7 +67,6 @@ OPERACIONES = {
 # A dónde lleva cada documento aceptado.
 ENLACES = {
     "venta.crear": "/panel/ventas/{}",
-    "cobro.crear": "/panel/cobranza/{}",
     "cliente.crear": "/panel/clientes/{}",
     "traspaso.crear": "/panel/entradas/devolucion/{}",
 }

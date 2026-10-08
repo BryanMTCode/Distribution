@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS clientes (
     ubicacion_precision_m   REAL,
     secuencia               INTEGER,
     lista_precios_id        TEXT,
+    -- Del crédito del piloto. Todo es de contado (ADR 0002 §81): siguen aquí
+    -- porque un teléfono que se actualiza ya las tiene, pero nada las lee.
     permite_credito         INTEGER NOT NULL DEFAULT 0,
     limite_credito          REAL NOT NULL DEFAULT 0,
     bloqueado               INTEGER NOT NULL DEFAULT 0,
@@ -328,7 +330,9 @@ CREATE TABLE IF NOT EXISTS credencial_local (
 CREATE TABLE IF NOT EXISTS carrito_borrador (
     id              INTEGER PRIMARY KEY CHECK (id = 1),   -- fila única
     cliente_id      TEXT NOT NULL,
-    a_credito       INTEGER NOT NULL DEFAULT 0,
+    -- Cómo va a pagar: todo es de contado (ADR 0002 §81).
+    forma_pago      TEXT NOT NULL DEFAULT 'efectivo',
+    referencia_pago TEXT,
     -- Las líneas, con su presentación y su precio ya resuelto. Se guarda el
     -- precio con el que se armó: si el catálogo se refresca a media visita, el
     -- vendedor sigue viendo lo que le cotizó al cliente.
@@ -352,6 +356,10 @@ CREATE TABLE IF NOT EXISTS ventas (
     carga_id                TEXT,
     tipo                    TEXT NOT NULL DEFAULT 'contado',
     estado                  TEXT NOT NULL DEFAULT 'confirmada',
+    -- Se paga en el acto (ADR 0002 §81): 'efectivo' entra al arqueo del corte;
+    -- 'transferencia' la confirma la oficina contra el banco.
+    forma_pago              TEXT NOT NULL DEFAULT 'efectivo',
+    referencia_pago         TEXT,
     lista_precios_id        TEXT,
     lista_precios_version   INTEGER,
     subtotal                REAL NOT NULL DEFAULT 0,

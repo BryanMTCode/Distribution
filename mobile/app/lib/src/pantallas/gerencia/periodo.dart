@@ -6,7 +6,7 @@
 ///
 ///   · Hoy, ayer, esta semana, la pasada, este mes, el pasado, o un rango de
 ///     fechas a mano.
-///   · Lo vendido (contado y crédito), lo cobrado, visitas sin venta, mermas,
+///   · Lo vendido (efectivo y transferencia), visitas sin venta, mermas,
 ///     devoluciones y clientes.
 ///   · Por vendedor —tocar uno abre todo lo que hizo en ese periodo— y por día
 ///     —tocar uno abre el tablero de ese día—.
@@ -236,14 +236,9 @@ class _EstadoPeriodo extends ConsumerState<VistaDelPeriodo> {
                   key: const Key('periodo_vendido'),
                   cifra: pesos(d.cifras.total, conCentavos: false),
                   etiqueta: 'vendido',
-                  detalle: 'Contado ${pesos(d.cifras.contado)}\n'
-                      'Crédito ${pesos(d.cifras.credito)}'
+                  detalle: 'Efectivo ${pesos(d.cifras.efectivo)}\n'
+                      'Transferencia ${pesos(d.cifras.transferencias)}'
                       '${d.cifras.canceladas > 0 ? '\n${d.cifras.canceladas} cancelada(s)' : ''}',
-                ),
-                Tarjeta(
-                  cifra: pesos(d.cifras.cobrado, conCentavos: false),
-                  etiqueta: 'cobrado',
-                  detalle: 'Abonos confirmados',
                 ),
                 Tarjeta(
                   cifra: '${d.cifras.clientesAtendidos}',
@@ -265,7 +260,7 @@ class _EstadoPeriodo extends ConsumerState<VistaDelPeriodo> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(v.nombre),
                   subtitle: Text(
-                    '${v.ventas} venta(s) · cobró ${pesos(v.cobrado)}'
+                    '${v.ventas} venta(s) · ${pesos(v.efectivo)} en efectivo'
                     '${v.noVentas > 0 ? ' · ${v.noVentas} sin venta' : ''}'
                     '${v.mermas > 0 ? ' · ${v.mermas} merma(s)' : ''}',
                   ),

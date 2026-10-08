@@ -65,7 +65,7 @@
     <div class="etiqueta">ventas por revisar</div>
     <div class="sutil" style="margin-top:6px">
       {% if indicadores.en_revision %}
-        Entraron marcadas: crédito excedido, precio viejo, fuera de geocerca.
+        Entraron marcadas: precio viejo, fuera de geocerca, sin ubicación.
       {% else %}
         Todas las ventas entraron limpias.
       {% endif %}
@@ -83,40 +83,18 @@
     </div>
   </div>
 
-  <a class="tarjeta {% if indicadores.cobros_en_revision %}aviso{% endif %}"
-     href="/panel/cobranza?solo_revision=1" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.cobros_en_revision }}</div>
-    <div class="etiqueta">cobros por revisar</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.cobros_en_revision %}
-        Cobró de más, cobró sin deuda, o el teléfono traía otro saldo.
-      {% else %}
-        Todos los cobros entraron limpios.
-      {% endif %}
-    </div>
-  </a>
-
-  <a class="tarjeta {% if indicadores.cobros_por_confirmar %}aviso{% endif %}"
-     href="/panel/cobranza/por-confirmar" style="text-decoration:none;color:inherit"
+  <a class="tarjeta {% if indicadores.transferencias_por_confirmar %}aviso{% endif %}"
+     href="/panel/transferencias" style="text-decoration:none;color:inherit"
      id="tarjeta_por_confirmar">
-    <div class="numero">{{ indicadores.cobros_por_confirmar }}</div>
-    <div class="etiqueta">transferencias y cheques por confirmar</div>
+    <div class="numero">{{ indicadores.transferencias_por_confirmar }}</div>
+    <div class="etiqueta">transferencias por confirmar</div>
     <div class="sutil" style="margin-top:6px">
-      {% if indicadores.cobros_por_confirmar %}
-        {{ indicadores.importe_por_confirmar }} que todavía no baja ninguna deuda.
+      {% if indicadores.transferencias_por_confirmar %}
+        {{ indicadores.importe_por_confirmar }} que todavía no se ve en el banco.
         Compáralo contra el estado de cuenta.
       {% else %}
         Nada esperando al banco.
       {% endif %}
-    </div>
-  </a>
-
-  <a class="tarjeta {% if indicadores.hay_cartera_vencida %}alerta{% endif %}"
-     href="/panel/cobranza/cartera/antiguedad" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.cartera_vencida }}</div>
-    <div class="etiqueta">cartera vencida</div>
-    <div class="sutil" style="margin-top:6px">
-      Lo que ya pasó su fecha de pago. La antigüedad dice desde cuándo.
     </div>
   </a>
 </div>
@@ -139,31 +117,20 @@
     </div>
   </div>
 
-  {# Lleva a LIQUIDACIÓN, no a cobranza. El número es ventas de contado más
-     cobros en efectivo, y cobranza solo muestra la segunda mitad: con un día de
-     puras ventas, el recuadro prometía dinero y el destino aparecía vacío. La
-     liquidación es donde ese importe se cobra de verdad. #}
+  {# Lleva al CORTE: es donde ese efectivo se entrega de verdad. #}
   <a class="tarjeta" href="/panel/liquidaciones"
      style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.efectivo_hoy }}</div>
     <div class="etiqueta">{% if periodo.es_hoy %}efectivo a entregar hoy{% else %}efectivo cobrado {{ cuando }}{% endif %}</div>
     <div class="sutil" style="margin-top:6px">
-      Ventas de contado más cobros en efectivo. El crédito no suma —no se cobró
-      nada— y una transferencia entra al sistema pero no a la bolsa del vendedor.
+      Ventas pagadas en efectivo. Todo es de contado; una transferencia entra al
+      sistema pero no a la bolsa del vendedor.
     </div>
   </a>
 
   <div class="tarjeta">
-    <div class="numero">{{ cifras.cobrado|dinero }}</div>
-    <div class="etiqueta">cobrado {{ cuando }}</div>
-    <div class="sutil" style="margin-top:6px">
-      Abonos confirmados, en todas las formas de pago. Las transferencias por
-      confirmar no cuentan hasta que el banco las confirme.
-    </div>
-  </div>
-  <div class="tarjeta">
-    <div class="numero">{{ cifras.contado|dinero }}</div>
-    <div class="etiqueta">de contado · {{ cifras.credito|dinero }} a crédito</div>
+    <div class="numero">{{ cifras.transferencias|dinero }}</div>
+    <div class="etiqueta">por transferencia {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
       {{ cifras.clientes_atendidos }} cliente(s) con compra{% if cifras.canceladas %},
       {{ cifras.canceladas }} venta(s) cancelada(s){% endif %}.
@@ -193,9 +160,8 @@
         <th>Vendedor</th>
         <th class="numero">Ventas</th>
         <th class="numero">Importe</th>
-        <th class="numero">Contado</th>
-        <th class="numero">Crédito</th>
-        <th class="numero">Cobrado</th>
+        <th class="numero">Efectivo</th>
+        <th class="numero">Transferencia</th>
         <th class="numero">Sin venta</th>
         <th class="numero">Mermas</th>
       </tr>
@@ -207,9 +173,8 @@
           <span class="sutil">{{ v.codigo }}</span></td>
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
-        <td class="numero">{{ v.contado|dinero }}</td>
-        <td class="numero">{{ v.credito|dinero }}</td>
-        <td class="numero">{{ v.cobrado|dinero }}</td>
+        <td class="numero">{{ v.efectivo|dinero }}</td>
+        <td class="numero">{{ v.transferencias|dinero }}</td>
         <td class="numero">{{ v.no_ventas }}</td>
         <td class="numero">{{ v.mermas }}</td>
       </tr>
@@ -227,7 +192,7 @@
   <table id="tabla_por_dia">
     <thead>
       <tr><th>Día</th><th class="numero">Ventas</th><th class="numero">Importe</th>
-          <th style="width:30%"></th><th class="numero">Cobrado</th></tr>
+          <th style="width:30%"></th><th class="numero">Efectivo</th></tr>
     </thead>
     <tbody>
       {% for d in por_dia %}
@@ -238,7 +203,7 @@
         <td aria-hidden="true">
           <div style="height:10px;border-radius:5px;background:var(--acento);width:{{ d.barra }}%;min-width:{{ 2 if d.importe else 0 }}px"></div>
         </td>
-        <td class="numero">{{ d.cobrado|dinero }}</td>
+        <td class="numero">{{ d.efectivo|dinero }}</td>
       </tr>
       {% endfor %}
     </tbody>

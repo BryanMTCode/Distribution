@@ -208,7 +208,7 @@ async def listar(
             ultimo_push is None or ultimo_push.date() < dia
         )
         sin_actividad = (
-            not d["venta_total"] and not d["visitas"] and not d["cobrado_total"]
+            not d["venta_total"] and not d["visitas"]
         )
 
         renglones.append(
@@ -226,8 +226,8 @@ async def listar(
                 "drop_size": drop_size(venta, d["visitas_con_venta"]),
                 "no_drops": d["no_drops"],
                 "no_drops_nuestros": d["no_drops_nuestros"],
-                "cobrado": dinero(d["cobrado_total"]),
-                "efectivo": dinero(d["cobrado_efectivo"]),
+                "efectivo": dinero(d["venta_efectivo"]),
+                "transferencia": dinero(d["venta_transferencia"]),
                 "mermas_documentos": d["mermas_documentos"],
                 "promedio": dinero(referencia.promedio) if referencia.suficiente else None,
                 "dias_de_referencia": referencia.dias,
@@ -289,22 +289,17 @@ async def listar(
             "resumen": {
                 **dict(resumen),
                 "venta_total": dinero(resumen["venta_total"]),
-                "venta_contado": dinero(resumen["venta_contado"]),
-                "venta_credito": dinero(resumen["venta_credito"]),
-                "cobrado_total": dinero(resumen["cobrado_total"]),
-                "cobrado_efectivo": dinero(resumen["cobrado_efectivo"]),
+                "venta_efectivo": dinero(resumen["venta_efectivo"]),
+                "venta_transferencia": dinero(resumen["venta_transferencia"]),
                 "efectividad": porcentaje(
                     resumen["visitas_con_venta"], resumen["visitas"]
                 ),
                 "drop_size": drop_size(venta_total, resumen["visitas_con_venta"]),
                 # El efectivo que la operación tiene que recibir hoy: las ventas
-                # de contado más los cobros en efectivo. Misma cuenta que el
-                # arqueo de la liquidación — si no coincidieran, esta pantalla
-                # prometería un número y la liquidación cobraría otro.
-                "efectivo_a_entregar": dinero(
-                    Decimal(resumen["venta_contado"])
-                    + Decimal(resumen["cobrado_efectivo"])
-                ),
+                # pagadas en efectivo. Misma cuenta que el arqueo del corte — si
+                # no coincidieran, esta pantalla prometería un número y el corte
+                # cobraría otro.
+                "efectivo_a_entregar": dinero(resumen["venta_efectivo"]),
             },
             "referencia": {
                 "promedio": dinero(referencia_total.promedio),

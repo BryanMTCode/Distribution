@@ -196,8 +196,8 @@ class RepoTablero {
         'venta': {
           'fecha': _soloFecha(t.venta.fecha),
           'total': t.venta.total.texto,
-          'contado': t.venta.contado.texto,
-          'credito': t.venta.credito.texto,
+          'efectivo': t.venta.efectivo.texto,
+          'transferencia': t.venta.transferencia.texto,
           'documentos': t.venta.documentos,
           'ticket_promedio': t.venta.ticketPromedio.texto,
           'calculado_en': t.venta.calculadoEn?.toUtc().toIso8601String(),
@@ -211,14 +211,9 @@ class RepoTablero {
           'drop_size': t.visitas.dropSize.texto,
           'calculado_en': t.visitas.calculadoEn?.toUtc().toIso8601String(),
         },
-        'cobranza': {
-          'cobrado_hoy': t.cobranza.cobradoHoy.texto,
-          'cobrado_efectivo': t.cobranza.cobradoEfectivo.texto,
-          'saldo_total': t.cobranza.saldoTotal.texto,
-          'saldo_vencido': t.cobranza.saldoVencido.texto,
-          'facturas_vencidas': t.cobranza.facturasVencidas,
-          'clientes_vencidos': t.cobranza.clientesVencidos,
-          'calculado_en': t.cobranza.calculadoEn?.toUtc().toIso8601String(),
+        'por_confirmar': {
+          'cuantas': t.porConfirmar.cuantas,
+          'importe': t.porConfirmar.importe.texto,
         },
         'mermas': {
           'documentos': t.mermas.documentos,
@@ -236,7 +231,7 @@ class RepoTablero {
               'visitas': v.visitas,
               'con_venta': v.conVenta,
               'no_drops': v.noDrops,
-              'cobrado': v.cobrado.texto,
+              'efectivo': v.efectivo.texto,
               'efectividad': v.efectividad.toStringAsFixed(1),
             },
         ],

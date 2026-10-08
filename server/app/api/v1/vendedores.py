@@ -79,7 +79,8 @@ class VendedorEnLista(BaseModel):
     rutas: str | None
     ventas: int
     importe: Dinero
-    cobrado: Dinero
+    # Lo vendido en efectivo: lo que entrega en el corte.
+    efectivo: Dinero
     no_ventas: int
     mermas: int
     ultimo_contacto: datetime | None
@@ -179,6 +180,10 @@ class VentaVista(BaseModel):
     vendedor: str
     cliente: str
     tipo: str
+    # 'efectivo' | 'transferencia'; nula solo en las ventas a crédito del piloto.
+    forma_pago: str | None = None
+    # 'confirmado' | 'por_confirmar' | 'rechazado' (la transferencia que no llegó).
+    pago_estado: str | None = None
     estado: str
     total: Dinero
     partidas: list[Partida]
@@ -210,7 +215,8 @@ async def venta(venta_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> Vent
         await sesion.execute(
             text(
                 "SELECT v.id, v.folio_local AS folio, v.fecha_operativa, "
-                "       v.fecha_dispositivo AS momento, v.tipo, v.estado, v.total, "
+                "       v.fecha_dispositivo AS momento, v.tipo, v.forma_pago, "
+                "       v.pago_estado, v.estado, v.total, "
                 "       u.nombre AS vendedor, c.nombre_comercial AS cliente "
                 "  FROM ventas v "
                 "  JOIN usuarios u ON u.id = v.vendedor_id "

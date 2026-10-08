@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.conftest import PASSWORD_VENDEDOR, solo_texto
-from tests.test_panel_cobranza import _csrf
+from tests.conftest import csrf_del_panel as _csrf
 
 pytestmark = pytest.mark.asyncio
 

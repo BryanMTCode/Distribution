@@ -4,9 +4,9 @@
 /// vendedor, sus detalles, sus ventas y todo eso». Es la pantalla Vendedores del
 /// panel, en el bolsillo:
 ///
-///   · La lista: cada vendedor con lo que vendió y cobró en el periodo, lo que
+///   · La lista: cada vendedor con lo que vendió (y cuánto en efectivo), lo que
 ///     debe en su cuenta y cuándo habló su teléfono por última vez.
-///   · Su ficha: TODO lo que hizo, en orden de hora —ventas, cobros, mermas,
+///   · Su ficha: TODO lo que hizo, en orden de hora —ventas, mermas,
 ///     visitas, cargas, cortes, su cuenta—, y su camión producto por producto.
 ///   · Cada venta se abre con lo que se le vendió a la tienda.
 ///
@@ -32,6 +32,17 @@ String _hora(DateTime? momento) {
   final l = momento.toLocal();
   return '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')} '
       '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+}
+
+/// Cómo se pagó, en palabras. Las ventas a crédito del piloto no traen forma.
+String _formaDePago(VentaVista v) {
+  final forma = v.formaDePago;
+  if (forma == null) return v.tipo == 'credito' ? 'a crédito (piloto)' : 'de contado';
+  return switch (v.pagoEstado) {
+    'por_confirmar' => '${forma.etiqueta.toLowerCase()} por confirmar',
+    'rechazado' => '${forma.etiqueta.toLowerCase()} que no llegó',
+    _ => forma.etiqueta.toLowerCase(),
+  };
 }
 
 class _Error extends StatelessWidget {
@@ -166,7 +177,7 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
                   subtitle: Text(
                     '${v.camion ?? 'sin camión'} · ${v.rutas ?? 'sin ruta'}\n'
                     '${v.ventas} venta(s) · ${pesos(v.importe)} · '
-                    'cobró ${pesos(v.cobrado)}'
+                    '${pesos(v.efectivo)} en efectivo'
                     '${v.noVentas > 0 ? ' · ${v.noVentas} sin venta' : ''}\n'
                     '${v.saldoCuenta.centavos > 0 ? 'Debe ${pesos(v.saldoCuenta)} · ' : ''}'
                     'Su teléfono: ${antiguedadEnPalabras(v.ultimoContacto)}',
@@ -544,7 +555,7 @@ class _EstadoVentaVista extends ConsumerState<PantallaVentaVista> {
             Text(v.cliente, style: estilo.titleMedium),
             Text(
               '${v.vendedor} · ${_hora(v.momento).isEmpty ? v.fecha : _hora(v.momento)} · '
-              '${v.tipo == 'credito' ? 'a crédito' : 'de contado'} · ${v.estado}',
+              '${_formaDePago(v)} · ${v.estado}',
             ),
             const Divider(height: 24),
             for (final p in v.partidas)

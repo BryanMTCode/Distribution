@@ -67,7 +67,7 @@
     {
       "operacion_id": "019283b0-0004-7000-8000-000000000004",
       "secuencia": 3,
-      "hash_payload": "a0846e280f28d67635b60129b8e607e3df251ff5590621943ba1c00805ce4693",
+      "hash_payload": "d9879af87f90462465f5e88d64bec2174b49f7faca4b7f205fb378ead79adeb3",
       "visita_id": "019283c0-0004-7000-8000-000000000004",
       "operaciones": [
         {
@@ -89,6 +89,7 @@
             "cliente_id": "019283a0-0005-7000-8000-000000000005",
             "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
             "tipo": "contado",
+            "forma_pago": "efectivo",
             "lista_precios_id": "019283a0-0007-7000-8000-000000000007",
             "lista_precios_version": 7,
             "subtotal": "629.00",
@@ -133,7 +134,7 @@
     {
       "operacion_id": "019283b0-0005-7000-8000-000000000005",
       "secuencia": 4,
-      "hash_payload": "8a73c34036f774062c08347922280b2ed57df80c4f2a2c199f18dbbe572137fd",
+      "hash_payload": "43f898f649a55a763210034ba5e09451c936405f12ba427870aa8e8d7cf2ff89",
       "visita_id": "019283c0-0005-7000-8000-000000000005",
       "operaciones": [
         {
@@ -144,7 +145,9 @@
             "folio_local": "VEND01-000125",
             "cliente_id": "019283a0-0005-7000-8000-000000000005",
             "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
-            "tipo": "credito",
+            "tipo": "contado",
+            "forma_pago": "transferencia",
+            "referencia_pago": "SPEI 4471",
             "lista_precios_id": "019283a0-0007-7000-8000-000000000007",
             "lista_precios_version": 7,
             "subtotal": "592.00",
@@ -167,24 +170,6 @@
                 "importe": "592.00"
               }
             ]
-          }
-        },
-        {
-          "tipo": "cobro.crear",
-          "entidad_id": "019283e2-0001-7000-8000-000000000001",
-          "datos": {
-            "folio_consecutivo": 31,
-            "folio_local": "VEND01-000031",
-            "cliente_id": "019283a0-0005-7000-8000-000000000005",
-            "dispositivo_id": "019283f0-0001-7000-8000-000000000001",
-            "visita_id": "019283c0-0005-7000-8000-000000000005",
-            "importe": "400.00",
-            "forma_pago": "efectivo",
-            "saldo_cache_disp": "592.00",
-            "lat": "19.4326000",
-            "lng": "-99.1332000",
-            "fecha_dispositivo": "2026-09-29T18:12:00.000Z",
-            "fecha_operativa": "2026-09-29"
           }
         }
       ]

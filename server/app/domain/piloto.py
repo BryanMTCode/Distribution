@@ -71,8 +71,9 @@ VEREDICTOS = {
 # importes en otra consulta abre la puerta a que las dos lean momentos
 # distintos de la base.
 #
-# Los cobros van en su propio escalar y no en un JOIN: un día puede tener
-# cobranza sin ventas —pasar a cobrar sin vender— y un JOIN los perdería.
+# La cobranza es el efectivo de las ventas del día: la operación es de contado
+# (ADR 0002 §81) y ya no hay abonos. Es lo que el papel del vendedor anota como
+# «cobrado» y lo que entrega en el corte.
 SQL_SISTEMA_POR_DIA = """
 WITH dias AS (
     SELECT generate_series(CAST(:desde AS date), CAST(:hasta AS date),
@@ -105,10 +106,9 @@ v AS (
 ),
 c AS (
     SELECT fecha_operativa AS fecha,
-           -- Lo que se CAPTURÓ, que es lo que el papel también tiene: una
-           -- transferencia por confirmar o rechazada sí está en el recibo.
-           COALESCE(sum(importe) FILTER (WHERE estado <> 'cancelado'), 0) AS cobranza
-      FROM cobros
+           COALESCE(sum(total) FILTER (WHERE estado = 'confirmada'
+                                         AND forma_pago = 'efectivo'), 0) AS cobranza
+      FROM ventas
      WHERE vendedor_id = :vendedor
        AND fecha_operativa BETWEEN :desde AND :hasta
      GROUP BY fecha_operativa
@@ -157,9 +157,9 @@ SELECT
   (SELECT COALESCE(sum(total), 0) FROM ventas
     WHERE vendedor_id = :vendedor AND fecha_operativa = :fecha
       AND estado = 'confirmada')                                AS importe,
-  (SELECT COALESCE(sum(importe), 0) FROM cobros
+  (SELECT COALESCE(sum(total), 0) FROM ventas
     WHERE vendedor_id = :vendedor AND fecha_operativa = :fecha
-      AND estado <> 'cancelado')                                AS cobranza
+      AND estado = 'confirmada' AND forma_pago = 'efectivo')    AS cobranza
 """
 
 # Las jornadas capturadas, con su cifra congelada. Se cruza en Python con

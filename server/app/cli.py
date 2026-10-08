@@ -66,7 +66,7 @@ async def crear_usuario_de_oficina() -> int:
     print(f"\nRoles de oficina: {', '.join(ROLES_DE_OFICINA)}")
     print("  admin       todos los permisos, incluido dar de alta usuarios")
     print("  gerente     SOLO LECTURA sobre la operación")
-    print("  supervisor  opera: carga, liquidación, cuarentena, crédito")
+    print("  supervisor  opera: carga, corte del día, cuarentena, transferencias")
     rol = (input("Rol [admin]: ").strip() or "admin").lower()
     if rol not in ROLES_DE_OFICINA:
         # El rol 'vendedor' se niega aquí a propósito: un vendedor no entra al

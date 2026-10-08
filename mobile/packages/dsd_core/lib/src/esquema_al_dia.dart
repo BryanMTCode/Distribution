@@ -53,6 +53,24 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
   ),
   // Los días de visita del cliente (octubre 2026, migración 0041 del servidor).
   ('clientes', 'plan_visita', 'ALTER TABLE clientes ADD COLUMN plan_visita TEXT'),
+  // Solo contado (octubre 2026, migración 0046 del servidor): la venta guarda
+  // cómo se pagó. Lo vendido antes de esta versión era efectivo.
+  (
+    'ventas',
+    'forma_pago',
+    "ALTER TABLE ventas ADD COLUMN forma_pago TEXT NOT NULL DEFAULT 'efectivo'",
+  ),
+  ('ventas', 'referencia_pago', 'ALTER TABLE ventas ADD COLUMN referencia_pago TEXT'),
+  (
+    'carrito_borrador',
+    'forma_pago',
+    "ALTER TABLE carrito_borrador ADD COLUMN forma_pago TEXT NOT NULL DEFAULT 'efectivo'",
+  ),
+  (
+    'carrito_borrador',
+    'referencia_pago',
+    'ALTER TABLE carrito_borrador ADD COLUMN referencia_pago TEXT',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

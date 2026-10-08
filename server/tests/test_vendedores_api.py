@@ -110,6 +110,8 @@ async def test_el_detalle_trae_todo_lo_que_hizo_y_la_venta_se_abre(cliente, sesi
     detalle = (await cliente.get(f"/v1/vendedores/ventas/{venta['ref']}", headers=cab)).json()
     assert detalle["cliente"] == "La Esquina"
     assert detalle["total"] == "2250.00"
+    assert detalle["forma_pago"] == "efectivo"
+    assert detalle["pago_estado"] == "confirmado"
     [partida] = detalle["partidas"]
     assert partida["cantidad"] == "180.000"
     assert partida["unidad"] == "PZA"
@@ -166,7 +168,9 @@ async def test_el_tablero_por_periodo_dice_lo_mismo_que_el_panel(cliente, sesion
     cuerpo = (await cliente.get("/v1/tablero/periodo?periodo=semana", headers=cab)).json()
 
     assert cuerpo["periodo"]["clave"] == "semana"
-    assert cuerpo["cifras"]["contado"] == "2250.00"
+    # Todo es de contado (ADR 0002 §81): por forma de pago.
+    assert cuerpo["cifras"]["efectivo"] == "2250.00"
+    assert cuerpo["cifras"]["transferencias"] == "0.00"
     assert cuerpo["cifras"]["total"] == "2250.00"
     [juan] = cuerpo["por_vendedor"]
     assert juan["importe"] == "2250.00"

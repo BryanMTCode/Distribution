@@ -86,8 +86,6 @@ SQL_DIAS_SUCIOS = """
 WITH documentos AS (
     SELECT fecha_operativa AS fecha, fecha_servidor FROM ventas
     UNION ALL
-    SELECT fecha_operativa, fecha_servidor FROM cobros
-    UNION ALL
     SELECT fecha_operativa, fecha_servidor FROM no_drops
     UNION ALL
     SELECT fecha_operativa, fecha_servidor FROM mermas
@@ -122,10 +120,13 @@ SQL_BORRAR_DIA = "DELETE FROM tablero_dia WHERE fecha = :fecha"
 SQL_DIA_VENDEDOR = """
 WITH ventas_dia AS (
     SELECT vendedor_id,
-           sum(total)                                        AS venta_total,
-           sum(total) FILTER (WHERE tipo = 'contado')        AS venta_contado,
-           sum(total) FILTER (WHERE tipo = 'credito')        AS venta_credito,
-           count(*)                                          AS documentos_venta
+           sum(total)                                              AS venta_total,
+           -- Todo es de contado (ADR 0002 §81): lo que importa es la forma.
+           -- El efectivo se entrega en el corte; la transferencia se confirma
+           -- contra el banco.
+           sum(total) FILTER (WHERE forma_pago = 'efectivo')       AS venta_efectivo,
+           sum(total) FILTER (WHERE forma_pago = 'transferencia')  AS venta_transferencia,
+           count(*)                                                AS documentos_venta
       FROM ventas
      WHERE fecha_operativa = :fecha AND estado = 'confirmada'
      GROUP BY vendedor_id
@@ -160,16 +161,6 @@ nodrops_dia AS (
      WHERE n.fecha_operativa = :fecha
      GROUP BY n.vendedor_id
 ),
-cobros_dia AS (
-    SELECT vendedor_id,
-           sum(importe)                                              AS cobrado_total,
-           sum(importe) FILTER (WHERE forma_pago = 'efectivo')       AS cobrado_efectivo
-      FROM cobros
-     -- Lo que el vendedor REPORTÓ cobrar hoy: una transferencia por confirmar es
-     -- trabajo del día aunque el banco no la haya acreditado. La rechazada no.
-     WHERE fecha_operativa = :fecha AND estado IN ('confirmado', 'por_confirmar')
-     GROUP BY vendedor_id
-),
 -- Solo 'merma': la devolución de cliente comparte tabla pero es otra cosa —la
 -- mercancía vuelve buena al camión y se puede revender—. Sumarlas juntas haría
 -- que un día de muchas devoluciones se leyera como un día de muchas pérdidas.
@@ -186,36 +177,32 @@ mermas_dia AS (
        AND m.tipo IN ('merma', 'cambio')
      GROUP BY m.vendedor_id
 ),
--- El UNION (no UNION ALL) de los cinco: un vendedor que solo cobró, o que solo
--- registró no-drops, tiene que aparecer. Con un JOIN desde ventas, el día en
+-- El UNION (no UNION ALL) de los cuatro: un vendedor que solo registró no-drops,
+-- o solo mermas, tiene que aparecer. Con un JOIN desde ventas, el día en
 -- que no vendió nada desaparecería del tablero — justo el día que hay que ver.
 todos AS (
     SELECT vendedor_id FROM ventas_dia
     UNION SELECT vendedor_id FROM visitas_dia
     UNION SELECT vendedor_id FROM nodrops_dia
-    UNION SELECT vendedor_id FROM cobros_dia
     UNION SELECT vendedor_id FROM mermas_dia
 )
 INSERT INTO tablero_dia (
     fecha, vendedor_id,
-    venta_total, venta_contado, venta_credito, documentos_venta,
+    venta_total, venta_efectivo, venta_transferencia, documentos_venta,
     visitas, visitas_con_venta,
     no_drops, no_drops_nuestros,
-    cobrado_total, cobrado_efectivo,
     mermas_documentos, mermas_unidades,
     calculado_en
 )
 SELECT :fecha, t.vendedor_id,
        COALESCE(v.venta_total, 0),
-       COALESCE(v.venta_contado, 0),
-       COALESCE(v.venta_credito, 0),
+       COALESCE(v.venta_efectivo, 0),
+       COALESCE(v.venta_transferencia, 0),
        COALESCE(v.documentos_venta, 0),
        COALESCE(s.visitas, 0),
        COALESCE(s.visitas_con_venta, 0),
        COALESCE(n.no_drops, 0),
        COALESCE(n.no_drops_nuestros, 0),
-       COALESCE(c.cobrado_total, 0),
-       COALESCE(c.cobrado_efectivo, 0),
        COALESCE(mm.mermas_documentos, 0),
        COALESCE(mm.mermas_unidades, 0),
        now()
@@ -223,7 +210,6 @@ SELECT :fecha, t.vendedor_id,
   LEFT JOIN ventas_dia  v  ON v.vendedor_id  = t.vendedor_id
   LEFT JOIN visitas_dia s  ON s.vendedor_id  = t.vendedor_id
   LEFT JOIN nodrops_dia n  ON n.vendedor_id  = t.vendedor_id
-  LEFT JOIN cobros_dia  c  ON c.vendedor_id  = t.vendedor_id
   LEFT JOIN mermas_dia  mm ON mm.vendedor_id = t.vendedor_id
 """
 
@@ -313,55 +299,6 @@ SELECT :periodo, t.ruta_id,
 
 
 # ---------------------------------------------------------------------------
-# La cartera
-# ---------------------------------------------------------------------------
-# Un SALDO, no un flujo: no pertenece a ninguna fecha operativa (ver el
-# comentario de `tablero_cartera` en la migración). Los tramos son los mismos
-# que la pantalla de antigüedad del panel, para que las dos cifras coincidan.
-SQL_CARTERA = """
-WITH saldos AS (
-    SELECT x.cliente_id,
-           x.saldo,
-           x.fecha_vencimiento,
-           CURRENT_DATE - x.fecha_vencimiento AS dias_vencido
-      FROM cuentas_por_cobrar x
-     WHERE x.estado IN ('abierta', 'parcial')
-)
-INSERT INTO tablero_cartera (
-    id, saldo_total, saldo_vencido,
-    vencido_1_15, vencido_16_30, vencido_31_60, vencido_61_mas,
-    facturas_abiertas, facturas_vencidas,
-    clientes_con_saldo, clientes_vencidos, calculado_en
-)
-SELECT true,
-       COALESCE(sum(saldo), 0),
-       COALESCE(sum(saldo) FILTER (WHERE dias_vencido > 0), 0),
-       COALESCE(sum(saldo) FILTER (WHERE dias_vencido BETWEEN 1 AND 15), 0),
-       COALESCE(sum(saldo) FILTER (WHERE dias_vencido BETWEEN 16 AND 30), 0),
-       COALESCE(sum(saldo) FILTER (WHERE dias_vencido BETWEEN 31 AND 60), 0),
-       COALESCE(sum(saldo) FILTER (WHERE dias_vencido > 60), 0),
-       count(*),
-       count(*) FILTER (WHERE dias_vencido > 0),
-       count(DISTINCT cliente_id),
-       count(DISTINCT cliente_id) FILTER (WHERE dias_vencido > 0),
-       now()
-  FROM saldos
-ON CONFLICT (id) DO UPDATE SET
-    saldo_total        = excluded.saldo_total,
-    saldo_vencido      = excluded.saldo_vencido,
-    vencido_1_15       = excluded.vencido_1_15,
-    vencido_16_30      = excluded.vencido_16_30,
-    vencido_31_60      = excluded.vencido_31_60,
-    vencido_61_mas     = excluded.vencido_61_mas,
-    facturas_abiertas  = excluded.facturas_abiertas,
-    facturas_vencidas  = excluded.facturas_vencidas,
-    clientes_con_saldo = excluded.clientes_con_saldo,
-    clientes_vencidos  = excluded.clientes_vencidos,
-    calculado_en       = now()
-"""
-
-
-# ---------------------------------------------------------------------------
 # El estado del mundo, que acompaña a cada cifra
 # ---------------------------------------------------------------------------
 # Misma definición que `analitica.py`: un equipo está rezagado si no ha hecho
@@ -392,15 +329,13 @@ SELECT count(*) FILTER (
 # mal elegido.
 SQL_RESUMEN_DIA = """
 SELECT COALESCE(sum(venta_total), 0)::numeric(14,2)     AS venta_total,
-       COALESCE(sum(venta_contado), 0)::numeric(14,2)   AS venta_contado,
-       COALESCE(sum(venta_credito), 0)::numeric(14,2)   AS venta_credito,
+       COALESCE(sum(venta_efectivo), 0)::numeric(14,2)  AS venta_efectivo,
+       COALESCE(sum(venta_transferencia), 0)::numeric(14,2) AS venta_transferencia,
        COALESCE(sum(documentos_venta), 0)               AS documentos_venta,
        COALESCE(sum(visitas), 0)                        AS visitas,
        COALESCE(sum(visitas_con_venta), 0)              AS visitas_con_venta,
        COALESCE(sum(no_drops), 0)                       AS no_drops,
        COALESCE(sum(no_drops_nuestros), 0)              AS no_drops_nuestros,
-       COALESCE(sum(cobrado_total), 0)::numeric(14,2)   AS cobrado_total,
-       COALESCE(sum(cobrado_efectivo), 0)::numeric(14,2) AS cobrado_efectivo,
        COALESCE(sum(mermas_documentos), 0)              AS mermas_documentos,
        COALESCE(sum(mermas_unidades), 0)::numeric(14,3) AS mermas_unidades,
        min(calculado_en)                                AS calculado_en,
@@ -417,7 +352,7 @@ SELECT t.vendedor_id, u.codigo, u.nombre,
        t.venta_total, t.documentos_venta,
        t.visitas, t.visitas_con_venta,
        t.no_drops, t.no_drops_nuestros,
-       t.cobrado_total, t.cobrado_efectivo,
+       t.venta_efectivo, t.venta_transferencia,
        t.mermas_documentos, t.mermas_unidades,
        t.calculado_en
   FROM tablero_dia t
@@ -688,17 +623,17 @@ def dias_de_referencia(dia: date, cuantos: int = DIAS_DE_REFERENCIA) -> list[dat
 # contar, porque fue un mal día real.
 #
 # La línea entre los dos casos la da el propio modelo: un día trabajado deja
-# rastro aunque no haya venta —visitas, no-drops, cobros—, así que «sin ninguna de
-# las tres» es «no trabajó» y no «trabajó mal».
+# rastro aunque no haya venta —visitas, no-drops—, así que «sin ninguna de las
+# dos» es «no trabajó» y no «trabajó mal».
 SQL_REFERENCIA_POR_VENDEDOR = """
 SELECT vendedor_id,
        avg(venta_total)::numeric(14,2)         AS venta_promedio,
        avg(visitas)::numeric(10,1)             AS visitas_promedio,
-       avg(cobrado_efectivo)::numeric(14,2)    AS efectivo_promedio,
+       avg(venta_efectivo)::numeric(14,2)      AS efectivo_promedio,
        count(*)                                AS dias
   FROM tablero_dia
  WHERE fecha = ANY(:dias)
-   AND (venta_total > 0 OR visitas > 0 OR cobrado_total > 0)
+   AND (venta_total > 0 OR visitas > 0)
  GROUP BY vendedor_id
 """
 
@@ -714,11 +649,11 @@ WITH por_dia AS (
     SELECT fecha,
            sum(venta_total)      AS venta,
            sum(visitas)          AS visitas,
-           sum(cobrado_efectivo) AS efectivo
+           sum(venta_efectivo)   AS efectivo
       FROM tablero_dia
      WHERE fecha = ANY(:dias)
      GROUP BY fecha
-    HAVING sum(venta_total) > 0 OR sum(visitas) > 0 OR sum(cobrado_total) > 0
+    HAVING sum(venta_total) > 0 OR sum(visitas) > 0
 )
 SELECT COALESCE(avg(venta), 0)::numeric(14,2)    AS venta_promedio,
        COALESCE(avg(visitas), 0)::numeric(10,1)  AS visitas_promedio,

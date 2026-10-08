@@ -210,8 +210,9 @@ async def test_la_venta_que_arma_dart_la_acepta_el_servidor(cliente, semilla, se
     venta = (
         await sesion.execute(
             text(
-                "SELECT folio_local, total, subtotal, cliente_id, tipo, "
-                "revision_motivos FROM ventas WHERE folio_local = 'VEND01-000124'"
+                "SELECT folio_local, total, subtotal, cliente_id, tipo, forma_pago, "
+                "pago_estado, revision_motivos FROM ventas "
+                "WHERE folio_local = 'VEND01-000124'"
             )
         )
     ).mappings().one()
@@ -219,6 +220,7 @@ async def test_la_venta_que_arma_dart_la_acepta_el_servidor(cliente, semilla, se
     assert venta["cliente_id"] == CLIENTE_DE_LA_VENTA
     assert venta["total"] == Decimal("629.00")
     assert venta["tipo"] == "contado"
+    assert (venta["forma_pago"], venta["pago_estado"]) == ("efectivo", "confirmado")
     # El precio coincidió con la lista: ese motivo NO debe aparecer.
     assert "precio_desactualizado" not in venta["revision_motivos"]
 
@@ -277,88 +279,37 @@ async def test_reenviar_la_venta_de_dart_no_duplica_el_ticket(
 
 
 @pytest.mark.asyncio
-async def test_EL_COBRO_QUE_ARMA_DART_SE_APLICA_A_LA_FACTURA_DEL_MISMO_SOBRE(
-    cliente, semilla, sesion
-):
-    """El caso 5 del contrato: venta a crédito y su cobro, en el MISMO sobre.
+async def test_LA_TRANSFERENCIA_QUE_ARMA_DART_QUEDA_POR_CONFIRMAR(cliente, semilla, sesion):
+    """El caso 5 del contrato: una venta pagada en el acto por transferencia.
 
-    Es lo que ningún otro caso prueba: que el servidor aplique el FIFO **sobre una
-    factura que acaba de crear en la misma transacción**. Si el orden de las
-    operaciones dentro del sobre se rompiera, el cobro no encontraría a qué
-    aplicarse y los $400 quedarían como saldo a favor de un cliente que sí debía.
-
-    Y que el sobre lo arme Dart importa más aquí que en cualquier otro caso: el
-    importe viaja como string de dos decimales, y si los dos lenguajes no
-    coincidieran en ese formato el cobro acabaría en cuarentena.
+    Todo es de contado (ADR 0002 §81). Si el nombre del campo divergiera entre
+    los dos lenguajes, la venta entraría como efectivo y el corte le pediría al
+    vendedor un dinero que no trae. Y la referencia es con lo que la oficina la
+    busca en el banco.
     """
     cab = await _cab_vendedor(cliente, sesion, semilla)
     r = await cliente.post("/v1/sync/push", json=_cuerpo(), headers=cab)
     assert r.status_code == 200, r.text
 
-    cobro = (
+    venta = (
         await sesion.execute(
             text(
-                "SELECT importe, importe_aplicado, saldo_a_favor, forma_pago, "
-                "       saldo_cache_disp, requiere_revision "
-                "  FROM cobros WHERE folio_local = 'VEND01-000031'"
+                "SELECT tipo, forma_pago, pago_estado, referencia_pago, total "
+                "  FROM ventas WHERE folio_local = 'VEND01-000125'"
             )
         )
     ).mappings().one()
-
-    assert cobro["importe"] == Decimal("400.00")
-    # Se aplicó completo: la factura de 592 lo absorbe.
-    assert cobro["importe_aplicado"] == Decimal("400.00")
-    assert cobro["saldo_a_favor"] == Decimal("0.00")
-    assert cobro["forma_pago"] == "efectivo"
-    # El saldo que traía el teléfono se guarda tal cual: es forense.
-    assert cobro["saldo_cache_disp"] == Decimal("592.00")
-    assert cobro["requiere_revision"] is False
-
-    # La factura quedó parcial, con los $192 que faltan.
-    factura = (
-        await sesion.execute(
-            text(
-                "SELECT c.importe_pagado, c.saldo, c.estado "
-                "  FROM cuentas_por_cobrar c "
-                "  JOIN ventas v ON v.id = c.venta_id "
-                " WHERE v.folio_local = 'VEND01-000125'"
-            )
-        )
-    ).mappings().first()
-    # La cuenta por cobrar la crea el worker al confirmar la venta a crédito; si
-    # todavía no existe, el cobro quedó como saldo a favor y eso también es un
-    # resultado válido del contrato — lo que no puede pasar es que el cobro falte.
-    if factura is not None:
-        assert factura["importe_pagado"] == Decimal("400.00")
-        assert factura["saldo"] == Decimal("192.00")
-        assert factura["estado"] == "parcial"
-
-
-@pytest.mark.asyncio
-async def test_reenviar_el_cobro_de_dart_no_abona_dos_veces(cliente, semilla, sesion):
-    """Abonar dos veces es la peor consecuencia de un reintento: el cliente
-    quedaría con saldo a favor y nadie sabría por qué."""
-    cab = await _cab_vendedor(cliente, sesion, semilla)
-    await cliente.post("/v1/sync/push", json=_cuerpo(), headers=cab)
-    await cliente.post("/v1/sync/push", json=_cuerpo(), headers=cab)
-
-    cobros = (
-        await sesion.execute(
-            text("SELECT count(*) FROM cobros WHERE folio_local = 'VEND01-000031'")
-        )
+    assert dict(venta) == {
+        "tipo": "contado",
+        "forma_pago": "transferencia",
+        "pago_estado": "por_confirmar",
+        "referencia_pago": "SPEI 4471",
+        "total": Decimal("592.00"),
+    }
+    deudas = (
+        await sesion.execute(text("SELECT count(*) FROM cuentas_por_cobrar"))
     ).scalar_one()
-    assert cobros == 1
-
-    aplicado = (
-        await sesion.execute(
-            text(
-                "SELECT COALESCE(sum(a.importe), 0) FROM cobros_aplicaciones a "
-                "  JOIN cobros k ON k.id = a.cobro_id "
-                " WHERE k.folio_local = 'VEND01-000031'"
-            )
-        )
-    ).scalar_one()
-    assert aplicado <= Decimal("400.00")
+    assert deudas == 0
 
 
 @pytest.mark.asyncio

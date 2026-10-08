@@ -59,7 +59,7 @@ void main() {
     expect(find.text('Abarrotes Doña Mary'), findsOneWidget);
   }, skip: soloEnModoDemo);
 
-  testWidgets('la ruta sembrada muestra los cuatro estados de crédito',
+  testWidgets('la ruta sembrada no habla de crédito',
       (tester) async {
     await montarApp(
       tester,
@@ -71,28 +71,8 @@ void main() {
     await tester.tap(find.byKey(const Key('boton_modo_demo')));
     await tester.pumpAndSettle(const Duration(seconds: 10));
 
-    // Es para lo que sirve la demo: ver de un golpe lo que la lista distingue.
-    expect(find.byKey(const Key('credito_disponible')), findsWidgets);
-    expect(find.byKey(const Key('credito_agotado')), findsOneWidget);
-    expect(find.byKey(const Key('credito_bloqueado')), findsOneWidget);
-    expect(find.byKey(const Key('credito_solo_contado')), findsOneWidget);
-  }, skip: soloEnModoDemo);
-
-  testWidgets('el disponible ya viene descontado por la venta encolada',
-      (tester) async {
-    // La Esquina de Ñoño: límite 3000, saldo 900, venta encolada de 1500.
-    // Disponible = 3000 - 900 - 1500 = 600.
-    await montarApp(
-      tester,
-      extras: [
-        servicioUbicacionProvider
-            .overrideWithValue(ServicioUbicacionFalso.siempre(const GpsSinLectura())),
-      ],
-    );
-    await tester.tap(find.byKey(const Key('boton_modo_demo')));
-    await tester.pumpAndSettle(const Duration(seconds: 10));
-
-    expect(find.text('\$600.00'), findsOneWidget);
+    expect(find.text('Cremería Los Compadres'), findsOneWidget);
+    expect(find.textContaining('crédito'), findsNothing);
   }, skip: soloEnModoDemo);
 
   testWidgets('sin señal de GPS la siembra usa coordenadas fijas y no falla',

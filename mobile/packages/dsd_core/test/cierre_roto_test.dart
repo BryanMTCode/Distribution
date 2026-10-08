@@ -100,7 +100,6 @@ void main() {
     final roto = _capturar(() => cierre().cerrar(
           carrito(),
           clienteId: 'cli-1',
-          creditoPermitido: false,
         ));
 
     expect(roto, isA<CierreRoto>());
@@ -114,7 +113,6 @@ void main() {
     final guardada = cierre().cerrar(
       carrito(),
       clienteId: 'cli-1',
-      creditoPermitido: false,
     );
     expect(guardada.folioLocal, equals('VEND01-000001'));
   });
@@ -128,7 +126,6 @@ void main() {
     final roto = _capturar(() => cierre().cerrar(
           carrito(),
           clienteId: 'cli-1',
-          creditoPermitido: false,
         ));
 
     expect(roto, isA<CierreRoto>());
@@ -155,7 +152,6 @@ void main() {
     final error = _capturar(() => cierre().cerrar(
           carrito(),
           clienteId: 'cli-1',
-          creditoPermitido: false,
         ));
     expect(error, isA<VentaRechazada>());
   });

@@ -39,6 +39,7 @@ ORIGENES = {
     "merma_atribuible": "Merma a cargo del vendedor",
     "faltante_efectivo": "Faltante de efectivo",
     "cobro_no_entregado": "Cobro que no llegó a la empresa",
+    "transferencia_no_llego": "Transferencia que no llegó",
     "cargo_manual": "Cargo",
     "descuento_nomina": "Descuento de nómina",
     "pago": "Pago",

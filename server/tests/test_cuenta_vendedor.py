@@ -246,7 +246,7 @@ async def test_sin_arqueo_no_se_carga_efectivo_y_se_dice(
 async def test_el_cierre_recalcula_el_efectivo_esperado(
     cliente, sesion, semilla, dia_de_trabajo
 ):
-    """Un cobro en efectivo que sincronizó DESPUÉS del arqueo entra a la cuenta:
+    """Una venta en efectivo que sincronizó DESPUÉS del arqueo entra a la cuenta:
     con el esperado del arqueo, esos $100 se quedarían sin cobrar a nadie."""
     await _entrar(cliente)
     liq = await _abrir(cliente, dia_de_trabajo["carga"])
@@ -256,12 +256,11 @@ async def test_el_cierre_recalcula_el_efectivo_esperado(
     await sesion.execute(
         text(
             """
-            INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
-                                cliente_id, vendedor_id, importe, forma_pago, estado,
-                                fecha_dispositivo, fecha_operativa, importe_aplicado,
-                                saldo_a_favor)
-            VALUES (:id, :d, 90, 'VEND01-C00090', :c, :v, 100, 'efectivo', 'confirmado',
-                    now(), :f, 0, 100)
+            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
+                                cliente_id, vendedor_id, almacen_id, tipo, forma_pago,
+                                subtotal, total, fecha_dispositivo, fecha_operativa)
+            VALUES (:id, :d, 90, 'VEND01-000090', :c, :v, :a, 'contado', 'efectivo',
+                    100, 100, now(), :f)
             """
         ),
         {
@@ -269,6 +268,7 @@ async def test_el_cierre_recalcula_el_efectivo_esperado(
             "d": dia_de_trabajo["dispositivo"],
             "c": dia_de_trabajo["cliente"],
             "v": semilla["vendedor"],
+            "a": semilla["camion"],
             "f": dia_de_trabajo["dia"],
         },
     )
@@ -527,51 +527,48 @@ async def test_solo_gerencia_mueve_y_ningun_vendedor_ve(sesion, semilla):
 
 
 # ===========================================================================
-# 6. El cliente sí pagó; el dinero no llegó
+# 6. La transferencia no llegó: se le puede cargar al vendedor
 # ===========================================================================
-async def test_el_cobro_no_entregado_abona_al_cliente_y_carga_al_vendedor(
-    cliente, sesion, semilla
+async def test_la_transferencia_que_no_llego_se_carga_al_vendedor_una_vez(
+    cliente, sesion, semilla, dia_de_trabajo
 ):
-    from tests.test_cobro_ingesta import _aplicar, _payload, _saldos, sembrar_escenario
-
-    escenario = await sembrar_escenario(sesion, semilla)
-    cobro_id = await _aplicar(
-        sesion,
-        escenario,
-        semilla,
-        _payload(escenario, importe="800.00", forma_pago="transferencia", referencia="X1"),
+    """Cobrar en efectivo y capturarlo como transferencia es la fuga que la 0038
+    cerró. Sin crédito no hay a quién más dejarle la deuda (ADR 0002 §81)."""
+    venta = dia_de_trabajo["venta"]
+    await sesion.execute(
+        text(
+            "UPDATE ventas SET forma_pago = 'transferencia', pago_estado = 'por_confirmar', "
+            "       referencia_pago = 'X1' WHERE id = :v"
+        ),
+        {"v": venta},
     )
     await sesion.commit()
 
     await _entrar(cliente)
-    pagina = await cliente.get(f"/panel/cobranza/{cobro_id}")
-    assert "forma_no_entregado" in pagina.text
+    pagina = await cliente.get("/panel/transferencias")
+    assert "cargar_al_vendedor" in pagina.text
     r = await cliente.post(
-        f"/panel/cobranza/{cobro_id}/no-entregado",
+        f"/panel/transferencias/{venta}/no-llego",
         data={
             "csrf": _csrf(cliente, pagina),
             "motivo": "El cliente enseñó su recibo; la transferencia nunca existió",
+            "cargar_al_vendedor": "1",
         },
         follow_redirects=True,
     )
-    assert "se le cargaron al vendedor" in solo_texto(r)
+    assert "se le cargaron" in solo_texto(r)
 
-    # Al cliente se le abonó: pagó de buena fe.
-    saldos = await _saldos(sesion, escenario["cliente"])
-    assert saldos[escenario["factura_vencida"]]["estado"] == "liquidada"
-    # Al vendedor se le cargó.
     movimientos = await _movimientos(sesion, semilla["vendedor"])
-    assert [m["origen"] for m in movimientos] == ["cobro_no_entregado"]
-    assert movimientos[0]["importe"] == Decimal("800.00")
-    assert movimientos[0]["cobro_id"] == cobro_id
+    assert [m["origen"] for m in movimientos] == ["transferencia_no_llego"]
+    assert movimientos[0]["importe"] == Decimal("2250.00")
 
     # Y no se puede hacer dos veces.
     r = await cliente.post(
-        f"/panel/cobranza/{cobro_id}/no-entregado",
-        data={"csrf": _csrf(cliente), "motivo": "otra vez"},
+        f"/panel/transferencias/{venta}/no-llego",
+        data={"csrf": _csrf(cliente), "motivo": "otra vez", "cargar_al_vendedor": "1"},
         follow_redirects=True,
     )
-    assert "sigue por confirmar" in solo_texto(r)
+    assert "ya no está por confirmar" in solo_texto(r)
     assert len(await _movimientos(sesion, semilla["vendedor"])) == 1
 
 

@@ -7,9 +7,9 @@
 /// lo sabía la oficina, al abrir la liquidación. Eso convierte el arqueo en una
 /// sorpresa, y una sorpresa con el dinero en la mano se discute.
 ///
-/// El número grande es **la misma cuenta que el arqueo**: ventas de contado más
-/// cobros en efectivo. Si fuera otra, esta pantalla sería una promesa que la
-/// oficina no va a cumplir.
+/// El número grande es **la misma cuenta que el arqueo**: las ventas pagadas en
+/// efectivo. Si fuera otra, esta pantalla sería una promesa que la oficina no va
+/// a cumplir.
 ///
 /// Lee de SQLite, así que funciona sin señal — que es cuando hace falta: a media
 /// ruta, decidiendo si alcanza el cambio, y en el patio antes de entrar a cuadrar.
@@ -166,37 +166,24 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
           const SizedBox(height: 8),
 
           _Renglon(
-            etiqueta: 'Ventas de contado',
-            monto: dia.contado,
+            etiqueta: 'Ventas en efectivo',
+            monto: dia.efectivo,
             nota: 'dinero que trae en la bolsa',
           ),
-          _Renglon(
-            etiqueta: 'Cobros en efectivo',
-            monto: dia.cobrosEfectivo,
-            nota: 'de cuentas anteriores',
-          ),
-          const Divider(height: 24),
-
           // Lo que NO es efectivo, y se muestra justamente para que no se cuente.
-          // Un vendedor que suma su crédito al dinero cree que le falta en la caja.
+          // Un vendedor que suma la transferencia al dinero cree que le falta en
+          // la caja.
           _Renglon(
-            etiqueta: 'Ventas a crédito',
-            monto: dia.credito,
-            nota: 'salió mercancía, NO entró dinero',
+            etiqueta: 'Ventas por transferencia',
+            monto: dia.transferencias,
+            nota: 'llegó al banco, no a tu bolsa',
             apagado: true,
           ),
-          if (dia.cobrosOtros != Dinero.cero)
-            _Renglon(
-              etiqueta: 'Cobros por transferencia',
-              monto: dia.cobrosOtros,
-              nota: 'entraron al sistema, no a tu bolsa',
-              apagado: true,
-            ),
           const Divider(height: 24),
           _Renglon(
             etiqueta: 'Total vendido $elDia',
             monto: dia.vendido,
-            nota: 'contado y crédito juntos',
+            nota: 'todo de contado',
             negrita: true,
           ),
 
@@ -335,15 +322,15 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                 ),
                 title: Text(venta.cliente),
                 subtitle: Text(
-                  '${venta.folio} · ${venta.esContado ? "contado" : "crédito"}',
+                  '${venta.folio} · ${venta.formaDePago.etiqueta.toLowerCase()}',
                 ),
                 trailing: Text(
                   '\$${venta.total.texto}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    // El crédito se ve distinto en la lista por lo mismo que en el
-                    // desglose: no es dinero que traiga.
-                    color: venta.esContado ? null : colores.outline,
+                    // La transferencia se ve distinta en la lista por lo mismo que
+                    // en el desglose: no es dinero que traiga.
+                    color: venta.formaDePago.entraAlArqueo ? null : colores.outline,
                   ),
                 ),
                 children: [

@@ -48,8 +48,8 @@ Map<String, Object?> tableroDeEjemplo({
       'venta': {
         'fecha': '2026-10-01',
         'total': '42180.00',
-        'contado': '31180.00',
-        'credito': '11000.00',
+        'efectivo': '31180.00',
+        'transferencia': '11000.00',
         'documentos': 34,
         'ticket_promedio': '1240.59',
         'calculado_en': '2026-10-01T18:00:00Z',
@@ -63,15 +63,7 @@ Map<String, Object?> tableroDeEjemplo({
         'drop_size': '1240.59',
         'calculado_en': '2026-10-01T18:00:00Z',
       },
-      'cobranza': {
-        'cobrado_hoy': '18450.75',
-        'cobrado_efectivo': '15200.00',
-        'saldo_total': '312890.40',
-        'saldo_vencido': '48220.10',
-        'facturas_vencidas': 27,
-        'clientes_vencidos': 14,
-        'calculado_en': '2026-10-01T17:58:00Z',
-      },
+      'por_confirmar': {'cuantas': 3, 'importe': '4820.10'},
       'mermas': {
         'documentos': 3,
         'unidades': '12.500',
@@ -87,7 +79,7 @@ Map<String, Object?> tableroDeEjemplo({
           'visitas': 30,
           'con_venta': 18,
           'no_drops': 12,
-          'cobrado': '9000.00',
+          'efectivo': '9000.00',
           'efectividad': '60.0',
         },
         {
@@ -99,7 +91,7 @@ Map<String, Object?> tableroDeEjemplo({
           'visitas': 0,
           'con_venta': 0,
           'no_drops': 0,
-          'cobrado': '0.00',
+          'efectivo': '0.00',
           'efectividad': '0.0',
         },
       ],
@@ -137,10 +129,11 @@ void main() {
       expect(tablero.venta.total.centavos, 4218000);
       // El reparto cuadra: si uno de los tres pasara por double, no sumaría.
       expect(
-        tablero.venta.contado + tablero.venta.credito,
+        tablero.venta.efectivo + tablero.venta.transferencia,
         tablero.venta.total,
       );
-      expect(tablero.cobranza.saldoVencido.texto, '48220.10');
+      expect(tablero.porConfirmar.importe.texto, '4820.10');
+      expect(tablero.porConfirmar.cuantas, 3);
     });
 
     test('las cantidades llevan tres decimales, no dos', () {
@@ -310,6 +303,34 @@ void main() {
       expect(tablero.vendedores[1].sinSincronizar, isFalse);
       expect(tablero.vendedores[1].ultimoPush, isNull);
       expect(tablero.vendedores[1].colaReportada, 0);
+    });
+
+    test('una copia guardada antes del contado se sigue leyendo', () {
+      // El teléfono guarda el último tablero para cuando no hay señal. Uno
+      // guardado por la versión anterior trae 'contado'/'credito' y 'cobrado':
+      // se lee como efectivo en vez de tirar la copia o reventar el parseo.
+      final viejo = tableroDeEjemplo();
+      final venta = Map<String, Object?>.of(viejo['venta']! as Map<String, Object?>)
+        ..remove('efectivo')
+        ..remove('transferencia')
+        ..['contado'] = '31180.00'
+        ..['credito'] = '11000.00';
+      final vendedores = [
+        for (final v in viejo['vendedores']! as List)
+          Map<String, Object?>.of(v as Map<String, Object?>)
+            ..['cobrado'] = v['efectivo']
+            ..remove('efectivo'),
+      ];
+      final tablero = Tablero.deJson({
+        ...viejo,
+        'venta': venta,
+        'vendedores': vendedores,
+      }..remove('por_confirmar'));
+      expect(tablero.venta.efectivo.centavos, 3118000);
+      expect(tablero.venta.transferencia, Dinero.cero);
+      expect(tablero.porConfirmar.cuantas, 0);
+      expect(tablero.vendedores.first.efectivo,
+          Dinero.deTexto((viejo['vendedores']! as List).first['efectivo'] as String));
     });
 
     test('«incompleta» llega como tal: es un piso, no una caída', () {

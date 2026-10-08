@@ -19,7 +19,6 @@ se rompen se rompen callando:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -272,223 +271,39 @@ async def test_confirmar_publica_su_delta_con_la_ruta(
 
 
 # ---------------------------------------------------------------------------
-# Crédito
+# Condiciones: solo la lista de precios. Todo es de contado (ADR 0002 §81).
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-async def con_adeudo(sesion, semilla, prospecto) -> uuid.UUID:
-    """El cliente confirmado, con crédito y una venta a crédito de $2,000 abierta.
-
-    La cuenta por cobrar tiene como llave primaria la venta que la originó: no se
-    puede deber sin haber comprado. Por eso el fixture arma la venta completa en
-    vez de insertar un adeudo suelto.
-    """
-    dispositivo, venta = uuid.uuid4(), uuid.uuid4()
-    await sesion.execute(
-        text(
-            "UPDATE clientes SET codigo = 'C00001', estatus = 'activo', "
-            "       lista_precios_id = :l, permite_credito = true, "
-            "       limite_credito = 5000, dias_credito = 7 WHERE id = :id"
-        ),
-        {"id": prospecto, "l": semilla["lista_precios"]},
-    )
-    await sesion.execute(
-        text(
-            "INSERT INTO dispositivos(id, usuario_id, etiqueta) "
-            "VALUES (:d, :u, 'POCO M5s de Juan')"
-        ),
-        {"d": dispositivo, "u": semilla["vendedor"]},
-    )
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
-                                cliente_id, vendedor_id, almacen_id, tipo,
-                                subtotal, total, lista_precios_id,
-                                lista_precios_version, fecha_dispositivo,
-                                fecha_operativa)
-            VALUES (:v, :d, 1, 'VEND01-000001', :c, :u, :a, 'credito',
-                    2000.00, 2000.00, :l, 1, now(), CURRENT_DATE)
-            """
-        ),
-        {
-            "v": venta,
-            "d": dispositivo,
-            "c": prospecto,
-            "u": semilla["vendedor"],
-            "a": semilla["camion"],
-            "l": semilla["lista_precios"],
-        },
-    )
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO cuentas_por_cobrar
-              (venta_id, cliente_id, importe_original, fecha_emision,
-               fecha_vencimiento, estado)
-            VALUES (:v, :c, 2000.00, CURRENT_DATE, :vence, 'abierta')
-            """
-        ),
-        {
-            "v": venta,
-            "c": prospecto,
-            "vence": (datetime.now(UTC) + timedelta(days=7)).date(),
-        },
-    )
-    await sesion.commit()
-    return prospecto
-
-
-async def test_bajar_el_limite_no_perdona_la_deuda(cliente, semilla, con_adeudo, sesion):
-    """Quien lo escribe casi siempre cree que está perdonando el adeudo.
-
-    Lo que pasa es otra cosa: el saldo sigue igual y el disponible se va a cero, así
-    que el teléfono corta la venta a crédito solo. La pantalla lo dice con números.
-    """
+async def test_la_lista_de_precios_se_guarda(cliente, semilla, prospecto, sesion):
     await _entrar(cliente)
-    detalle = await cliente.get(f"/panel/clientes/{con_adeudo}")
-
+    pagina = await cliente.get(f"/panel/clientes/{prospecto}")
     r = await cliente.post(
-        f"/panel/clientes/{con_adeudo}/credito",
-        data={
-            "csrf": _csrf_de(detalle),
-            "lista_precios_id": str(semilla["lista_precios"]),
-            "permite_credito": "1",
-            "limite_credito": "1000",
-            "dias_credito": "7",
-        },
+        f"/panel/clientes/{prospecto}/condiciones",
+        data={"csrf": _csrf_de(pagina), "lista_precios_id": str(semilla["lista_precios"])},
         follow_redirects=True,
     )
-    assert "La deuda no cambió" in r.text
-    assert "$2,000.00" in r.text
-
-    cartera = (
+    assert "Lista de precios guardada" in r.text
+    lista = (
         await sesion.execute(
-            text(
-                "SELECT saldo, disponible, credito_agotado "
-                "  FROM v_cartera_cliente WHERE cliente_id = :id"
-            ),
-            {"id": con_adeudo},
-        )
-    ).mappings().one()
-
-    assert cartera["saldo"] == Decimal("2000.00")
-    # max(límite − saldo, 0): el disponible se va a cero, no a negativo.
-    assert cartera["disponible"] == Decimal("0.00")
-    assert cartera["credito_agotado"] is True
-
-
-async def test_credito_autorizado_con_limite_en_cero_se_niega(
-    cliente, semilla, prospecto
-):
-    """Es la contradicción que deja al vendedor peleando con el teléfono: la
-    oficina cree que autorizó el crédito y la pantalla del carrito no lo deja."""
-    await _entrar(cliente)
-    detalle = await cliente.get(f"/panel/clientes/{prospecto}")
-
-    r = await cliente.post(
-        f"/panel/clientes/{prospecto}/credito",
-        data={
-            "csrf": _csrf_de(detalle),
-            "lista_precios_id": str(semilla["lista_precios"]),
-            "permite_credito": "1",
-            "limite_credito": "0",
-            "dias_credito": "0",
-        },
-        follow_redirects=True,
-    )
-    assert "Pon el límite o quita el crédito" in r.text
-
-
-async def test_el_plazo_de_credito_tiene_tope(cliente, semilla, prospecto):
-    """365 días de plazo en abarrotes es un dedazo, no una condición comercial."""
-    await _entrar(cliente)
-    detalle = await cliente.get(f"/panel/clientes/{prospecto}")
-
-    r = await cliente.post(
-        f"/panel/clientes/{prospecto}/credito",
-        data={
-            "csrf": _csrf_de(detalle),
-            "lista_precios_id": str(semilla["lista_precios"]),
-            "limite_credito": "1000",
-            "dias_credito": "365",
-        },
-        follow_redirects=True,
-    )
-    assert "no puede pasar de 90" in r.text
-
-
-async def test_el_saldo_no_se_puede_editar_desde_ninguna_pantalla(
-    cliente, semilla, con_adeudo
-):
-    """Un campo editable de saldo sería una segunda verdad.
-
-    El saldo sale de `cuentas_por_cobrar`. Si además se pudiera escribir a mano,
-    tarde o temprano las dos cifras no coinciden y nadie sabe cuál cobrar.
-    """
-    await _entrar(cliente)
-    html = (await cliente.get(f"/panel/clientes/{con_adeudo}")).text
-
-    assert 'name="saldo"' not in html
-    # Pero el número sí se ve: es lo primero que se pregunta de un cliente.
-    assert "$2,000.00" in html
-
-
-# ---------------------------------------------------------------------------
-# Bloqueo
-# ---------------------------------------------------------------------------
-
-
-async def test_bloquear_exige_el_motivo(cliente, semilla, prospecto, sesion):
-    """El vendedor va a preguntar por qué no le puede vender a esa tienda, y
-    "bloqueado" sin más no le sirve a nadie."""
-    await _entrar(cliente)
-    detalle = await cliente.get(f"/panel/clientes/{prospecto}")
-
-    r = await cliente.post(
-        f"/panel/clientes/{prospecto}/bloqueo",
-        data={"csrf": _csrf_de(detalle), "bloquear": "1", "motivo": "   "},
-        follow_redirects=True,
-    )
-    assert "Escribe por qué se bloquea" in r.text
-
-    bloqueado = (
-        await sesion.execute(
-            text("SELECT bloqueado FROM clientes WHERE id = :id"), {"id": prospecto}
+            text("SELECT lista_precios_id FROM clientes WHERE id = :c"), {"c": prospecto}
         )
     ).scalar_one()
-    assert bloqueado is False
+    assert lista == semilla["lista_precios"]
 
 
-async def test_el_motivo_del_bloqueo_viaja_al_telefono(
-    cliente, semilla, prospecto, sesion
-):
+async def test_el_credito_y_el_bloqueo_ya_no_estan(cliente, semilla, prospecto):
     await _entrar(cliente)
-    detalle = await cliente.get(f"/panel/clientes/{prospecto}")
-
-    await cliente.post(
-        f"/panel/clientes/{prospecto}/bloqueo",
-        data={
-            "csrf": _csrf_de(detalle),
-            "bloquear": "1",
-            "motivo": "Cheque devuelto del 12/09",
-        },
-        follow_redirects=False,
-    )
-
-    payload = (
-        await sesion.execute(
-            text(
-                "SELECT payload FROM change_log "
-                " WHERE entidad = 'cliente' AND entidad_id = :id "
-                " ORDER BY cursor DESC LIMIT 1"
-            ),
-            {"id": prospecto},
+    pagina = await cliente.get(f"/panel/clientes/{prospecto}")
+    assert pagina.status_code == 200
+    for ya_no in ("Límite de crédito", "Bloquear el crédito", "Disponible para crédito"):
+        assert ya_no not in pagina.text, ya_no
+    for ruta in ("credito", "bloqueo"):
+        r = await cliente.post(
+            f"/panel/clientes/{prospecto}/{ruta}",
+            data={"csrf": _csrf_calculado(cliente), "permite_credito": "1"},
         )
-    ).scalar_one()
-    assert payload["bloqueado"] is True
-    assert payload["bloqueo_motivo"] == "Cheque devuelto del 12/09"
+        assert r.status_code in (404, 405), ruta
 
 
 # ---------------------------------------------------------------------------
@@ -603,21 +418,18 @@ async def gerente(sesion, semilla) -> None:
     await sesion.commit()
 
 
-async def test_el_gerente_no_decide_el_credito(cliente, semilla, prospecto, gerente):
-    """Gerencia monitorea, no opera (migración 0009): no tiene
-    `clientes.administrar`."""
+async def test_el_gerente_no_cambia_la_lista_de_precios(cliente, semilla, prospecto, gerente):
+    """Gerencia no tiene `clientes.administrar` (migración 0009)."""
     await _entrar(cliente, "GER01")
     lectura = await cliente.get(f"/panel/clientes/{prospecto}")
     assert lectura.status_code == 200
-    assert "Guardar condiciones" not in lectura.text
+    assert "Guardar la lista de precios" not in lectura.text
 
     r = await cliente.post(
-        f"/panel/clientes/{prospecto}/credito",
+        f"/panel/clientes/{prospecto}/condiciones",
         data={
             "csrf": _csrf_calculado(cliente),
             "lista_precios_id": str(semilla["lista_precios"]),
-            "permite_credito": "1",
-            "limite_credito": "999999",
         },
     )
     assert r.status_code == 403

@@ -7,9 +7,10 @@
 /// pasado" —eso es el laboratorio— sino **cómo va el día y qué hay que mover
 /// hoy**:
 ///
-///   · Venta del día, con su desglose contado/crédito.
+///   · Venta del día, con su desglose efectivo/transferencia (todo es de
+///     contado, ADR 0002 §81).
 ///   · Avance del mes por ruta contra su objetivo.
-///   · Cobranza: lo cobrado hoy y lo vencido.
+///   · Transferencias que todavía no se ven en el banco.
 ///   · Efectividad de visita y cuántos no-drops son NUESTROS.
 ///   · Quién va bien y quién no ha hecho nada todavía.
 ///   · El mapa del día.
@@ -273,12 +274,12 @@ class _Cuerpo extends StatelessWidget {
               alerta: t.venta.referencia.lectura == LecturaDeReferencia.abajo,
             ),
             Tarjeta(
-              cifra: pesos(t.cobranza.cobradoHoy, conCentavos: false),
-              etiqueta: 'cobrado hoy',
-              // El efectivo se separa porque es el único que entra al arqueo
-              // de la liquidación: una transferencia no está en la bolsa.
-              detalle: '${pesos(t.cobranza.cobradoEfectivo)} en efectivo, '
-                  'que es lo que entra al arqueo',
+              cifra: pesos(t.venta.efectivo, conCentavos: false),
+              etiqueta: 'en efectivo',
+              // El efectivo se separa porque es el único que entra al corte:
+              // una transferencia no está en la bolsa del vendedor.
+              detalle: '${pesos(t.venta.transferencia)} por transferencia, '
+                  'que no entra al corte',
             ),
             Tarjeta(
               cifra: '${t.visitas.efectividad.toStringAsFixed(1)}%',
@@ -299,34 +300,17 @@ class _Cuerpo extends StatelessWidget {
           ],
         ),
 
-        if (t.venta.credito.centavos > 0) ...[
+        if (t.porConfirmar.cuantas > 0) ...[
           const SizedBox(height: 10),
+          // Un pendiente de cualquier día, no un flujo de hoy: lo que la
+          // oficina tiene que ir a buscar al banco para cuadrar el dinero.
           Text(
-            '${pesos(t.venta.credito)} del día salió a crédito '
-            '(${pesos(t.venta.contado)} de contado).',
+            '${t.porConfirmar.cuantas} transferencias por '
+            '${pesos(t.porConfirmar.importe)} esperan confirmarse en el banco.',
+            key: const Key('transferencias_por_confirmar'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
-
-        _Titulo('Cartera'),
-        _Rejilla(
-          children: [
-            Tarjeta(
-              cifra: pesos(t.cobranza.saldoVencido, conCentavos: false),
-              etiqueta: 'vencido',
-              detalle: '${t.cobranza.facturasVencidas} documentos de '
-                  '${t.cobranza.clientesVencidos} clientes',
-              alerta: t.cobranza.saldoVencido.centavos > 0,
-            ),
-            Tarjeta(
-              cifra: pesos(t.cobranza.saldoTotal, conCentavos: false),
-              etiqueta: 'cartera total',
-              // La cartera es un SALDO, no un flujo del día: su antigüedad es
-              // la del cálculo y no la del día operativo que se está viendo.
-              detalle: 'Al momento del cálculo, no del día que estás viendo.',
-            ),
-          ],
-        ),
 
         _Titulo('Avance del mes'),
         _Avance(avance: t.avance),
@@ -570,7 +554,7 @@ class _RenglonVendedorWidget extends StatelessWidget {
     return [
       '${renglon.visitas} visitas · ${renglon.conVenta} con venta · '
           '${renglon.efectividad.toStringAsFixed(0)}% · '
-          'cobró ${pesos(renglon.cobrado, conCentavos: false)}',
+          '${pesos(renglon.efectivo, conCentavos: false)} en efectivo',
       ?textoDeReferencia(renglon.referencia, fecha),
     ].join(' · ');
   }

@@ -80,27 +80,41 @@ void main() {
   group('clientes de la oficina', () {
     test('la lista trae los conteos de cada filtro', () async {
       final t = _Transporte(200, {
-        'filtro': 'vencidos', 'recortado': false,
-        'conteos': {'todos': 2, 'vencidos': 1},
+        'filtro': 'sin_ubicacion', 'recortado': false,
+        'conteos': {'todos': 2, 'prospectos': 0, 'sin_ubicacion': 1},
         'clientes': [
           {'id': 'c1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'R4',
-           'estatus': 'activo', 'bloqueado': false, 'telefono': null, 'saldo': '400.00',
-           'saldo_vencido': '400.00', 'facturas_vencidas': 1, 'ultima_compra': null},
+           'estatus': 'activo', 'telefono': null, 'con_ubicacion': false,
+           'ultima_compra': null},
         ],
       });
-      final l = await ClienteClientesDeOficina(t).lista(filtro: 'vencidos', q: ' esq ');
-      expect(t.pedidas.single.$2, {'filtro': 'vencidos', 'q': 'esq'});
-      expect(l.conteos['vencidos'], 1);
-      expect(l.clientes.single.saldoVencido.centavos, 40000);
+      final l = await ClienteClientesDeOficina(t).lista(filtro: 'sin_ubicacion', q: ' esq ');
+      expect(t.pedidas.single.$2, {'filtro': 'sin_ubicacion', 'q': 'esq'});
+      expect(l.conteos['sin_ubicacion'], 1);
+      expect(l.clientes.single.conUbicacion, isFalse);
     });
 
-    test('bloquear manda el motivo', () async {
-      final t = _Transporte(422, {'detail': 'Escribe por qué se bloquea.'});
-      expect(
-        () => ClienteClientesDeOficina(t).bloquear('c1', bloquear: true),
-        throwsA(isA<CargaRechazada>()),
-      );
-      expect(t.pedidas.single.$2, {'bloquear': true, 'motivo': ''});
+    test('la ficha trae la ubicación y cómo pagó cada venta', () async {
+      final t = _Transporte(200, {
+        'id': 'c1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'razon_social': null,
+        'contacto': null, 'telefono': null, 'direccion': null, 'referencias': null,
+        'ruta': 'R4', 'estatus': 'activo', 'lat': '23.2329000', 'lng': '-106.4062000',
+        'ubicacion_origen': 'gps', 'ubicacion_capturada_en': null,
+        'comprado_mes': '250.00', 'comprado_anio': '250.00',
+        'ventas': [
+          {'id': 'v1', 'folio': 'V-1', 'fecha': '2026-10-08', 'momento': null,
+           'tipo': 'contado', 'forma_pago': 'transferencia', 'estado': 'confirmada',
+           'total': '250.00', 'vendedor': 'Juan'},
+          {'id': 'v0', 'folio': 'V-0', 'fecha': '2026-09-20', 'momento': null,
+           'tipo': 'credito', 'forma_pago': null, 'estado': 'confirmada',
+           'total': '90.00', 'vendedor': 'Juan'},
+        ],
+      });
+      final f = await ClienteClientesDeOficina(t).ficha('c1');
+      expect(f.lat, closeTo(23.2329, 1e-7));
+      expect(f.conUbicacion, isTrue);
+      expect(f.ventas.first.formaDePago, FormaDePago.transferencia);
+      expect(f.ventas.last.formaDePago, isNull);
     });
   });
 

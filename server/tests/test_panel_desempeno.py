@@ -69,7 +69,7 @@ async def jornada(sesion, semilla) -> dict:
       · venta = $500 + $500 + $1,200 = $2,200
       · drop size sobre visitas CON VENTA (2) → $1,100
       · drop size sobre documentos (3), que sería el error → $733.33
-      · efectivo = contado ($1,000) + cobro en efectivo ($300) = $1,300
+      · efectivo = las dos de Mary ($1,000); la de Puente fue por transferencia
     """
     dispositivo = uuid.uuid4()
     hoy = date.today()
@@ -99,15 +99,16 @@ async def jornada(sesion, semilla) -> dict:
 
     folio = [0]
 
-    async def venta(a_quien, total, *, tipo="contado"):
+    async def venta(a_quien, total, *, forma="efectivo"):
         folio[0] += 1
         await sesion.execute(
             text(
                 """
                 INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local,
-                                    cliente_id, vendedor_id, ruta_id, almacen_id, tipo,
-                                    subtotal, total, fecha_dispositivo, fecha_operativa)
-                VALUES (:v, :d, :f, :fl, :c, :u, :r, :a, :tipo,
+                                    cliente_id, vendedor_id, ruta_id, almacen_id,
+                                    forma_pago, subtotal, total, fecha_dispositivo,
+                                    fecha_operativa)
+                VALUES (:v, :d, :f, :fl, :c, :u, :r, :a, :forma,
                         :total, :total, :ahora, :dia)
                 """
             ),
@@ -120,7 +121,7 @@ async def jornada(sesion, semilla) -> dict:
                 "u": semilla["vendedor"],
                 "r": semilla["ruta"],
                 "a": semilla["camion"],
-                "tipo": tipo,
+                "forma": forma,
                 "total": total,
                 "ahora": ahora,
                 "dia": hoy,
@@ -130,25 +131,7 @@ async def jornada(sesion, semilla) -> dict:
     # Mary partió su pedido en dos remisiones: sigue siendo UNA visita.
     await venta(clientes["Mary"], Decimal("500.00"))
     await venta(clientes["Mary"], Decimal("500.00"))
-    await venta(clientes["Puente"], Decimal("1200.00"), tipo="credito")
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO cobros (id, dispositivo_id, folio_consecutivo, folio_local,
-                                cliente_id, vendedor_id, importe, forma_pago,
-                                fecha_dispositivo, fecha_operativa)
-            VALUES (:id, :d, 90, 'VEND01-A000090', :c, :u, 300, 'efectivo', :ahora, :dia)
-            """
-        ),
-        {
-            "id": uuid.uuid4(),
-            "d": dispositivo,
-            "c": clientes["Mary"],
-            "u": semilla["vendedor"],
-            "ahora": ahora,
-            "dia": hoy,
-        },
-    )
+    await venta(clientes["Puente"], Decimal("1200.00"), forma="transferencia")
     await sesion.commit()
     await recalcular_dia(sesion, hoy)
     await sesion.commit()
@@ -163,7 +146,6 @@ async def _historia(
     dias: list[date],
     venta: Decimal | int = 2000,
     visitas: int = 4,
-    cobrado: Decimal | int = 0,
 ):
     """Renglones de `tablero_dia` para días pasados.
 
@@ -176,15 +158,12 @@ async def _historia(
             text(
                 """
                 INSERT INTO tablero_dia (fecha, vendedor_id, venta_total,
-                                         venta_contado, documentos_venta, visitas,
-                                         visitas_con_venta, cobrado_total,
-                                         cobrado_efectivo, calculado_en)
-                VALUES (:f, :v, :venta, :venta, 3, :visitas, :visitas, :cobrado,
-                        :cobrado, now())
+                                         venta_efectivo, documentos_venta, visitas,
+                                         visitas_con_venta, calculado_en)
+                VALUES (:f, :v, :venta, :venta, 3, :visitas, :visitas, now())
                 ON CONFLICT (fecha, vendedor_id) DO UPDATE
                    SET venta_total = excluded.venta_total,
-                       visitas = excluded.visitas,
-                       cobrado_total = excluded.cobrado_total
+                       visitas = excluded.visitas
                 """
             ),
             {
@@ -192,7 +171,6 @@ async def _historia(
                 "v": vendedor,
                 "venta": venta,
                 "visitas": visitas,
-                "cobrado": cobrado,
             },
         )
     await sesion.commit()
@@ -217,9 +195,9 @@ async def test_muestra_la_venta_del_dia_de_cada_vendedor(cliente, semilla, jorna
     assert "Juan Pérez" in plano
     assert "VEND01" in plano
     assert "$2,200.00" in plano
-    # El desglose, porque contado y crédito no son lo mismo para la caja.
-    assert "$1,000.00 contado" in plano
-    assert "$1,200.00 crédito" in plano
+    # El desglose, porque efectivo y transferencia no son lo mismo para la caja.
+    assert "$1,000.00 en efectivo" in plano
+    assert "$1,200.00 por transferencia" in plano
 
 
 async def test_el_drop_size_se_calcula_sobre_las_visitas_con_venta(
@@ -242,7 +220,7 @@ async def test_el_drop_size_se_calcula_sobre_las_visitas_con_venta(
 async def test_el_efectivo_a_entregar_cuadra_con_el_arqueo_de_la_liquidacion(
     cliente, sesion, semilla, jornada
 ):
-    """Contado más cobros en efectivo. La MISMA cuenta que decide el arqueo.
+    """Las ventas en efectivo. La MISMA cuenta que decide el arqueo.
 
     Si las dos no coincidieran, esta pantalla prometería un número y la
     liquidación cobraría otro, y el vendedor discutiría con razón.
@@ -250,11 +228,11 @@ async def test_el_efectivo_a_entregar_cuadra_con_el_arqueo_de_la_liquidacion(
     from app.api.admin.liquidaciones import _efectivo_esperado
 
     esperado = await _efectivo_esperado(sesion, semilla["vendedor"], jornada["dia"])
-    assert esperado == Decimal("1300.00")
+    assert esperado == Decimal("1000.00")
 
     await _entrar(cliente)
     plano = await _ver(cliente)
-    assert "$1,300.00" in plano
+    assert "$1,000.00" in plano
     assert "efectivo a entregar" in plano
 
 
@@ -305,7 +283,7 @@ async def test_un_dia_que_no_trabajo_no_le_baja_el_promedio(
     """Un martes de vacaciones en cero haría que hoy se leyera como un éxito.
 
     Con tres martes de $2,000 y uno en blanco, el promedio sigue siendo $2,000 —no
-    $1,500—. Un día sin venta, sin visita y sin cobro es «no trabajó», no «trabajó
+    $1,500—. Un día sin venta y sin visita es «no trabajó», no «trabajó
     mal».
     """
     hoy = jornada["dia"]

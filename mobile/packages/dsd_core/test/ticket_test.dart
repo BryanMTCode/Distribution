@@ -47,7 +47,8 @@ PresentacionVendible _pieza() => PresentacionVendible(
     );
 
 VentaGuardada _venta({
-  bool aCredito = false,
+  FormaDePago forma = FormaDePago.efectivo,
+  String? referencia,
   List<LineaCarrito>? lineas,
   Dinero? total,
   int foliosRestantes = 400,
@@ -67,7 +68,8 @@ VentaGuardada _venta({
     folioLocal: 'VEND01-000124',
     visitaId: 'vis-1',
     clienteId: 'cli-1',
-    aCredito: aCredito,
+    formaDePago: forma,
+    referenciaPago: referencia,
     subtotal: suma,
     total: total ?? suma,
     lineas: renglones,
@@ -88,15 +90,17 @@ void main() {
       // siguiente y todo el ticket se corre. Es el defecto más fácil de
       // introducir y el más difícil de ver sin la impresora.
       //
-      // Esta prueba cubría solo la venta de contado, y por eso se colaron 34
-      // columnas en el bloque de crédito ("Consulta tu saldo con tu vendedor.").
-      // Lo encontró la vista previa versionada al mirarla. Ahora recorre las
-      // cuatro variantes: contado, crédito, copia, y crédito en copia.
+      // Recorre todas las variantes: efectivo, transferencia con una clave de
+      // rastreo larga, y sus copias.
+      final transferencia = _venta(
+        forma: FormaDePago.transferencia,
+        referencia: 'BNET01002610080000123456789012',
+      );
       final variantes = {
-        'contado': _vista(_venta()),
-        'credito': _vista(_venta(aCredito: true)),
-        'copia de contado': _vista(_venta(), copia: 1),
-        'copia de credito': _vista(_venta(aCredito: true), copia: 3),
+        'efectivo': _vista(_venta()),
+        'transferencia': _vista(transferencia),
+        'copia de efectivo': _vista(_venta(), copia: 1),
+        'copia de transferencia': _vista(transferencia, copia: 3),
       };
 
       for (final entrada in variantes.entries) {
@@ -191,30 +195,26 @@ void main() {
     });
   });
 
-  group('contado y crédito', () {
-    test('de contado lo dice y no pide firma', () {
+  group('la forma de pago', () {
+    test('en efectivo lo dice y no pide firma', () {
       final texto = _vista(_venta()).texto;
-      expect(texto, contains('CONTADO'));
+      expect(texto, contains('EFECTIVO'));
       expect(texto, isNot(contains('Recibi conforme')));
     });
 
-    test('a crédito lo dice, con su importe y su firma', () {
-      final texto = _vista(_venta(aCredito: true)).texto;
-      expect(texto, contains('CREDITO'));
-      expect(texto, contains('Recibi conforme'));
-      expect(texto, contains('629.00'));
+    test('por transferencia lo dice, con su referencia completa', () {
+      // La oficina la busca en el estado de cuenta: cortada no sirve.
+      final texto = _vista(
+        _venta(forma: FormaDePago.transferencia, referencia: 'SPEI 4471'),
+      ).texto;
+      expect(texto, contains('TRANSFERENCIA'));
+      expect(texto, contains('Ref. SPEI 4471'));
     });
 
-    test('NO imprime el saldo del cliente', () {
-      // El saldo del teléfono puede tener horas (§0.3). Imprimir un saldo viejo
-      // en un papel que el cliente conserva es crear una disputa: él sostiene el
-      // número impreso y la oficina el suyo.
-      final texto = _vista(_venta(aCredito: true)).texto.toLowerCase();
-      expect(texto, isNot(contains('saldo actual')));
-      expect(texto, isNot(contains('saldo total')));
-      expect(texto, isNot(contains('debe')));
-      // Lo que sí dice es dónde consultarlo.
-      expect(texto, contains('consulta tu saldo'));
+    test('no hay saldo ni crédito en el papel: todo es de contado', () {
+      final texto = _vista(_venta()).texto.toLowerCase();
+      expect(texto, isNot(contains('saldo')));
+      expect(texto, isNot(contains('credito')));
     });
 
     test('el subtotal solo aparece si difiere del total', () {

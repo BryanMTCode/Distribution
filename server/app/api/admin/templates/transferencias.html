@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block titulo %}Transferencias{% endblock %}
+{% block contenido %}
+<h1>Transferencias por confirmar</h1>
+<p class="subtitulo">
+  Ventas que el cliente pagó por transferencia. No vienen en la bolsa del
+  vendedor: compáralas contra el estado de cuenta, palomea las que ya llegaron y
+  confírmalas de una vez. Es solo para cuadrar el dinero: la operación es de
+  contado y no hay saldos que liberar.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+{% if pendientes %}
+<div class="tarjetas">
+  <div class="tarjeta aviso">
+    <div class="numero">${{ '%.2f'|format(total) }}</div>
+    <div class="etiqueta">
+      en {{ pendientes|length }} venta{{ '' if pendientes|length == 1 else 's' }} esperando al banco
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/panel/transferencias/confirmar" id="forma_confirmar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tabla-marco">
+    <table>
+      <thead>
+        <tr>
+          {% if puede_confirmar %}<th style="width:36px"></th>{% endif %}
+          <th>Venta</th>
+          <th>Cliente</th>
+          <th>Vendedor</th>
+          <th>Referencia</th>
+          <th class="numero">Importe</th>
+          <th class="numero">Espera</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in pendientes %}
+        <tr>
+          {% if puede_confirmar %}
+          <td>
+            <input type="checkbox" name="venta" value="{{ f.id }}"
+                   aria-label="Confirmar {{ f.folio_local }}">
+          </td>
+          {% endif %}
+          <td>
+            <a href="/panel/ventas/{{ f.id }}" class="mono">{{ f.folio_local }}</a>
+            <div class="sutil">{{ f.fecha_operativa.strftime('%d/%m/%Y') }}</div>
+          </td>
+          <td>
+            {{ f.cliente }}
+            {% if f.codigo_cliente %}<div class="sutil">{{ f.codigo_cliente }}</div>{% endif %}
+          </td>
+          <td class="sutil">{{ f.vendedor }}</td>
+          <td class="mono sutil">{{ f.referencia_pago or 'sin referencia' }}</td>
+          <td class="numero"><strong>${{ '%.2f'|format(f.total) }}</strong></td>
+          <td class="numero">
+            {% if f.dias <= 0 %}<span class="sutil">hoy</span>
+            {% elif f.dias >= 3 %}<span style="color:var(--alerta)">{{ f.dias }} días</span>
+            {% else %}{{ f.dias }} día{{ '' if f.dias == 1 else 's' }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if puede_confirmar %}
+  <button type="submit" id="boton_confirmar" style="margin-top:12px">
+    Confirmar las palomeadas
+  </button>
+  {% else %}
+  <p class="sutil">Confirmar lo hace gerencia (permiso «cobranza.confirmar»).</p>
+  {% endif %}
+</form>
+
+{% if puede_confirmar %}
+<h2>¿Alguna no llegó?</h2>
+<p class="sutil">Una por una y con motivo: queda quién lo dijo y por qué.</p>
+{% for f in pendientes %}
+<form method="post" action="/panel/transferencias/{{ f.id }}/no-llego" class="fila-forma"
+      style="margin-bottom:8px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <span class="mono">{{ f.folio_local }}</span> · ${{ '%.2f'|format(f.total) }} ·
+  <input type="text" name="motivo" maxlength="500" placeholder="Qué pasó"
+         aria-label="Motivo de {{ f.folio_local }}" style="min-width:260px">
+  {% if puede_cargar %}
+  <label class="sutil"><input type="checkbox" name="cargar_al_vendedor" value="1">
+    cargarla a {{ f.vendedor }}</label>
+  {% endif %}
+  <button type="submit" class="secundario" id="no_llego_{{ f.folio_local }}">No llegó</button>
+</form>
+{% endfor %}
+{% endif %}
+{% else %}
+<div class="vacio">Nada esperando al banco. Todas las transferencias están resueltas.</div>
+{% endif %}
+
+{% if resueltas %}
+<h2>Resueltas en las últimas dos semanas</h2>
+<div class="tabla-marco">
+  <table>
+    <thead>
+      <tr><th>Venta</th><th>Cliente</th><th>Vendedor</th><th>Resultado</th>
+          <th class="numero">Importe</th></tr>
+    </thead>
+    <tbody>
+      {% for f in resueltas %}
+      <tr>
+        <td><a href="/panel/ventas/{{ f.id }}" class="mono">{{ f.folio_local }}</a></td>
+        <td>{{ f.cliente }}</td>
+        <td class="sutil">{{ f.vendedor }}</td>
+        <td>
+          {% if f.pago_estado == 'confirmado' %}Llegó{% else %}
+          <span style="color:var(--alerta)">No llegó</span>: {{ f.pago_resolucion_nota }}{% endif %}
+          <div class="sutil">{{ f.resolvio or '' }}</div>
+        </td>
+        <td class="numero">${{ '%.2f'|format(f.total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

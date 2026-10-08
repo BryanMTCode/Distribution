@@ -96,13 +96,6 @@ class _EstadoEmpresa extends ConsumerState<PantallaEmpresa> {
                   detalle: '${r.clientesNuevosMes} nuevo(s) este mes\n'
                       '${r.prospectos} prospecto(s) · ${r.clientesInactivos} de baja',
                 ),
-                Tarjeta(
-                  cifra: pesos(r.cartera, conCentavos: false),
-                  etiqueta: 'por cobrar',
-                  detalle: '${r.clientesConSaldo} cliente(s) con saldo\n'
-                      'Vencido ${pesos(r.carteraVencida)}',
-                  alerta: r.carteraVencida.centavos > 0,
-                ),
               ]),
               titulo('Gente y rutas'),
               _Rejilla(children: [

@@ -3,16 +3,16 @@
 /// ───────────────────────────────────────────────────────────────────────────
 /// LA MISMA FÓRMULA QUE EL ARQUEO, Y POR ESO SE ESCRIBE AQUÍ
 /// ───────────────────────────────────────────────────────────────────────────
-/// `efectivo = ventas de CONTADO del día + cobros en EFECTIVO del día`
+/// `efectivo = ventas del día pagadas en EFECTIVO`
 ///
 /// Es exactamente lo que calcula `_efectivo_esperado` en el servidor, que es la
-/// cuenta con la que la oficina le cobra al vendedor en la liquidación. Si esta
-/// pantalla usara otra —sumar el crédito, o incluir las transferencias— el
-/// vendedor llegaría a la bodega con un número en la cabeza distinto del que le
-/// van a pedir, y la discusión sería todas las tardes.
+/// cuenta con la que la oficina le cobra al vendedor en el corte. Si esta
+/// pantalla usara otra —incluir las transferencias— el vendedor llegaría a la
+/// bodega con un número en la cabeza distinto del que le van a pedir, y la
+/// discusión sería todas las tardes.
 ///
-/// Las ventas a CRÉDITO no entran: no se cobró nada. Y de los cobros, solo los de
-/// forma `efectivo`: una transferencia entró al sistema pero no a su bolsa.
+/// Todo es de contado (ADR 0002 §81). La transferencia entró al sistema pero no
+/// a su bolsa: se muestra aparte.
 ///
 /// Se lee de SQLite, así que la pantalla funciona sin señal — que es cuando el
 /// vendedor la necesita: a media ruta, decidiendo si le alcanza el cambio.
@@ -21,6 +21,7 @@ library;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'dinero.dart';
+import 'forma_de_pago.dart';
 
 /// Un renglón de lo que se le vendió al cliente.
 class PartidaDeMiDia {
@@ -51,7 +52,7 @@ class VentaDeMiDia {
     required this.folio,
     required this.cliente,
     required this.total,
-    required this.tipo,
+    required this.formaDePago,
     required this.sincronizada,
     this.partidas = const [],
   });
@@ -63,13 +64,11 @@ class VentaDeMiDia {
   final String folio;
   final String cliente;
   final Dinero total;
-  final String tipo;
+  final FormaDePago formaDePago;
 
   /// Si ya salió del teléfono. Se muestra porque una venta sin sincronizar es
   /// dinero que la oficina todavía no sabe que existe.
   final bool sincronizada;
-
-  bool get esContado => tipo == 'contado';
 }
 
 /// Una venta del día que la OFICINA canceló o corrigió.
@@ -107,10 +106,8 @@ class VentaTocadaPorOficina {
 class MiDia {
   const MiDia({
     required this.ventas,
-    required this.contado,
-    required this.credito,
-    required this.cobrosEfectivo,
-    required this.cobrosOtros,
+    required this.efectivo,
+    required this.transferencias,
     required this.sinSincronizar,
     this.tocadasPorOficina = const [],
   });
@@ -120,30 +117,20 @@ class MiDia {
   /// Lo que la oficina canceló o corrigió hoy.
   final List<VentaTocadaPorOficina> tocadasPorOficina;
 
-  /// Ventas de contado del día. Dinero que entró a la bolsa.
-  final Dinero contado;
+  /// Lo que el vendedor debe entregar: las ventas en efectivo. Es la cuenta del
+  /// arqueo.
+  final Dinero efectivo;
 
-  /// Ventas a crédito del día. Mercancía que salió sin dinero.
-  final Dinero credito;
-
-  final Dinero cobrosEfectivo;
-
-  /// Transferencias y cheques: entran al sistema, no a la bolsa.
-  final Dinero cobrosOtros;
+  /// Las ventas por transferencia: entran al banco, no a la bolsa.
+  final Dinero transferencias;
 
   /// Documentos del día que todavía no han salido del teléfono.
   final int sinSincronizar;
 
-  /// Lo que el vendedor debe entregar. Es la cuenta del arqueo.
-  Dinero get efectivo => contado + cobrosEfectivo;
+  /// Todo lo vendido: efectivo y transferencias.
+  Dinero get vendido => efectivo + transferencias;
 
-  /// Lo vendido, con crédito incluido. No es dinero en la bolsa.
-  Dinero get vendido => contado + credito;
-
-  bool get vacio =>
-      ventas.isEmpty &&
-      cobrosEfectivo == Dinero.cero &&
-      cobrosOtros == Dinero.cero;
+  bool get vacio => ventas.isEmpty;
 }
 
 class RepoMiDia {
@@ -184,7 +171,7 @@ class RepoMiDia {
     final ventas = _db
         .select(
           '''
-          SELECT v.id, v.folio_local, v.total, v.tipo, v.sincronizada,
+          SELECT v.id, v.folio_local, v.total, v.forma_pago, v.sincronizada,
                  COALESCE(c.nombre_comercial, 'Cliente nuevo') AS cliente
             FROM ventas v
             LEFT JOIN clientes c ON c.id = v.cliente_id
@@ -198,7 +185,7 @@ class RepoMiDia {
             folio: f['folio_local'] as String,
             cliente: f['cliente'] as String,
             total: _dinero(f['total']),
-            tipo: f['tipo'] as String,
+            formaDePago: FormaDePago.deCodigo(f['forma_pago'] as String?),
             sincronizada: (f['sincronizada'] as int? ?? 0) == 1,
             partidas: _partidasDe(f['id'] as String),
           ),
@@ -232,39 +219,23 @@ class RepoMiDia {
         )
         .toList();
 
-    Dinero sumaVentas(bool contado) => ventas
-        .where((v) => v.esContado == contado)
+    Dinero suma(FormaDePago forma) => ventas
+        .where((v) => v.formaDePago == forma)
         .fold(Dinero.cero, (acc, v) => acc + v.total);
-
-    // Los cobros se suman en SQL y no en Dart porque no se listan: solo su total
-    // entra en la cuenta del efectivo.
-    Dinero sumaCobros(String operador) => _dinero(
-          _db.select(
-            "SELECT COALESCE(sum(importe), 0) AS t FROM cobros "
-            "WHERE fecha_operativa = ? AND estado = 'confirmado' "
-            'AND forma_pago $operador',
-            [fechaOperativa],
-          ).first['t'],
-        );
 
     final pendientes = _db.select(
       '''
-      SELECT (SELECT COUNT(*) FROM ventas
-               WHERE fecha_operativa = ? AND estado = 'confirmada'
-                 AND COALESCE(sincronizada, 0) = 0)
-           + (SELECT COUNT(*) FROM cobros
-               WHERE fecha_operativa = ? AND estado = 'confirmado'
-                 AND COALESCE(sincronizado, 0) = 0) AS n
+      SELECT COUNT(*) AS n FROM ventas
+       WHERE fecha_operativa = ? AND estado = 'confirmada'
+         AND COALESCE(sincronizada, 0) = 0
       ''',
-      [fechaOperativa, fechaOperativa],
+      [fechaOperativa],
     ).first['n'] as int;
 
     return MiDia(
       ventas: ventas,
-      contado: sumaVentas(true),
-      credito: sumaVentas(false),
-      cobrosEfectivo: sumaCobros("= 'efectivo'"),
-      cobrosOtros: sumaCobros("<> 'efectivo'"),
+      efectivo: suma(FormaDePago.efectivo),
+      transferencias: suma(FormaDePago.transferencia),
       sinSincronizar: pendientes,
       tocadasPorOficina: tocadas,
     );

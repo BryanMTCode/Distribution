@@ -4,10 +4,8 @@
 ESTA PANTALLA ES LA MITAD QUE LE FALTABA A LA FASE 2
 ────────────────────────────────────────────────────────────────────────────
 Cuando un vendedor da de alta una tienda en la calle, el servidor la guarda
-`estatus = 'prospecto'`, **sin código, sin lista de precios y con límite de
-crédito en cero** (`manejadores.crear_cliente`). Eso es correcto y es a
-propósito: aceptar una línea de crédito propuesta desde el teléfono sería dejar
-que el vendedor se autorice su propia cartera.
+`estatus = 'prospecto'`, **sin código y sin lista de precios**
+(`manejadores.crear_cliente`).
 
 Pero hasta hoy nada podía terminar el trabajo. Un prospecto se quedaba prospecto
 para siempre. El alta de campo estaba construida y era, en la práctica, un
@@ -16,23 +14,15 @@ formulario que no llevaba a ningún lado.
 Aquí se cierra el circuito:
 
   confirmar   asigna el consecutivo, pone `activo` y le da lista de precios
-  condiciones decide crédito, límite y días — decisión de oficina, nunca de ruta
-  bloquear    corta la venta a crédito sin borrar nada
 
-────────────────────────────────────────────────────────────────────────────
-EL SALDO NO SE EDITA
-────────────────────────────────────────────────────────────────────────────
-No hay campo de saldo en ninguna de estas pantallas, y no es un olvido. El saldo
-sale de `cuentas_por_cobrar` a través de `v_cartera_cliente`: es la suma de lo
-que se le facturó menos lo que pagó. Un campo editable de saldo sería una segunda
-verdad que tarde o temprano contradice a la primera, y entonces nadie sabe cuál
-de las dos cobrar. Se corrige con un cargo o un pago, que dejan rastro.
+La operación es de contado (ADR 0002 §81): aquí ya no hay condiciones de
+crédito, saldo ni bloqueo. Las columnas viejas se quedan en la base como historia.
 
 ────────────────────────────────────────────────────────────────────────────
 NADA SE BORRA
 ────────────────────────────────────────────────────────────────────────────
-Un cliente que ya no existe se marca `inactivo`. Tiene ventas, tiene cartera, y
-puede tener una venta de esta mañana que todavía no ha sincronizado. Borrarlo
+Un cliente que ya no existe se marca `inactivo`. Tiene ventas, y puede tener
+una venta de esta mañana que todavía no ha sincronizado. Borrarlo
 mandaría esa venta a cuarentena por una llave foránea: sería violar §0.1 desde la
 oficina.
 """
@@ -52,8 +42,6 @@ from app.api.admin.comun import (
     CapturaInvalida,
     SesionDep,
     auditar,
-    dinero,
-    leer_dinero,
     leer_entero,
     render,
     texto_o_nulo,
@@ -67,9 +55,6 @@ router = APIRouter(prefix="/panel/clientes", tags=["panel"], include_in_schema=F
 # vendedor no lo tiene; el gerente tampoco, porque gerencia monitorea y no opera.
 PERMISO = "clientes.administrar"
 
-# Un plazo de crédito no pasa de un mes en este negocio: la mercancía se vende
-# antes. Un número más grande casi siempre es un dedazo.
-DIAS_CREDITO_MAXIMO = 90
 ESTATUS = ["prospecto", "activo", "inactivo"]
 
 
@@ -95,7 +80,7 @@ async def listar(
     """
     actor.exigir("clientes.ver")
 
-    if filtro not in ("pendientes", "todos", "bloqueados", "inactivos"):
+    if filtro not in ("pendientes", "todos", "inactivos"):
         filtro = "pendientes"
 
     condiciones: list[str] = []
@@ -103,8 +88,6 @@ async def listar(
 
     if filtro == "pendientes":
         condiciones.append("(c.estatus = 'prospecto' OR c.requiere_revision)")
-    elif filtro == "bloqueados":
-        condiciones.append("c.bloqueado")
     elif filtro == "inactivos":
         condiciones.append("c.estatus IN ('inactivo', 'baja')")
     else:
@@ -123,18 +106,15 @@ async def listar(
         await sesion.execute(
             text(
                 f"""
-                SELECT c.id, c.codigo, c.nombre_comercial, c.estatus, c.bloqueado,
+                SELECT c.id, c.codigo, c.nombre_comercial, c.estatus,
                        c.origen_alta, c.requiere_revision, c.revision_motivo,
                        c.colonia, c.municipio, c.telefono, c.creado_en,
-                       c.permite_credito, c.limite_credito,
+                       (c.lat IS NOT NULL AND c.lng IS NOT NULL) AS con_ubicacion,
                        r.nombre AS ruta, r.codigo AS ruta_codigo,
-                       l.nombre AS lista_precios,
-                       COALESCE(cart.saldo, 0) AS saldo,
-                       COALESCE(cart.facturas_vencidas, 0) AS vencidas
+                       l.nombre AS lista_precios
                   FROM clientes c
                   LEFT JOIN rutas r ON r.id = c.ruta_id
                   LEFT JOIN listas_precios l ON l.id = c.lista_precios_id
-                  LEFT JOIN v_cartera_cliente cart ON cart.cliente_id = c.id
                  WHERE {" AND ".join(condiciones)}
                  ORDER BY (c.estatus = 'prospecto') DESC,
                           c.requiere_revision DESC,
@@ -153,7 +133,6 @@ async def listar(
                 SELECT
                   count(*) FILTER (WHERE estatus = 'prospecto' OR requiere_revision)
                     AS pendientes,
-                  count(*) FILTER (WHERE bloqueado) AS bloqueados,
                   count(*) FILTER (WHERE estatus NOT IN ('inactivo', 'baja')) AS activos
                   FROM clientes
                 """
@@ -210,13 +189,6 @@ async def detalle(
     if cliente is None:
         return RedirectResponse("/panel/clientes", status_code=status.HTTP_303_SEE_OTHER)
 
-    cartera = (
-        await sesion.execute(
-            text("SELECT * FROM v_cartera_cliente WHERE cliente_id = :id"),
-            {"id": cliente_id},
-        )
-    ).mappings().first()
-
     # Posibles duplicados: dos vendedores pueden dar de alta la misma tiendita el
     # mismo día. NO se fusionan por heurística (0003); se muestran aquí para que
     # alguien decida.
@@ -244,18 +216,14 @@ async def detalle(
         "cliente_detalle.html",
         {
             "cliente": cliente,
-            "cartera": cartera,
             "duplicados": duplicados,
             "rutas": await _rutas(sesion),
             "listas": await _listas(sesion),
             "canales": await _canales(sesion),
             "estatus_posibles": ESTATUS,
-            "dias_maximo": DIAS_CREDITO_MAXIMO,
             "error": error,
             "guardado": guardado,
             "puede_editar": actor.puede(PERMISO),
-            "saldo_texto": dinero(cartera["saldo"] if cartera else 0),
-            "disponible_texto": dinero(cartera["disponible"] if cartera else 0),
             "dias_de_visita": DIAS,
             "plan": (await plan_de(sesion, [cliente_id]))[cliente_id],
         },
@@ -428,136 +396,35 @@ async def guardar_datos(
     return _volver(cliente_id, guardado="Datos guardados.")
 
 
-@router.post("/{cliente_id}/credito")
-async def guardar_credito(
+@router.post("/{cliente_id}/condiciones")
+async def guardar_condiciones(
     peticion: Request,
     actor: ActorWeb,
     sesion: SesionDep,
     cliente_id: uuid.UUID,
     lista_precios_id: Annotated[str, Form()] = "",
-    permite_credito: Annotated[str, Form()] = "",
-    limite_credito: Annotated[str, Form()] = "",
-    dias_credito: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Las condiciones comerciales: lo que decide la oficina y lee el teléfono.
+    """La lista de precios: lo que decide la oficina y lee el teléfono.
 
-    ────────────────────────────────────────────────────────────────────────
-    BAJAR UN LÍMITE NO BORRA LO QUE YA SE DEBE
-    ────────────────────────────────────────────────────────────────────────
-    Si un cliente debe $2,000 y su límite baja a $1,000, el saldo sigue siendo
-    $2,000: lo que cambia es que ya no puede llevar más. `v_cartera_cliente`
-    calcula `disponible` como `max(límite − saldo, 0)`, así que el disponible se
-    va a cero y la venta a crédito se corta sola en el teléfono. La pantalla lo
-    dice cuando el límite nuevo queda por debajo del saldo, porque quien lo
-    escribe casi siempre cree que está perdonando la deuda.
-
-    Y lo que ya salió a la calle esta mañana no se entera hasta que sincronice.
-    §0.1: si el vendedor cobra a crédito con el límite viejo, la venta entra y se
-    marca `excede_limite_credito`. No se rechaza — la mercancía ya la tiene el
-    cliente.
+    Antes aquí también se decidía el crédito. La operación es de contado (ADR 0002
+    §81): la única condición comercial que queda es con qué precios se le vende.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
-
     try:
-        limite = leer_dinero(limite_credito, campo="El límite de crédito")
-        dias = leer_entero(dias_credito, campo="Los días de crédito",
-                           maximo=DIAS_CREDITO_MAXIMO)
-    except CapturaInvalida as e:
-        return _volver(cliente_id, error=str(e))
-
-    da_credito = bool(permite_credito)
-    if da_credito and limite <= 0:
-        return _volver(
-            cliente_id,
-            error="Con crédito autorizado y límite en cero, el teléfono no va a "
-            "dejar vender a crédito. Pon el límite o quita el crédito.",
-        )
-
+        lista = uuid.UUID(lista_precios_id) if lista_precios_id else None
+    except ValueError:
+        return _volver(cliente_id, error="Esa lista de precios no existe.")
     await sesion.execute(
         text(
-            """
-            UPDATE clientes
-               SET lista_precios_id = :lista,
-                   permite_credito = :permite,
-                   limite_credito = :limite,
-                   dias_credito = :dias,
-                   actualizado_en = now()
-             WHERE id = :id
-            """
+            "UPDATE clientes SET lista_precios_id = :lista, actualizado_en = now() "
+            " WHERE id = :id"
         ),
-        {
-            "id": cliente_id,
-            "lista": uuid.UUID(lista_precios_id) if lista_precios_id else None,
-            "permite": da_credito,
-            "limite": limite,
-            "dias": dias,
-        },
+        {"id": cliente_id, "lista": lista},
     )
     await sesion.commit()
-
-    saldo = (
-        await sesion.execute(
-            text("SELECT saldo FROM v_cartera_cliente WHERE cliente_id = :id"),
-            {"id": cliente_id},
-        )
-    ).scalar_one_or_none() or 0
-
-    aviso = "Condiciones guardadas."
-    if da_credito and limite < saldo:
-        aviso += (
-            f" Ojo: debe {dinero(saldo)} y el límite nuevo es {dinero(limite)}, "
-            "así que su disponible queda en cero y no va a poder llevar más a "
-            "crédito hasta que abone. La deuda no cambió."
-        )
-    return _volver(cliente_id, guardado=aviso)
-
-
-@router.post("/{cliente_id}/bloqueo")
-async def cambiar_bloqueo(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    cliente_id: uuid.UUID,
-    bloquear: Annotated[str, Form()] = "",
-    motivo: Annotated[str, Form()] = "",
-    csrf: Annotated[str, Form()] = "",
-):
-    """Bloquea o desbloquea la venta a crédito.
-
-    El bloqueo pide motivo, y por la misma razón que la nota de la cuarentena:
-    dentro de un mes el vendedor va a preguntar por qué no le puede vender a esa
-    tienda, y "bloqueado" sin más no le sirve a nadie. El motivo viaja al teléfono
-    en el delta del cliente.
-
-    **No impide la venta de contado.** El cliente puede seguir comprando pagando
-    en el momento; lo que se corta es el préstamo. Bloquear un negocio por
-    completo sería una decisión distinta, y se toma marcándolo `inactivo`.
-    """
-    actor.exigir(PERMISO)
-    exigir_csrf(peticion, csrf)
-
-    quiere_bloquear = bool(bloquear)
-    if quiere_bloquear and not motivo.strip():
-        return _volver(cliente_id, error="Escribe por qué se bloquea. El vendedor va a preguntar.")
-
-    await sesion.execute(
-        text(
-            "UPDATE clientes SET bloqueado = :b, bloqueo_motivo = :m, "
-            "       actualizado_en = now() WHERE id = :id"
-        ),
-        {
-            "id": cliente_id,
-            "b": quiere_bloquear,
-            "m": texto_o_nulo(motivo, maximo=300) if quiere_bloquear else None,
-        },
-    )
-    await sesion.commit()
-    return _volver(
-        cliente_id,
-        guardado="Bloqueado para crédito." if quiere_bloquear else "Desbloqueado.",
-    )
+    return _volver(cliente_id, guardado="Lista de precios guardada.")
 
 
 @router.post("/{cliente_id}/duplicado/{fila}")

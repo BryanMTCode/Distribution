@@ -166,34 +166,15 @@ void main() {
     expect(c['sincronizado'], equals(1));
   });
 
-  test('la cartera deja al crédito local listo para decidir', () {
-    // El cierre del círculo: el saldo que manda el servidor, aplicado al
-    // espejo, alimentando la regla de crédito que bloquea la venta.
+  test('la cartera del piloto se sigue aplicando sin romper nada', () {
+    // Ya no hay crédito (ADR 0002 §81), pero un servidor con historia todavía
+    // puede publicar un delta de cartera: el teléfono lo aplica al espejo y nada
+    // lo lee para decidir una venta.
     AplicadorDeltas(db).aplicar(_deltas, recibidoEn: '2026-09-28T10:00:00.000Z');
 
-    final c = db.select('SELECT limite_credito, saldo_cache, saldo_cache_en, '
-        'permite_credito, bloqueado FROM clientes').single;
-
-    final estado = EstadoCredito(
-      limite: Dinero.deTexto((c['limite_credito'] as num).toStringAsFixed(2)),
-      saldoConfirmado: Dinero.deTexto((c['saldo_cache'] as num).toStringAsFixed(2)),
-      permiteCredito: (c['permite_credito'] as int) == 1,
-      bloqueado: (c['bloqueado'] as int) == 1,
-    );
-
-    expect(estado.saldoConfirmado.texto, equals('1200.00'));
-    expect(estado.disponible.texto, equals('3800.00'));
+    final c = db.select('SELECT saldo_cache, saldo_cache_en FROM clientes').single;
+    expect(c['saldo_cache'], equals(1200.0));
     expect(c['saldo_cache_en'], equals('2026-09-28T10:00:00.000Z'));
-
-    // Una venta de 3800 a crédito cabe justo; una de 3800.01 ya no.
-    expect(
-      evaluarVenta(estado, Dinero.deTexto('3800.00'), aCredito: true).permitida,
-      isTrue,
-    );
-    expect(
-      evaluarVenta(estado, Dinero.deTexto('3800.01'), aCredito: true).permitida,
-      isFalse,
-    );
   });
 
   test('los motivos de merma llegan con lo que decide si se le descuenta', () {

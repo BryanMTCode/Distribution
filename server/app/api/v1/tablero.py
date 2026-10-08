@@ -40,6 +40,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.api.admin.transferencias import cuantas_por_confirmar
 from app.api.deps import ActorDep, SesionDep
 from app.api.esquemas import Cantidad, Dinero
 from app.domain.tablero import (
@@ -111,8 +112,10 @@ class ReferenciaSalida(BaseModel):
 class VentaDelDia(BaseModel):
     fecha: date
     total: Dinero
-    contado: Dinero
-    credito: Dinero
+    # Todo es de contado (ADR 0002 §81): el dinero del día por forma de pago. El
+    # efectivo se entrega en el corte; la transferencia se confirma en el banco.
+    efectivo: Dinero
+    transferencia: Dinero
     documentos: int
     # El ticket promedio sale de los documentos, no de las visitas: es la cifra
     # que el gerente compara con la de ayer. El drop size "de verdad" —por
@@ -134,15 +137,11 @@ class VisitasDelDia(BaseModel):
     calculado_en: datetime | None
 
 
-class CobranzaDelDia(BaseModel):
-    cobrado_hoy: Dinero
-    cobrado_efectivo: Dinero
-    saldo_total: Dinero
-    saldo_vencido: Dinero
-    facturas_vencidas: int
-    clientes_vencidos: int
-    # La cartera es un SALDO: su antigüedad es la del cálculo, no la del día.
-    calculado_en: datetime | None
+class TransferenciasPorConfirmar(BaseModel):
+    """Lo que espera al banco AHORA, de cualquier día: un pendiente, no un flujo."""
+
+    cuantas: int
+    importe: Dinero
 
 
 class MermasDelDia(BaseModel):
@@ -160,7 +159,8 @@ class RenglonVendedor(BaseModel):
     visitas: int
     con_venta: int
     no_drops: int
-    cobrado: Dinero
+    # Lo vendido en efectivo: lo que entrega en el corte.
+    efectivo: Dinero
     efectividad: Decimal
     # Su propio mismo día de la semana. Mismo trato que el total: sin historia
     # bastante, no hay flecha.
@@ -206,7 +206,7 @@ class Tablero(BaseModel):
     frescura: FrescuraSalida
     venta: VentaDelDia
     visitas: VisitasDelDia
-    cobranza: CobranzaDelDia
+    por_confirmar: TransferenciasPorConfirmar
     mermas: MermasDelDia
     vendedores: list[RenglonVendedor]
     avance: AvanceDelMes
@@ -312,9 +312,7 @@ async def ver_tablero(
     resumen = (
         await sesion.execute(text(SQL_RESUMEN_DIA), {"fecha": dia})
     ).mappings().one()
-    cartera = (
-        await sesion.execute(text("SELECT * FROM tablero_cartera WHERE id"))
-    ).mappings().first()
+    por_confirmar = await cuantas_por_confirmar(sesion)
     refresco = (
         await sesion.execute(text("SELECT * FROM tablero_refrescos WHERE id"))
     ).mappings().first()
@@ -389,8 +387,8 @@ async def ver_tablero(
         venta=VentaDelDia(
             fecha=dia,
             total=venta_total,
-            contado=Decimal(resumen["venta_contado"]),
-            credito=Decimal(resumen["venta_credito"]),
+            efectivo=Decimal(resumen["venta_efectivo"]),
+            transferencia=Decimal(resumen["venta_transferencia"]),
             documentos=documentos,
             ticket_promedio=(
                 (venta_total / documentos).quantize(Decimal("0.01"))
@@ -424,14 +422,9 @@ async def ver_tablero(
             ),
             calculado_en=resumen["calculado_en"],
         ),
-        cobranza=CobranzaDelDia(
-            cobrado_hoy=Decimal(resumen["cobrado_total"]),
-            cobrado_efectivo=Decimal(resumen["cobrado_efectivo"]),
-            saldo_total=Decimal(cartera["saldo_total"]) if cartera else Decimal("0"),
-            saldo_vencido=Decimal(cartera["saldo_vencido"]) if cartera else Decimal("0"),
-            facturas_vencidas=int(cartera["facturas_vencidas"]) if cartera else 0,
-            clientes_vencidos=int(cartera["clientes_vencidos"]) if cartera else 0,
-            calculado_en=cartera["calculado_en"] if cartera else None,
+        por_confirmar=TransferenciasPorConfirmar(
+            cuantas=int(por_confirmar["cuantas"]),
+            importe=Decimal(por_confirmar["importe"]),
         ),
         mermas=MermasDelDia(
             documentos=int(resumen["mermas_documentos"]),
@@ -488,7 +481,7 @@ def _renglon_vendedor(fila, ref, equipo, *, dia: date, es_hoy: bool) -> RenglonV
         visitas=int(fila["visitas"]),
         con_venta=int(fila["visitas_con_venta"]),
         no_drops=int(fila["no_drops"]),
-        cobrado=Decimal(fila["cobrado_total"]),
+        efectivo=Decimal(fila["venta_efectivo"]),
         efectividad=porcentaje(fila["visitas_con_venta"], fila["visitas"]),
         referencia=_referencia(
             Decimal(ref["venta_promedio"]) if ref else Decimal("0"),
@@ -598,11 +591,10 @@ class PeriodoDelTablero(BaseModel):
 
 
 class CifrasDelPeriodo(BaseModel):
-    contado: Dinero
-    credito: Dinero
+    efectivo: Dinero
+    transferencias: Dinero
     total: Dinero
     canceladas: int
-    cobrado: Dinero
     mermas: int
     devoluciones: int
     no_ventas: int
@@ -616,9 +608,8 @@ class VendedorDelPeriodo(BaseModel):
     nombre: str
     ventas: int
     importe: Dinero
-    contado: Dinero
-    credito: Dinero
-    cobrado: Dinero
+    efectivo: Dinero
+    transferencias: Dinero
     mermas: int
     no_ventas: int
 
@@ -627,7 +618,7 @@ class DiaDelPeriodo(BaseModel):
     fecha: date
     ventas: int
     importe: Dinero
-    cobrado: Dinero
+    efectivo: Dinero
 
 
 class TableroDelPeriodo(BaseModel):
@@ -662,7 +653,7 @@ async def ver_periodo(
         periodos=list(PERIODOS),
         cifras=CifrasDelPeriodo(
             **cifras,
-            total=Decimal(cifras["contado"] or 0) + Decimal(cifras["credito"] or 0),
+            total=Decimal(cifras["efectivo"] or 0) + Decimal(cifras["transferencias"] or 0),
         ),
         por_vendedor=[VendedorDelPeriodo(**v) for v in datos["por_vendedor"]],
         por_dia=[
@@ -680,7 +671,6 @@ class ResumenDeLaEmpresa(BaseModel):
     prospectos: int
     clientes_inactivos: int
     clientes_nuevos_mes: int
-    clientes_con_saldo: int
     vendedores: int
     vendedores_con_camion: int
     usuarios_oficina: int
@@ -693,8 +683,6 @@ class ResumenDeLaEmpresa(BaseModel):
     piezas_en_bodegas: Cantidad
     piezas_en_camiones: Cantidad
     existencias_negativas: int
-    cartera: Dinero
-    cartera_vencida: Dinero
     vendido_mes: Dinero
     vendido_anio: Dinero
 

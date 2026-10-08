@@ -24,8 +24,8 @@
 /// carrera con nadie.
 library;
 
-import 'credito.dart';
 import 'dinero.dart';
+import 'forma_de_pago.dart';
 import 'precio.dart';
 
 /// Una presentación que se puede vender: producto + unidad + su precio ya
@@ -211,12 +211,21 @@ class ExistenciasCamion {
 /// partes de la interfaz puedan mutarlo a la vez es la clase de bug que produce
 /// un ticket con una línea de más.
 class Carrito {
-  const Carrito({this.lineas = const [], this.aCredito = false});
+  const Carrito({
+    this.lineas = const [],
+    this.formaDePago = FormaDePago.efectivo,
+    this.referenciaPago,
+  });
 
   final List<LineaCarrito> lineas;
 
-  /// A crédito o de contado. Cambia la evaluación, no los importes.
-  final bool aCredito;
+  /// Cómo paga el cliente, en el acto: no hay crédito (ADR 0002 §81). Cambia lo
+  /// que el vendedor entrega en el corte, no los importes.
+  final FormaDePago formaDePago;
+
+  /// La clave de rastreo o folio de la transferencia, si el cliente la da. Es lo
+  /// que la oficina busca en el estado de cuenta.
+  final String? referenciaPago;
 
   bool get estaVacio => lineas.isEmpty;
   int get cuantasLineas => lineas.length;
@@ -321,27 +330,31 @@ class Carrito {
         ? [...lineas, nueva]
         : lineas.map((l) => l.llave == nueva.llave ? nueva : l).toList();
 
-    return ResultadoCarrito.ok(
-      Carrito(lineas: actualizadas, aCredito: aCredito),
-    );
+    return ResultadoCarrito.ok(_con(actualizadas));
   }
 
-  Carrito quitar(String llave) => Carrito(
-        lineas: lineas.where((l) => l.llave != llave).toList(),
-        aCredito: aCredito,
+  Carrito _con(List<LineaCarrito> nuevas) =>
+      Carrito(lineas: nuevas, formaDePago: formaDePago, referenciaPago: referenciaPago);
+
+  Carrito quitar(String llave) =>
+      _con(lineas.where((l) => l.llave != llave).toList());
+
+  /// Vacío y en efectivo: la forma de pago es de ESTE cliente, y el siguiente
+  /// empieza de nuevo.
+  Carrito vaciar() => const Carrito();
+
+  /// La referencia solo existe con transferencia: al volver a efectivo se borra,
+  /// para que no viaje un folio de banco pegado a una venta en efectivo.
+  Carrito conFormaDePago(FormaDePago forma, {String? referencia}) => Carrito(
+        lineas: lineas,
+        formaDePago: forma,
+        referenciaPago: forma == FormaDePago.transferencia ? _limpia(referencia) : null,
       );
 
-  Carrito vaciar() => Carrito(aCredito: aCredito);
-
-  Carrito conFormaDePago({required bool aCredito}) =>
-      Carrito(lineas: lineas, aCredito: aCredito);
-
-  /// Si esta venta procede con el crédito del cliente.
-  ///
-  /// De contado siempre procede, aunque el cliente deba hasta la camisa: negarla
-  /// no cobra la deuda vieja y sí pierde la venta nueva.
-  ResultadoCredito evaluar(EstadoCredito credito) =>
-      evaluarVenta(credito, total, aCredito: aCredito);
+  static String? _limpia(String? texto) {
+    final t = texto?.trim() ?? '';
+    return t.isEmpty ? null : t;
+  }
 
   /// Parte lo que cabe como se carga físicamente: presentaciones completas y
   /// unidades sueltas.

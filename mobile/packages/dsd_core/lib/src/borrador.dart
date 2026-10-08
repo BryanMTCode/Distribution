@@ -30,6 +30,7 @@ import 'dart:convert';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'carrito.dart';
+import 'forma_de_pago.dart';
 import 'precio.dart';
 
 class BorradorDeCarrito {
@@ -56,18 +57,20 @@ class RepoBorrador {
     }
     _db.execute(
       '''
-      INSERT INTO carrito_borrador (id, cliente_id, a_credito, lineas_json,
-                                    actualizado_en)
-      VALUES (1, ?, ?, ?, ?)
+      INSERT INTO carrito_borrador (id, cliente_id, forma_pago, referencia_pago,
+                                    lineas_json, actualizado_en)
+      VALUES (1, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         cliente_id = excluded.cliente_id,
-        a_credito = excluded.a_credito,
+        forma_pago = excluded.forma_pago,
+        referencia_pago = excluded.referencia_pago,
         lineas_json = excluded.lineas_json,
         actualizado_en = excluded.actualizado_en
       ''',
       [
         clienteId,
-        carrito.aCredito ? 1 : 0,
+        carrito.formaDePago.codigo,
+        carrito.referenciaPago,
         jsonEncode([for (final l in carrito.lineas) _aMapa(l)]),
         ahora,
       ],
@@ -81,7 +84,8 @@ class RepoBorrador {
   /// pasaría sin borrador, y mucho mejor que dejar la app sin abrir.
   BorradorDeCarrito? leer() {
     final filas = _db.select(
-      'SELECT cliente_id, a_credito, lineas_json FROM carrito_borrador WHERE id = 1',
+      'SELECT cliente_id, forma_pago, referencia_pago, lineas_json '
+      '  FROM carrito_borrador WHERE id = 1',
     );
     if (filas.isEmpty) return null;
 
@@ -97,7 +101,8 @@ class RepoBorrador {
         clienteId: f['cliente_id'] as String,
         carrito: Carrito(
           lineas: lineas,
-          aCredito: (f['a_credito'] as int) == 1,
+          formaDePago: FormaDePago.deCodigo(f['forma_pago'] as String?),
+          referenciaPago: f['referencia_pago'] as String?,
         ),
       );
     } on Object {

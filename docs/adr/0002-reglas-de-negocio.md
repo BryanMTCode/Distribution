@@ -34,6 +34,9 @@ Solo `PZA` y `CAJA`. **Sin granel**, así que ninguna unidad es fraccionable.
 
 ## 3. Crédito: límite en dinero con bloqueo automático
 
+> **Sustituida por §81 (octubre 2026).** La operación es de contado: ya no hay
+> límite, saldo, abonos ni cartera. Lo que sigue queda como historia del piloto.
+
 Ventas de contado y a crédito. Cada cliente tiene un **límite de saldo en dinero**. Al excederlo:
 
 - se **bloquea la venta a crédito** hasta que abone;
@@ -4607,3 +4610,38 @@ avisa que es un piso, §0.3), Entradas, Traspasos, Cargas y Corte del día. Cada
 parte sale con su permiso; con una sola, se muestra directo. El aviso de «bodega
 vacía» de las cargas ya manda a Almacén → Entradas en vez de al panel.
 (versionCode 25)
+
+## 81. Solo contado: se quita el crédito
+
+**Decisión (octubre 2026, retroalimentación del piloto).** La operación es
+estrictamente de contado. Toda venta se paga en el acto, **en efectivo o por
+transferencia**; no hay límite de crédito, saldo del cliente, abonos ni cartera
+vencida. El vendedor sigue sin poder dar descuentos (§7).
+
+- **La venta lleva su forma de pago.** `ventas.forma_pago` ('efectivo' |
+  'transferencia') y, si es transferencia, una referencia opcional (clave de
+  rastreo). El carrito del teléfono elige entre las dos; el ticket la imprime.
+- **La transferencia se confirma solo para cuadrar el dinero.** Llega como
+  `pago_estado = 'por_confirmar'`; la oficina la busca en el banco y la marca
+  confirmada en *Transferencias* (panel), o «no llegó» con motivo. Ya no «libera
+  saldo»: no hay saldo. Si no llegó, la oficina puede cargarla a la cuenta del
+  vendedor (cargo `transferencia_no_llego`, uno por venta).
+- **El corte cuenta solo el efectivo.** Efectivo esperado = ventas de contado en
+  efectivo del día. La transferencia se ve aparte, en «Mi día», en el corte y en
+  el tablero, rotulada como «llegó al banco, no a tu bolsa».
+- **El tablero** parte la venta en efectivo y transferencia, y avisa cuántas
+  transferencias esperan confirmarse (de cualquier día). Las tarjetas de
+  cobranza y cartera desaparecen del panel, de la app y del resumen de la
+  empresa.
+- **El historial se conserva.** No se borra nada: las ventas a crédito, cuentas
+  por cobrar y cobros del piloto siguen en la base y se ven como tales («crédito
+  (piloto)»). Lo que se quitó son las pantallas, las reglas y la cobranza.
+- **Un teléfono viejo.** Una venta a crédito que llegue de una app anterior se
+  acepta —la mercancía ya salió— y se marca con el motivo `venta_a_credito` para
+  que la oficina la revise; no crea cuenta por cobrar. Un `cobro.crear` ya no
+  tiene manejador: cae a cuarentena como tipo desconocido.
+- **La copia del tablero** guardada por la versión anterior de la app (con
+  'contado'/'crédito') se sigue leyendo: lo que era contado se lee como efectivo.
+
+(migración 0039_solo_contado; versionCode 26)
+

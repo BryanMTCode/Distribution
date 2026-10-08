@@ -82,7 +82,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
             ("/panel/plan-visita", "Plan de visita"),
             ("/panel/cargas", "Cargas"),
             ("/panel/ventas", "Ventas"),
-            ("/panel/cobranza", "Cobranza"),
+            # Solo para cuadrar el dinero: la operación es de contado.
+            ("/panel/transferencias", "Transferencias"),
             ("/panel/liquidaciones", "Corte del día"),
             # Todo lo que hizo cada vendedor, en una línea de tiempo.
             ("/panel/vendedores", "Vendedores"),
@@ -143,7 +144,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/plan-visita": "clientes.ver",
     "/panel/cargas": "inventario.ver",
     "/panel/ventas": None,
-    "/panel/cobranza": "cobranza.ver",
+    "/panel/transferencias": "cobranza.ver",
     "/panel/liquidaciones": "inventario.ver",
     "/panel/vendedores": "ventas.ver_todas",
     "/panel/vendedores/cuenta": "vendedores.cuenta_ver",

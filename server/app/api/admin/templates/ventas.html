@@ -48,7 +48,7 @@
         <td class="sutil">{{ f.vendedor }}</td>
         <td class="numero">
           ${{ '%.2f'|format(f.total) }}
-          <div class="sutil">{{ f.tipo }}</div>
+          <div class="sutil">{% if f.tipo == 'credito' %}crédito (piloto){% else %}{{ f.forma_pago }}{% if f.pago_estado == 'por_confirmar' %} · por confirmar{% elif f.pago_estado == 'rechazado' %} · no llegó{% endif %}{% endif %}</div>
         </td>
         <td>
           {% if f.requiere_revision %}

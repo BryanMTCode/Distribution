@@ -13,7 +13,6 @@ import '../../demo.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
-import 'abono.dart';
 import 'alta_cliente.dart';
 import 'camion.dart';
 import 'catalogo.dart';
@@ -243,18 +242,9 @@ class PantallaClientes extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) => _Renglon(
                       cliente: clientes[i],
-                      // El pago es su propio camino, no un paso del carrito: el
-                      // cliente puede pagar sin comprar nada, y es el caso más
-                      // común del día de cobranza.
-                      alCobrar: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => PantallaAbono(cliente: clientes[i]),
-                        ),
-                      ),
                       // Tocar un cliente ABRE SU VISITA: fija de quién es el
                       // carrito y entra al catálogo con SUS precios. El catálogo
-                      // no existe "en general" — el precio depende de su lista y
-                      // el crédito de su saldo.
+                      // no existe "en general" — el precio depende de su lista.
                       alTocar: () {
                         ref.read(clienteEnVisitaProvider.notifier).state =
                             clientes[i].id;
@@ -383,12 +373,10 @@ class _Renglon extends StatelessWidget {
   const _Renglon({
     required this.cliente,
     required this.alTocar,
-    required this.alCobrar,
   });
 
   final ClienteEnRuta cliente;
   final VoidCallback alTocar;
-  final VoidCallback alCobrar;
 
   @override
   Widget build(BuildContext context) {
@@ -396,12 +384,6 @@ class _Renglon extends StatelessWidget {
       if (cliente.codigo != null) cliente.codigo,
       if (cliente.direccion != null) cliente.direccion,
     ].whereType<String>().join(' · ');
-
-    // El botón de cobrar solo aparece si el cliente DEBE algo. Ofrecerlo siempre
-    // llenaría la lista de botones que no hacen nada en la mayoría de los
-    // renglones, y el día de cobranza lo que se busca es justo lo contrario:
-    // encontrar rápido a quién hay que cobrarle.
-    final debe = cliente.credito.saldoEfectivo.centavos > 0;
 
     return ListTile(
       key: Key('cliente_${cliente.id}'),
@@ -429,122 +411,8 @@ class _Renglon extends StatelessWidget {
             ),
         ],
       ),
-      subtitle: subtitulo.isEmpty && cliente.porConfirmar.esCero
-          ? null
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (subtitulo.isNotEmpty) Text(subtitulo),
-                // Ya pagó por transferencia o cheque y la oficina no lo ha
-                // confirmado: la deuda sigue completa, pero no hay que volver a
-                // cobrárselo.
-                if (!cliente.porConfirmar.esCero)
-                  Text(
-                    key: Key('por_confirmar_${cliente.id}'),
-                    '\$${cliente.porConfirmar.texto} pagado, por confirmar',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.tertiary,
-                    ),
-                  ),
-              ],
-            ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Credito(cliente: cliente),
-          if (debe)
-            IconButton(
-              key: Key('cobrar_${cliente.id}'),
-              tooltip: 'Registrar pago',
-              icon: const Icon(Icons.payments_outlined),
-              onPressed: alCobrar,
-            ),
-        ],
-      ),
+      subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
       onTap: alTocar,
     );
   }
-}
-
-/// El distintivo de crédito.
-///
-/// El número que se muestra ya incluye la cola local: si el vendedor acaba de
-/// venderle a crédito y no ha sincronizado, el disponible que ve aquí ya bajó.
-/// Mostrar el saldo del servidor a secas sería invitarlo a pasarse del límite.
-class _Credito extends StatelessWidget {
-  const _Credito({required this.cliente});
-
-  final ClienteEnRuta cliente;
-
-  @override
-  Widget build(BuildContext context) {
-    final colores = Theme.of(context).colorScheme;
-
-    if (!cliente.credito.permiteCredito) {
-      return Text(
-        key: const Key('credito_solo_contado'),
-        'Contado',
-        style: TextStyle(color: colores.onSurfaceVariant, fontSize: 12),
-      );
-    }
-
-    if (cliente.credito.bloqueado) {
-      return _Etiqueta(
-        clave: 'credito_bloqueado',
-        texto: 'Bloqueado',
-        fondo: colores.errorContainer,
-        frente: colores.onErrorContainer,
-      );
-    }
-
-    if (cliente.credito.disponible.esCero) {
-      return _Etiqueta(
-        clave: 'credito_agotado',
-        texto: 'Sin crédito',
-        fondo: colores.errorContainer,
-        frente: colores.onErrorContainer,
-      );
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(
-          key: const Key('credito_disponible'),
-          '\$${cliente.credito.disponible.texto}',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        Text('disponible',
-            style: TextStyle(fontSize: 11, color: colores.onSurfaceVariant)),
-      ],
-    );
-  }
-}
-
-class _Etiqueta extends StatelessWidget {
-  const _Etiqueta({
-    required this.clave,
-    required this.texto,
-    required this.fondo,
-    required this.frente,
-  });
-
-  final String clave;
-  final String texto;
-  final Color fondo;
-  final Color frente;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        key: Key(clave),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: fondo,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(texto,
-            style: TextStyle(color: frente, fontSize: 12, fontWeight: FontWeight.w600)),
-      );
 }

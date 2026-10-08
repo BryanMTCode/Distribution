@@ -39,7 +39,7 @@ void main() {
         {
           'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'activo': true,
           'camion': 'Camión 01', 'rutas': 'R04', 'ventas': 3, 'importe': '2250.50',
-          'cobrado': '100.00', 'no_ventas': 1, 'mermas': 0,
+          'efectivo': '100.00', 'no_ventas': 1, 'mermas': 0,
           'ultimo_contacto': '2026-10-07T15:00:00Z', 'saldo_cuenta': '-12.00',
         },
       ],
@@ -116,8 +116,8 @@ void main() {
     final t = _Transporte(200, {
       'id': 'venta-1', 'folio': 'VEND01-000001', 'fecha_operativa': '2026-10-07',
       'momento': '2026-10-07T15:00:00Z', 'vendedor': 'Juan Pérez',
-      'cliente': 'La Esquina', 'tipo': 'contado', 'estado': 'confirmada',
-      'total': '2250.00',
+      'cliente': 'La Esquina', 'tipo': 'contado', 'forma_pago': 'transferencia',
+      'pago_estado': 'por_confirmar', 'estado': 'confirmada', 'total': '2250.00',
       'partidas': [
         {'linea': 1, 'sku': 'A', 'nombre': 'Atún', 'unidad': 'PZA',
          'cantidad': '180.000', 'precio_unitario': '12.50', 'importe': '2250.00'},
@@ -126,6 +126,8 @@ void main() {
     final v = await ClienteVendedores(t).venta('venta-1');
     expect(t.pedidas.single.$1, '/v1/vendedores/ventas/venta-1');
     expect(v.partidas.single.precioUnitario.centavos, 1250);
+    expect(v.formaDePago, FormaDePago.transferencia);
+    expect(v.pagoEstado, 'por_confirmar');
   });
 
   test('un servidor sin la ruta se distingue de un vendedor que no existe', () async {
@@ -165,17 +167,17 @@ void main() {
       'periodo': {..._periodo, 'clave': 'rango', 'desde': '2026-10-01', 'hasta': '2026-10-07'},
       'periodos': _periodos,
       'cifras': {
-        'contado': '100.00', 'credito': '50.00', 'total': '150.00', 'canceladas': 0,
-        'cobrado': '20.00', 'mermas': 1, 'devoluciones': 0, 'no_ventas': 2,
+        'efectivo': '100.00', 'transferencias': '50.00', 'total': '150.00',
+        'canceladas': 0, 'mermas': 1, 'devoluciones': 0, 'no_ventas': 2,
         'clientes_atendidos': 3, 'clientes_nuevos': 1,
       },
       'por_vendedor': [
         {'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan', 'ventas': 2,
-         'importe': '150.00', 'contado': '100.00', 'credito': '50.00',
-         'cobrado': '20.00', 'mermas': 1, 'no_ventas': 2},
+         'importe': '150.00', 'efectivo': '100.00', 'transferencias': '50.00',
+         'mermas': 1, 'no_ventas': 2},
       ],
       'por_dia': [
-        {'fecha': '2026-10-07', 'ventas': 2, 'importe': '150.00', 'cobrado': '20.00'},
+        {'fecha': '2026-10-07', 'ventas': 2, 'importe': '150.00', 'efectivo': '100.00'},
       ],
     });
     final p = await ClientePeriodo(t).ver(desde: '2026-10-01', hasta: '2026-10-07');
@@ -183,6 +185,7 @@ void main() {
     expect(t.pedidas.single.$2,
         {'periodo': 'rango', 'desde': '2026-10-01', 'hasta': '2026-10-07'});
     expect(p.cifras.total.centavos, 15000);
+    expect(p.cifras.transferencias.centavos, 5000);
     expect(p.porVendedor.single.importe.centavos, 15000);
     expect(p.porDia.single.fecha, '2026-10-07');
     expect(p.periodo.enPalabras(hoy: '2026-10-07'),
@@ -192,11 +195,11 @@ void main() {
   test('el resumen de la empresa', () async {
     final t = _Transporte(200, {
       'clientes_activos': 120, 'prospectos': 4, 'clientes_inactivos': 2,
-      'clientes_nuevos_mes': 6, 'clientes_con_saldo': 30, 'vendedores': 5,
+      'clientes_nuevos_mes': 6, 'vendedores': 5,
       'vendedores_con_camion': 4, 'usuarios_oficina': 3, 'rutas': 5, 'telefonos': 5,
       'productos': 210, 'productos_sin_precio': 1, 'bodegas': 1, 'camiones': 5,
       'piezas_en_bodegas': '4800.000', 'piezas_en_camiones': '960.000',
-      'existencias_negativas': 0, 'cartera': '15000.00', 'cartera_vencida': '0.00',
+      'existencias_negativas': 0,
       'vendido_mes': '98000.50', 'vendido_anio': '980000.00',
     });
     final r = await ClientePeriodo(t).empresa();

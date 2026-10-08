@@ -1,9 +1,7 @@
 /// Lista de clientes de la ruta.
 ///
-/// La prueba que cierra el círculo del proyecto es
-/// `una venta a crédito sin sincronizar baja el disponible que ve el vendedor`:
-/// la regla de `dsd_core/credito.dart` compuesta con la cola local de SQLite,
-/// llegando hasta el pixel.
+/// Todo es de contado (ADR 0002 §81): la lista ya no muestra disponible, saldo
+/// ni bloqueo; muestra el orden de visita, lo visitado y lo que falta por subir.
 library;
 
 import 'package:flutter/material.dart';
@@ -55,81 +53,23 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // Crédito en pantalla
+  // Todo es de contado
   // -------------------------------------------------------------------------
 
-  testWidgets('muestra el disponible de quien tiene línea', (tester) async {
+  testWidgets('la lista ya no habla de crédito, saldo ni bloqueo', (tester) async {
     await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Con crédito', limite: 5000, saldoCache: 1200);
+      sembrarCliente(base, id: 'c1', nombre: 'Doña Mary');
+      // Las columnas del crédito siguen en la base local de un teléfono que
+      // viene de la versión anterior: nada las lee.
+      base.db.execute(
+        'UPDATE clientes SET permite_credito = 1, limite_credito = 5000, '
+        'saldo_cache = 4800, bloqueado = 1',
+      );
     });
-    expect(find.text('\$3800.00'), findsOneWidget);
-  });
-
-  testWidgets('un cliente sin línea se marca como contado', (tester) async {
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Solo contado', permiteCredito: false);
-    });
-    expect(find.byKey(const Key('credito_solo_contado')), findsOneWidget);
-  });
-
-  testWidgets('un cliente bloqueado se marca como bloqueado', (tester) async {
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Bloqueado', bloqueado: true);
-    });
-    expect(find.byKey(const Key('credito_bloqueado')), findsOneWidget);
-  });
-
-  testWidgets('con el límite agotado se marca sin crédito', (tester) async {
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Agotado', limite: 1000, saldoCache: 1000);
-    });
-    expect(find.byKey(const Key('credito_agotado')), findsOneWidget);
-  });
-
-  testWidgets('una venta a crédito sin sincronizar baja el disponible que ve el vendedor',
-      (tester) async {
-    // LA prueba del proyecto. Sin contar la cola local, la pantalla diría
-    // \$5000 disponibles y el vendedor le seguiría vendiendo a crédito a un
-    // cliente que ya se pasó — porque ninguna venta de la mañana alcanzó a
-    // sincronizar.
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Doña Mary', limite: 5000, saldoCache: 0);
-      sembrarVentaACreditoPendiente(base, clienteId: 'c1', total: 1500);
-    });
-
-    expect(find.text('\$3500.00'), findsOneWidget);
-    expect(find.text('\$5000.00'), findsNothing,
-        reason: 'la pantalla ignoró la cola local');
-  });
-
-  testWidgets('varias ventas encadenadas agotan el crédito en pantalla', (tester) async {
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Doña Mary', limite: 2000, saldoCache: 0);
-      sembrarVentaACreditoPendiente(base, clienteId: 'c1', total: 800, consecutivo: 1);
-      sembrarVentaACreditoPendiente(base, clienteId: 'c1', total: 800, consecutivo: 2);
-      sembrarVentaACreditoPendiente(base, clienteId: 'c1', total: 800, consecutivo: 3);
-    });
-    expect(find.byKey(const Key('credito_agotado')), findsOneWidget);
-  });
-
-  testWidgets('un cobro sin sincronizar libera línea de inmediato', (tester) async {
-    // Si el vendedor acaba de cobrarle en efectivo, la línea se libera ya.
-    // Hacerlo esperar a la sincronización sería negarle una venta ya pagada.
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Doña Mary', limite: 5000, saldoCache: 4800);
-      sembrarCobroPendiente(base, clienteId: 'c1', importe: 2000);
-    });
-    expect(find.text('\$2200.00'), findsOneWidget);
-  });
-
-  testWidgets('un cobro cancelado no libera línea', (tester) async {
-    await entrar(tester, (base) {
-      sembrarCliente(base, id: 'c1', nombre: 'Doña Mary', limite: 5000, saldoCache: 4800);
-      sembrarCobroPendiente(base, clienteId: 'c1', importe: 2000);
-      base.db.execute("UPDATE cobros SET estado='cancelado'");
-    });
-    expect(find.byKey(const Key('credito_disponible')), findsOneWidget);
-    expect(find.text('\$200.00'), findsOneWidget);
+    expect(find.text('Doña Mary'), findsOneWidget);
+    expect(find.textContaining('crédito'), findsNothing);
+    expect(find.textContaining('isponible'), findsNothing);
+    expect(find.textContaining('\$'), findsNothing);
   });
 
   // -------------------------------------------------------------------------

@@ -16,10 +16,9 @@ import 'vendedores_cliente.dart' show PeriodoVisto, ServidorSinEstaFuncion;
 class CifrasDelPeriodo {
   const CifrasDelPeriodo({
     required this.total,
-    required this.contado,
-    required this.credito,
+    required this.efectivo,
+    required this.transferencias,
     required this.canceladas,
-    required this.cobrado,
     required this.mermas,
     required this.devoluciones,
     required this.noVentas,
@@ -29,10 +28,9 @@ class CifrasDelPeriodo {
 
   factory CifrasDelPeriodo.deJson(Map<String, Object?> j) => CifrasDelPeriodo(
         total: Dinero.deTexto(j['total']! as String),
-        contado: Dinero.deTexto(j['contado']! as String),
-        credito: Dinero.deTexto(j['credito']! as String),
+        efectivo: Dinero.deTexto(j['efectivo']! as String),
+        transferencias: Dinero.deTexto(j['transferencias']! as String),
         canceladas: (j['canceladas']! as num).toInt(),
-        cobrado: Dinero.deTexto(j['cobrado']! as String),
         mermas: (j['mermas']! as num).toInt(),
         devoluciones: (j['devoluciones']! as num).toInt(),
         noVentas: (j['no_ventas']! as num).toInt(),
@@ -41,10 +39,11 @@ class CifrasDelPeriodo {
       );
 
   final Dinero total;
-  final Dinero contado;
-  final Dinero credito;
+
+  /// Todo es de contado (ADR 0002 §81): lo vendido es lo cobrado, por forma.
+  final Dinero efectivo;
+  final Dinero transferencias;
   final int canceladas;
-  final Dinero cobrado;
   final int mermas;
   final int devoluciones;
   final int noVentas;
@@ -59,7 +58,8 @@ class VendedorDelPeriodo {
     required this.nombre,
     required this.ventas,
     required this.importe,
-    required this.cobrado,
+    required this.efectivo,
+    required this.transferencias,
     required this.mermas,
     required this.noVentas,
   });
@@ -70,7 +70,8 @@ class VendedorDelPeriodo {
         nombre: j['nombre']! as String,
         ventas: (j['ventas']! as num).toInt(),
         importe: Dinero.deTexto(j['importe']! as String),
-        cobrado: Dinero.deTexto(j['cobrado']! as String),
+        efectivo: Dinero.deTexto(j['efectivo']! as String),
+        transferencias: Dinero.deTexto(j['transferencias']! as String),
         mermas: (j['mermas']! as num).toInt(),
         noVentas: (j['no_ventas']! as num).toInt(),
       );
@@ -80,7 +81,8 @@ class VendedorDelPeriodo {
   final String nombre;
   final int ventas;
   final Dinero importe;
-  final Dinero cobrado;
+  final Dinero efectivo;
+  final Dinero transferencias;
   final int mermas;
   final int noVentas;
 }
@@ -90,21 +92,21 @@ class DiaDelPeriodo {
     required this.fecha,
     required this.ventas,
     required this.importe,
-    required this.cobrado,
+    required this.efectivo,
   });
 
   factory DiaDelPeriodo.deJson(Map<String, Object?> j) => DiaDelPeriodo(
         fecha: j['fecha']! as String,
         ventas: (j['ventas']! as num).toInt(),
         importe: Dinero.deTexto(j['importe']! as String),
-        cobrado: Dinero.deTexto(j['cobrado']! as String),
+        efectivo: Dinero.deTexto(j['efectivo']! as String),
       );
 
   /// `YYYY-MM-DD`.
   final String fecha;
   final int ventas;
   final Dinero importe;
-  final Dinero cobrado;
+  final Dinero efectivo;
 }
 
 class TableroDelPeriodo {
@@ -157,7 +159,6 @@ class ResumenDeLaEmpresa {
   int get prospectos => _n('prospectos');
   int get clientesInactivos => _n('clientes_inactivos');
   int get clientesNuevosMes => _n('clientes_nuevos_mes');
-  int get clientesConSaldo => _n('clientes_con_saldo');
   int get vendedores => _n('vendedores');
   int get vendedoresConCamion => _n('vendedores_con_camion');
   int get usuariosOficina => _n('usuarios_oficina');
@@ -172,8 +173,6 @@ class ResumenDeLaEmpresa {
   String get piezasEnBodegas => _j['piezas_en_bodegas']! as String;
   String get piezasEnCamiones => _j['piezas_en_camiones']! as String;
   int get existenciasNegativas => _n('existencias_negativas');
-  Dinero get cartera => _d('cartera');
-  Dinero get carteraVencida => _d('cartera_vencida');
   Dinero get vendidoMes => _d('vendido_mes');
   Dinero get vendidoAnio => _d('vendido_anio');
 }

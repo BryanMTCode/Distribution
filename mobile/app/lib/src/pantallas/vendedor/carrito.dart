@@ -7,9 +7,9 @@
 ///    importe. Es lo que el cliente va a revisar en el papel impreso, y si no
 ///    cuadra en pantalla, el vendedor lo descubre AHORA y no frente al cliente
 ///    con el ticket ya salido.
-/// 2. **La forma de pago cambia lo que se puede hacer, no los importes.** De
-///    contado siempre procede. A crédito puede bloquearse, y entonces se dice
-///    cuánto falta abonar — no "operación no permitida".
+/// 2. **Todo es de contado** (ADR 0002 §81): el cliente paga en el acto, en
+///    efectivo o por transferencia. La forma cambia lo que el vendedor entrega
+///    en el corte, no los importes.
 /// 3. **No hay campo de precio ni de descuento.** El vendedor no otorga
 ///    descuentos (ADR 0002 §7). No está deshabilitado: no existe.
 library;
@@ -31,7 +31,6 @@ class PantallaCarrito extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final carrito = ref.watch(carritoProvider);
     final cliente = ref.watch(clienteDeLaVisitaProvider);
-    final evaluacion = ref.watch(evaluacionProvider);
 
     // La venta cerrada abre su pantalla. Se navega desde aquí y no desde el
     // botón para que el estado sea la única fuente: si la app se reconstruye
@@ -83,10 +82,7 @@ class PantallaCarrito extends ConsumerWidget {
             ),
         ],
       ),
-      bottomNavigationBar: _BarraCobro(
-        carrito: carrito,
-        evaluacion: evaluacion,
-      ),
+      bottomNavigationBar: _BarraCobro(carrito: carrito),
       body: carrito.estaVacio
           ? const Center(
               key: Key('pedido_vacio'),
@@ -107,8 +103,6 @@ class PantallaCarrito extends ConsumerWidget {
                 const Divider(height: 1),
                 _Resumen(carrito: carrito),
                 _FormaDePago(carrito: carrito),
-                if (evaluacion != null)
-                  _AvisoCredito(evaluacion: evaluacion, aCredito: carrito.aCredito),
               ],
             ),
     );
@@ -197,8 +191,6 @@ class PantallaCarrito extends ConsumerWidget {
 String _mensajeDeFallo(MotivoNoVenta motivo, String? detalle) =>
     switch (motivo) {
       MotivoNoVenta.carritoVacio => 'No hay nada que cobrar',
-      MotivoNoVenta.creditoRechazado =>
-        'El crédito no alcanza. Cámbialo a contado o cóbrale primero.',
       MotivoNoVenta.sinRangoDeFolios =>
         'Este equipo no tiene folios asignados. Sincroniza una vez.',
       MotivoNoVenta.sinFolios =>
@@ -324,175 +316,91 @@ class _Resumen extends StatelessWidget {
       );
 }
 
-/// Contado o crédito. Dos botones grandes, no un menú.
-class _FormaDePago extends ConsumerWidget {
+/// Efectivo o transferencia. Dos botones grandes, no un menú.
+///
+/// La referencia de la transferencia es opcional —no siempre el cliente la tiene
+/// a la mano—, pero si se escribe viaja en la venta y en el ticket: es con lo que
+/// la oficina la encuentra en el estado de cuenta.
+class _FormaDePago extends ConsumerStatefulWidget {
   const _FormaDePago({required this.carrito});
 
   final Carrito carrito;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cliente = ref.watch(clienteDeLaVisitaProvider);
+  ConsumerState<_FormaDePago> createState() => _EstadoFormaDePago();
+}
+
+class _EstadoFormaDePago extends ConsumerState<_FormaDePago> {
+  late final _referencia = TextEditingController(text: widget.carrito.referenciaPago ?? '');
+
+  @override
+  void dispose() {
+    _referencia.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final control = ref.read(carritoProvider.notifier);
-    // Un cliente sin línea de crédito no debe poder ni elegirlo: ofrecer una
-    // opción que va a fallar es hacerle perder tiempo frente al cliente.
-    final puedeCredito =
-        cliente?.credito.permiteCredito ?? false;
+    final forma = widget.carrito.formaDePago;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Forma de pago',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text('Forma de pago', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          SegmentedButton<bool>(
+          SegmentedButton<FormaDePago>(
             key: const Key('forma_de_pago'),
-            segments: [
-              const ButtonSegment(
-                value: false,
-                label: Text('Contado'),
+            segments: const [
+              ButtonSegment(
+                value: FormaDePago.efectivo,
+                label: Text('Efectivo'),
                 icon: Icon(Icons.payments_outlined),
               ),
               ButtonSegment(
-                value: true,
-                label: const Text('Crédito'),
-                icon: const Icon(Icons.account_balance_wallet_outlined),
-                enabled: puedeCredito,
+                value: FormaDePago.transferencia,
+                label: Text('Transferencia'),
+                icon: Icon(Icons.account_balance_outlined),
               ),
             ],
-            selected: {carrito.aCredito},
+            selected: {forma},
             onSelectionChanged: (s) =>
-                control.cambiarFormaDePago(aCredito: s.first),
+                control.cambiarFormaDePago(s.first, referencia: _referencia.text),
           ),
-          if (!puedeCredito)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'Este cliente es solo de contado.',
-                key: const Key('nota_solo_contado'),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+          if (forma == FormaDePago.transferencia) ...[
+            const SizedBox(height: 10),
+            TextField(
+              key: const Key('campo_referencia_pago'),
+              controller: _referencia,
+              decoration: const InputDecoration(
+                labelText: 'Clave de rastreo o referencia (opcional)',
+                helperText: 'Con esto la oficina la encuentra en el banco. '
+                    'No viene en tu efectivo del corte.',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
+              onChanged: (t) =>
+                  control.cambiarFormaDePago(FormaDePago.transferencia, referencia: t),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// Lo que el crédito del cliente permite, con el número que hace falta.
-class _AvisoCredito extends StatelessWidget {
-  const _AvisoCredito({required this.evaluacion, required this.aCredito});
-
-  final ResultadoCredito evaluacion;
-  final bool aCredito;
-
-  @override
-  Widget build(BuildContext context) {
-    final colores = Theme.of(context).colorScheme;
-    if (!aCredito) return const SizedBox.shrink();
-
-    if (evaluacion.permitida) {
-      return _Tarjeta(
-        clave: 'credito_ok',
-        fondo: colores.tertiaryContainer,
-        frente: colores.onTertiaryContainer,
-        icono: Icons.check_circle_outline,
-        titulo: 'Procede a crédito',
-        detalle: 'Le quedarían \$${evaluacion.disponible.texto} de línea.',
-      );
-    }
-
-    final (titulo, detalle) = switch (evaluacion.motivo) {
-      MotivoCredito.excedeLimite => (
-          'Se pasa del límite',
-          // El número que resuelve la situación: cuánto tiene que abonar para
-          // que la venta pase. "No permitido" deja al vendedor sin salida.
-          'Necesita abonar \$${evaluacion.excedente.texto} '
-              'para que pase esta venta, o cóbrale de contado.',
-        ),
-      MotivoCredito.clienteBloqueado => (
-          'Cliente bloqueado',
-          'La oficina bloqueó su crédito. De contado sí puedes venderle.',
-        ),
-      MotivoCredito.sinLineaDeCredito => (
-          'Sin línea de crédito',
-          'Este cliente solo compra de contado.',
-        ),
-      _ => ('No procede a crédito', 'Cóbrale de contado.'),
-    };
-
-    return _Tarjeta(
-      clave: 'credito_bloquea',
-      fondo: colores.errorContainer,
-      frente: colores.onErrorContainer,
-      icono: Icons.block_outlined,
-      titulo: titulo,
-      detalle: detalle,
-    );
-  }
-}
-
-class _Tarjeta extends StatelessWidget {
-  const _Tarjeta({
-    required this.clave,
-    required this.fondo,
-    required this.frente,
-    required this.icono,
-    required this.titulo,
-    required this.detalle,
-  });
-
-  final String clave;
-  final Color fondo;
-  final Color frente;
-  final IconData icono;
-  final String titulo;
-  final String detalle;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        key: Key(clave),
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: fondo,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icono, color: frente),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(titulo,
-                      style: TextStyle(color: frente, fontWeight: FontWeight.w700)),
-                  Text(detalle, style: TextStyle(color: frente, fontSize: 13)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-}
-
 /// El total y el paso siguiente.
 class _BarraCobro extends ConsumerWidget {
-  const _BarraCobro({required this.carrito, required this.evaluacion});
+  const _BarraCobro({required this.carrito});
 
   final Carrito carrito;
-  final ResultadoCredito? evaluacion;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colores = Theme.of(context).colorScheme;
-    final procede = !carrito.estaVacio && (evaluacion?.permitida ?? false);
+    final procede = !carrito.estaVacio;
     final cobrando = ref.watch(cobroProvider) is CobroEnCurso;
 
     return SafeArea(
@@ -535,7 +443,9 @@ class _BarraCobro extends ConsumerWidget {
                       )
                     : const Icon(Icons.point_of_sale_outlined),
                 label: Text(
-                  carrito.aCredito ? 'Registrar a crédito' : 'Cobrar de contado',
+                  carrito.formaDePago == FormaDePago.transferencia
+                      ? 'Cobrar por transferencia'
+                      : 'Cobrar en efectivo',
                 ),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),

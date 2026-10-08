@@ -3,6 +3,9 @@
 /// Todo sale de SQLite: la pantalla funciona igual con señal o sin ella, y no
 /// hay un estado "cargando del servidor" que deje al vendedor esperando frente
 /// al cliente.
+///
+/// La operación es de contado (ADR 0002 §81): aquí ya no hay saldo, límite ni
+/// bloqueo. Las columnas viejas siguen en la base local y nada las lee.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -13,14 +16,15 @@ class ClienteEnRuta {
   const ClienteEnRuta({
     required this.id,
     required this.nombreComercial,
-    required this.credito,
     this.codigo,
     this.telefono,
     this.direccion,
+    this.referencias,
     this.secuencia,
-    this.saldoCacheEn,
+    this.lat,
+    this.lng,
+    this.ubicacionOrigen,
     this.esLocal = false,
-    this.porConfirmar = Dinero.cero,
     this.plan = const [],
     this.tocaHoy = false,
     this.visitadoHoy = false,
@@ -31,26 +35,18 @@ class ClienteEnRuta {
   final String? codigo;
   final String? telefono;
   final String? direccion;
+  final String? referencias;
   final int? secuencia;
 
-  /// Estado de crédito ya compuesto con la cola local de este dispositivo.
-  final EstadoCredito credito;
+  /// Dónde está el negocio: lo que usa la geocerca de la venta.
+  final double? lat;
+  final double? lng;
 
-  /// Cuándo se sincronizó el saldo. Se muestra siempre: un saldo sin su
-  /// antigüedad es un número en el que el vendedor confía más de lo debido.
-  final String? saldoCacheEn;
+  /// 'gps' si se tomó parado en el negocio; 'manual' si se escribió o corrigió.
+  final String? ubicacionOrigen;
 
   /// Alta hecha en este teléfono que aún no confirma el servidor.
   final bool esLocal;
-
-  /// Transferencias y cheques que el cliente ya pagó y la oficina todavía no
-  /// confirma en el banco: los que trae el servidor más los de este teléfono sin
-  /// sincronizar.
-  ///
-  /// NO están restados del saldo ni del crédito —una transferencia sin confirmar
-  /// no libera línea (migración 0038 del servidor)—. Existen para que el vendedor
-  /// no le vuelva a cobrar al cliente lo que ya le pagó.
-  final Dinero porConfirmar;
 
   /// Qué días le toca visita, del plan que capturó la oficina.
   final List<DiaDeVisita> plan;
@@ -58,17 +54,12 @@ class ClienteEnRuta {
   /// Si hoy le toca, según su plan. Sin plan, nunca.
   final bool tocaHoy;
 
-  /// Si hoy ya hay un papel suyo en este teléfono: venta, no-drop, cobro o
-  /// devolución. Es la misma definición de «visita» que usa Efectividad en el
-  /// servidor para contar lo que tocaba y nadie hizo.
+  /// Si hoy ya hay un papel suyo en este teléfono: venta, no-drop o devolución.
+  /// Es la misma definición de «visita» que usa Efectividad en el servidor para
+  /// contar lo que tocaba y nadie hizo.
   final bool visitadoHoy;
 
-  /// Lo que se pinta como distintivo en la lista.
-  ResultadoCredito evaluar(Dinero total, {required bool aCredito}) =>
-      evaluarVenta(credito, total, aCredito: aCredito);
-
-  bool get creditoAgotado =>
-      !credito.permiteCredito || credito.bloqueado || credito.disponible.esCero;
+  bool get conUbicacion => lat != null && lng != null;
 }
 
 class RepoClientes {
@@ -77,14 +68,6 @@ class RepoClientes {
   final Database _db;
 
   /// Clientes de la ruta, en orden de visita.
-  ///
-  /// El saldo efectivo se compone en SQL sumando lo que este dispositivo tiene
-  /// sin sincronizar: ventas a crédito encoladas y cobros EN EFECTIVO encolados.
-  /// Sin eso, cinco ventas de la mañana pasarían todas el límite (ver
-  /// `dsd_core/credito.dart`).
-  ///
-  /// Una transferencia o un cheque encolado NO resta: no libera crédito hasta que
-  /// la oficina lo confirme. Se suma aparte, a `por_confirmar`.
   List<ClienteEnRuta> deLaRuta({
     String? busqueda,
     int limite = 200,
@@ -103,41 +86,17 @@ class RepoClientes {
              c.nombre_comercial,
              c.telefono,
              c.direccion,
+             c.referencias,
              c.secuencia,
-             c.permite_credito,
-             c.bloqueado,
-             c.limite_credito,
-             c.saldo_cache,
-             c.saldo_cache_en,
+             c.lat,
+             c.lng,
+             c.ubicacion_origen,
              c.es_local,
-             COALESCE((
-               SELECT SUM(v.total) FROM ventas v
-                WHERE v.cliente_id = c.id
-                  AND v.tipo = 'credito'
-                  AND v.estado = 'confirmada'
-                  AND v.sincronizada = 0
-             ), 0) AS cargos_pendientes,
-             COALESCE((
-               SELECT SUM(k.importe) FROM cobros k
-                WHERE k.cliente_id = c.id
-                  AND k.estado = 'confirmado'
-                  AND k.forma_pago = 'efectivo'
-                  AND k.sincronizado = 0
-             ), 0) AS abonos_pendientes,
-             c.por_confirmar + COALESCE((
-               SELECT SUM(k.importe) FROM cobros k
-                WHERE k.cliente_id = c.id
-                  AND k.estado = 'confirmado'
-                  AND k.forma_pago <> 'efectivo'
-                  AND k.sincronizado = 0
-             ), 0) AS por_confirmar,
              c.plan_visita,
              (EXISTS (SELECT 1 FROM ventas v
                        WHERE v.cliente_id = c.id AND v.fecha_operativa = ?4)
               OR EXISTS (SELECT 1 FROM no_drops n
                           WHERE n.cliente_id = c.id AND n.fecha_operativa = ?4)
-              OR EXISTS (SELECT 1 FROM cobros k
-                          WHERE k.cliente_id = c.id AND k.fecha_operativa = ?4)
               OR EXISTS (SELECT 1 FROM mermas m
                           WHERE m.cliente_id = c.id AND m.fecha_operativa = ?4)
              ) AS visitado_hoy
@@ -163,12 +122,6 @@ class RepoClientes {
   }
 
   static ClienteEnRuta _aCliente(Row f, DateTime hoy) {
-    // Los importes viven en la base local como REAL por compatibilidad con el
-    // esquema, y se convierten a centavos exactos al entrar al dominio. La
-    // aritmética de dinero nunca ocurre en double.
-    Dinero desdeBase(Object? valor) =>
-        Dinero.deTexto(((valor as num?) ?? 0).toDouble().toStringAsFixed(2));
-
     final plan = leerPlanDeVisita(f['plan_visita'] as String?);
     return ClienteEnRuta(
       id: f['id'] as String,
@@ -176,21 +129,15 @@ class RepoClientes {
       nombreComercial: f['nombre_comercial'] as String,
       telefono: f['telefono'] as String?,
       direccion: f['direccion'] as String?,
+      referencias: f['referencias'] as String?,
       secuencia: f['secuencia'] as int?,
-      saldoCacheEn: f['saldo_cache_en'] as String?,
+      lat: (f['lat'] as num?)?.toDouble(),
+      lng: (f['lng'] as num?)?.toDouble(),
+      ubicacionOrigen: f['ubicacion_origen'] as String?,
       esLocal: (f['es_local'] as int) == 1,
-      porConfirmar: desdeBase(f['por_confirmar']),
       plan: plan,
       tocaHoy: tocaVisita(plan, hoy),
       visitadoHoy: (f['visitado_hoy'] as int? ?? 0) == 1,
-      credito: EstadoCredito(
-        limite: desdeBase(f['limite_credito']),
-        saldoConfirmado: desdeBase(f['saldo_cache']),
-        permiteCredito: (f['permite_credito'] as int) == 1,
-        bloqueado: (f['bloqueado'] as int) == 1,
-        cargosPendientes: desdeBase(f['cargos_pendientes']),
-        abonosPendientes: desdeBase(f['abonos_pendientes']),
-      ),
     );
   }
 }

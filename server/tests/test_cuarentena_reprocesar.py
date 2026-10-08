@@ -23,7 +23,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.ayudas_sync import a_json, operacion_cliente, sobre
-from tests.test_panel_cobranza import _csrf
+from tests.conftest import csrf_del_panel as _csrf
 from tests.test_plan_visita import _entrar
 from tests.test_sync_push import _cab_vendedor, _contar
 

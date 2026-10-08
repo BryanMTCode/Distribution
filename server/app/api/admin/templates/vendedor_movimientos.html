@@ -33,7 +33,7 @@
        href="?{{ periodo.como_parametros() }}&tipo={{ clave }}">
       <div class="numero">{{ r.cuantos }}</div>
       <div class="etiqueta">{{ etiqueta|lower }}</div>
-      {% if clave in ('venta', 'cobro') %}
+      {% if clave == 'venta' %}
         <div class="sutil" style="margin-top:6px">{{ r.importe|dinero }}</div>
       {% endif %}
     </a>

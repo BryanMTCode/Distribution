@@ -7,10 +7,10 @@ offline y panel web analítico.
 
 **Fases 0 a 7 hechas — el día completo del vendedor, su cierre y su lectura.** Sale el camión cargado,
 se vende y se cobra offline, se registra lo que se perdió y a quién no se le vendió, la liquidación
-cuadra contra la ecuación, y la oficina puede leer lo que pasó: cobros marcados, cartera por antigüedad
+cuadra contra la ecuación, y la oficina puede leer lo que pasó: transferencias por confirmar
 y efectividad de visita por causa. Reglas de negocio
-cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, crédito con límite
-en dinero y bloqueo automático, remisión no fiscal, equipos de la empresa, sin lotes, y el **camión como
+cerradas ([ADR 0002](docs/adr/0002-reglas-de-negocio.md)): autoventa, pieza y caja, **solo contado
+—efectivo o transferencia— desde la retroalimentación del piloto (§81)**, remisión no fiscal, equipos de la empresa, sin lotes, y el **camión como
 almacén rodante** — la mercancía que no se vende se queda arriba y se acumula con la carga del día
 siguiente, así que no se le cobra como faltante al vendedor. Y lo que sí entrega baja
 con un **traspaso que pasa por tránsito**: su palabra saca la mercancía del camión, pero
@@ -29,9 +29,9 @@ la bodega sube cuando alguien la cuenta.
 | Registro de dispositivos y rangos de folio | ✅ con pruebas |
 | Cola de trabajos (`FOR UPDATE SKIP LOCKED`) | ✅ con pruebas de concurrencia |
 | Datos de referencia (roles, permisos, unidades, motivos) | ✅ sembrados por migración |
-| Reglas de crédito con bloqueo offline | ✅ con pruebas de propiedades |
+| **Solo contado** (§81) — la venta lleva su forma de pago: efectivo o transferencia | ✅ con pruebas |
 | API de catálogo (productos, presentaciones, precios) | ✅ con pruebas |
-| API de clientes (alta en campo, alcance por ruta, cartera) | ✅ con pruebas |
+| API de clientes (alta en campo, alcance por ruta) | ✅ con pruebas |
 | **Motor de sincronización** — sobres, idempotencia, cuarentena | ✅ con pruebas de caos |
 | Cursor de deltas con filtro de snapshot | ✅ verificado contra transacción en vuelo |
 | change_log poblado por trigger | ✅ nada puede escribir sin dejar rastro |
@@ -41,12 +41,12 @@ la bodega sube cuando alguien la cuenta.
 | Aplicador de deltas al espejo local | ✅ contra el payload real del servidor |
 | Delta de cartera (el saldo que faltaba) | ✅ migración 0011 |
 | **Login sin señal** (Argon2id verificado en Dart) | ✅ con pruebas de widget |
-| **Lista de clientes offline** con crédito compuesto | ✅ con pruebas de widget |
+| **Lista de clientes offline**, en orden de visita | ✅ con pruebas de widget |
 | Modo demo para evaluar la UI en campo sin servidor | ✅ imposible en release (candado de compilación) |
 | **Precio rígido en tres capas** (dominio · servidor · CHECK de PostgreSQL) | ✅ [ADR 0002 §7](docs/adr/0002-reglas-de-negocio.md) |
 | Dinero de 2 decimales y **precio de 4** (caja↔pieza sin descuadre) | ✅ 5º contrato, 13 casos |
 | **Catálogo de la visita** con precio de la lista del cliente | ✅ 18 pruebas de widget |
-| **Carrito** con existencia del camión y crédito compuesto | ✅ 18 pruebas de widget + 25 de dominio |
+| **Carrito** con existencia del camión y forma de pago | ✅ 18 pruebas de widget + 25 de dominio |
 | Cobro y remisión (impresión **a un toque**, no automática) | ✅ 15 pruebas de widget |
 | **Ticket ESC/POS de 58 mm** — diseño, acentos, emoji, reimpresión | ✅ 59 pruebas de bytes |
 | Vista previa del ticket, en el teléfono y versionada | ✅ [ver el papel](contracts/ticket_58mm_ejemplo.txt) |
@@ -55,7 +55,6 @@ la bodega sube cuando alguien la cuenta.
 | Portal por rol (vendedor / gerencia) | ✅ con pruebas |
 | Contrato de Argon2id (7 vectores) | ✅ **verificado en los dos lenguajes** |
 | **Outbox del dispositivo** — documento y cola en una transacción | ✅ con pruebas |
-| Reglas de crédito en Dart (espejo del servidor) | ✅ con pruebas |
 | Dinero exacto en el dispositivo (centavos enteros) | ✅ con pruebas |
 | Rangos de folio locales | ✅ con pruebas |
 | Contrato canónico Dart↔Python (34 vectores) | ✅ **verificado en los dos lenguajes** |
@@ -66,7 +65,7 @@ la bodega sube cuando alguien la cuenta.
 | Pantalla de **cuarentena**: lo que el servidor rechazó | ✅ con payload íntegro |
 | Pantalla de **ventas marcadas**, con el motivo en español | ✅ la otra mitad de §0.1 |
 | **Captura de catálogo y precios** con cuatro decimales | ✅ 20 pruebas |
-| **Confirmar prospectos de calle**: código, lista y crédito | ✅ 16 pruebas |
+| **Confirmar prospectos de calle**: código y lista de precios | ✅ 16 pruebas |
 | **Carga del camión** — bodega → camión, con su delta y su detalle | ✅ 20 pruebas |
 | **Cargar varios a la vez** — la carga lista lo que hay en la bodega, se escriben cantidades y un botón | ✅ 8 pruebas |
 | El teléfono **suma** la carga al sobrante, sin duplicarla en un `pull` repetido | ✅ 18 pruebas de Dart |
@@ -77,18 +76,16 @@ la bodega sube cuando alguien la cuenta.
 | **Sincronización blindada** — un delta que revienta se aparta, no congela el teléfono ([auditoría](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 31 pruebas |
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
-| **Cobranza en la app** — abono, recibo impreso y FIFO en el servidor | ✅ 63 pruebas |
 | **Mermas y devoluciones** — el signo que evita que el faltante sea del vendedor | ✅ 44 pruebas + 32 de ingesta |
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
-| **Cobranza en el panel** — arqueo del día, cobros marcados y antigüedad | ✅ 25 pruebas |
-| **Transferencias y cheques por confirmar** — no liberan crédito hasta que la oficina los ve en el banco | ✅ 22 pruebas + 4 de Dart y 4 de widget |
+| **Transferencias por confirmar** — la oficina las busca en el banco para cuadrar el dinero; la que no llegó, con motivo | ✅ 9 pruebas |
 | **Cuenta del vendedor** — faltante y mermas a su cargo **a costo**, efectivo; abonos y condonación | ✅ 23 pruebas |
 | **Cambio físico** — fresco por caducado o dañado: sale del camión con documento, sin cobro ni faltante | ✅ 8 pruebas + 2 de Dart y 5 de widget |
 | **Editar y eliminar la estructura** — usuarios, rutas, almacenes, listas, proveedores y motivos; la base decide si se borra o se da de baja | ✅ 24 pruebas |
 | **Plan de visita** — «hoy te tocan» en el teléfono, y Efectividad cuenta lo que tocaba y nadie visitó | ✅ 18 pruebas + 11 de Dart y 5 de widget |
 | **¿Listo para operar?** — los once pasos del arranque, y los **pendientes de hoy** arriba del tablero | ✅ 10 pruebas |
-| **Panel → teléfono, acción por acción** — la ruta viaja con su titular, la cartera con el cliente, el alcance se lee en vivo ([§8](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 10 pruebas + 3 de Dart |
+| **Panel → teléfono, acción por acción** — la ruta viaja con su titular, el cliente con su lista, el alcance se lee en vivo ([§8](docs/AUDITORIA-SINCRONIZACION.md)) | ✅ 10 pruebas + 3 de Dart |
 | **Guardia entre lenguajes** — lo que publica el servidor, el teléfono lo sabe aplicar (y al revés) | ✅ 3 pruebas |
 | **Cuadre del camión** — con todo entregado y todo traído, el teléfono queda igual al panel | ✅ 6 pruebas + 12 de Dart |
 | **Tablero por periodo**, **movimientos de cada vendedor** y **bitácora de sincronizaciones** | ✅ 17 pruebas |
@@ -124,7 +121,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1375 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **646 de Dart** y **326 de widget**, todas en verde.
+**1287 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **605 de Dart** y **275 de widget**, todas en verde.
 
 ## Stack
 
@@ -187,13 +184,12 @@ server/
                      sincronizaciones.py cada subida y cada bajada, y si cada teléfono está al día
                      desempeno.py     el día de cada vendedor contra sus mismos días de la semana
                      productos.py     catálogo y precios (los 4 decimales)
-                     clientes.py      confirmar prospectos y decidir el crédito
+                     clientes.py      confirmar prospectos y su lista de precios
                      cargas.py        la carga del camión (bodega → camión)
                      equipo.py        usuarios, rutas, almacenes y listas de precios
                      inventario.py    existencias y libro mayor por almacén
                      liquidaciones.py el corte del día (Fase 7)
-                     cobranza.py      arqueo del día, cobros marcados, transferencias
-                                      por confirmar y antigüedad
+                     transferencias.py las transferencias por confirmar en el banco
                      cuenta_vendedores.py lo que debe cada vendedor, y cómo lo paga
                      equipo_fichas.py editar y eliminar usuarios, rutas, almacenes y listas
                      motivos.py       los catálogos de motivos (y si una merma se cobra)
@@ -214,7 +210,7 @@ server/
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
-    infra/           cobranza.py (el FIFO, y deshacerlo) · cuenta_vendedor.py (los cargos del Corte)
+    infra/           cuenta_vendedor.py (los cargos del Corte)
     api/v1/          auth, dispositivos, salud, tablero
     workers/         cola sobre PostgreSQL + proceso worker
   db/
@@ -227,20 +223,20 @@ mobile/
   db/schema.sql      esquema local del dispositivo — FUENTE DE VERDAD
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, precio de 4 decimales, carrito,
-                     borrador, VENTA, COBRO, MERMA, NO-DROP, TICKET ESC/POS +
-                     vista previa, crédito, credencial, folios, outbox, sobres,
+                     borrador, VENTA, MERMA, NO-DROP, TICKET ESC/POS +
+                     vista previa, forma de pago, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            646 pruebas que corren en segundos
+    test/            605 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
-    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket, abono,
+    lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket,
                      merma y devolución, no-drop, lienzo espacial, MI DÍA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
                      gerencia/ (tablero, mapa del día)
-    test/            326 pruebas de widget, sin emulador
+    test/            275 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
