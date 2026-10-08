@@ -28,7 +28,7 @@ import '../../estado/cargas.dart';
 class PantallaCargas extends ConsumerStatefulWidget {
   const PantallaCargas({super.key, this.conBarra = true});
 
-  /// Sin barra cuando va dentro de la pestaña Camiones, que ya pone la suya.
+  /// Sin barra cuando va dentro de la pestaña Almacén, que ya pone la suya.
   final bool conBarra;
 
   @override
@@ -509,8 +509,8 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                       padding: EdgeInsets.symmetric(vertical: 8),
                       child: Text(
                         'La bodega no tiene existencias registradas, así que no hay '
-                        'qué subir. Primero da entrada a la mercancía en el panel '
-                        '(Compras o Entradas).',
+                        'qué subir. Primero da entrada a la mercancía: Almacén → '
+                        'Entradas.',
                         key: Key('aviso_bodega_vacia'),
                       ),
                     ),

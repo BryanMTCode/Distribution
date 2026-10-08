@@ -38,6 +38,7 @@ from app.api.admin import ventas as panel_ventas
 from app.api.admin.sesion_web import SinSesionWeb
 from app.api.middleware import Observabilidad
 from app.api.v1 import (
+    almacen,
     auth,
     cargas,
     catalogo,
@@ -120,6 +121,7 @@ def crear_app() -> FastAPI:
     app.include_router(tablero.router, prefix="/v1")
     app.include_router(cargas.router, prefix="/v1")
     app.include_router(cortes.router, prefix="/v1")
+    app.include_router(almacen.router, prefix="/v1")
     app.include_router(oficina_clientes.router, prefix="/v1")
     app.include_router(vendedores.router, prefix="/v1")
 

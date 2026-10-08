@@ -9,7 +9,8 @@
 ///   · **Empresa**: cuántos clientes, vendedores, artículos; la cartera.
 ///   · **Vendedores**: cada uno, su camión y todo lo que hizo.
 ///   · **Clientes**: quién debe y desde cuándo, qué compra, su crédito.
-///   · **Camiones**: cargar y hacer el corte del día.
+///   · **Almacén**: existencias, entradas de mercancía, traspasos entre
+///     bodegas, cargas del camión y corte del día.
 ///
 /// Cada pestaña aparece solo si el usuario tiene su permiso. La UI oculta; el
 /// servidor prohíbe de todos modos.
@@ -18,9 +19,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../estado/cargas.dart';
 import '../../estado/vendedores.dart';
-import 'camiones.dart';
+import 'almacen.dart';
 import 'clientes_oficina.dart';
 import 'empresa.dart';
 import 'panel.dart';
@@ -73,13 +73,13 @@ class _EstadoPortal extends ConsumerState<PortalDeOficina> {
           const PantallaClientesDeOficina(),
         ),
       ],
-      // Cargar y cortar: lo que se hace con el camión enfrente.
-      if (ref.watch(puedeCargarProvider) || ref.watch(puedeCortarProvider))
+      // Todo lo que mueve mercancía: ver, recibir, traspasar, cargar, cortar.
+      if (ref.watch(muestraAlmacenProvider))
         (
-          const Key('nav_camiones'),
-          Icons.local_shipping_outlined,
-          'Camiones',
-          const PantallaCamiones(),
+          const Key('nav_almacen'),
+          Icons.warehouse_outlined,
+          'Almacén',
+          const PantallaAlmacen(),
         ),
     ];
     final elegida = ref.watch(pestanaDeOficinaProvider).clamp(0, pestanas.length - 1);

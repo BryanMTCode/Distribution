@@ -283,3 +283,30 @@ class BarraDeAvance extends StatelessWidget {
     );
   }
 }
+
+/// Un aviso en caja de color: el mensaje del servidor o un error. Rojo cuando
+/// algo no se hizo; del color secundario cuando solo informa.
+class AvisoDeOficina extends StatelessWidget {
+  const AvisoDeOficina(this.texto, {super.key, this.esError = false});
+
+  final String texto;
+  final bool esError;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: esError ? c.errorContainer : c.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(color: esError ? c.onErrorContainer : c.onSecondaryContainer),
+      ),
+    );
+  }
+}

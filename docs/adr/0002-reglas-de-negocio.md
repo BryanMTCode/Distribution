@@ -4555,3 +4555,55 @@ varios días, con el resumen del periodo por vendedor y por día; tocar un día 
 desglose lo abre completo. La barra de abajo queda en cinco: **Tablero, Empresa,
 Vendedores, Clientes y Camiones** (Cargas y Corte del día, que se hacen con el
 camión enfrente). (versionCode 24)
+
+## 78. Las entradas de mercancía desde la app
+
+**Decisión (octubre 2026).** «Quiero agregar mercancía desde la app: manejar todo
+el negocio en modo gerencia». La app de la oficina captura entradas completas
+(Almacén → Entradas): compra a proveedor, inventario inicial y ajuste por conteo
+físico, por `/v1/almacen/entradas`.
+
+- **Mismas reglas que el panel, no una copia:** la lógica se separó de la
+  pantalla en `abrir_entrada`, `agregar_renglon_a_entrada`,
+  `quitar_renglon_de_entrada`, `confirmar_entrada`, `cancelar_entrada` y
+  `datos_de_la_entrada` (`app/api/admin/entradas.py`); el panel y la app las
+  llaman igual. Bultos enteros; la compra exige costo por bulto en cada renglón y,
+  con proveedor del catálogo, deja su cuenta por pagar con el promedio ponderado
+  recalculado; el inventario inicial exige nota; el producto con lote exige lote;
+  confirmar dos veces no mete dos veces (409); cancelar pide motivo; a un camión
+  no se recibe (§0.2).
+- **Quién:** ver, `inventario.ver` y ser de la oficina (el vendedor tiene
+  `inventario.ver` para su camión, no para todos los almacenes). Capturar,
+  `inventario.ajustar` —el mismo permiso que en el panel: admin, supervisor y
+  gerente—. Sin él, la lista se ve sin botón de «nueva».
+
+## 79. Traspasos entre bodegas
+
+**Decisión (octubre 2026).** «Quiero traspasar mercancía entre almacenes desde la
+app». Antes, mover de una bodega a otra eran dos documentos sueltos sin nada que
+los atara. Ahora es un **traspaso** (`app/infra/traspasos.py`,
+`POST /v1/almacen/traspasos`):
+
+- **Solo entre bodegas.** El camión tiene dueño exclusivo (§0.2): sube con una
+  carga y baja con la devolución del vendedor; la oficina no le mueve el
+  inventario por su cuenta. Un camión como origen o destino se rechaza diciendo
+  el camino correcto.
+- **En un paso:** nace `aceptado`, con los dos lados —asiento `traspaso` en el
+  libro mayor y las dos existencias— en la misma transacción. No pasa por
+  tránsito: la devolución del camión sí, porque la declara una persona y la recibe
+  otra; aquí quien mueve es la oficina y lo que mueve es su propio inventario.
+- **No deja el origen en negativo.** Es captura, no un hecho que llega tarde
+  (§0.1): si no alcanza, dice cuánto hay y cuánto se pidió, y no se mueve nada.
+  Las existencias del origen se bloquean antes de comparar.
+- **No se publica a ningún teléfono:** el disparador de `traspasos` publica
+  cuando cambia el estado, y este nunca cambia. Folio `TR-`.
+
+## 80. La pestaña Almacén
+
+**Decisión (octubre 2026).** La pestaña Camiones de la app de la oficina se
+volvió **Almacén**, con todo lo que mueve mercancía: Existencias (cada bodega y
+cada camión, en piezas y en cajas, con los negativos en rojo; la del camión
+avisa que es un piso, §0.3), Entradas, Traspasos, Cargas y Corte del día. Cada
+parte sale con su permiso; con una sola, se muestra directo. El aviso de «bodega
+vacía» de las cargas ya manda a Almacén → Entradas en vez de al panel.
+(versionCode 25)

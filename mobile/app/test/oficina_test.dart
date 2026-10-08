@@ -272,11 +272,11 @@ Future<_ServidorDeOficina> _montar(
 
 void main() {
   group('la barra del portal', () {
-    testWidgets('la oficina ve Tablero, Empresa, Vendedores, Clientes y Camiones',
+    testWidgets('la oficina ve Tablero, Empresa, Vendedores, Clientes y Almacén',
         (tester) async {
       await _montar(tester);
       for (final k in ['nav_tablero', 'nav_empresa', 'boton_vendedores', 'nav_clientes',
-          'nav_camiones']) {
+          'nav_almacen']) {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
     });
@@ -286,7 +286,7 @@ void main() {
       expect(find.byKey(const Key('nav_tablero')), findsOneWidget);
       expect(find.byKey(const Key('boton_vendedores')), findsNothing);
       expect(find.byKey(const Key('nav_clientes')), findsNothing);
-      expect(find.byKey(const Key('nav_camiones')), findsNothing);
+      expect(find.byKey(const Key('nav_almacen')), findsNothing);
     });
 
     testWidgets('abrir la app no consulta las pestañas que no se han abierto',
@@ -492,7 +492,7 @@ void main() {
   group('el corte del día', () {
     testWidgets('abrir, contar y cerrar confirmando la sincronización', (tester) async {
       final servidor = await _montar(tester);
-      await tester.tap(find.byKey(const Key('nav_camiones')));
+      await tester.tap(find.byKey(const Key('nav_almacen')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('pestana_cortes')));
       await tester.pumpAndSettle();

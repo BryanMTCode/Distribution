@@ -124,6 +124,25 @@ EDITABLE = ("borrador",)
 MAXIMO_BULTOS = Decimal("100000")
 
 
+# ---------------------------------------------------------------------------
+# La entrada, aparte de la pantalla
+# ---------------------------------------------------------------------------
+# `abrir_entrada`, `datos_de_la_entrada`, `agregar_renglon_a_entrada`,
+# `quitar_renglon_de_entrada`, `confirmar_entrada` y `cancelar_entrada` son la
+# entrada de mercancía: las usan el panel y la app (`/v1/almacen/entradas`).
+# Viven aquí, una vez, para que la que se recibe desde el teléfono mueva el libro
+# mayor, el costo promedio y la cuenta por pagar EXACTAMENTE igual que la del
+# panel. Las rutas del panel solo traducen a HTML.
+
+
+class EntradaNoExiste(Exception):
+    """La entrada que se pidió no existe."""
+
+
+class EntradaRechazada(Exception):
+    """No se puede así; el mensaje dice por qué y qué hacer."""
+
+
 def _a_lista(*, error: str = "", guardado: str = "") -> RedirectResponse:
     cola = []
     if error:
@@ -250,7 +269,32 @@ async def listar(
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
-    entradas = (
+    entradas = await entradas_recientes(sesion)
+
+    return render(
+        peticion,
+        "entradas.html",
+        {
+            "entradas": entradas,
+            "motivos": MOTIVOS,
+            "bodegas": await _bodegas(sesion),
+            "proveedores": await _proveedores(sesion),
+            "hoy": date.today().isoformat(),
+            "puede_editar": actor.puede(PERMISO),
+            "borradores": sum(1 for e in entradas if e["estado"] == "borrador"),
+            "devoluciones": await _devoluciones_por_recibir(sesion),
+            "error": error,
+            "guardado": guardado,
+        },
+        actor=actor,
+        seccion="Entradas",
+    )
+
+
+async def entradas_recientes(sesion) -> list:
+    """Las últimas cien entradas, las más nuevas primero."""
+    return list(
+        (
         await sesion.execute(
             text(
                 """
@@ -276,25 +320,7 @@ async def listar(
                 """
             )
         )
-    ).mappings().all()
-
-    return render(
-        peticion,
-        "entradas.html",
-        {
-            "entradas": entradas,
-            "motivos": MOTIVOS,
-            "bodegas": await _bodegas(sesion),
-            "proveedores": await _proveedores(sesion),
-            "hoy": date.today().isoformat(),
-            "puede_editar": actor.puede(PERMISO),
-            "borradores": sum(1 for e in entradas if e["estado"] == "borrador"),
-            "devoluciones": await _devoluciones_por_recibir(sesion),
-            "error": error,
-            "guardado": guardado,
-        },
-        actor=actor,
-        seccion="Entradas",
+        ).mappings().all()
     )
 
 
@@ -316,13 +342,43 @@ async def crear(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        nueva = await abrir_entrada(
+            sesion,
+            almacen_destino_id=almacen_destino_id,
+            motivo=motivo,
+            proveedor_id=proveedor_id,
+            proveedor=proveedor,
+            referencia=referencia,
+            fecha=fecha,
+            nota=nota,
+            quien=actor.usuario_id,
+        )
+    except EntradaRechazada as e:
+        return _a_lista(error=str(e))
+    return _volver(nueva, guardado="Borrador abierto. Captura los renglones.")
+
+
+async def abrir_entrada(
+    sesion,
+    *,
+    almacen_destino_id: str,
+    motivo: str,
+    proveedor_id: str = "",
+    proveedor: str = "",
+    referencia: str = "",
+    fecha: str = "",
+    nota: str = "",
+    quien: uuid.UUID,
+) -> uuid.UUID:
+    """Abre el borrador y devuelve su id. Ver `crear` para cada decisión."""
     if motivo not in MOTIVOS:
-        return _a_lista(error="Falta elegir por qué entra la mercancía.")
+        raise EntradaRechazada("Falta elegir por qué entra la mercancía.")
 
     try:
-        destino = uuid.UUID(almacen_destino_id)
-    except ValueError:
-        return _a_lista(error="Falta elegir a qué bodega entra.")
+        destino = uuid.UUID(str(almacen_destino_id))
+    except ValueError as e:
+        raise EntradaRechazada("Falta elegir a qué bodega entra.") from e
 
     bodega = (
         await sesion.execute(
@@ -331,11 +387,11 @@ async def crear(
         )
     ).mappings().first()
     if bodega is None:
-        return _a_lista(error="Esa bodega no existe o está inactiva.")
+        raise EntradaRechazada("Esa bodega no existe o está inactiva.")
     if bodega["tipo"] not in TIPOS_DE_DESTINO:
         # §0.2. El mensaje dice el camino correcto, no solo que no se puede.
-        return _a_lista(
-            error=f"{bodega['nombre']} es un {bodega['tipo']}, no una bodega. La "
+        raise EntradaRechazada(
+            f"{bodega['nombre']} es un {bodega['tipo']}, no una bodega. La "
             "mercancía nueva entra a la bodega y de ahí sube al camión con una "
             "carga, que es lo que el teléfono del vendedor sabe recibir."
         )
@@ -348,15 +404,15 @@ async def crear(
     if operativa > hoy:
         # Una entrada con fecha futura es mercancía que todavía no llegó, y
         # entraría al libro mayor con una fecha en la que no existía.
-        return _a_lista(
-            error="La fecha no puede ser futura: una entrada con fecha de mañana "
+        raise EntradaRechazada(
+            "La fecha no puede ser futura: una entrada con fecha de mañana "
             "es mercancía que todavía no llegó."
         )
 
     texto_nota = texto_o_nulo(nota, maximo=500)
     if motivo in EXIGEN_NOTA and not texto_nota:
-        return _a_lista(
-            error="El inventario inicial necesita una nota: es el documento que "
+        raise EntradaRechazada(
+            "El inventario inicial necesita una nota: es el documento que "
             "explica de dónde salió todo el inventario del arranque, y se lee el "
             "día que algo no cuadra."
         )
@@ -384,7 +440,7 @@ async def crear(
         except ValueError:
             del_catalogo = None
         if del_catalogo is None:
-            return _a_lista(error="Ese proveedor no existe o está inactivo.")
+            raise EntradaRechazada("Ese proveedor no existe o está inactivo.")
 
     nombre_proveedor = (
         del_catalogo["nombre"] if del_catalogo
@@ -415,11 +471,11 @@ async def crear(
             "ref": texto_o_nulo(referencia, maximo=80),
             "fecha": operativa,
             "nota": texto_nota,
-            "quien": actor.usuario_id,
+            "quien": quien,
         },
     )
     await sesion.commit()
-    return _volver(nueva, guardado="Borrador abierto. Captura los renglones.")
+    return nueva
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +492,47 @@ async def detalle(
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
+    datos = await datos_de_la_entrada(sesion, entrada_id)
+    if datos is None:
+        return _a_lista(error="Esa entrada no existe.")
+    entrada = datos["entrada"]
+
+    presentaciones = (
+        await sesion.execute(
+            text(
+                "SELECT DISTINCT unidad_codigo FROM producto_unidades "
+                " WHERE activo ORDER BY unidad_codigo"
+            )
+        )
+    ).scalars().all()
+
+    return render(
+        peticion,
+        "entrada_detalle.html",
+        {
+            "entrada": entrada,
+            "motivo_etiqueta": etiqueta(entrada["motivo"]),
+            "importes": datos["importes"],
+            "importe_capturado": datos["importe_capturado"],
+            "sin_costo": datos["sin_costo"],
+            "cuenta": datos["cuenta"],
+            "exige_costo": entrada["motivo"] == "compra",
+            "renglones": datos["renglones"],
+            "proyectado": datos["proyectado"],
+            "presentaciones": presentaciones,
+            "editable": entrada["estado"] in EDITABLE,
+            "puede_editar": actor.puede(PERMISO),
+            "total_piezas": datos["total_piezas"],
+            "error": error,
+            "guardado": guardado,
+        },
+        actor=actor,
+        seccion="Entradas",
+    )
+
+
+async def datos_de_la_entrada(sesion, entrada_id: uuid.UUID) -> dict | None:
+    """Todo lo que se ve de una entrada."""
     entrada = (
         await sesion.execute(
             text(
@@ -454,7 +551,7 @@ async def detalle(
         )
     ).mappings().first()
     if entrada is None:
-        return _a_lista(error="Esa entrada no existe.")
+        return None
 
     # Cada renglón con la existencia ACTUAL del producto en esa bodega al lado.
     # No es adorno: quien recibe tiene que poder ver si lo que está capturando
@@ -502,15 +599,6 @@ async def detalle(
             )
         )
 
-    presentaciones = (
-        await sesion.execute(
-            text(
-                "SELECT DISTINCT unidad_codigo FROM producto_unidades "
-                " WHERE activo ORDER BY unidad_codigo"
-            )
-        )
-    ).scalars().all()
-
     # El importe de cada renglón y el del documento, calculados aquí: la
     # plantilla no multiplica dinero. Un `Decimal * Decimal` en Jinja es
     # correcto, pero un filtro que devuelva `float` en medio de la cadena
@@ -535,29 +623,16 @@ async def detalle(
         )
     ).mappings().first()
 
-    return render(
-        peticion,
-        "entrada_detalle.html",
-        {
-            "entrada": entrada,
-            "motivo_etiqueta": etiqueta(entrada["motivo"]),
-            "importes": importes,
-            "importe_capturado": sum(importes.values(), Decimal("0.00")),
-            "sin_costo": [r for r in renglones if r["costo_unitario"] is None],
-            "cuenta": cuenta,
-            "exige_costo": entrada["motivo"] == "compra",
-            "renglones": renglones,
-            "proyectado": proyectado,
-            "presentaciones": presentaciones,
-            "editable": entrada["estado"] in EDITABLE,
-            "puede_editar": actor.puede(PERMISO),
-            "total_piezas": sum(Decimal(r["cantidad"]) for r in renglones),
-            "error": error,
-            "guardado": guardado,
-        },
-        actor=actor,
-        seccion="Entradas",
-    )
+    return {
+        "entrada": dict(entrada),
+        "renglones": renglones,
+        "proyectado": proyectado,
+        "importes": importes,
+        "importe_capturado": sum(importes.values(), Decimal("0.00")),
+        "sin_costo": [r for r in renglones if r["costo_unitario"] is None],
+        "cuenta": cuenta,
+        "total_piezas": sum((Decimal(r["cantidad"]) for r in renglones), Decimal(0)),
+    }
 
 
 @router.post("/{entrada_id}/renglon")
@@ -582,6 +657,36 @@ async def agregar_renglon(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        aviso = await agregar_renglon_a_entrada(
+            sesion,
+            entrada_id,
+            producto=producto,
+            unidad_codigo=unidad_codigo,
+            cantidad=cantidad,
+            costo=costo,
+            lote=lote,
+            caducidad=caducidad,
+        )
+    except EntradaNoExiste as e:
+        return _a_lista(error=str(e))
+    except (EntradaRechazada, CapturaInvalida, CantidadInvalida) as e:
+        return _volver(entrada_id, error=str(e))
+    return _volver(entrada_id, guardado=aviso)
+
+
+async def agregar_renglon_a_entrada(
+    sesion,
+    entrada_id: uuid.UUID,
+    *,
+    producto: str,
+    unidad_codigo: str,
+    cantidad: str,
+    costo: str = "",
+    lote: str = "",
+    caducidad: str = "",
+) -> str:
+    """Agrega (o suma) un renglón y devuelve el aviso. Ver `agregar_renglon`."""
     # `FOR UPDATE` y no un SELECT simple, por una carrera estrecha y silenciosa:
     # si alguien confirma el documento mientras esto se ejecuta, un SELECT
     # normal leería 'borrador' de la versión anterior de la fila y el renglón se
@@ -601,12 +706,11 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if entrada is None:
-        return _a_lista(error="Esa entrada no existe.")
+        raise EntradaNoExiste("Esa entrada no existe.")
     if entrada["estado"] not in EDITABLE:
-        return _volver(
-            entrada_id,
-            error=f"Esta entrada ya está {entrada['estado']}. Lo confirmado se "
-            "corrige con otro documento, no editando el historial.",
+        raise EntradaRechazada(
+            f"Esta entrada ya está {entrada['estado']}. Lo confirmado se "
+            "corrige con otro documento, no editando el historial."
         )
 
     clave = producto.strip()
@@ -620,7 +724,7 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if fila is None:
-        return _volver(entrada_id, error=f"No hay producto activo con clave «{clave}».")
+        raise EntradaRechazada(f"No hay producto activo con clave «{clave}».")
 
     presentacion = (
         await sesion.execute(
@@ -632,51 +736,41 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if presentacion is None:
-        return _volver(
-            entrada_id,
-            error=f"{fila['nombre']} no tiene la presentación {unidad_codigo}.",
-        )
+        raise EntradaRechazada(f"{fila['nombre']} no tiene la presentación {unidad_codigo}.")
 
-    try:
-        bultos = _leer_bultos(cantidad)
-        # La multiplicación, una sola vez y con la misma función que usa el
-        # teléfono al armar una partida: la conversión caja→pieza está escrita
-        # en un solo lugar del sistema.
-        en_base = cantidad_base(bultos, Decimal(presentacion["factor"]))
-        # El costo se captura POR BULTO —como viene en la factura— y se guarda
-        # POR UNIDAD BASE, igual que la cantidad. Dividir aquí y no al confirmar
-        # es lo que mantiene la regla del sistema: el libro mayor y todo lo que
-        # cuelga de él hablan en unidad base.
-        por_bulto = _leer_costo(
-            costo, obligatorio=entrada["motivo"] == "compra"
+    bultos = _leer_bultos(cantidad)
+    # La multiplicación, una sola vez y con la misma función que usa el
+    # teléfono al armar una partida: la conversión caja→pieza está escrita
+    # en un solo lugar del sistema.
+    en_base = cantidad_base(bultos, Decimal(presentacion["factor"]))
+    # El costo se captura POR BULTO —como viene en la factura— y se guarda
+    # POR UNIDAD BASE, igual que la cantidad. Dividir aquí y no al confirmar
+    # es lo que mantiene la regla del sistema: el libro mayor y todo lo que
+    # cuelga de él hablan en unidad base.
+    por_bulto = _leer_costo(
+        costo, obligatorio=entrada["motivo"] == "compra"
+    )
+    costo_base = (
+        (por_bulto / Decimal(presentacion["factor"])).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
         )
-        costo_base = (
-            (por_bulto / Decimal(presentacion["factor"])).quantize(
-                Decimal("0.0001"), rounding=ROUND_HALF_UP
-            )
-            if por_bulto is not None
-            else None
-        )
-    except (CapturaInvalida, CantidadInvalida) as e:
-        return _volver(entrada_id, error=str(e))
+        if por_bulto is not None
+        else None
+    )
 
     vence = None
     if (caducidad or "").strip():
         try:
             vence = date.fromisoformat(caducidad.strip())
-        except ValueError:
-            return _volver(
-                entrada_id, error=f"«{caducidad}» no es una fecha de caducidad."
-            )
+        except ValueError as e:
+            raise EntradaRechazada(f"«{caducidad}» no es una fecha de caducidad.") from e
 
     numero_lote = texto_o_nulo(lote, maximo=40)
     if fila["maneja_lote"] and not numero_lote:
         # El producto se marcó como de lote en el catálogo: recibirlo sin lote
         # deja una merma por caducidad imposible de rastrear hasta su tarima.
-        return _volver(
-            entrada_id,
-            error=f"{fila['nombre']} maneja lote: captura el de la tarima que "
-            "estás recibiendo.",
+        raise EntradaRechazada(
+            f"{fila['nombre']} maneja lote: captura el de la tarima que estás recibiendo."
         )
 
     await sesion.execute(
@@ -755,7 +849,7 @@ async def agregar_renglon(
             f"${costo_base:,.4f} la unidad; importe "
             f"${importe_de_renglon(bultos, por_bulto):,.2f}."
         )
-    return _volver(entrada_id, guardado=aviso)
+    return aviso
 
 
 @router.post("/{entrada_id}/renglon/{renglon_id}/quitar")
@@ -770,6 +864,18 @@ async def quitar_renglon(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        await quitar_renglon_de_entrada(sesion, entrada_id, renglon_id)
+    except EntradaNoExiste as e:
+        return _a_lista(error=str(e))
+    except EntradaRechazada as e:
+        return _volver(entrada_id, error=str(e))
+    return _volver(entrada_id, guardado="Renglón quitado.")
+
+
+async def quitar_renglon_de_entrada(
+    sesion, entrada_id: uuid.UUID, renglon_id: uuid.UUID
+) -> None:
     # `FOR UPDATE` por lo mismo que al agregar: quitar un renglón que la
     # confirmación acaba de escribir en el libro mayor dejaría el asiento sin su
     # línea de documento.
@@ -780,12 +886,11 @@ async def quitar_renglon(
         )
     ).scalar()
     if estado is None:
-        return _a_lista(error="Esa entrada no existe.")
+        raise EntradaNoExiste("Esa entrada no existe.")
     if estado not in EDITABLE:
-        return _volver(
-            entrada_id,
-            error="Esta entrada ya se confirmó: el renglón ya es un asiento del "
-            "libro mayor y no se quita, se compensa.",
+        raise EntradaRechazada(
+            "Esta entrada ya se confirmó: el renglón ya es un asiento del "
+            "libro mayor y no se quita, se compensa."
         )
 
     await sesion.execute(
@@ -793,7 +898,6 @@ async def quitar_renglon(
         {"r": renglon_id, "e": entrada_id},
     )
     await sesion.commit()
-    return _volver(entrada_id, guardado="Renglón quitado.")
 
 
 # ---------------------------------------------------------------------------
@@ -817,6 +921,17 @@ async def confirmar(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        aviso = await confirmar_entrada(sesion, entrada_id, quien=actor.usuario_id)
+    except EntradaNoExiste as e:
+        return _a_lista(error=str(e))
+    except EntradaRechazada as e:
+        return _volver(entrada_id, error=str(e))
+    return _volver(entrada_id, guardado=aviso)
+
+
+async def confirmar_entrada(sesion, entrada_id: uuid.UUID, *, quien: uuid.UUID) -> str:
+    """Escribe el libro mayor, existencias, costo y cuenta por pagar. Ver `confirmar`."""
     entrada = (
         await sesion.execute(
             text(
@@ -828,9 +943,9 @@ async def confirmar(
         )
     ).mappings().first()
     if entrada is None:
-        return _a_lista(error="Esa entrada no existe.")
+        raise EntradaNoExiste("Esa entrada no existe.")
     if entrada["estado"] != "borrador":
-        return _volver(entrada_id, error=f"Esta entrada ya está {entrada['estado']}.")
+        raise EntradaRechazada(f"Esta entrada ya está {entrada['estado']}.")
 
     renglones = (
         await sesion.execute(
@@ -845,9 +960,7 @@ async def confirmar(
         )
     ).mappings().all()
     if not renglones:
-        return _volver(
-            entrada_id, error="No puedes confirmar una entrada sin un solo renglón."
-        )
+        raise EntradaRechazada("No puedes confirmar una entrada sin un solo renglón.")
 
     # En una compra, todos los renglones llevan costo. Se revisa aquí otra vez
     # y no solo al capturar porque un renglón puede haberse agregado antes de
@@ -856,12 +969,11 @@ async def confirmar(
     if entrada["motivo"] == "compra":
         sin_costo = [r["nombre"] for r in renglones if r["costo_unitario"] is None]
         if sin_costo:
-            return _volver(
-                entrada_id,
-                error="Estos renglones no tienen costo y es una compra: "
+            raise EntradaRechazada(
+                "Estos renglones no tienen costo y es una compra: "
                 + ", ".join(sin_costo[:5])
                 + (f" y {len(sin_costo) - 5} más" if len(sin_costo) > 5 else "")
-                + ". Sin costo no hay cuenta por pagar ni promedio.",
+                + ". Sin costo no hay cuenta por pagar ni promedio."
             )
 
     tipo = tipo_de_movimiento(entrada["motivo"])
@@ -890,7 +1002,7 @@ async def confirmar(
                 "lote": r["lote"],
                 "cad": r["caducidad"],
                 "doc": entrada_id,
-                "quien": actor.usuario_id,
+                "quien": quien,
                 "ahora": ahora,
             },
         )
@@ -1044,21 +1156,18 @@ async def confirmar(
         {
             "id": entrada_id,
             "ahora": ahora,
-            "quien": actor.usuario_id,
+            "quien": quien,
             "importe": importe_total,
         },
     )
     await sesion.commit()
 
     piezas = sum(Decimal(r["cantidad"]) for r in renglones)
-    return _volver(
-        entrada_id,
-        guardado=(
-            f"{entrada['folio']} confirmada: {len(renglones)} renglón(es), "
-            f"{sin_decimales(piezas)} piezas en la bodega"
-            + (f" por ${importe_total:,.2f}" if importe_total else "")
-            + ". Ya se puede cargar a un camión."
-        ),
+    return (
+        f"{entrada['folio']} confirmada: {len(renglones)} renglón(es), "
+        f"{sin_decimales(piezas)} piezas en la bodega"
+        + (f" por ${importe_total:,.2f}" if importe_total else "")
+        + ". Ya se puede cargar a un camión."
     )
 
 
@@ -1081,6 +1190,19 @@ async def cancelar(
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
 
+    try:
+        await cancelar_entrada(sesion, entrada_id, motivo=motivo, quien=actor.usuario_id)
+    except EntradaNoExiste as e:
+        return _a_lista(error=str(e))
+    except EntradaRechazada as e:
+        return _volver(entrada_id, error=str(e))
+    return _a_lista(guardado="Entrada cancelada.")
+
+
+async def cancelar_entrada(
+    sesion, entrada_id: uuid.UUID, *, motivo: str, quien: uuid.UUID
+) -> None:
+    """Cancela un borrador, con motivo. Lo confirmado no: se compensa."""
     estado = (
         await sesion.execute(
             text("SELECT estado FROM entradas WHERE id = :id FOR UPDATE"),
@@ -1088,17 +1210,16 @@ async def cancelar(
         )
     ).scalar()
     if estado is None:
-        return _a_lista(error="Esa entrada no existe.")
+        raise EntradaNoExiste("Esa entrada no existe.")
     if estado != "borrador":
-        return _volver(
-            entrada_id,
-            error=f"Esta entrada está {estado}. Lo que ya entró al libro mayor se "
-            "corrige con un documento en contra, no cancelando.",
+        raise EntradaRechazada(
+            f"Esta entrada está {estado}. Lo que ya entró al libro mayor se "
+            "corrige con un documento en contra, no cancelando."
         )
 
     razon = texto_o_nulo(motivo, maximo=300)
     if not razon:
-        return _volver(entrada_id, error="Escribe por qué se cancela.")
+        raise EntradaRechazada("Escribe por qué se cancela.")
 
     await sesion.execute(
         text(
@@ -1109,10 +1230,9 @@ async def cancelar(
              WHERE id = :id
             """
         ),
-        {"id": entrada_id, "quien": actor.usuario_id, "motivo": razon},
+        {"id": entrada_id, "quien": quien, "motivo": razon},
     )
     await sesion.commit()
-    return _a_lista(guardado="Entrada cancelada.")
 
 
 # ---------------------------------------------------------------------------

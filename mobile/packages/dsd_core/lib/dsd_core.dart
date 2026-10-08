@@ -4,6 +4,7 @@
 /// vive la mitad del sistema que tiene que funcionar sin señal.
 library;
 
+export 'src/almacen_cliente.dart';
 export 'src/alta_cliente.dart';
 export 'src/aplicador_deltas.dart';
 export 'src/auth_cliente.dart';

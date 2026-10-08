@@ -59,7 +59,7 @@ class _Aviso extends StatelessWidget {
 class PantallaCortes extends ConsumerStatefulWidget {
   const PantallaCortes({super.key, this.conBarra = true});
 
-  /// Sin barra cuando va dentro de la pestaña Camiones, que ya pone la suya.
+  /// Sin barra cuando va dentro de la pestaña Almacén, que ya pone la suya.
   final bool conBarra;
 
   @override

@@ -35,6 +35,11 @@ String explicarErrorDeOficina(Object error) => switch (error) {
         'Tu usuario no tiene permiso de cargar camiones. Se da desde el panel.',
       SinPermisoDeVendedores() =>
         'Tu usuario no tiene permiso de ver a los vendedores (ventas.ver_todas).',
+      SinPermisoDeCortar() =>
+        'Tu usuario no tiene permiso de hacer el corte del día. Se da desde el panel.',
+      SinPermisoDeAlmacen() =>
+        'Tu usuario no tiene permiso para esto del almacén (inventario.ajustar). '
+            'Se da desde el panel.',
       SesionInvalida() => 'La sesión venció. Sal y vuelve a entrar.',
       ErrorDeRed(:final mensaje) =>
         'No se pudo conectar ($mensaje). Esta pantalla necesita señal.',

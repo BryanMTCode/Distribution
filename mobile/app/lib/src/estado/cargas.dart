@@ -29,6 +29,16 @@ final puedeCargarProvider = Provider<bool>(
   },
 );
 
+/// Si se muestra el corte del día (`inventario.liquidar`). La UI oculta; el
+/// servidor prohíbe.
+final puedeCortarProvider = Provider<bool>(
+  (ref) => switch (ref.watch(sesionProvider)) {
+    SesionDeGerencia(:final perfil) => perfil.puedeCortar,
+    SesionAbierta(:final credencial) => credencial.puede('inventario.liquidar'),
+    SinSesion() => false,
+  },
+);
+
 /// El error, dicho para quien está en la bodega con el teléfono en la mano.
 /// Es el mismo texto que el resto de la oficina: ver `explicarErrorDeOficina`.
 String explicarErrorDeCarga(Object error) => explicarErrorDeOficina(error);
