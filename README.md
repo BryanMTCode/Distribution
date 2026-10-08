@@ -80,7 +80,7 @@ la bodega sube cuando alguien la cuenta.
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
 | **Transferencias por confirmar** — la oficina las busca en el banco para cuadrar el dinero; la que no llegó, con motivo | ✅ 9 pruebas |
-| **Cierre del vendedor** (§82) — corte a ciegas y solicitud de carga sin señal, el gerente acepta (cierra el corte y confirma la carga de mañana), tickets por WhatsApp | ✅ 17 pruebas + 16 de Dart y 4 de widget |
+| **Cierre del vendedor** (§82) — corte a ciegas y solicitud de carga sin señal, el gerente acepta (cierra el corte y confirma la carga de mañana), tickets por WhatsApp | ✅ 18 pruebas + 16 de Dart y 4 de widget |
 | **Compra a proveedor sin señal** (§83) — el gerente la captura en la calle, se manda entera e idempotente a la bodega principal; costo opcional | ✅ 7 pruebas + 6 de Dart y 3 de widget |
 | **Ubicación del cliente con GPS o a mano** (§84) — vendedor sin señal, oficina en la app y el panel, una sola regla de validación | ✅ 14 pruebas + 10 de Dart y 4 de widget |
 | **Cuenta del vendedor** — faltante y mermas a su cargo **a costo**, efectivo; abonos y condonación | ✅ 23 pruebas |
@@ -124,7 +124,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1287 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **605 de Dart** y **275 de widget**, todas en verde.
+**1326 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **637 de Dart** y **286 de widget**, todas en verde.
 
 ## Stack
 
@@ -233,7 +233,7 @@ mobile/
                      compartir, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            605 pruebas que corren en segundos
+    test/            637 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -243,7 +243,7 @@ mobile/
                      CORTE y SOLICITUD DE CARGA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
                      gerencia/ (tablero, mapa del día, cortes y cargas por aceptar)
-    test/            275 pruebas de widget, sin emulador
+    test/            286 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
