@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import quote
@@ -144,6 +144,8 @@ async def listar(
             "vendedores": await _vendedores(sesion) if actor.puede(PERMISO) else [],
             "bodegas": await _bodegas(sesion) if actor.puede(PERMISO) else [],
             "hoy": date.today().isoformat(),
+            # La carga se hace la víspera: el formulario propone mañana (§82).
+            "manana": (date.today() + timedelta(days=1)).isoformat(),
             "error": error,
             "guardado": guardado,
         },
@@ -181,7 +183,11 @@ async def crear(
     try:
         vendedor = uuid.UUID(vendedor_id)
         origen = uuid.UUID(almacen_origen_id)
-        dia = date.fromisoformat(fecha_operativa) if fecha_operativa else date.today()
+        dia = (
+            date.fromisoformat(fecha_operativa)
+            if fecha_operativa
+            else date.today() + timedelta(days=1)
+        )
     except ValueError:
         return _a_lista(error="Faltan el vendedor, la bodega o la fecha.")
 

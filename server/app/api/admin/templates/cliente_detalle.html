@@ -119,21 +119,31 @@
 {# Domicilio y datos                                                        #}
 {# ------------------------------------------------------------------------ #}
 <h2 id="datos">Domicilio y datos</h2>
+<h3 id="ubicacion">Ubicación</h3>
 {% if cliente.lat is not none %}
 <p class="sutil">
-  Ubicación capturada en ruta: {{ cliente.lat }}, {{ cliente.lng }}
-  {% if cliente.ubicacion_origen %}({{ cliente.ubicacion_origen }}{% if cliente.ubicacion_precision_m %},
+  {{ cliente.lat }}, {{ cliente.lng }}
+  {% if cliente.ubicacion_origen %}({{ 'tomada con GPS' if cliente.ubicacion_origen == 'gps' else 'escrita a mano' }}{% if cliente.ubicacion_precision_m %},
     ±{{ cliente.ubicacion_precision_m|round|int }} m{% endif %}){% endif %}.
-  <strong>No se edita desde aquí</strong>: la tomó el vendedor parado en la banqueta
-  del negocio. Cambiarla desde una computadora a quince kilómetros sería sustituir
-  un dato medido por uno supuesto, y encima rompería la distancia que marca las
-  ventas fuera de geocerca.
+  Es la geocerca de sus ventas: lo mejor es tomarla con el GPS parado en el
+  negocio, desde el teléfono. Aquí se corrige a mano (copiada de un mapa).
 </p>
 {% else %}
 <p class="sutil" style="color:var(--aviso)">
   Sin coordenadas. Las ventas a este cliente no se pueden comparar contra su
   domicilio.
 </p>
+{% endif %}
+{% if puede_ubicar %}
+<form method="post" action="/panel/clientes/{{ cliente.id }}/ubicacion" class="fila-forma"
+      id="forma_ubicacion" style="margin-bottom:16px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Latitud <input type="text" name="lat" value="{{ cliente.lat if cliente.lat is not none else '' }}"
+         placeholder="23.2494" style="width:140px"></label>
+  <label>Longitud <input type="text" name="lng" value="{{ cliente.lng if cliente.lng is not none else '' }}"
+         placeholder="-106.4111" style="width:140px"></label>
+  <button type="submit" class="secundario" id="guardar_ubicacion">Guardar ubicación</button>
+</form>
 {% endif %}
 
 {% if puede_editar %}

@@ -211,6 +211,11 @@ class _EstadoNuevaCarga extends State<_NuevaCarga> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('Nueva carga', style: Theme.of(context).textTheme.titleLarge),
+          // Una carga al día y se hace la víspera (ADR 0002 §82). Lo normal es
+          // aceptarla desde «Cortes y cargas»; esto es para cuando el vendedor no
+          // la pidió desde su teléfono.
+          const Text('Es para mañana. Lo normal es aceptar la que pidió el vendedor '
+              'en «Cortes y cargas».'),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             key: const Key('campo_vendedor_carga'),
@@ -472,10 +477,10 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                   const _Aviso(
                     key: Key('aviso_carga_ya_confirmada'),
                     texto: 'Esta carga ya se confirmó: la mercancía salió de la bodega '
-                        'y ya no se edita. Cada vendedor lleva UNA carga por día. Si '
-                        'hoy necesita más mercancía, súbesela con un ajuste de su '
-                        'camión en el panel (Inventario → su camión → Ajustar), o '
-                        'cárgasela mañana.',
+                        'y ya no se edita. Cada vendedor lleva UNA carga por día, y se '
+                        'hace la víspera. Si necesita más mercancía, súbesela con un '
+                        'ajuste de su camión en el panel (Inventario → su camión → '
+                        'Ajustar).',
                     esError: true,
                   ),
                 const SizedBox(height: 8),

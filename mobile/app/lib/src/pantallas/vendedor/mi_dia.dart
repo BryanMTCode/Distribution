@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/mi_dia.dart';
+import 'cierre_del_dia.dart';
 
 class PantallaMiDia extends ConsumerStatefulWidget {
   const PantallaMiDia({super.key});
@@ -186,6 +187,15 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
             nota: 'todo de contado',
             negrita: true,
           ),
+
+          // ---------------------------------------------------------------
+          // El cierre del día (§82): el corte y la carga de mañana. Solo hoy:
+          // un día pasado ya no se corta desde aquí.
+          // ---------------------------------------------------------------
+          if (esHoy) ...[
+            const SizedBox(height: 16),
+            const TarjetaDelCierre(),
+          ],
 
           // ---------------------------------------------------------------
           // Lo que todavía no sabe la oficina.

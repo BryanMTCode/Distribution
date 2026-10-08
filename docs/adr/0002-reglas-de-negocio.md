@@ -4645,3 +4645,109 @@ vencida. El vendedor sigue sin poder dar descuentos (§7).
 
 (migración 0039_solo_contado; versionCode 26)
 
+## 82. El cierre del vendedor: corte → solicitud de carga → aceptación
+
+**Decisión (octubre 2026, retroalimentación del piloto).** El fin del día es un
+solo recorrido, que empieza en el teléfono del vendedor y termina en el del
+gerente:
+
+1. **Corte del día (vendedor).** Cuenta lo que le sobró arriba del camión y el
+   efectivo que entrega. El conteo es **a ciegas**: la pantalla no dice cuánto
+   cree el sistema que trae, porque con la cifra a la vista el conteo se vuelve
+   un copiado. Sale un **ticket** con lo vendido (efectivo y transferencia), el
+   efectivo contra lo vendido en efectivo y el sobrante. Se guarda sin señal y
+   viaja por la cola (`corte.crear`) detrás de todas las ventas del día. Si lo
+   rehace antes de que la oficina lo vea, vale el último.
+2. **Solicitar carga (vendedor).** Ahí mismo pide la carga **del día
+   siguiente**, por presentación (cajas). También sin señal
+   (`solicitud_carga.crear`); una nueva reemplaza a la pendiente. Sale su ticket.
+3. **Aceptar (gerente).** En «Cortes y cargas por aceptar» (app: Almacén;
+   panel: Operación de rutas) ve el corte junto con la solicitud: lo contado
+   contra lo que el sistema tiene —lo que no contó vale cero y se ve antes de
+   aceptar— y lo pedido contra lo que hay en la bodega. Puede bajar o quitar
+   renglones. Al aceptar:
+   · el corte se cierra con las funciones del corte de siempre (lo contado por
+     el vendedor y el efectivo que declaró); el faltante va a su cuenta, a costo;
+   · la carga se crea y se **confirma** desde la bodega principal (la de código
+     `BODEGA_PRINCIPAL`, o la más antigua), con `fecha_operativa` = mañana. Le
+     llega al teléfono como cualquier carga.
+   Sale el **ticket de la carga aceptada**. También puede rechazar la solicitud
+   con un motivo, que le llega al vendedor.
+
+**Una carga al día, y es para el día siguiente.** Se impone en tres lugares: a
+lo más una solicitud aceptada por vendedor y día (índice único), una solicitud
+que llega para un día que ya tiene una aceptada entra rechazada con el motivo,
+y aceptar no crea una carga si ese día ya tiene otra confirmada. La carga a
+mano (panel y app) sigue existiendo para cuando el vendedor no la pidió, y ahora
+propone mañana.
+
+**Los tickets se comparten como texto** (`share_plus`): WhatsApp, correo o lo
+que tenga el teléfono, con los encabezados en negritas de WhatsApp. El texto
+sale de `dsd_core` y es el mismo para el vendedor y el gerente. La impresora
+térmica sigue siendo para la remisión del cliente.
+
+**Reintentar es seguro.** Aceptar no es una sola transacción (el corte confirma
+por partes): un corte ya cerrado no se vuelve a cerrar, el borrador de carga de
+un intento fallido se reutiliza, y la solicitud se marca aceptada en la misma
+transacción que mueve el inventario de la carga. Si el teléfono reporta
+operaciones sin subir o hay cuarentena, no se acepta y se dice por qué.
+
+La oficina sigue pudiendo cortar a mano desde «Corte del día»; si lo hace, el
+corte del vendedor queda como constancia.
+
+(migración 0040_cierre_del_vendedor; versionCode 27)
+
+## 83. La compra a proveedor desde el teléfono del gerente, aunque no haya señal
+
+**Decisión (octubre 2026, retroalimentación del piloto).** «Agregar producto» en
+el teléfono del gerente **no** es dar de alta un artículo en el catálogo: es
+registrar una **entrada al almacén por compra a un proveedor** —qué productos
+llegaron y cuántos— que suma al inventario de la **bodega principal**.
+
+- **Se captura sin señal.** El gerente la recibe en la calle. La compra se guarda
+  en el teléfono (`compras_pendientes`) con el id que le da el teléfono y se
+  manda **entera** al tener señal (`POST /v1/almacen/compras`): al abrir
+  Almacén → Entradas, o con «Mandar ahora». Para capturar sin señal se usa la
+  copia del catálogo y de los proveedores que el teléfono guarda cada vez que
+  hay señal (se refresca si tiene más de seis horas).
+- **Se aplica una sola vez.** El servidor la reconoce por ese id: reintentar
+  —porque la señal se fue a la mitad, o la respuesta no llegó— devuelve la misma
+  entrada sin volver a sumar. Si un intento se cortó con la entrada en borrador,
+  el siguiente la rehace. Lo que suma a la bodega es una cantidad (un delta),
+  nunca un «la bodega tiene tanto».
+- **El costo es opcional, renglón por renglón.** Con costo: mueve el costo
+  promedio y entra a la cuenta por pagar del proveedor (si es del catálogo).
+  Sin costo: solo suma inventario; no mueve el promedio ni entra a la deuda. Las
+  compras capturadas en el panel siguen exigiéndolo (`entradas.costo_opcional`).
+- **Lo rechazado se queda con su texto** (media caja, un proveedor dado de baja)
+  y no se reintenta solo; el gerente lo corrige y lo reintenta.
+- Es una entrada de compra como cualquier otra: folio `EN-…`, libro mayor,
+  existencias, y aparece en Entradas del panel y de la app.
+
+(migración 0041_compra_desde_el_telefono; versionCode 27)
+
+## 84. La ubicación del cliente: con GPS o escrita a mano
+
+**Decisión (octubre 2026, retroalimentación del piloto).** En el perfil del
+cliente hay **las dos formas a la vez**: un botón que toma el **GPS** —si se está
+parado en el negocio— y los **campos de latitud y longitud**, editables, para
+meterla o corregirla a mano (copiada de un mapa, dictada por teléfono, o porque
+dentro de un mercado el GPS no lee). Se puede pegar «23.2494, -106.4111» en un
+solo campo y se reparte en los dos. Escribir en un campo vuelve la ubicación
+«manual»: la precisión del GPS ya no describe un número que alguien cambió.
+
+- **El vendedor**, desde «Perfil y ubicación» en la visita: sin señal, se guarda
+  al momento en el teléfono —la geocerca de la venta la usa ya— y viaja por la
+  cola (`cliente.ubicar`). Solo de los clientes de su ruta.
+- **La oficina**, desde la ficha del cliente en su app (con GPS o a mano) y desde
+  el panel (a mano). Permiso nuevo `clientes.ubicar`: admin, supervisor, gerente
+  y vendedor.
+- **Una sola regla** de qué es una coordenada válida, en el servidor y en el
+  teléfono: se rechaza el (0, 0), la latitud y la longitud al revés, y la
+  longitud de México sin el signo menos —que pondría la tienda en China—.
+- Cada cambio deja la ubicación anterior en `auditoria` y publica el cliente a
+  los teléfonos de su ruta. Esto sustituye la regla anterior de que la oficina
+  no editaba la ubicación.
+
+(migración 0042_ubicacion_del_cliente; versionCode 27)
+

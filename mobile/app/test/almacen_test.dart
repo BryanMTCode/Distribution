@@ -218,12 +218,12 @@ Future<void> _irA(WidgetTester tester, String pestana) async {
 
 void main() {
   group('la pestaña', () {
-    testWidgets('con todos los permisos: existencias, entradas, traspasos, cargas y corte',
-        (tester) async {
+    testWidgets('con todos los permisos: cortes y cargas, existencias, entradas, '
+        'traspasos, cargas y corte', (tester) async {
       await _montar(tester);
       expect(find.byKey(const Key('pantalla_almacen')), findsOneWidget);
-      for (final k in ['pestana_existencias', 'pestana_entradas', 'pestana_traspasos',
-          'pestana_cargas', 'pestana_cortes']) {
+      for (final k in ['pestana_cierres', 'pestana_existencias', 'pestana_entradas',
+          'pestana_traspasos', 'pestana_cargas', 'pestana_cortes']) {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
     });
@@ -242,6 +242,7 @@ void main() {
   group('existencias', () {
     testWidgets('cada almacén con lo que tiene, en piezas y en cajas', (tester) async {
       await _montar(tester);
+      await _irA(tester, 'pestana_existencias');
       expect(find.byKey(const Key('almacen_BODEGA_PRINCIPAL')), findsOneWidget);
       expect(textoQueContiene('1 en negativo'), findsNothing); // va en un TextSpan
       expect(find.textContaining('1 en negativo', findRichText: true), findsOneWidget);
@@ -261,6 +262,7 @@ void main() {
 
     testWidgets('el camión avisa que es un piso y pinta el negativo', (tester) async {
       await _montar(tester);
+      await _irA(tester, 'pestana_existencias');
       await tester.tap(find.byKey(const Key('almacen_CAMION_01')));
       await tester.pumpAndSettle();
       expect(textoQueContiene('Lo vendido sin señal'), findsOneWidget);

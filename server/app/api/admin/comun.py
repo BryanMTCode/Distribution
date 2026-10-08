@@ -80,6 +80,9 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         "Operación de rutas",
         [
             ("/panel/plan-visita", "Plan de visita"),
+            # Lo que mandan los vendedores al terminar el día: su corte y la
+            # carga que piden para mañana (ADR 0002 §82).
+            ("/panel/cierres", "Cortes y cargas por aceptar"),
             ("/panel/cargas", "Cargas"),
             ("/panel/ventas", "Ventas"),
             # Solo para cuadrar el dinero: la operación es de contado.
@@ -142,6 +145,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/desempeno": "tablero.ver",
     "/panel/arranque": None,
     "/panel/plan-visita": "clientes.ver",
+    "/panel/cierres": "inventario.cargar",
     "/panel/cargas": "inventario.ver",
     "/panel/ventas": None,
     "/panel/transferencias": "cobranza.ver",

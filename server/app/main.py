@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 
 from app.api.admin import arranque as panel_arranque
 from app.api.admin import cargas as panel_cargas
+from app.api.admin import cierres as panel_cierres
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import compras as panel_compras
 from app.api.admin import cuenta_vendedores as panel_cuenta_vendedores
@@ -42,6 +43,7 @@ from app.api.v1 import (
     auth,
     cargas,
     catalogo,
+    cierres,
     clientes,
     cortes,
     dispositivos,
@@ -121,6 +123,7 @@ def crear_app() -> FastAPI:
     app.include_router(tablero.router, prefix="/v1")
     app.include_router(cargas.router, prefix="/v1")
     app.include_router(cortes.router, prefix="/v1")
+    app.include_router(cierres.router, prefix="/v1")
     app.include_router(almacen.router, prefix="/v1")
     app.include_router(oficina_clientes.router, prefix="/v1")
     app.include_router(vendedores.router, prefix="/v1")
@@ -132,6 +135,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_productos.router)
     app.include_router(panel_clientes.router)
     app.include_router(panel_cargas.router)
+    app.include_router(panel_cierres.router)
     app.include_router(panel_equipo.router)
     app.include_router(panel_equipo_fichas.router)
     app.include_router(panel_entradas.router)

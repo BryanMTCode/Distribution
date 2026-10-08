@@ -27,6 +27,7 @@ import '../../estado/carrito.dart';
 import 'carrito.dart';
 import 'merma.dart';
 import 'no_drop.dart';
+import 'perfil_cliente.dart';
 
 class PantallaCatalogo extends ConsumerStatefulWidget {
   const PantallaCatalogo({super.key});
@@ -79,6 +80,9 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
               icon: const Icon(Icons.more_vert),
               onSelected: (opcion) {
                 final destino = switch (opcion) {
+                  'perfil' => MaterialPageRoute<void>(
+                      builder: (_) => PantallaPerfilDelCliente(cliente: cliente),
+                    ),
                   'no_drop' => MaterialPageRoute<void>(
                       builder: (_) => PantallaNoDrop(cliente: cliente),
                     ),
@@ -95,6 +99,16 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
                 Navigator.of(context).push(destino);
               },
               itemBuilder: (_) => const [
+                // Sus datos y su ubicación: con GPS o a mano (§84).
+                PopupMenuItem(
+                  value: 'perfil',
+                  key: Key('opcion_perfil_cliente'),
+                  child: ListTile(
+                    leading: Icon(Icons.storefront_outlined),
+                    title: Text('Perfil y ubicación'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'no_drop',
                   child: ListTile(

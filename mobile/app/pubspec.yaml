@@ -5,7 +5,7 @@ publish_to: none
 # repartir un APK nuevo, por dos razones distintas: Android rechaza instalar
 # encima un versionCode MENOR que el instalado, y dos APK con el MISMO número
 # son indistinguibles con el teléfono en la mano. `make apk` lo imprime.
-version: 0.1.0+26
+version: 0.1.0+27
 
 environment:
   sdk: ^3.9.0
@@ -14,7 +14,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # El núcleo offline: canónico, dinero exacto, crédito, folios, outbox.
+  # El núcleo offline: canónico, dinero exacto, folios, outbox.
   # Vive aparte y sin Flutter para poder probarse en segundos.
   dsd_core:
     path: ../packages/dsd_core
@@ -36,6 +36,9 @@ dependencies:
   # La versión instalada, al pie de la pantalla de entrada: con el teléfono en
   # la mano es la forma de saber si el APK nuevo de verdad quedó instalado.
   package_info_plus: ^9.0.1
+  # Compartir los tickets del corte y de la carga (WhatsApp, correo, lo que
+  # tenga el teléfono) como texto, sin depender de la impresora.
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:

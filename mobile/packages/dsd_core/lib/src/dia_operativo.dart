@@ -31,6 +31,18 @@ String diaOperativoDe(DateTime instante) {
   return '${local.year}-$mes-$dia';
 }
 
+/// El día siguiente a un día operativo (`YYYY-MM-DD`).
+///
+/// Para la carga: solo hay una al día y es para mañana (ADR 0002 §82). Se hace
+/// en UTC a propósito: sumar 24 horas a una medianoche local puede caer en el
+/// mismo día el día que cambia el horario.
+String diaSiguiente(String diaOperativo) {
+  final d = DateTime.parse('${diaOperativo}T00:00:00Z').add(const Duration(days: 1));
+  final mes = d.month.toString().padLeft(2, '0');
+  final dia = d.day.toString().padLeft(2, '0');
+  return '${d.year}-$mes-$dia';
+}
+
 const _diasDeLaSemana = [
   'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo',
 ];

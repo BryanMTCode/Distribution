@@ -311,25 +311,24 @@ async def test_el_credito_y_el_bloqueo_ya_no_estan(cliente, semilla, prospecto):
 # ---------------------------------------------------------------------------
 
 
-async def test_la_georreferencia_no_se_edita_desde_la_oficina(
+async def test_la_ubicacion_se_corrige_con_su_propio_formulario(
     cliente, semilla, prospecto, sesion
 ):
-    """La capturó el vendedor parado en la banqueta del negocio.
+    """La ubicación tiene su formulario, con la regla de los tres caminos (§84).
 
-    Cambiarla desde una computadora a quince kilómetros sería sustituir un dato
-    medido por uno supuesto, y encima rompería la distancia con la que se marcan
-    las ventas fuera de geocerca.
+    Antes no se editaba desde la oficina. El piloto pidió poder meterla o
+    corregirla a mano —copiada de un mapa— además del GPS, y eso vive en su
+    propio formulario, que deja la anterior en la auditoría. El de datos sigue
+    sin tocarla: un nombre corregido no puede mover la geocerca de nadie.
     """
     await _entrar(cliente)
     html = (await cliente.get(f"/panel/clientes/{prospecto}")).text
 
-    assert 'name="lat"' not in html
-    assert 'name="lng"' not in html
-    # Pero se muestra, con su origen y su precisión: es dato auditable.
+    assert 'id="forma_ubicacion"' in html
+    # Se muestra con su origen: es dato auditable.
     assert "19.4326" in html
-    assert "gps" in html
+    assert "tomada con GPS" in html
 
-    # Y aunque se mande a mano, el formulario de datos no la toca.
     detalle = await cliente.get(f"/panel/clientes/{prospecto}")
     await cliente.post(
         f"/panel/clientes/{prospecto}/datos",

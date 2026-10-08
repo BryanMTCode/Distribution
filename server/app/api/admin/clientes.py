@@ -48,6 +48,7 @@ from app.api.admin.comun import (
 )
 from app.api.admin.plan_visita import DIAS, plan_de, reemplazar_plan
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.ubicacion_cliente import UbicacionInvalida, fijar_ubicacion, leer_coordenadas
 
 router = APIRouter(prefix="/panel/clientes", tags=["panel"], include_in_schema=False)
 
@@ -224,6 +225,7 @@ async def detalle(
             "error": error,
             "guardado": guardado,
             "puede_editar": actor.puede(PERMISO),
+            "puede_ubicar": actor.puede("clientes.ubicar"),
             "dias_de_visita": DIAS,
             "plan": (await plan_de(sesion, [cliente_id]))[cliente_id],
         },
@@ -425,6 +427,33 @@ async def guardar_condiciones(
     )
     await sesion.commit()
     return _volver(cliente_id, guardado="Lista de precios guardada.")
+
+
+@router.post("/{cliente_id}/ubicacion")
+async def guardar_ubicacion(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    cliente_id: uuid.UUID,
+    lat: Annotated[str, Form()] = "",
+    lng: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Corrige la ubicación a mano (ADR 0002 §84). La del GPS se toma en el teléfono."""
+    actor.exigir("clientes.ubicar")
+    exigir_csrf(peticion, csrf)
+    try:
+        la, lo = leer_coordenadas(lat, lng)
+        await fijar_ubicacion(
+            sesion, cliente_id, lat=la, lng=lo, origen="manual", quien=actor.usuario_id
+        )
+    except UbicacionInvalida as e:
+        return _volver(cliente_id, error=str(e))
+    await sesion.commit()
+    return _volver(
+        cliente_id,
+        guardado="Ubicación guardada. Los teléfonos de su ruta la reciben al sincronizar.",
+    )
 
 
 @router.post("/{cliente_id}/duplicado/{fila}")

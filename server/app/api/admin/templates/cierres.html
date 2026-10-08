@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block titulo %}Cortes y cargas{% endblock %}
+{% block contenido %}
+<h1>Cortes y cargas por aceptar</h1>
+<p class="subtitulo">
+  Cada vendedor hace su corte en el teléfono —cuenta lo que le sobró y el
+  efectivo que entrega— y pide la carga de mañana. Al aceptar, el corte se
+  cierra (lo que falte va a su cuenta, a costo) y la carga se confirma desde la
+  bodega principal. Solo hay una carga al día, y es para el día siguiente.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+{% if not pendientes %}
+<div class="vacio">Nada por aceptar: ningún vendedor ha mandado su corte o su carga.</div>
+{% endif %}
+
+{% for c in pendientes %}
+<section class="tarjeta" style="margin-bottom:24px" id="cierre_{{ c.vendedor_codigo }}">
+  <h2 style="margin-top:0">{{ c.vendedor }} <span class="sutil">· {{ c.camion or 'sin camión' }}</span></h2>
+  <form method="post" action="/panel/cierres/aceptar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if c.corte %}<input type="hidden" name="corte_id" value="{{ c.corte.id }}">{% endif %}
+    {% if c.solicitud %}<input type="hidden" name="solicitud_id" value="{{ c.solicitud.id }}">{% endif %}
+
+    {% if c.corte %}
+    <h3>Corte del {{ c.corte.fecha_operativa.strftime('%d/%m/%Y') }}
+      {% if c.corte.estado != 'pendiente' %}<span class="sutil">· ya {{ c.corte.estado }}</span>{% endif %}</h3>
+    <p>{{ c.corte.resumen }}</p>
+    {% if c.corte.observaciones %}<p class="sutil">«{{ c.corte.observaciones }}»</p>{% endif %}
+    <div class="tabla-marco">
+      <table>
+        <thead><tr><th>Producto</th><th class="numero">Contó</th>
+          <th class="numero">Sistema</th><th class="numero">Diferencia</th></tr></thead>
+        <tbody>
+          {% for r in c.corte.renglones %}
+          <tr>
+            <td>{{ r.nombre }} <span class="sutil mono">{{ r.sku }}</span></td>
+            <td class="numero">{% if r.contado %}{{ '%.0f'|format(r.contada) }}{% else %}<span style="color:var(--alerta)">no lo contó</span>{% endif %}</td>
+            <td class="numero sutil">{{ '%.0f'|format(r.sistema) }}</td>
+            <td class="numero">{% if r.diferencia < 0 %}<span style="color:var(--alerta)">{{ '%.0f'|format(r.diferencia) }}</span>{% elif r.diferencia > 0 %}+{{ '%.0f'|format(r.diferencia) }}{% else %}<span class="sutil">0</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if c.solicitud %}
+    <h3>Carga para el {{ c.solicitud.fecha_operativa.strftime('%d/%m/%Y') }}
+      <span class="sutil">· sale de {{ c.solicitud.bodega or 'la bodega principal' }}</span></h3>
+    {% if c.solicitud.observaciones %}<p class="sutil">«{{ c.solicitud.observaciones }}»</p>{% endif %}
+    <div class="tabla-marco">
+      <table>
+        <thead><tr><th>Producto</th><th class="numero">Pidió</th>
+          <th class="numero">En bodega</th><th class="numero">Se carga</th></tr></thead>
+        <tbody>
+          {% for r in c.solicitud.renglones %}
+          <tr>
+            <td>{{ r.nombre }} <span class="sutil mono">{{ r.sku }}</span></td>
+            <td class="numero">{{ '%.0f'|format(r.bultos) }} {{ r.unidad_codigo }}
+              <div class="sutil">{{ '%.0f'|format(r.cantidad) }} {{ r.unidad_base }}</div></td>
+            <td class="numero {% if r.en_bodega < r.cantidad %}alerta{% endif %}">{{ '%.0f'|format(r.en_bodega) }}</td>
+            <td class="numero">
+              <input type="number" min="0" step="1" name="bultos_{{ r.producto_id }}"
+                     placeholder="{{ '%.0f'|format(r.bultos) }}" style="width:80px"
+                     aria-label="{{ r.unidad_codigo }} de {{ r.nombre }}"> {{ r.unidad_codigo }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="sutil">Deja «Se carga» vacío para cargar lo que pidió; 0 lo quita.</p>
+    {% else %}
+    <p class="sutil">No pidió carga para mañana.</p>
+    {% endif %}
+
+    {% if puede_cerrar %}
+    <button type="submit" id="aceptar_{{ c.vendedor_codigo }}">
+      {% if c.solicitud and c.corte and c.corte.estado == 'pendiente' %}Aceptar: cerrar el corte y confirmar la carga
+      {% elif c.solicitud %}Aceptar y confirmar la carga{% else %}Cerrar el corte{% endif %}
+    </button>
+    {% else %}
+    <p class="sutil">Aceptar lo hace gerencia (permisos «inventario.cargar» e «inventario.liquidar»).</p>
+    {% endif %}
+  </form>
+
+  {% if c.solicitud %}
+  <form method="post" action="/panel/cierres/solicitudes/{{ c.solicitud.id }}/rechazar"
+        class="fila-forma" style="margin-top:12px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="motivo" maxlength="300" placeholder="Por qué no se le carga"
+           aria-label="Motivo del rechazo" style="min-width:260px">
+    <button type="submit" class="secundario" id="rechazar_{{ c.vendedor_codigo }}">Rechazar la solicitud</button>
+  </form>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if recientes %}
+<h2>Resueltas en la última semana</h2>
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Vendedor</th><th>Para el</th><th>Resultado</th><th>Corte</th></tr></thead>
+    <tbody>
+      {% for c in recientes %}
+      <tr>
+        <td>{{ c.vendedor }}</td>
+        <td>{{ c.solicitud.fecha_operativa.strftime('%d/%m/%Y') }}</td>
+        <td>
+          {% if c.solicitud.estado == 'aceptada' %}Carga <span class="mono">{{ c.solicitud.carga_folio }}</span>
+          {% else %}<span style="color:var(--alerta)">Rechazada</span>: {{ c.solicitud.motivo }}{% endif %}
+          <div class="sutil">{{ c.solicitud.resuelta_por or '' }}</div>
+        </td>
+        <td class="sutil">{% if c.corte %}{{ c.corte.liquidacion_folio or c.corte.estado }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

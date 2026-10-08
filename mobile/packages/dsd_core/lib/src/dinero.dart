@@ -65,6 +65,21 @@ class Dinero implements Comparable<Dinero> {
     return '$signo$enteros.$decimales';
   }
 
+  /// «$4,200.00»: para que lo lea una persona —un ticket, un mensaje—. Desde los
+  /// centavos enteros, como `texto`: el importe no pasa por `double` ni para
+  /// pintarse.
+  String get enPesos {
+    final signo = centavos < 0 ? '-' : '';
+    final absoluto = centavos.abs();
+    final digitos = (absoluto ~/ 100).toString();
+    final conMiles = StringBuffer();
+    for (var i = 0; i < digitos.length; i++) {
+      if (i > 0 && (digitos.length - i) % 3 == 0) conMiles.write(',');
+      conMiles.write(digitos[i]);
+    }
+    return '$signo\$$conMiles.${(absoluto % 100).toString().padLeft(2, '0')}';
+  }
+
   @override
   int compareTo(Dinero other) => centavos.compareTo(other.centavos);
 

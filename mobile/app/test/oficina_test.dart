@@ -480,6 +480,7 @@ void main() {
       final servidor = await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_almacen')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('pestana_cortes')));
       await tester.tap(find.byKey(const Key('pestana_cortes')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('por_cortar_CG-000001')));

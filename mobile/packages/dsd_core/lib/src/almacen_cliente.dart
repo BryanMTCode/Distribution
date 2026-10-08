@@ -11,6 +11,8 @@ library;
 
 import 'dart:convert';
 
+import 'compras_sin_senal.dart' show CatalogoDeCompras, CompraCapturada, ProductoParaComprar;
+
 import 'cargas_cliente.dart' show CargaRechazada, PresentacionDeCarga;
 import 'dinero.dart';
 import 'sync_cliente.dart' show SesionInvalida, ServidorConProblemas;
@@ -637,6 +639,29 @@ class ClienteAlmacen {
 
   Future<DetalleDeEntrada> cancelarEntrada(String id, {required String motivo}) =>
       _entrada('/v1/almacen/entradas/$id/cancelar', {'motivo': motivo});
+
+  /// La compra que el gerente recibió en la calle (§83), de un jalón.
+  ///
+  /// Idempotente por `compra.id`: si ya había entrado, el servidor devuelve la
+  /// misma entrada sin volver a sumar.
+  Future<DetalleDeEntrada> recibirCompra(CompraCapturada compra) =>
+      _entrada('/v1/almacen/compras', compra.aJson());
+
+  /// Lo que hace falta para capturar compras sin señal: el catálogo de la
+  /// bodega y los proveedores. Se guarda en el teléfono cada vez que hay señal.
+  Future<CatalogoDeCompras> catalogoDeCompras() async {
+    final lista = await entradas();
+    final bodega = lista.bodegas.isEmpty ? null : lista.bodegas.first.id;
+    final productos = bodega == null
+        ? const <Object?>[]
+        : await _get('/v1/almacen/productos', parametros: {'almacen_id': bodega}) as List;
+    return CatalogoDeCompras(
+      productos: [
+        for (final p in productos) ProductoParaComprar.deJson((p! as Map).cast()),
+      ],
+      proveedores: lista.proveedores,
+    );
+  }
 
   Future<ListaDeTraspasos> traspasos() async =>
       ListaDeTraspasos.deJson((await _get('/v1/almacen/traspasos') as Map).cast());

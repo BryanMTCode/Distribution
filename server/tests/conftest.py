@@ -69,6 +69,12 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # El cierre del vendedor (migración 0047) cuelga de `usuarios`; explícito por
+    # lo mismo que las demás.
+    "solicitud_carga_detalle",
+    "solicitudes_carga",
+    "corte_vendedor_conteo",
+    "cortes_vendedor",
     # La bitácora de bajadas (migración 0043) cuelga de `dispositivos`; explícita
     # por lo mismo que las demás.
     "sync_bajadas",

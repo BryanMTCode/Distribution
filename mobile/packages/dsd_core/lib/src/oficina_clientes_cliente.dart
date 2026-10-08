@@ -13,6 +13,7 @@ import 'dinero.dart';
 import 'forma_de_pago.dart';
 import 'sync_cliente.dart' show SesionInvalida, ServidorConProblemas;
 import 'transporte.dart';
+import 'ubicacion.dart';
 import 'vendedores_cliente.dart' show ServidorSinEstaFuncion, SinPermisoDeVendedores;
 
 Dinero _d(Object? v) => Dinero.deTexto(v! as String);
@@ -150,6 +151,10 @@ class FichaDelCliente {
   /// 'gps' si se tomó parado en el negocio; 'manual' si se escribió o corrigió.
   String? get ubicacionOrigen => _j['ubicacion_origen'] as String?;
   bool get conUbicacion => lat != null && lng != null;
+
+  /// Si quien la ve puede fijar o corregir la ubicación (§84). Un servidor
+  /// anterior no lo manda: falso, y la ficha solo la muestra.
+  bool get puedeUbicar => _j['puede_ubicar'] as bool? ?? false;
   Dinero get compradoMes => _d(_j['comprado_mes']);
   Dinero get compradoAnio => _d(_j['comprado_anio']);
   List<VentaDelCliente> get ventas =>
@@ -173,6 +178,20 @@ class ClienteClientesDeOficina {
 
   Future<FichaDelCliente> ficha(String id) async {
     final r = await _transporte.obtener('/v1/oficina/clientes/$id');
+    _revisar(r);
+    return FichaDelCliente.deJson((jsonDecode(r.cuerpo) as Map).cast());
+  }
+
+  /// Fija o corrige la ubicación (§84): la del GPS del teléfono o la escrita a
+  /// mano. Devuelve la ficha como quedó, con el mensaje del servidor.
+  Future<FichaDelCliente> ubicar(String id, Ubicacion ubicacion) async {
+    final r = await _transporte.post('/v1/oficina/clientes/$id/ubicacion', {
+      'lat': ubicacion.latTexto,
+      'lng': ubicacion.lngTexto,
+      'origen': ubicacion.origen.codigo,
+      if (ubicacion.precisionMetros != null)
+        'precision_m': ubicacion.precisionMetros!.toStringAsFixed(2),
+    });
     _revisar(r);
     return FichaDelCliente.deJson((jsonDecode(r.cuerpo) as Map).cast());
   }

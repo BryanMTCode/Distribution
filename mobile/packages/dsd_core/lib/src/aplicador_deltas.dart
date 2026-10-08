@@ -113,6 +113,7 @@ class AplicadorDeltas {
         'venta' => _venta(delta, recibidoEn),
         'ajuste_camion' => _ajusteCamion(delta, recibidoEn),
         'traspaso' => _traspaso(delta),
+        'solicitud_carga' => _solicitudDeCarga(delta, recibidoEn),
         'identidad' => _identidad(delta),
         'motivo_merma' => _motivoMerma(delta),
         'motivo_no_drop' => _motivoNoDrop(delta),
@@ -661,6 +662,97 @@ class AplicadorDeltas {
         'UPDATE traspaso_detalle SET cantidad_recibida = ? '
         ' WHERE traspaso_id = ? AND producto_id = ?',
         [recibida, delta.entidadId, producto],
+      );
+    }
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // La carga que pidió el vendedor (ADR 0002 §82)
+  // -------------------------------------------------------------------------
+
+  /// La oficina aceptó, rechazó o dio por reemplazada su solicitud de carga.
+  ///
+  /// La mercancía NO entra aquí: llega con el delta de la carga, como cualquier
+  /// carga, y se suma una sola vez (`cargas_aplicadas`). Esto solo le dice al
+  /// vendedor qué pasó con lo que pidió —el folio, lo que se le cargó o el
+  /// motivo— para que su ticket lo diga.
+  ///
+  /// Si el teléfono no tiene la solicitud (se reinstaló la app) se crea con lo
+  /// que trae el delta: es la única forma de que el vendedor vea por qué no le
+  /// llegó lo que pidió.
+  bool _solicitudDeCarga(Delta delta, String recibidoEn) {
+    final s = delta.payload;
+    if (s == null) return true;
+
+    final local = _db.select(
+      'SELECT 1 FROM solicitudes_carga WHERE id = ?',
+      [delta.entidadId],
+    );
+    if (local.isEmpty) {
+      final fecha = s['fecha_operativa'] as String?;
+      if (fecha == null) return true;
+      _db.execute(
+        '''
+        INSERT INTO solicitudes_carga (id, corte_id, fecha_operativa, estado,
+                                       fecha_dispositivo, sincronizado)
+        VALUES (?, ?, ?, 'pendiente', ?, 1)
+        ''',
+        [delta.entidadId, s['corte_id'] as String?, fecha, recibidoEn],
+      );
+    }
+
+    _db.execute(
+      '''
+      UPDATE solicitudes_carga
+         SET estado       = COALESCE(?, estado),
+             carga_id     = ?,
+             carga_folio  = ?,
+             motivo       = ?,
+             resuelta_en  = ?,
+             sincronizado = 1
+       WHERE id = ?
+      ''',
+      [
+        s['estado'] as String?,
+        s['carga_id'] as String?,
+        s['carga_folio'] as String?,
+        s['motivo'] as String?,
+        s['resuelta_en']?.toString(),
+        delta.entidadId,
+      ],
+    );
+
+    for (final fila in (s['detalle'] as List?) ?? const []) {
+      if (fila is! Map<String, Object?>) continue;
+      final producto = fila['producto_id'] as String?;
+      if (producto == null) continue;
+      final cantidad = Cantidad.deTexto(_aTextoCantidad(fila['cantidad']));
+      final bultos = Cantidad.deTexto(_aTextoCantidad(fila['bultos']));
+      final crudo = fila['cantidad_aceptada'];
+      final aceptada =
+          crudo == null ? null : Cantidad.deTexto(_aTextoCantidad(crudo)).milesimos / 1000;
+      // El renglón que el teléfono no tenía —solicitud creada arriba— se agrega
+      // con su factor deducido de lo pedido: bultos × factor = cantidad.
+      _db.execute(
+        '''
+        INSERT OR IGNORE INTO solicitud_carga_detalle
+          (solicitud_id, producto_id, unidad_codigo, factor, bultos, cantidad)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          delta.entidadId,
+          producto,
+          fila['unidad_codigo'] as String? ?? 'PZA',
+          bultos.esCero ? 1 : cantidad.milesimos / bultos.milesimos,
+          bultos.milesimos / 1000,
+          cantidad.milesimos / 1000,
+        ],
+      );
+      _db.execute(
+        'UPDATE solicitud_carga_detalle SET cantidad_aceptada = ? '
+        ' WHERE solicitud_id = ? AND producto_id = ?',
+        [aceptada, delta.entidadId, producto],
       );
     }
     return true;

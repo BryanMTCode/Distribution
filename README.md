@@ -80,6 +80,9 @@ la bodega sube cuando alguien la cuenta.
 | **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
 | **Transferencias por confirmar** — la oficina las busca en el banco para cuadrar el dinero; la que no llegó, con motivo | ✅ 9 pruebas |
+| **Cierre del vendedor** (§82) — corte a ciegas y solicitud de carga sin señal, el gerente acepta (cierra el corte y confirma la carga de mañana), tickets por WhatsApp | ✅ 17 pruebas + 16 de Dart y 4 de widget |
+| **Compra a proveedor sin señal** (§83) — el gerente la captura en la calle, se manda entera e idempotente a la bodega principal; costo opcional | ✅ 7 pruebas + 6 de Dart y 3 de widget |
+| **Ubicación del cliente con GPS o a mano** (§84) — vendedor sin señal, oficina en la app y el panel, una sola regla de validación | ✅ 14 pruebas + 10 de Dart y 4 de widget |
 | **Cuenta del vendedor** — faltante y mermas a su cargo **a costo**, efectivo; abonos y condonación | ✅ 23 pruebas |
 | **Cambio físico** — fresco por caducado o dañado: sale del camión con documento, sin cobro ni faltante | ✅ 8 pruebas + 2 de Dart y 5 de widget |
 | **Editar y eliminar la estructura** — usuarios, rutas, almacenes, listas, proveedores y motivos; la base decide si se borra o se da de baja | ✅ 24 pruebas |
@@ -190,6 +193,7 @@ server/
                      inventario.py    existencias y libro mayor por almacén
                      liquidaciones.py el corte del día (Fase 7)
                      transferencias.py las transferencias por confirmar en el banco
+                     cierres.py       cortes y cargas por aceptar (el cierre del vendedor)
                      cuenta_vendedores.py lo que debe cada vendedor, y cómo lo paga
                      equipo_fichas.py editar y eliminar usuarios, rutas, almacenes y listas
                      motivos.py       los catálogos de motivos (y si una merma se cobra)
@@ -210,7 +214,8 @@ server/
                      importes.py      la aritmética de una partida (un solo redondeo)
                      identificadores.py  UUIDv7
     infra/models/    SQLAlchemy 2.0 sobre el esquema del SQL
-    infra/           cuenta_vendedor.py (los cargos del Corte)
+    infra/           cuenta_vendedor.py (los cargos del Corte) · cierre_del_vendedor.py
+                     (aceptar el corte y la carga que pide, para el panel y la app)
     api/v1/          auth, dispositivos, salud, tablero
     workers/         cola sobre PostgreSQL + proceso worker
   db/
@@ -224,7 +229,8 @@ mobile/
   packages/dsd_core/ NÚCLEO OFFLINE en Dart puro (sin Flutter):
     lib/src/         canónico, dinero exacto, precio de 4 decimales, carrito,
                      borrador, VENTA, MERMA, NO-DROP, TICKET ESC/POS +
-                     vista previa, forma de pago, credencial, folios, outbox, sobres,
+                     vista previa, forma de pago, CIERRE DEL DÍA y sus tickets para
+                     compartir, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
     test/            605 pruebas que corren en segundos
@@ -233,9 +239,10 @@ mobile/
     lib/src/datos/   base local, almacén seguro, repositorios
     lib/src/estado/  sesión y providers
     lib/src/pantallas/ login, ruta, catálogo, carrito, venta, ticket,
-                     merma y devolución, no-drop, lienzo espacial, MI DÍA,
+                     merma y devolución, no-drop, lienzo espacial, MI DÍA con su
+                     CORTE y SOLICITUD DE CARGA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
-                     gerencia/ (tablero, mapa del día)
+                     gerencia/ (tablero, mapa del día, cortes y cargas por aceptar)
     test/            275 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en

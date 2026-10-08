@@ -9,6 +9,8 @@ de operación lo dice su manejador, y cada fase registra los suyos:
     Fase 5  cobro.crear
     Fase 6  merma.crear, no_drop.crear
     Fase 7  traspaso.crear
+    §82     corte.crear, solicitud_carga.crear  (el cierre del vendedor)
+    §84     cliente.ubicar  (la ubicación del cliente, con GPS o a mano)
 
 Esa separación es lo que permitió probar el motor a fondo antes de que
 existiera la primera pantalla de venta.
@@ -19,7 +21,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -29,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.importes import cantidad_base, importe_de_linea
 from app.domain.sync.sobres import CodigoError
 from app.infra.models import Cliente
+from app.infra.ubicacion_cliente import UbicacionInvalida, fijar_ubicacion, leer_coordenadas
 
 __all__ = ["Contexto", "ErrorDeManejador", "manejador_de", "obtener_manejador"]
 
@@ -1394,6 +1397,323 @@ async def _almacen_de_transito(
             "nadie la cuente",
         )
     return fila["id"]
+
+
+# ---------------------------------------------------------------------------
+# §82 · el cierre del vendedor: su corte y la carga que pide para mañana
+# ---------------------------------------------------------------------------
+# Las dos operaciones son la PALABRA del vendedor, y ninguna mueve nada al
+# llegar: lo que mueve inventario y dinero es la aceptación del gerente
+# (`app/infra/cierre_del_vendedor.py`), con las mismas funciones del corte y la
+# carga de siempre. Por eso aquí no hay guardas de existencia ni de saldo: un
+# documento de campo se guarda y se marca, nunca se rechaza (§0.1).
+
+
+@manejador_de("corte.crear")
+async def crear_corte(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """El vendedor declara su corte: lo que contó arriba del camión y su efectivo.
+
+    Si ese mismo día ya había mandado otro que nadie ha visto, el nuevo lo
+    reemplaza: es el vendedor corrigiendo su conteo antes de entregar, y lo que
+    vale es lo último que dijo. Uno que la oficina ya cerró no se toca.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM cortes_vendedor WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    fecha_operativa = _fecha_obligatoria(datos, "fecha_operativa")
+    efectivo = _decimal_obligatorio(datos, "efectivo_declarado")
+    if efectivo < 0:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, "el efectivo entregado no puede ser negativo"
+        )
+    conteo = datos.get("conteo")
+    if not isinstance(conteo, list):
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO,
+            "el corte trae su conteo, aunque sea vacío: sin él no se sabe qué sobró",
+        )
+
+    notas: list[str] = []
+    # La carga se toma del payload solo si es DE ESTE vendedor: una carga ajena
+    # cerraría el corte de otro camión.
+    carga_id = _uuid_opcional(datos, "carga_id")
+    if carga_id is not None:
+        dueno = (
+            await sesion.execute(
+                text("SELECT vendedor_id FROM cargas WHERE id = :c"), {"c": carga_id}
+            )
+        ).scalar_one_or_none()
+        if dueno != ctx.usuario_id:
+            notas.append("la carga que mandó el teléfono no es suya o no existe")
+            carga_id = None
+
+    await sesion.execute(
+        text(
+            "UPDATE cortes_vendedor SET estado = 'reemplazado' "
+            " WHERE vendedor_id = :v AND fecha_operativa = :d AND estado = 'pendiente'"
+        ),
+        {"v": ctx.usuario_id, "d": fecha_operativa},
+    )
+
+    contados: dict[uuid.UUID, Decimal] = {}
+    for crudo in conteo:
+        if not isinstance(crudo, dict):
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "renglón de conteo mal formado")
+        producto_id = _uuid_obligatorio(crudo, "producto_id")
+        cantidad = _decimal_obligatorio(crudo, "cantidad")
+        if cantidad < 0:
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO, f"no se cuentan {cantidad} piezas"
+            )
+        contados[producto_id] = contados.get(producto_id, Decimal(0)) + cantidad
+
+    conocidos = set()
+    if contados:
+        conocidos = set(
+            (
+                await sesion.execute(
+                    text("SELECT id FROM productos WHERE id = ANY(:ids)"),
+                    {"ids": list(contados)},
+                )
+            ).scalars()
+        )
+    desconocidos = len(contados) - len(conocidos)
+    if desconocidos:
+        notas.append(f"{desconocidos} producto(s) del conteo no existen en el catálogo")
+
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO cortes_vendedor (id, vendedor_id, dispositivo_id, carga_id,
+                                         fecha_operativa, efectivo_declarado,
+                                         observaciones, fecha_dispositivo,
+                                         recibido_en, nota)
+            VALUES (:id, :v, :equipo, :carga, :d, :efectivo, :obs, :fd, :ahora, :nota)
+            """
+        ),
+        {
+            "id": entidad_id,
+            "v": ctx.usuario_id,
+            "equipo": ctx.dispositivo_id,
+            "carga": carga_id,
+            "d": fecha_operativa,
+            "efectivo": efectivo,
+            "obs": _texto(datos, "observaciones"),
+            "fd": fecha_dispositivo,
+            "ahora": ctx.recibido_en,
+            "nota": "; ".join(notas) or None,
+        },
+    )
+    for producto_id, cantidad in contados.items():
+        if producto_id not in conocidos:
+            continue
+        await sesion.execute(
+            text(
+                "INSERT INTO corte_vendedor_conteo (corte_id, producto_id, cantidad) "
+                "VALUES (:c, :p, :cant)"
+            ),
+            {"c": entidad_id, "p": producto_id, "cant": cantidad},
+        )
+    await sesion.flush()
+
+
+@manejador_de("solicitud_carga.crear")
+async def crear_solicitud_de_carga(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """La carga que el vendedor pide para el día siguiente.
+
+    Una carga al día: si ese día ya tiene una solicitud ACEPTADA, la nueva entra
+    ya rechazada —y se le avisa al teléfono con el motivo—; si tiene otra
+    pendiente, la nueva la reemplaza: es el vendedor corrigiendo su pedido.
+    """
+    ya = await sesion.execute(
+        text("SELECT 1 FROM solicitudes_carga WHERE id = :id"), {"id": entidad_id}
+    )
+    if ya.first() is not None:
+        return
+
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    fecha_operativa = _fecha_obligatoria(datos, "fecha_operativa")
+    detalle = datos.get("detalle")
+    if not isinstance(detalle, list) or not detalle:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, "una solicitud de carga sin renglones no pide nada"
+        )
+
+    renglones: dict[uuid.UUID, tuple[str, Decimal, Decimal]] = {}
+    for crudo in detalle:
+        if not isinstance(crudo, dict):
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "renglón mal formado")
+        producto_id = _uuid_obligatorio(crudo, "producto_id")
+        unidad = _texto(crudo, "unidad_codigo", obligatorio=True)
+        bultos = _decimal_obligatorio(crudo, "bultos")
+        cantidad = _decimal_obligatorio(crudo, "cantidad")
+        if bultos <= 0 or cantidad <= 0:
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO, "un renglón en cero no pide nada"
+            )
+        renglones[producto_id] = (unidad, bultos, cantidad)
+
+    conocidos = set(
+        (
+            await sesion.execute(
+                text("SELECT id FROM productos WHERE id = ANY(:ids)"),
+                {"ids": list(renglones)},
+            )
+        ).scalars()
+    )
+
+    corte_id = _uuid_opcional(datos, "corte_id")
+    if corte_id is not None:
+        dueno = (
+            await sesion.execute(
+                text("SELECT vendedor_id FROM cortes_vendedor WHERE id = :c"),
+                {"c": corte_id},
+            )
+        ).scalar_one_or_none()
+        if dueno != ctx.usuario_id:
+            # El corte viaja en el sobre anterior; si no llegó o no es suyo, la
+            # solicitud se guarda igual, suelta.
+            corte_id = None
+
+    aceptada = (
+        await sesion.execute(
+            text(
+                "SELECT c.folio FROM solicitudes_carga s "
+                "  LEFT JOIN cargas c ON c.id = s.carga_id "
+                " WHERE s.vendedor_id = :v AND s.fecha_operativa = :d "
+                "   AND s.estado = 'aceptada'"
+            ),
+            {"v": ctx.usuario_id, "d": fecha_operativa},
+        )
+    ).first()
+    if aceptada is None:
+        await sesion.execute(
+            text(
+                "UPDATE solicitudes_carga SET estado = 'reemplazada', resuelta_en = :ahora, "
+                "       motivo = 'La reemplazó una solicitud más reciente.' "
+                " WHERE vendedor_id = :v AND fecha_operativa = :d AND estado = 'pendiente'"
+            ),
+            {"v": ctx.usuario_id, "d": fecha_operativa, "ahora": ctx.recibido_en},
+        )
+        estado, motivo, resuelta_en = "pendiente", None, None
+    else:
+        estado = "rechazada"
+        lo_aceptado = f"la carga {aceptada[0]}" if aceptada[0] else "otra solicitud"
+        motivo = f"Ya se aceptó {lo_aceptado} para ese día: solo hay una carga al día."
+        resuelta_en = ctx.recibido_en
+
+    observaciones = _texto(datos, "observaciones")
+    if desconocidos := len(renglones) - len(conocidos):
+        # No se rechaza la solicitud por un producto que la oficina dio de baja:
+        # se pide lo demás y se deja dicho qué faltó.
+        nota = f"[{desconocidos} producto(s) ya no están en el catálogo y no se pidieron]"
+        observaciones = f"{observaciones} {nota}" if observaciones else nota
+
+    # El detalle va ANTES que el renglón resuelto: el disparador lo lee al
+    # publicar, y una solicitud rechazada al llegar se publica en el INSERT.
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO solicitudes_carga (id, vendedor_id, dispositivo_id, corte_id,
+                                           fecha_operativa, observaciones,
+                                           fecha_dispositivo, recibido_en, estado)
+            VALUES (:id, :v, :equipo, :corte, :d, :obs, :fd, :ahora, 'pendiente')
+            """
+        ),
+        {
+            "id": entidad_id,
+            "v": ctx.usuario_id,
+            "equipo": ctx.dispositivo_id,
+            "corte": corte_id,
+            "d": fecha_operativa,
+            "obs": observaciones,
+            "fd": fecha_dispositivo,
+            "ahora": ctx.recibido_en,
+        },
+    )
+    for producto_id, (unidad, bultos, cantidad) in renglones.items():
+        if producto_id not in conocidos:
+            continue
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO solicitud_carga_detalle (solicitud_id, producto_id,
+                                                     unidad_codigo, bultos, cantidad)
+                VALUES (:s, :p, :u, :b, :c)
+                """
+            ),
+            {"s": entidad_id, "p": producto_id, "u": unidad, "b": bultos, "c": cantidad},
+        )
+    if estado != "pendiente":
+        await sesion.execute(
+            text(
+                "UPDATE solicitudes_carga SET estado = :e, motivo = :m, resuelta_en = :r "
+                " WHERE id = :id"
+            ),
+            {"e": estado, "m": motivo, "r": resuelta_en, "id": entidad_id},
+        )
+    await sesion.flush()
+
+
+# ---------------------------------------------------------------------------
+# §84 · la ubicación del cliente, desde el perfil en el teléfono del vendedor
+# ---------------------------------------------------------------------------
+@manejador_de("cliente.ubicar")
+async def ubicar_cliente(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """El vendedor fijó o corrigió la ubicación de un cliente de su ruta.
+
+    Solo de su ruta: dejar que un teléfono mueva la ubicación de cualquier cliente
+    sería dejarle mover la geocerca de las ventas de otro vendedor. El reenvío no
+    hace daño: escribir la misma coordenada dos veces deja la misma coordenada.
+    """
+    cliente = (
+        await sesion.execute(
+            text("SELECT ruta_id FROM clientes WHERE id = :c"), {"c": entidad_id}
+        )
+    ).mappings().first()
+    if cliente is None:
+        raise ErrorDeManejador(CodigoError.CONFLICTO_DE_DATOS, "ese cliente no existe")
+    if cliente["ruta_id"] not in ctx.rutas:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "ese cliente no es de la ruta de este vendedor: su ubicación la mueve la oficina",
+        )
+    try:
+        lat, lng = leer_coordenadas(_texto(datos, "lat"), _texto(datos, "lng"))
+        await fijar_ubicacion(
+            sesion,
+            entidad_id,
+            lat=lat,
+            lng=lng,
+            origen=_texto(datos, "ubicacion_origen") or "manual",
+            precision_m=_decimal(datos, "ubicacion_precision_m"),
+            quien=ctx.usuario_id,
+            dispositivo_id=ctx.dispositivo_id,
+            momento=_instante_obligatorio(datos, "fecha_dispositivo"),
+        )
+    except UbicacionInvalida as e:
+        raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, str(e)) from e
+    await sesion.flush()
+
+
+def _fecha_obligatoria(datos: dict[str, Any], clave: str) -> date:
+    texto = _texto(datos, clave, obligatorio=True)
+    try:
+        return date.fromisoformat(texto)
+    except ValueError as e:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO, f"'{clave}' no es una fecha AAAA-MM-DD: {texto!r}"
+        ) from e
 
 
 def _entero(datos: dict[str, Any], clave: str, *, obligatorio: bool = False) -> int | None:

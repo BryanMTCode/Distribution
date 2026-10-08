@@ -35,7 +35,7 @@ firmar su propia entrega. La app esconde el botón; el servidor lo prohíbe.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, status
@@ -76,6 +76,9 @@ class Opciones(BaseModel):
     vendedores: list[Opcion]
     bodegas: list[Opcion]
     hoy: date
+    # Para cuándo se abre la carga si no se dice: el día siguiente. Solo hay
+    # una carga al día y se hace la víspera (ADR 0002 §82).
+    manana: date
 
 
 class CargaResumen(BaseModel):
@@ -169,6 +172,7 @@ async def opciones(actor: ActorDep, sesion: SesionDep) -> Opciones:
         vendedores=[Opcion(**dict(v)) for v in await _vendedores(sesion)],
         bodegas=[Opcion(**dict(b)) for b in await _bodegas(sesion)],
         hoy=date.today(),
+        manana=date.today() + timedelta(days=1),
     )
 
 
@@ -300,9 +304,12 @@ async def abrir(peticion: PeticionNueva, actor: ActorDep, sesion: SesionDep) -> 
 
     Devolver la existente en vez de un error es lo que espera quien la abre dos
     veces desde dos teléfonos: seguir capturando donde iba, no un 409.
+
+    Sin fecha es para MAÑANA: solo hay una carga al día y se hace la víspera,
+    después del corte (ADR 0002 §82).
     """
     actor.exigir(PERMISO)
-    dia = peticion.fecha_operativa or date.today()
+    dia = peticion.fecha_operativa or date.today() + timedelta(days=1)
 
     fila = (
         await sesion.execute(

@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/sincronizacion.dart';
 import '../../estado/vendedores.dart';
+import '../editor_de_ubicacion.dart';
 import 'comunes.dart';
 import 'vendedores.dart';
 
@@ -272,6 +273,34 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
                 ),
               ),
             ),
+            if (f.puedeUbicar) ...[
+              const SizedBox(height: 16),
+              Text('Fijar o corregir la ubicación', style: estilo.titleMedium),
+              const Text('Con el GPS si estás en el negocio; si no, escríbela (por '
+                  'ejemplo, copiada de un mapa).'),
+              const SizedBox(height: 8),
+              EditorDeUbicacion(
+                key: const Key('editor_ubicacion_oficina'),
+                lat: f.lat,
+                lng: f.lng,
+                origen: f.ubicacionOrigen,
+                alGuardar: (ubicacion) async {
+                  final cliente = _cliente(ref);
+                  if (cliente == null) {
+                    throw const _Texto('No hay sesión en línea. Busca señal.');
+                  }
+                  try {
+                    final nueva = await cliente.ubicar(f.id, ubicacion);
+                    if (mounted) setState(() => _f = nueva);
+                    return nueva.mensaje ?? 'Ubicación guardada.';
+                  } on CargaRechazada catch (e) {
+                    throw _Texto(e.detalle);
+                  } on Object catch (e) {
+                    throw _Texto(explicarErrorDeOficina(e));
+                  }
+                },
+              ),
+            ],
             const Divider(height: 32),
             Text('Sus compras', style: estilo.titleMedium),
             if (f.ventas.isEmpty)
@@ -303,4 +332,14 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
   void _verVenta(String ventaId) => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => PantallaVentaVista(ventaId: ventaId)),
       );
+}
+
+/// Un error que se lee tal cual en el editor de ubicación.
+class _Texto implements Exception {
+  const _Texto(this.texto);
+
+  final String texto;
+
+  @override
+  String toString() => texto;
 }

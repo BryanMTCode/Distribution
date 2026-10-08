@@ -8,6 +8,7 @@ library;
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'carrito.dart' show nuevoUuidProvider;
 import 'sesion.dart';
 import 'sincronizacion.dart';
 
@@ -42,3 +43,16 @@ final puedeAjustarProvider = Provider<bool>(
     SinSesion() => false,
   },
 );
+
+/// Las compras que el gerente captura en la calle, aunque no haya señal (§83).
+/// Viven en la base del teléfono hasta que el servidor las recibe.
+final comprasSinSenalProvider = Provider<ComprasSinSenal>(
+  (ref) => ComprasSinSenal(
+    ref.watch(baseLocalProvider).db,
+    nuevoUuid: ref.watch(nuevoUuidProvider),
+    ahora: ref.watch(relojProvider),
+  ),
+);
+
+/// Sube cuando cambia la cola de compras, para que las pantallas la relean.
+final revisionDeComprasProvider = StateProvider<int>((_) => 0);

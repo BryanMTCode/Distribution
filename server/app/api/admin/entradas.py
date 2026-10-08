@@ -370,8 +370,16 @@ async def abrir_entrada(
     fecha: str = "",
     nota: str = "",
     quien: uuid.UUID,
+    entrada_id: uuid.UUID | None = None,
+    costo_opcional: bool = False,
 ) -> uuid.UUID:
-    """Abre el borrador y devuelve su id. Ver `crear` para cada decisión."""
+    """Abre el borrador y devuelve su id. Ver `crear` para cada decisión.
+
+    `entrada_id` lo pone la compra que el gerente capturó sin señal: es su llave
+    de idempotencia. `costo_opcional` es la regla de esa compra (ADR 0002 §83):
+    el renglón con costo mueve el promedio y entra a la cuenta por pagar; el que
+    no lo trae solo suma inventario.
+    """
     if motivo not in MOTIVOS:
         raise EntradaRechazada("Falta elegir por qué entra la mercancía.")
 
@@ -450,18 +458,20 @@ async def abrir_entrada(
     consecutivo = (
         await sesion.execute(text("SELECT nextval('seq_folio_entrada')"))
     ).scalar_one()
-    nueva = uuid.uuid4()
+    nueva = entrada_id or uuid.uuid4()
     await sesion.execute(
         text(
             """
             INSERT INTO entradas
                 (id, folio, almacen_destino_id, motivo, proveedor_id, proveedor,
-                 referencia, fecha_operativa, nota, estado, creado_por)
+                 referencia, fecha_operativa, nota, estado, creado_por,
+                 costo_opcional)
             VALUES (:id, :folio, :a, :motivo, :prov_id, :prov, :ref, :fecha,
-                    :nota, 'borrador', :quien)
+                    :nota, 'borrador', :quien, :costo_opcional)
             """
         ),
         {
+            "costo_opcional": costo_opcional,
             "id": nueva,
             "folio": f"EN-{consecutivo:06d}",
             "a": destino,
@@ -699,7 +709,7 @@ async def agregar_renglon_a_entrada(
     entrada = (
         await sesion.execute(
             text(
-                "SELECT estado, motivo, almacen_destino_id FROM entradas "
+                "SELECT estado, motivo, almacen_destino_id, costo_opcional FROM entradas "
                 " WHERE id = :id FOR UPDATE"
             ),
             {"id": entrada_id},
@@ -748,7 +758,7 @@ async def agregar_renglon_a_entrada(
     # es lo que mantiene la regla del sistema: el libro mayor y todo lo que
     # cuelga de él hablan en unidad base.
     por_bulto = _leer_costo(
-        costo, obligatorio=entrada["motivo"] == "compra"
+        costo, obligatorio=entrada["motivo"] == "compra" and not entrada["costo_opcional"]
     )
     costo_base = (
         (por_bulto / Decimal(presentacion["factor"])).quantize(
@@ -936,7 +946,7 @@ async def confirmar_entrada(sesion, entrada_id: uuid.UUID, *, quien: uuid.UUID) 
         await sesion.execute(
             text(
                 "SELECT id, folio, estado, motivo, almacen_destino_id, "
-                "       fecha_operativa, proveedor_id, referencia "
+                "       fecha_operativa, proveedor_id, referencia, costo_opcional "
                 "  FROM entradas WHERE id = :id FOR UPDATE"
             ),
             {"id": entrada_id},
@@ -966,7 +976,7 @@ async def confirmar_entrada(sesion, entrada_id: uuid.UUID, *, quien: uuid.UUID) 
     # y no solo al capturar porque un renglón puede haberse agregado antes de
     # que alguien cambiara el motivo con SQL, y confirmar una compra sin costo
     # dejaría una cuenta por pagar de cero — una deuda invisible.
-    if entrada["motivo"] == "compra":
+    if entrada["motivo"] == "compra" and not entrada["costo_opcional"]:
         sin_costo = [r["nombre"] for r in renglones if r["costo_unitario"] is None]
         if sin_costo:
             raise EntradaRechazada(
@@ -1070,6 +1080,11 @@ async def confirmar_entrada(sesion, entrada_id: uuid.UUID, *, quien: uuid.UUID) 
         # la factura, o el pago se rechaza por un centavo.
         if r["importe"] is not None:
             importe_total += Decimal(r["importe"])
+        elif entrada["motivo"] == "compra":
+            # La compra del teléfono sin costo (§83): el renglón suma inventario y
+            # NO entra a la cuenta por pagar. Valuarlo al promedio aquí metería a
+            # la deuda con el proveedor un importe que nadie le facturó.
+            pass
         elif costo_actual is not None:
             # Sin costo capturado, el renglón se valúa al promedio vigente y el
             # promedio NO se mueve: es el tratamiento estándar de lo que aparece
@@ -1163,11 +1178,18 @@ async def confirmar_entrada(sesion, entrada_id: uuid.UUID, *, quien: uuid.UUID) 
     await sesion.commit()
 
     piezas = sum(Decimal(r["cantidad"]) for r in renglones)
+    sin_costo = sum(1 for r in renglones if r["costo_unitario"] is None)
     return (
         f"{entrada['folio']} confirmada: {len(renglones)} renglón(es), "
         f"{sin_decimales(piezas)} piezas en la bodega"
         + (f" por ${importe_total:,.2f}" if importe_total else "")
         + ". Ya se puede cargar a un camión."
+        + (
+            f" {sin_costo} renglón(es) sin costo: sumaron al inventario, pero no "
+            "movieron el costo promedio ni entraron a la cuenta por pagar."
+            if entrada["motivo"] == "compra" and sin_costo
+            else ""
+        )
     )
 
 

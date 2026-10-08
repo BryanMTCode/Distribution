@@ -130,9 +130,9 @@ make worker
 
 **«Hoy» lo deciden `date.today()` en Python y `CURRENT_DATE` en PostgreSQL**, y los dos usan la zona
 del sistema. En el centro de México son UTC−6, así que **con el reloj en UTC, a partir de las 18:00
-locales «hoy» pasa a ser mañana**: el tablero de Gerencia muestra el día siguiente vacío, la cobranza
-del día sale sin cobros, y el arqueo de la liquidación no cuadra con el efectivo que la gente tiene en
-la mano.
+locales «hoy» pasa a ser mañana**: el tablero de Gerencia muestra el día siguiente vacío, la carga
+«para mañana» sale para pasado mañana, y el arqueo del corte no cuadra con el efectivo que la gente
+tiene en la mano.
 
 El síntoma desconcierta porque **a las once de la mañana todo funciona**.
 
@@ -380,8 +380,7 @@ almacén, y a quién le debemos y cuándo vence.
    centavo de menos, el pago de la factura completa se rechazaría por exceder el saldo.
 4. **Registra un pago parcial y luego el resto.** El pago se aplica a **esa** factura, no «a lo que se
    le debe»: a un proveedor se le paga una factura concreta y así se puede conciliar contra su estado
-   de cuenta. (La cobranza sí aplica FIFO, y es a propósito: un cliente paga un abono sin decir cuál
-   factura.)
+   de cuenta.
 5. **Mira el valor del inventario.** Está al promedio ponderado e incluye lo que traen los camiones:
    es inventario de la empresa aunque esté en la calle. Los productos con existencia y **sin costo**
    se cuentan aparte en vez de valuarse en cero.
@@ -422,20 +421,27 @@ la que decide si hay algo que arreglar en la bodega.
 El flujo completo de la bodega es **Entradas → Inventario → Cargas**, con **Salidas** para corregir, y
 las cuatro pantallas están enlazadas entre sí.
 
-**Cobranza** — <http://127.0.0.1:8000/panel/cobranza>
+**Transferencias** — <http://127.0.0.1:8000/panel/transferencias>
 
-1. Abre en **el día de hoy**. Arriba, «Qué entregar hoy»: comprueba que la columna **Efectivo a
-   entregar** no incluya las transferencias. Es la cifra que cuadra contra la mano del vendedor; si
-   sumara el banco, la caja no cuadraría nunca.
-2. Botón **«Por revisar»**: trae los cobros marcados con el motivo **en español**, no el código.
-3. Entra a un cobro marcado. Valida tres cosas:
-   - **a qué facturas se aplicó** el dinero, en orden de vencimiento más antiguo;
-   - el bloque **«Qué veía el vendedor»** — el saldo que traía el teléfono contra el real. Ese número
-     distingue a quien cobró a ciegas (equipo sin sincronizar) de quien cobró mal;
-   - el botón **«Dar por revisado»**. Confirma que **no cambia el importe ni la aplicación**: solo
-     registra quién lo miró, y el motivo original se queda al lado.
-4. Enlace **«Ver la cartera por antigüedad»**: los tramos se cuentan desde el **vencimiento**, no desde
-   la emisión. Un cliente a 30 días no debe aparecer vencido el día 15.
+La operación es de contado (ADR 0002 §81): no hay cobranza ni cartera. Esta
+pantalla es solo para cuadrar el dinero que no llegó en la mano.
+
+1. Arriba, las ventas pagadas por transferencia que **esperan al banco**, la más vieja primero.
+2. Palomea las que ya viste en el estado de cuenta y **confírmalas de una vez**. Confirmar dos veces
+   no hace nada la segunda.
+3. «**No llegó**» pide motivo, y puede cargársela a la cuenta del vendedor.
+
+**Cortes y cargas por aceptar** — <http://127.0.0.1:8000/panel/cierres>
+
+1. Cada vendedor que hizo su corte en el teléfono aparece con **su corte y la carga que pidió para
+   mañana**, juntos (ADR 0002 §82).
+2. Revisa el efectivo («Entrega $X de $Y · faltan $Z») y el conteo: un producto que el sistema tiene
+   y el vendedor **no contó** sale como «no lo contó» y cuenta como faltante.
+3. En «Se carga», deja vacío para cargar lo que pidió; escribe otro número para cambiarlo, o 0 para
+   quitarlo.
+4. **Aceptar** cierra el corte (lo que falte va a su cuenta, a costo) y confirma la carga de mañana
+   desde la bodega principal. Si el teléfono tiene algo sin subir, no deja y dice por qué.
+5. **Rechazar** pide motivo: le llega al vendedor y puede mandar otra.
 
 **Inventario** — <http://127.0.0.1:8000/panel/inventario>
 
@@ -843,20 +849,35 @@ indistinguible de «no fui».
 4. Escoge **«Cerrado»**: no exige nota, y **no** debe decir que es nuestra culpa.
 5. Después, en el panel → *Efectividad*: la visita perdida aparece con su categoría separada.
 
-### Cobro de efectivo — icono de billetes, solo en clientes que deben
+### Corte del día y solicitud de carga — en «Mi día», al terminar la ruta
 
-1. El botón **solo aparece si el cliente debe algo**. Comprueba que un cliente sin deuda no lo tiene: el
-   día de cobranza lo que se busca es encontrar rápido a quién cobrarle.
-2. El saldo se muestra **con su antigüedad** («Actualizado hace 3 h»). Un número sin fecha se trata como
-   la verdad, y éste es una caché.
-3. Teclea `500` — debe leerse como `500.00`. Prueba también `1,250.5` → `1250.50`.
-4. **La prueba que importa:** cobra **más** de lo que dice que debe. Debe **dejarte**. El dinero ya está
-   sobre el mostrador; si la pantalla lo impidiera, el vendedor se guardaría efectivo sin documento.
-5. Cambia la forma de pago a **transferencia**: debe **exigir referencia**.
-6. Guarda. Aparece el folio y el botón **«Imprimir recibo»** — la impresión es **un toque aparte**, no
-   automática. Sin impresora emparejada, usa **«Ver el recibo en pantalla»** para revisar el papel.
-7. Confirma en el panel → *Cobranza* que el cobro llegó, a qué factura se aplicó, y que si cobraste de
-   más aparece **marcado** con «Cobró más de lo que el cliente debía».
+1. En **Mi día** (solo hoy) aparece «**Cierre del día**» → **Hacer el corte del día**.
+2. Comprueba que **no** se ve cuánto cree el sistema que traes de cada producto: el conteo es a
+   ciegas. Deja uno vacío e intenta terminar — **no debe pasar** («Falta contar: …, escribe 0»).
+3. Escribe el efectivo que entregas y termina. Sale el **ticket del corte**: lo vendido en efectivo y
+   por transferencia, «Faltan/Sobran $X contra lo vendido en efectivo» y el sobrante del camión.
+4. **Compartir** abre la hoja del teléfono (WhatsApp, correo). El texto llega con negritas en WhatsApp.
+5. **Solicitar carga para mañana**: busca productos y escribe cuántas cajas. Envía. Sale el ticket de
+   la solicitud, «Pendiente: la revisa la oficina».
+6. Todo esto funciona **sin señal**. Al sincronizar viaja a la oficina; cuando la acepten, Mi día dice
+   «Carga de mañana ACEPTADA: CG-…» y el ticket cambia a «CARGA ACEPTADA», con lo que de verdad se
+   cargó si la oficina cambió algo.
+
+### Perfil y ubicación del cliente — menú ⋮ de la visita
+
+1. **Perfil y ubicación** muestra los datos del cliente y su ubicación (ADR 0002 §84).
+2. **Tomar con el GPS** llena latitud y longitud y dice el `±N m`. Bajo techo dice que no leyó.
+3. Escríbela a mano, o **pega** «23.2494, -106.4111» en el campo de latitud: se reparte en los dos.
+4. Prueba ponerlas **al revés**, o la longitud sin el signo menos: **no debe guardar**, y lo dice.
+5. Guarda: queda en el teléfono al momento (la geocerca la usa ya) y viaja al sincronizar.
+
+### Recibir una compra — app de Gerencia → Almacén → Entradas
+
+1. **Recibir compra** funciona **sin señal** (ADR 0002 §83): con el modo avión puesto, captura
+   proveedor, productos y cuántas cajas. El costo es **opcional**.
+2. Guarda: «Compra guardada en el teléfono». La tarjeta dice «1 compra(s) por mandar».
+3. Quita el modo avión y toca **Mandar ahora** (o vuelve a abrir Entradas): aparece «Entró: EN-…» y
+   la bodega principal sube. Mandarla dos veces no la suma dos veces.
 
 ### Tablero de Gerencia — se entra por «Entrar como Gerencia» en el login
 

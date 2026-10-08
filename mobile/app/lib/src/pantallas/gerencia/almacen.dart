@@ -2,8 +2,10 @@
 ///
 /// Pedido en operación (octubre 2026): «quiero agregar mercancía desde la app y
 /// traspasar entre almacenes: manejar todo el negocio en modo gerencia». La
-/// pestaña Camiones (cargas y corte) se volvió Almacén, con cinco partes:
+/// pestaña Camiones (cargas y corte) se volvió Almacén, con estas partes:
 ///
+///   · **Cortes y cargas**: lo que mandan los vendedores al terminar el día —su
+///     corte y la carga que piden para mañana— para aceptarlo (ADR 0002 §82).
 ///   · **Existencias**: qué hay en cada bodega y en cada camión.
 ///   · **Entradas**: la mercancía que llega (compra, inventario inicial, ajuste).
 ///   · **Traspasos** de una bodega a otra.
@@ -22,6 +24,7 @@ import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
 import '../../estado/vendedores.dart';
 import 'cargas.dart';
+import 'cierres.dart';
 import 'comunes.dart';
 import 'cortes.dart';
 import 'entradas.dart';
@@ -43,6 +46,13 @@ class PantallaAlmacen extends ConsumerWidget {
     final ver = ref.watch(puedeVerAlmacenProvider);
     // (clave, título, pantalla con o sin barra propia)
     final partes = <(Key, String, Widget Function(bool conBarra))>[
+      // Primero: es lo que el gerente atiende cada tarde.
+      if (ref.watch(puedeCargarProvider))
+        (
+          const Key('pestana_cierres'),
+          'Cortes y cargas',
+          (b) => PantallaCierres(conBarra: b),
+        ),
       if (ver) ...[
         (
           const Key('pestana_existencias'),

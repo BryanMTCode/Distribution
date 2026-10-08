@@ -6,6 +6,9 @@
 /// costo promedio y, si es compra a un proveedor del catálogo, deja la cuenta
 /// por pagar.
 ///
+/// Arriba va «Recibir compra», que funciona sin señal (ADR 0002 §83): ver
+/// `compras.dart`.
+///
 /// Las reglas las pone el servidor y esta pantalla muestra su mensaje tal cual:
 /// bultos enteros, la compra exige costo por bulto, el inventario inicial
 /// exige nota, el producto con lote exige lote, y al camión no se recibe.
@@ -19,6 +22,7 @@ import '../../estado/almacen.dart';
 import '../../estado/vendedores.dart';
 import 'almacen.dart';
 import 'comunes.dart';
+import 'compras.dart';
 
 String _estado(String estado) => switch (estado) {
       'borrador' => 'capturando',
@@ -56,6 +60,10 @@ class _EstadoEntradas extends ConsumerState<PantallaEntradas> {
       setState(() => _error = 'No hay sesión en línea. Sal y vuelve a entrar con señal.');
       return;
     }
+    // Lo que el gerente capturó sin señal se manda en cuanto se puede (§83).
+    // Va antes de pedir la lista para que lo recién recibido salga en ella.
+    await enviarComprasPendientes(ref);
+    if (!mounted) return;
     try {
       final l = await cliente.entradas();
       if (!mounted) return;
@@ -63,6 +71,9 @@ class _EstadoEntradas extends ConsumerState<PantallaEntradas> {
         _lista = l;
         _error = null;
       });
+      // Con señal: que el teléfono tenga el catálogo para la próxima compra
+      // que llegue donde no la hay.
+      await refrescarCatalogoDeCompras(ref);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() => _error = explicarErrorDeOficina(e));
@@ -133,6 +144,10 @@ class _EstadoEntradas extends ConsumerState<PantallaEntradas> {
           key: const Key('lista_entradas'),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
+            // Arriba y fuera de la lista del servidor: sin señal también se ve,
+            // porque es justo cuando hace falta.
+            const TarjetaComprasDelTelefono(),
+            const SizedBox(height: 8),
             if (_error != null) AvisoDeOficina(_error!, esError: true),
             if (l == null && _error == null)
               const Padding(

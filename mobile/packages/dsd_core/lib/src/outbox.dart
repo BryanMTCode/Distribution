@@ -211,6 +211,9 @@ class Outbox {
   static const _documentos = [
     ('venta.crear', 'ventas', 'sincronizada'),
     ('cobro.crear', 'cobros', 'sincronizado'),
+    // El cierre del día (§82).
+    ('corte.crear', 'cortes_vendedor', 'sincronizado'),
+    ('solicitud_carga.crear', 'solicitudes_carga', 'sincronizado'),
     ('merma.crear', 'mermas', 'sincronizada'),
     ('no_drop.crear', 'no_drops', 'sincronizado'),
     ('traspaso.crear', 'traspasos', 'sincronizado'),

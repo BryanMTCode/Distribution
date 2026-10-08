@@ -472,6 +472,95 @@ CREATE TABLE IF NOT EXISTS no_drops (
 );
 
 -- =============================================================================
+-- EL CIERRE DEL DÍA (ADR 0002 §82): el corte del vendedor y la carga que pide
+-- =============================================================================
+-- Los dos nacen aquí, sin señal, y viajan por la cola (`corte.crear`,
+-- `solicitud_carga.crear`). El corte es la palabra del vendedor —lo que contó
+-- arriba del camión y el efectivo que entrega—; lo cierra la oficina al aceptar.
+-- La solicitud vuelve por delta ('solicitud_carga') cuando la oficina la acepta
+-- o la rechaza, con el folio de la carga.
+--
+-- El nombre del producto se guarda con el renglón: el ticket se vuelve a
+-- compartir días después, y tiene que decir lo mismo aunque el catálogo cambie.
+-- Por eso tampoco hay llave foránea a `productos`: un delta con un producto que
+-- el teléfono ya no tiene no puede tumbar la tanda.
+CREATE TABLE IF NOT EXISTS cortes_vendedor (
+    id                  TEXT PRIMARY KEY,
+    fecha_operativa     TEXT NOT NULL,
+    carga_id            TEXT,
+    efectivo_declarado  REAL NOT NULL,
+    -- Lo vendido en efectivo según el teléfono al hacer el corte: es contra lo
+    -- que el vendedor cuadró su bolsa, y lo que dice su ticket.
+    efectivo_esperado   REAL NOT NULL DEFAULT 0,
+    observaciones       TEXT,
+    -- El ticket tal como se generó, para volver a compartirlo sin recalcular.
+    texto_ticket        TEXT,
+    fecha_dispositivo   TEXT NOT NULL,
+    sincronizado        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS corte_vendedor_conteo (
+    corte_id     TEXT NOT NULL REFERENCES cortes_vendedor(id) ON DELETE CASCADE,
+    producto_id  TEXT NOT NULL,
+    nombre       TEXT,
+    cantidad     REAL NOT NULL,
+    PRIMARY KEY (corte_id, producto_id)
+);
+
+CREATE TABLE IF NOT EXISTS solicitudes_carga (
+    id                  TEXT PRIMARY KEY,
+    corte_id            TEXT,
+    -- PARA cuándo: el día siguiente al corte.
+    fecha_operativa     TEXT NOT NULL,
+    -- 'pendiente' | 'aceptada' | 'rechazada' | 'reemplazada', como en el servidor.
+    estado              TEXT NOT NULL DEFAULT 'pendiente',
+    carga_id            TEXT,
+    carga_folio         TEXT,
+    motivo              TEXT,
+    observaciones       TEXT,
+    resuelta_en         TEXT,
+    fecha_dispositivo   TEXT NOT NULL,
+    sincronizado        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS solicitud_carga_detalle (
+    solicitud_id       TEXT NOT NULL REFERENCES solicitudes_carga(id) ON DELETE CASCADE,
+    producto_id        TEXT NOT NULL,
+    nombre             TEXT,
+    unidad_codigo      TEXT NOT NULL,
+    factor             REAL NOT NULL DEFAULT 1,
+    bultos             REAL NOT NULL,
+    cantidad           REAL NOT NULL,
+    -- Lo que dejó la oficina al aceptar. NULL mientras no se resuelve.
+    cantidad_aceptada  REAL,
+    PRIMARY KEY (solicitud_id, producto_id)
+);
+
+-- =============================================================================
+-- COMPRAS DEL GERENTE SIN SEÑAL (ADR 0002 §83)
+-- =============================================================================
+-- El gerente recibe mercancía de un proveedor en la calle, a veces sin señal. La
+-- compra se guarda aquí con el id que le da el teléfono y se manda entera al
+-- tener señal (`POST /v1/almacen/compras`). El servidor la reconoce por ese id:
+-- reintentar no la suma dos veces.
+--
+-- No va por la `outbox` del vendedor a propósito: el gerente no tiene
+-- dispositivo registrado ni folios, y su compra se manda con su sesión, como
+-- todo lo de la oficina. Lo que comparten es la regla: se guarda primero, se
+-- manda después, y se reconoce por su id.
+CREATE TABLE IF NOT EXISTS compras_pendientes (
+    id              TEXT PRIMARY KEY,
+    -- El cuerpo tal como se va a mandar.
+    payload         TEXT NOT NULL,
+    -- 'pendiente' | 'enviada' | 'rechazada'
+    estado          TEXT NOT NULL DEFAULT 'pendiente',
+    folio           TEXT,               -- el de la entrada, cuando el servidor la recibe
+    mensaje         TEXT,               -- lo que contestó el servidor
+    creada_en       TEXT NOT NULL,
+    enviada_en      TEXT
+);
+
+-- =============================================================================
 -- OUTBOX — el corazón de la sincronización
 -- =============================================================================
 -- Se escribe en la MISMA transacción SQLite que el documento de negocio. Si la
@@ -484,7 +573,7 @@ CREATE TABLE IF NOT EXISTS no_drops (
 
 CREATE TABLE IF NOT EXISTS outbox (
     operacion_id    TEXT PRIMARY KEY,          -- uuidv7; llave de idempotencia
-    tipo            TEXT NOT NULL,             -- 'venta.crear','cobro.crear',...
+    tipo            TEXT NOT NULL,             -- 'venta.crear','merma.crear',...
     entidad_id      TEXT NOT NULL,
     payload         TEXT NOT NULL,             -- JSON canónico
     hash_payload    TEXT NOT NULL,             -- SHA-256 del payload canónico

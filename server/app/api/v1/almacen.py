@@ -11,6 +11,8 @@ almacenes desde la app: manejar todo el negocio en modo gerencia». Aquí viven:
   conteo), con las MISMAS funciones que el panel (`app/api/admin/entradas.py`):
   costo por bulto, promedio ponderado y cuenta por pagar al proveedor.
 · **Traspasos** entre bodegas (`app/infra/traspasos.py`).
+· **Compras** que el gerente recibe en la calle (§83): se capturan sin señal y
+  llegan de un jalón, con el id del teléfono, a la bodega principal.
 
 ────────────────────────────────────────────────────────────────────────────
 QUIÉN
@@ -52,6 +54,7 @@ from app.api.deps import ROLES_DE_OFICINA, Actor, ActorDep, SesionDep
 from app.api.esquemas import Cantidad, Dinero
 from app.domain.entradas import MOTIVOS, etiqueta
 from app.domain.importes import CantidadInvalida
+from app.infra.cierre_del_vendedor import bodega_principal
 from app.infra.traspasos import (
     PedidoDeTraspaso,
     TraspasoRechazado,
@@ -210,6 +213,27 @@ class PeticionRenglonDeEntrada(BaseModel):
     costo: str = Field(default="", max_length=20)
     lote: str = Field(default="", max_length=40)
     caducidad: str = Field(default="", max_length=10)
+
+
+class RenglonDeCompra(BaseModel):
+    producto_id: uuid.UUID
+    unidad: str = Field(max_length=20)
+    # Bultos enteros, como texto: se validan con las reglas del panel.
+    cantidad: str = Field(max_length=20)
+    # Por bulto. Vacío: este renglón solo suma inventario (§83).
+    costo: str = Field(default="", max_length=20)
+
+
+class PeticionCompra(BaseModel):
+    # El que le dio el teléfono al capturarla: la llave para no sumarla dos veces.
+    id: uuid.UUID
+    proveedor_id: uuid.UUID | None = None
+    proveedor: str = Field(default="", max_length=160)
+    referencia: str = Field(default="", max_length=80)
+    nota: str = Field(default="", max_length=500)
+    # El día en que llegó la mercancía (`YYYY-MM-DD`), aunque se mande después.
+    fecha: str = Field(default="", max_length=10)
+    renglones: list[RenglonDeCompra] = Field(min_length=1, max_length=300)
 
 
 class PeticionCancelar(BaseModel):
@@ -427,6 +451,88 @@ async def abrir(peticion: PeticionEntrada, actor: ActorDep, sesion: SesionDep) -
     except EntradaRechazada as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return await _entrada(sesion, entrada_id, mensaje="Entrada abierta: agrega lo que llegó.")
+
+
+@router.post("/compras", response_model=Entrada)
+async def recibir_compra(peticion: PeticionCompra, actor: ActorDep, sesion: SesionDep) -> Entrada:
+    """La compra que el gerente recibió en la calle, quizá capturada sin señal (§83).
+
+    De un jalón: abre la entrada con el id del teléfono, agrega los renglones y la
+    confirma en la bodega principal. **Idempotente**: si ese id ya entró, devuelve
+    la misma entrada sin volver a sumar; si quedó en borrador por un intento que
+    se cortó a la mitad, se rehace. Así el teléfono puede reintentar sin miedo
+    cada vez que recupera la señal.
+    """
+    actor.exigir(PERMISO_AJUSTAR)
+    existente = (
+        await sesion.execute(
+            text("SELECT estado, folio FROM entradas WHERE id = :id"), {"id": peticion.id}
+        )
+    ).mappings().first()
+    if existente is not None and existente["estado"] == "confirmada":
+        return await _entrada(
+            sesion,
+            peticion.id,
+            mensaje=f"Esta compra ya se había recibido ({existente['folio']}): no se "
+            "sumó otra vez.",
+        )
+    if existente is not None and existente["estado"] != "borrador":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"La entrada {existente['folio']} de esta compra está {existente['estado']}.",
+        )
+
+    bodega = await bodega_principal(sesion)
+    if bodega is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "No hay ninguna bodega activa.")
+
+    try:
+        if existente is None:
+            await abrir_entrada(
+                sesion,
+                almacen_destino_id=str(bodega["id"]),
+                motivo="compra",
+                proveedor_id=str(peticion.proveedor_id) if peticion.proveedor_id else "",
+                proveedor=peticion.proveedor,
+                referencia=peticion.referencia,
+                fecha=peticion.fecha,
+                nota=peticion.nota,
+                quien=actor.usuario_id,
+                entrada_id=peticion.id,
+                costo_opcional=True,
+            )
+        else:
+            await sesion.execute(
+                text("DELETE FROM entrada_detalle WHERE entrada_id = :e"), {"e": peticion.id}
+            )
+            await sesion.commit()
+        for r in peticion.renglones:
+            sku = (
+                await sesion.execute(
+                    text("SELECT sku FROM productos WHERE id = :p"), {"p": r.producto_id}
+                )
+            ).scalar_one_or_none()
+            if sku is None:
+                raise EntradaRechazada(
+                    "Un producto de la compra ya no existe en el catálogo. Quítalo y "
+                    "vuelve a mandarla."
+                )
+            await agregar_renglon_a_entrada(
+                sesion,
+                peticion.id,
+                producto=sku,
+                unidad_codigo=r.unidad,
+                cantidad=r.cantidad,
+                costo=r.costo,
+                lote="",
+                caducidad="",
+            )
+        aviso = await confirmar_entrada(sesion, peticion.id, quien=actor.usuario_id)
+    except EntradaNoExiste as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+    except (EntradaRechazada, CapturaInvalida, CantidadInvalida) as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return await _entrada(sesion, peticion.id, mensaje=aviso)
 
 
 @router.get("/entradas/{entrada_id}", response_model=Entrada)

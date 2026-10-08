@@ -25,16 +25,18 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from starlette import status
 
 from app.api.deps import ActorDep, SesionDep
 from app.api.esquemas import Dinero
+from app.infra.ubicacion_cliente import UbicacionInvalida, fijar_ubicacion, leer_coordenadas
 
 router = APIRouter(prefix="/oficina/clientes", tags=["oficina"])
 
 PERMISO_VER = "ventas.ver_todas"
+PERMISO_UBICAR = "clientes.ubicar"
 
 # Los filtros de la lista: las preguntas de la oficina.
 FILTROS = {
@@ -99,7 +101,18 @@ class FichaDelCliente(BaseModel):
     comprado_mes: Dinero
     comprado_anio: Dinero
     ventas: list[VentaDelCliente]
+    # Si quien la ve puede fijar o corregir la ubicación (`clientes.ubicar`).
+    puede_ubicar: bool = False
     mensaje: str | None = None
+
+
+class PeticionUbicacion(BaseModel):
+    # Texto: se valida con la regla de los tres caminos (`ubicacion_cliente.py`).
+    lat: str = Field(max_length=24)
+    lng: str = Field(max_length=24)
+    # 'gps' si se tomó parado en el negocio; 'manual' si se escribió o corrigió.
+    origen: str = Field(default="manual", max_length=10)
+    precision_m: str | None = Field(default=None, max_length=12)
 
 
 # ---------------------------------------------------------------------------
@@ -167,11 +180,43 @@ async def lista(
 @router.get("/{cliente_id}", response_model=FichaDelCliente)
 async def ficha(cliente_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> FichaDelCliente:
     actor.exigir(PERMISO_VER)
-    return await ficha_del_cliente(sesion, cliente_id)
+    return await ficha_del_cliente(
+        sesion, cliente_id, puede_ubicar=actor.puede(PERMISO_UBICAR)
+    )
+
+
+@router.post("/{cliente_id}/ubicacion", response_model=FichaDelCliente)
+async def ubicar(
+    cliente_id: uuid.UUID, peticion: PeticionUbicacion, actor: ActorDep, sesion: SesionDep
+) -> FichaDelCliente:
+    """Fija o corrige la ubicación: la del GPS del teléfono o la escrita a mano (§84)."""
+    actor.exigir(PERMISO_VER)
+    actor.exigir(PERMISO_UBICAR)
+    try:
+        lat, lng = leer_coordenadas(peticion.lat, peticion.lng)
+        precision = None
+        if peticion.origen == "gps" and peticion.precision_m:
+            precision = Decimal(peticion.precision_m)
+        await fijar_ubicacion(
+            sesion, cliente_id, lat=lat, lng=lng, origen=peticion.origen,
+            precision_m=precision, quien=actor.usuario_id,
+        )
+    except UbicacionInvalida as e:
+        codigo = status.HTTP_404_NOT_FOUND if "no existe" in str(e) else status.HTTP_409_CONFLICT
+        raise HTTPException(codigo, str(e)) from e
+    except ArithmeticError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, "La precisión no es un número.") from e
+    await sesion.commit()
+    return await ficha_del_cliente(
+        sesion,
+        cliente_id,
+        mensaje="Ubicación guardada. Los teléfonos de su ruta la reciben al sincronizar.",
+        puede_ubicar=True,
+    )
 
 
 async def ficha_del_cliente(
-    sesion, cliente_id: uuid.UUID, *, mensaje: str | None = None
+    sesion, cliente_id: uuid.UUID, *, mensaje: str | None = None, puede_ubicar: bool = False
 ) -> FichaDelCliente:
     c = (
         await sesion.execute(
@@ -225,5 +270,6 @@ async def ficha_del_cliente(
     return FichaDelCliente(
         **datos,
         ventas=[VentaDelCliente(**dict(v)) for v in ventas],
+        puede_ubicar=puede_ubicar,
         mensaje=mensaje,
     )
