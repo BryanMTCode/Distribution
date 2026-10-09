@@ -447,6 +447,11 @@ Dos secciones, cada una con sus botones (ADR 0002 §82). **Primero el corte, des
 
 **Inventario** — <http://127.0.0.1:8000/panel/inventario>
 
+Cada artículo dice su **precio** por pieza y su **valor** (existencia × precio de venta), con el total
+al pie y lo que vale cada almacén en su tarjeta (ADR 0002 §86). Un artículo sin precio dice «sin
+precio» y no suma; el total avisa cuántos son. En la app del gerente lo mismo está en Almacén →
+Existencias.
+
 1. Escoge almacén. El camión es un almacén como cualquier otro: ahí ves lo que trae cada vendedor.
 2. Un número **en negativo no es un error del sistema**: es un conteo por revisar. Pasa cuando se cargó
    más de lo registrado, o cuando una venta offline entró con el camión ya en cero.

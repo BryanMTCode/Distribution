@@ -283,6 +283,7 @@ class _EstadoExistencias extends ConsumerState<PantallaExistencias> {
             children: [
               TextSpan(
                 text: '${x.productos} producto(s) · ${cantidadLegible(x.piezas)} piezas'
+                    ' · ${pesos(x.valor)}'
                     '${x.responsable == null ? '' : '\n${x.responsable}'}',
               ),
               if (x.negativos > 0)
@@ -363,6 +364,19 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
               '${almacen.responsable == null ? '' : ' · ${almacen.responsable}'}',
               style: Theme.of(context).textTheme.titleSmall,
             ),
+            // Lo que vale, como en la hoja de la dirección: existencia × precio de
+            // venta. Lo negativo y lo que no tiene precio no suman.
+            Text(
+              'Vale ${pesos(almacen.valor)} a precio de venta',
+              key: const Key('valor_del_almacen'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (d != null && d.existencias.any((e) => e.precio == null))
+              Text(
+                '${d.existencias.where((e) => e.precio == null).length} artículo(s) sin '
+                'precio no suman: pónselo en el panel, en Productos.',
+                style: TextStyle(color: colores.error),
+              ),
             const SizedBox(height: 8),
             // §0.3: lo del camión es un piso. Lo que vendió sin señal no está.
             if (!almacen.esBodega)
@@ -406,16 +420,29 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(e.nombre),
                   subtitle: Text(
-                    [e.sku, enBultos(e.cantidad, e.presentaciones, e.unidadBase)]
-                        .whereType<String>()
-                        .join(' · '),
+                    [
+                      e.sku,
+                      enBultos(e.cantidad, e.presentaciones, e.unidadBase),
+                      e.precio == null ? 'sin precio' : '${pesos(e.precio!)} c/u',
+                    ].whereType<String>().join(' · '),
                   ),
-                  trailing: Text(
-                    '${cantidadLegible(e.cantidad)} ${e.unidadBase}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: e.negativa ? colores.error : null,
-                    ),
+                  trailing: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${cantidadLegible(e.cantidad)} ${e.unidadBase}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: e.negativa ? colores.error : null,
+                        ),
+                      ),
+                      Text(
+                        e.valor == null ? '—' : pesos(e.valor!),
+                        key: Key('valor_${e.sku}'),
+                        style: TextStyle(color: e.negativa ? colores.error : null),
+                      ),
+                    ],
                   ),
                 ),
             ],

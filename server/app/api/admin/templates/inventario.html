@@ -29,6 +29,7 @@
       <div class="sutil" style="margin-top:6px">
         {{ a.tipo }}{% if a.responsable %} · {{ a.responsable }}{% endif %}
         <div>{{ a.piezas|entero }} unidades base</div>
+        <div id="valor_{{ a.codigo }}">{{ a.valor|dinero }} a precio de venta</div>
         {% if a.negativos %}
           <div style="color:var(--alerta)">{{ a.negativos }} en negativo</div>
         {% endif %}
@@ -74,6 +75,8 @@
       <tr>
         <th>Producto</th>
         <th class="numero">Existencia</th>
+        <th class="numero">Precio</th>
+        <th class="numero">Valor</th>
         <th>Equivale a</th>
         <th class="numero">Actualizado</th>
         {% if puede_ajustar %}<th></th>{% endif %}
@@ -100,6 +103,12 @@
             </div>
           {% endif %}
         </td>
+        <td class="numero sutil">
+          {% if f.precio is not none %}${{ f.precio|precio }}{% else %}<span style="color:var(--alerta)">sin precio</span>{% endif %}
+        </td>
+        <td class="numero" id="valor_{{ f.sku }}">
+          {% if f.valor is not none %}<strong>{{ f.valor|dinero }}</strong>{% else %}—{% endif %}
+        </td>
         <td class="sutil">
           {% if f.presentaciones %}
             {% for p in f.presentaciones %}
@@ -124,11 +133,19 @@
       <tr>
         <td><strong>Total</strong></td>
         <td class="numero"><strong>{{ total_piezas|entero }}</strong> unidades base</td>
+        <td></td>
+        <td class="numero" id="total_valor"><strong>{{ total_valor|dinero }}</strong>
+          {% if sin_precio %}<div class="sutil" style="color:var(--alerta)">{{ sin_precio }} sin precio no suman</div>{% endif %}
+        </td>
         <td colspan="{% if puede_ajustar %}3{% else %}2{% endif %}"></td>
       </tr>
     </tbody>
   </table>
 </div>
+<p class="sutil">
+  El <strong>valor</strong> es la existencia por el precio de venta de la pieza en
+  la lista de precios por omisión. Lo que está en negativo no suma al total.
+</p>
 <p class="sutil">
   Un número en <strong>negativo</strong> no es un error del sistema: es un conteo
   que hay que revisar. Pasa cuando se cargó más de lo que la bodega tenía

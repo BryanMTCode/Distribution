@@ -4811,3 +4811,24 @@ bodega. «Las que salen son muy largas y difíciles de agregar».
   abre nada; solo tiene que ser única.
 
 (migración 0043_clave_del_equipo; versionCode 28)
+
+## 86. Lo que vale el inventario, por artículo
+
+**Decisión (octubre 2026).** «En el inventario quiero que salga el total de dinero
+que hay por cada artículo», como en la hoja de la dirección: existencia × precio
+de venta.
+
+- **El precio** es el de la lista por omisión, por pieza: el de la pieza si lo
+  tiene; si solo tiene el de la caja, la caja entre su factor
+  (`app/infra/valor_de_inventario.py`, uno solo para el panel y la app).
+- **Dónde se ve:** en el Inventario del panel, columnas «Precio» y «Valor» por
+  artículo, el total al pie y lo que vale cada almacén en su tarjeta; en la app
+  del gerente, Almacén → Existencias: lo que vale cada almacén y, por artículo,
+  el precio por pieza y su valor.
+- **Lo negativo** resta en su renglón y no suma al total. **Sin precio no vale
+  cero**: dice «sin precio», no entra al total, y el total avisa cuántos faltan.
+- Es valor **a precio de venta**, no a costo: es lo que la mercancía produce si
+  se vende, que es lo que la hoja calculaba.
+
+(versionCode 29)
+

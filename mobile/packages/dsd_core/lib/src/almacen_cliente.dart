@@ -44,6 +44,7 @@ class AlmacenResumen {
     required this.productos,
     required this.piezas,
     required this.negativos,
+    this.valor = Dinero.cero,
   });
 
   factory AlmacenResumen.deJson(Map<String, Object?> j) => AlmacenResumen(
@@ -55,6 +56,8 @@ class AlmacenResumen {
         productos: (j['productos']! as num).toInt(),
         piezas: j['piezas']! as String,
         negativos: (j['negativos']! as num).toInt(),
+        // Un servidor anterior no lo manda.
+        valor: _dineroONulo(j['valor']) ?? Dinero.cero,
       );
 
   final String id;
@@ -76,6 +79,9 @@ class AlmacenResumen {
   /// Productos en negativo: algo se vendió o se movió sin estar en el sistema.
   final int negativos;
 
+  /// Lo que vale lo que tiene, a precio de venta. Lo negativo no suma.
+  final Dinero valor;
+
   bool get esBodega => tipo == 'bodega';
 }
 
@@ -87,6 +93,8 @@ class ExistenciaDeProducto {
     required this.unidadBase,
     required this.cantidad,
     required this.presentaciones,
+    this.precio,
+    this.valor,
   });
 
   factory ExistenciaDeProducto.deJson(Map<String, Object?> j) => ExistenciaDeProducto(
@@ -96,6 +104,8 @@ class ExistenciaDeProducto {
         unidadBase: j['unidad_base']! as String,
         cantidad: j['cantidad']! as String,
         presentaciones: _presentaciones(j['presentaciones']),
+        precio: _dineroONulo(j['precio']),
+        valor: _dineroONulo(j['valor']),
       );
 
   final String productoId;
@@ -106,6 +116,12 @@ class ExistenciaDeProducto {
 
   /// La más grande primero.
   final List<PresentacionDeCarga> presentaciones;
+
+  /// Precio de venta de la pieza, en la lista por omisión. Nulo sin precio.
+  final Dinero? precio;
+
+  /// Existencia × precio. Nulo si el artículo no tiene precio.
+  final Dinero? valor;
 
   bool get negativa => double.parse(cantidad) < 0;
 }

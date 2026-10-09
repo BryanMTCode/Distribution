@@ -61,6 +61,7 @@ from app.infra.traspasos import (
     traspasar_entre_bodegas,
     traspasos_entre_bodegas,
 )
+from app.infra.valor_de_inventario import precio_de_venta
 
 router = APIRouter(prefix="/almacen", tags=["almacen"])
 
@@ -83,6 +84,8 @@ class AlmacenResumen(BaseModel):
     productos: int
     piezas: Cantidad
     negativos: int
+    # Lo que vale lo que tiene, a precio de venta (lo negativo no suma).
+    valor: Dinero = Decimal(0)
 
 
 class Presentacion(BaseModel):
@@ -97,6 +100,10 @@ class Existencia(BaseModel):
     unidad_base: str
     cantidad: Cantidad
     presentaciones: list[Presentacion]
+    # Precio de venta de la pieza (a centavos, para mostrarlo) y lo que vale la
+    # existencia. Nulos si el artículo no tiene precio en ninguna lista.
+    precio: Dinero | None = None
+    valor: Dinero | None = None
 
 
 class ExistenciasDelAlmacen(BaseModel):
@@ -279,20 +286,23 @@ class TraspasoHecho(BaseModel):
 # ---------------------------------------------------------------------------
 # Existencias
 # ---------------------------------------------------------------------------
-SQL_ALMACENES = """
+SQL_ALMACENES = f"""
 SELECT a.id, a.codigo, a.nombre, a.tipo, u.nombre AS responsable,
        COALESCE(x.productos, 0) AS productos, COALESCE(x.piezas, 0) AS piezas,
-       COALESCE(x.negativos, 0) AS negativos
+       COALESCE(x.negativos, 0) AS negativos, COALESCE(x.valor, 0) AS valor
   FROM almacenes a
   LEFT JOIN usuarios u ON u.id = a.responsable_id
   LEFT JOIN LATERAL (
         SELECT count(*) FILTER (WHERE e.cantidad <> 0) AS productos,
                sum(e.cantidad) FILTER (WHERE e.cantidad > 0) AS piezas,
-               count(*) FILTER (WHERE e.cantidad < 0) AS negativos
-          FROM existencias e WHERE e.almacen_id = a.id
+               count(*) FILTER (WHERE e.cantidad < 0) AS negativos,
+               sum(round(e.cantidad * pv.precio, 2)) FILTER (WHERE e.cantidad > 0) AS valor
+          FROM existencias e
+          {precio_de_venta("e.producto_id")}
+         WHERE e.almacen_id = a.id
   ) x ON true
  WHERE a.activo AND a.tipo IN ('bodega', 'camion')
-"""
+"""  # noqa: S608 — fragmento constante del código
 
 SQL_PRESENTACIONES = """
 LEFT JOIN LATERAL (
@@ -345,10 +355,12 @@ async def existencias(
             text(
                 f"""
                 SELECT e.producto_id, p.sku, p.nombre, p.unidad_base, e.cantidad,
-                       pres.presentaciones
+                       pres.presentaciones,
+                       pv.precio, round(e.cantidad * pv.precio, 2) AS valor
                   FROM existencias e
                   JOIN productos p ON p.id = e.producto_id
                   {SQL_PRESENTACIONES}
+                  {precio_de_venta("p.id")}
                  WHERE e.almacen_id = :a AND e.cantidad <> 0 {filtro}
                  ORDER BY p.nombre
                  LIMIT 1000
@@ -361,7 +373,8 @@ async def existencias(
         almacen=AlmacenResumen(**dict(almacen)),
         existencias=[
             Existencia(
-                **{k: f[k] for k in ("producto_id", "sku", "nombre", "unidad_base", "cantidad")},
+                **{k: f[k] for k in ("producto_id", "sku", "nombre", "unidad_base", "cantidad",
+                                     "precio", "valor")},
                 presentaciones=_presentaciones(f["presentaciones"]),
             )
             for f in filas

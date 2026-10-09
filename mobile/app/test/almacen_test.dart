@@ -23,6 +23,7 @@ const _presentaciones = [
 const _bodega = {
   'id': 'b1', 'codigo': 'BODEGA_PRINCIPAL', 'nombre': 'Bodega', 'tipo': 'bodega',
   'responsable': null, 'productos': 1, 'piezas': '760.000', 'negativos': 0,
+  'valor': '7600.00',
 };
 
 const _camion = {
@@ -82,9 +83,11 @@ class _ServidorDeAlmacen implements Transporte {
           'almacen': _bodega,
           'existencias': [
             {'producto_id': 'p1', 'sku': 'ATUN-140', 'nombre': 'Atún en agua 140 g',
-             'unidad_base': 'PZA', 'cantidad': '760.000', 'presentaciones': _presentaciones},
+             'unidad_base': 'PZA', 'cantidad': '760.000', 'presentaciones': _presentaciones,
+             'precio': '10.00', 'valor': '7600.00'},
             {'producto_id': 'p2', 'sku': 'COCA600', 'nombre': 'Coca 600 ml',
-             'unidad_base': 'PZA', 'cantidad': '12.000', 'presentaciones': _presentaciones},
+             'unidad_base': 'PZA', 'cantidad': '12.000', 'presentaciones': _presentaciones,
+             'precio': null, 'valor': null},
           ],
         },
       '/v1/almacen/c1/existencias' => {
@@ -255,6 +258,13 @@ void main() {
       // 760 piezas con caja de 24: 31 cajas y 16 piezas, como en el anaquel.
       expect(textoQueContiene('31 CAJA + 16 PZA'), findsOneWidget);
       expect(find.text('760 PZA'), findsOneWidget);
+      // Y lo que vale, artículo por artículo y el almacén entero.
+      expect(textoQueContiene(r'$10.00 c/u'), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('valor_ATUN-140'))).data,
+          r'$7,600.00');
+      expect(tester.widget<Text>(find.byKey(const Key('valor_COCA600'))).data, '—');
+      expect(textoQueContiene('Vale \$7,600.00 a precio de venta'), findsOneWidget);
+      expect(textoQueContiene('1 artículo(s) sin precio no suman'), findsOneWidget);
 
       await tester.enterText(find.byKey(const Key('campo_buscar_existencia')), 'coca');
       await tester.pumpAndSettle();

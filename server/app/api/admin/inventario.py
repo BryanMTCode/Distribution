@@ -42,6 +42,7 @@ from sqlalchemy import text
 
 from app.api.admin.comun import CapturaInvalida, SesionDep, render
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.valor_de_inventario import precio_de_venta
 
 # Los almacenes que se pueden ajustar a mano desde el panel.
 TIPOS_AJUSTABLES = ("camion", "bodega")
@@ -72,23 +73,29 @@ async def listar(
     almacenes = (
         await sesion.execute(
             text(
-                """
+                f"""
                 SELECT a.id, a.codigo, a.nombre, a.tipo,
                        u.nombre AS responsable,
                        COALESCE(e.renglones, 0) AS renglones,
                        COALESCE(e.piezas, 0) AS piezas,
-                       COALESCE(e.negativos, 0) AS negativos
+                       COALESCE(e.negativos, 0) AS negativos,
+                       COALESCE(e.valor, 0) AS valor
                   FROM almacenes a
                   LEFT JOIN usuarios u ON u.id = a.responsable_id
                   LEFT JOIN LATERAL (
-                        SELECT count(*) FILTER (WHERE cantidad <> 0) AS renglones,
-                               sum(cantidad) AS piezas,
-                               count(*) FILTER (WHERE cantidad < 0) AS negativos
-                          FROM existencias WHERE almacen_id = a.id
+                        SELECT count(*) FILTER (WHERE x.cantidad <> 0) AS renglones,
+                               sum(x.cantidad) AS piezas,
+                               count(*) FILTER (WHERE x.cantidad < 0) AS negativos,
+                               -- Lo que vale, a precio de venta (lo negativo no resta).
+                               sum(round(x.cantidad * pv.precio, 2))
+                                 FILTER (WHERE x.cantidad > 0) AS valor
+                          FROM existencias x
+                          {precio_de_venta("x.producto_id")}
+                         WHERE x.almacen_id = a.id
                   ) e ON true
                  WHERE a.activo
                  ORDER BY a.tipo, a.codigo
-                """
+                """  # noqa: S608 — fragmento constante del código
             )
         )
     ).mappings().all()
@@ -104,6 +111,8 @@ async def listar(
                 "q": "",
                 "filtro": filtro,
                 "total_piezas": Decimal(0),
+                "total_valor": Decimal(0),
+                "sin_precio": 0,
             },
             actor=actor,
             seccion="Inventario",
@@ -142,6 +151,7 @@ async def listar(
                 SELECT p.id, p.sku, p.nombre, p.unidad_base, p.activo,
                        e.cantidad, e.actualizado_en,
                        pu.presentaciones,
+                       pv.precio, round(e.cantidad * pv.precio, 2) AS valor,
                        -- La suma del libro mayor para este almacén y producto.
                        -- Si no cuadra con la caché, alguna transacción escribió
                        -- una y no la otra: es un bug, no un dato.
@@ -166,6 +176,7 @@ async def listar(
                            AND (almacen_origen_id = e.almacen_id
                                 OR almacen_destino_id = e.almacen_id)
                   ) m ON true
+                  {precio_de_venta("p.id")}
                  WHERE {" AND ".join(condiciones)}
                  ORDER BY p.nombre
                  LIMIT 500
@@ -190,6 +201,16 @@ async def listar(
             "q": busqueda,
             "filtro": filtro,
             "total_piezas": sum((Decimal(f["cantidad"]) for f in filas), Decimal(0)),
+            # El total de lo que se ve, a precio de venta, como el de la tarjeta del
+            # almacén: lo negativo no suma. Lo que no tiene precio tampoco, y se
+            # dice cuántos son: un total que parece completo y no lo está es peor
+            # que uno que avisa.
+            "total_valor": sum(
+                (Decimal(f["valor"]) for f in filas
+                 if f["valor"] is not None and f["cantidad"] > 0),
+                Decimal(0),
+            ),
+            "sin_precio": sum(1 for f in filas if f["precio"] is None),
             "puede_ajustar": (
                 elegido["tipo"] in TIPOS_AJUSTABLES
                 and actor.puede("inventario.ajustar")
