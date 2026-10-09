@@ -1,4 +1,4 @@
-"""Comandos de línea. Hoy uno: crear el primer usuario de oficina.
+"""Comandos de línea: el primer usuario de oficina, los recálculos y la base en blanco.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -196,11 +196,69 @@ async def recalcular_tablero() -> int:
     return 0
 
 
+async def base_en_blanco() -> int:
+    """Vacía la base —se quedan los usuarios— y carga los artículos reales.
+
+    Lo que se queda y lo que se va está en `app/infra/base_en_blanco.py`. Pide
+    escribir una frase para confirmar: no se deshace sin el respaldo.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import (
+        PALABRA,
+        ArticulosInvalidos,
+        leer_articulos,
+        lo_que_se_borra,
+        lo_que_se_queda,
+        poner_en_blanco,
+        quien_registra,
+    )
+
+    try:
+        articulos = leer_articulos()
+    except ArticulosInvalidos as e:
+        print(f"ERROR en el archivo de artículos: {e}")
+        return 1
+
+    async with CrearSesion() as sesion:
+        se_va = await lo_que_se_borra(sesion)
+        se_queda = await lo_que_se_queda(sesion)
+        print("BASE EN BLANCO\n")
+        print("Se QUEDAN: " + ", ".join(f"{n} {t}" for t, n in se_queda.items())
+              + ", con roles, permisos, listas de precios y motivos.")
+        print("Se BORRA todo lo demás, entre ello: "
+              + ", ".join(f"{n} {t}" for t, n in se_va.items()) + ".")
+        print(f"Se cargan {len(articulos)} artículos con su precio y su existencia en bodega.\n")
+        print("Haz el respaldo ANTES:  bash scripts/en_el_servidor.sh respaldar.sh")
+        print("Esto no se deshace sin ese respaldo.\n")
+        if input(f"Para seguir escribe {PALABRA}: ").strip().upper() != PALABRA:
+            print("No se borró nada.")
+            return 1
+
+        try:
+            resultado = await poner_en_blanco(
+                sesion, articulos, quien=await quien_registra(sesion)
+            )
+        except ArticulosInvalidos as e:
+            print(f"ERROR: {e}. No se borró nada.")
+            return 1
+
+    print(f"\nListo. {resultado.articulos} artículos en {resultado.familias} familias.")
+    if resultado.entrada:
+        print(f"Inventario inicial {resultado.entrada}: {resultado.piezas:,} piezas "
+              f"{resultado.aviso_inventario}.")
+    elif resultado.aviso_inventario:
+        print(f"OJO: {resultado.aviso_inventario}")
+    print("\nEn cada teléfono: Ajustes → Apps → la app → Almacenamiento → Borrar datos, y")
+    print("vincúlalo otra vez con su clave (Panel → Teléfonos). Sin eso conserva lo de antes.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
         "refrescar-analitica": refrescar_analitica,
         "recalcular-tablero": recalcular_tablero,
+        "base-en-blanco": base_en_blanco,
     }
     if len(sys.argv) != 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")

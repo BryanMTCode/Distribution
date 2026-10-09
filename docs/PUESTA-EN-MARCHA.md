@@ -834,3 +834,40 @@ Se mitiga de dos formas y conviene tener las dos:
 
 Está en `DESPLIEGUE.md` §0, y es lo único de la mudanza al VPS que empeoró respecto
 de tener el servidor en la oficina.
+
+## Anexo · Poner la base en blanco para empezar las pruebas
+
+**DÓNDE:** en el **servidor**, por SSH.
+
+Vacía la base y deja **solo** a los usuarios —con sus roles, permisos y rutas—,
+los almacenes (bodegas y camiones), los teléfonos vinculados con su clave, las
+listas de precios y los motivos. Se borra todo lo demás: productos, clientes,
+ventas, cargas, cortes, mermas, entradas, existencias, cuentas y la bitácora.
+Después carga los **25 artículos** de `server/db/semillas/articulos_distribuciones_se.csv`
+(el Excel de la dirección, en cinco familias) con su precio de venta, y su
+existencia entra a la bodega principal como **inventario inicial** (`EN-000001`).
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh         # PRIMERO el respaldo
+docker compose stop api worker                       # que nadie escriba mientras
+docker compose run --rm api python -m app.cli base-en-blanco
+docker compose start api worker
+```
+
+Antes de borrar dice cuánto hay y pide escribir `EN BLANCO`; con cualquier otra
+cosa no toca nada.
+
+**✅ Debes ver** «Listo. 25 artículos en 5 familias» y «Inventario inicial
+EN-000001: 10,561 piezas en …». En el panel, *Productos* tiene los 25 y
+*Inventario* muestra la bodega con su existencia.
+
+**⚠️ Los teléfonos guardan lo de antes.** En cada uno —vendedores y gerente—:
+*Ajustes → Apps → la app → Almacenamiento → Borrar datos*, y vincúlalo otra vez
+con su **clave** (Panel → Teléfonos; si no tiene, «Poner clave»). Sin eso seguiría
+ofreciendo los productos y los clientes viejos.
+
+**⚠️ Para cambiar los artículos** edita el CSV —una fila por artículo: SKU,
+nombre, familia, existencia en piezas y precio de venta por pieza— antes de
+correrlo. Los precios entran sin IVA desglosado: el precio es lo que se cobra.
+

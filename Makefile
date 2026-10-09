@@ -178,6 +178,9 @@ refrescar-analitica:  ## Recalcula el esquema estrella del laboratorio
 recalcular-tablero:  ## Recalcula los modelos de lectura del tablero de Gerencia
 	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli recalcular-tablero
 
+base-en-blanco:  ## Vacía la base (se quedan los usuarios) y carga los artículos reales
+	cd server && DSD_DATABASE_URL="$(DB)" .venv/bin/python -m app.cli base-en-blanco
+
 respaldo:  ## Respalda la base (DSD_RESPALDOS para elegir la carpeta)
 	DSD_RESPALDO_URL="$(RESPALDO_URL)" bash scripts/respaldar.sh
 
