@@ -45,7 +45,7 @@ from decimal import Decimal
 from sqlalchemy import text
 
 from app.api.admin.cargas import _bloqueos_para_cargar, _leer_bultos, mover_y_confirmar
-from app.api.admin.comun import CapturaInvalida, dinero
+from app.api.admin.comun import CapturaInvalida, dinero, leer_dinero
 from app.api.admin.liquidaciones import (
     CorteNoExiste,
     CorteRechazado,
@@ -324,8 +324,14 @@ async def _corte(sesion, corte_id: uuid.UUID) -> dict | None:
         "fecha_operativa": c["fecha_operativa"],
         "estado": c["estado"],
         "efectivo_declarado": c["efectivo_declarado"],
+        # Lo que el gerente contó al cerrar (§87); nulo mientras no se cierra.
+        "efectivo_recibido": c["efectivo_recibido"],
         "efectivo_esperado": esperado,
-        "diferencia_efectivo": c["efectivo_declarado"] - esperado,
+        "diferencia_efectivo": (
+            c["efectivo_recibido"]
+            if c["efectivo_recibido"] is not None
+            else c["efectivo_declarado"]
+        ) - esperado,
         "observaciones": c["observaciones"],
         "recibido_en": c["recibido_en"],
         "resuelto_en": c["resuelto_en"],
@@ -513,8 +519,20 @@ async def _solicitud(sesion, solicitud_id: uuid.UUID) -> dict | None:
 # ---------------------------------------------------------------------------
 # Cerrar el corte y aceptar la carga: cada uno por su lado
 # ---------------------------------------------------------------------------
-async def cerrar_corte_del_vendedor(sesion, corte_id: uuid.UUID, *, quien: uuid.UUID) -> str:
-    """Cierra el corte que mandó el vendedor. Devuelve el aviso para la pantalla."""
+async def cerrar_corte_del_vendedor(
+    sesion,
+    corte_id: uuid.UUID,
+    *,
+    quien: uuid.UUID,
+    efectivo_recibido: str | None = None,
+) -> str:
+    """Cierra el corte que mandó el vendedor. Devuelve el aviso para la pantalla.
+
+    `efectivo_recibido` es lo que el gerente contó en la mano (ADR 0002 §87): el
+    arqueo y lo que se carga a la cuenta del vendedor salen de ahí, no de lo que
+    el vendedor declaró. Vacío vale lo declarado —así cerraba la app anterior a
+    la versión +30—.
+    """
     corte = (
         await sesion.execute(text("SELECT * FROM cortes_vendedor WHERE id = :c"), {"c": corte_id})
     ).mappings().first()
@@ -526,7 +544,13 @@ async def cerrar_corte_del_vendedor(sesion, corte_id: uuid.UUID, *, quien: uuid.
         )
     if corte["estado"] != "pendiente":
         raise CierreRechazado(f"Ese corte ya está {corte['estado']}.")
-    return await _cerrar_el_corte(sesion, dict(corte), quien)
+    recibido = None
+    if (efectivo_recibido or "").strip():
+        try:
+            recibido = leer_dinero(efectivo_recibido, campo="El efectivo recibido")
+        except CapturaInvalida as e:
+            raise CierreRechazado(str(e)) from e
+    return await _cerrar_el_corte(sesion, dict(corte), quien, recibido=recibido)
 
 
 async def aceptar_solicitud(
@@ -619,11 +643,19 @@ async def aceptar(
     return " ".join(avisos)
 
 
-async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
-    """El corte del vendedor, cerrado con las funciones del corte de siempre."""
+async def _cerrar_el_corte(
+    sesion, corte: dict, quien: uuid.UUID, *, recibido: Decimal | None = None
+) -> str:
+    """El corte del vendedor, cerrado con las funciones del corte de siempre.
+
+    `recibido` es lo que contó el gerente; sin él, vale lo declarado.
+    """
+    declarado = corte["efectivo_declarado"]
+    if recibido is None:
+        recibido = declarado
     carga = await _carga_del_corte(sesion, corte)
     if carga is None:
-        await _marcar_corte(sesion, corte["id"], quien, None,
+        await _marcar_corte(sesion, corte["id"], quien, None, recibido=recibido,
                             nota="no había carga abierta que liquidar")
         await sesion.commit()
         return (
@@ -652,11 +684,12 @@ async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
     try:
         liquidacion_id = await abrir_corte(sesion, carga["id"])
         # Nadie cuenta el camión: lo que le queda es lo que el sistema calcula
-        # (`conteo_automatico`), y lo único que el vendedor declara es el efectivo.
+        # (`conteo_automatico`). El efectivo sí se cuenta, y lo cuenta quien lo
+        # recibe: el arqueo es con lo recibido, no con lo declarado (§87).
         await guardar_arqueo(
             sesion,
             liquidacion_id,
-            format(corte["efectivo_declarado"], "f"),
+            format(recibido, "f"),
             corte["observaciones"] or "",
         )
         # La confirmación de «el teléfono terminó de subir» la da el corte mismo:
@@ -668,24 +701,46 @@ async def _cerrar_el_corte(sesion, corte: dict, quien: uuid.UUID) -> str:
     except (CorteNoExiste, CorteRechazado, CapturaInvalida) as e:
         raise CierreRechazado(f"El corte no se pudo cerrar: {e}") from e
 
-    await _marcar_corte(sesion, corte["id"], quien, liquidacion_id, nota=None)
+    no_coincide = recibido != declarado
+    await _marcar_corte(
+        sesion, corte["id"], quien, liquidacion_id, recibido=recibido,
+        nota=(
+            f"declaró {dinero(declarado)} y el gerente recibió {dinero(recibido)}"
+            if no_coincide else None
+        ),
+    )
     await sesion.commit()
+    if no_coincide:
+        diferencia = recibido - declarado
+        cuanto = (
+            f"faltan {dinero(-diferencia)}" if diferencia < 0 else f"sobran {dinero(diferencia)}"
+        )
+        aviso += (
+            f" OJO: el vendedor declaró {dinero(declarado)} y se recibieron "
+            f"{dinero(recibido)}: {cuanto} de lo que dijo. El arqueo es con lo recibido."
+        )
     return aviso
 
 
 async def _marcar_corte(
-    sesion, corte_id: uuid.UUID, quien: uuid.UUID, liquidacion_id, *, nota: str | None
+    sesion,
+    corte_id: uuid.UUID,
+    quien: uuid.UUID,
+    liquidacion_id,
+    *,
+    nota: str | None,
+    recibido: Decimal | None = None,
 ) -> None:
     await sesion.execute(
         text(
             "UPDATE cortes_vendedor "
             "   SET estado = 'cerrado', liquidacion_id = :l, resuelto_por = :q, "
-            "       resuelto_en = now(), "
+            "       resuelto_en = now(), efectivo_recibido = :r, "
             "       nota = CASE WHEN CAST(:nota AS text) IS NULL THEN nota "
             "                   ELSE concat_ws('; ', nota, CAST(:nota AS text)) END "
             " WHERE id = :c"
         ),
-        {"c": corte_id, "q": quien, "l": liquidacion_id, "nota": nota},
+        {"c": corte_id, "q": quien, "l": liquidacion_id, "nota": nota, "r": recibido},
     )
 
 
@@ -927,9 +982,21 @@ async def rechazar_solicitud(
 
 
 def resumen_de_efectivo(corte: dict) -> str:
-    """Una línea para la lista: lo que entregó contra lo que vendió en efectivo."""
+    """Una línea para la lista: lo que entregó contra lo que vendió en efectivo.
+
+    Por cerrar, es lo que declaró el vendedor; cerrado, lo que recibió el
+    gerente, y lo declarado al lado si no coincidió.
+    """
     diferencia = corte["diferencia_efectivo"]
-    base = f"Entrega {dinero(corte['efectivo_declarado'])} de {dinero(corte['efectivo_esperado'])}"
+    declarado = corte["efectivo_declarado"]
+    recibido = corte.get("efectivo_recibido")
+    esperado = dinero(corte["efectivo_esperado"])
+    if recibido is None:
+        base = f"Declara {dinero(declarado)} de {esperado}"
+    else:
+        base = f"Entregó {dinero(recibido)} de {esperado}"
+        if recibido != declarado:
+            base += f" (declaró {dinero(declarado)})"
     if diferencia == 0:
         return base + " · cuadra"
     if diferencia < 0:

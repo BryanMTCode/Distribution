@@ -180,14 +180,26 @@ void main() {
       expect(find.byKey(const Key('pantalla_corte_vendedor')), findsOneWidget);
       expect(textoQueContiene('Traía 0 · cargó 240 · vendió 180'), findsOneWidget);
       expect(textoQueContiene('60 PZA'), findsOneWidget);
+
+      // El efectivo lo cuenta el gerente: arranca en lo declarado (ADR 0002 §87).
+      final campo = find.byKey(const Key('campo_efectivo_recibido'));
+      expect(tester.widget<TextField>(campo).controller!.text, '2200.00');
+      expect(textoQueContiene(r'faltan $50.00. Lo que falta se carga'), findsOneWidget);
+      await tester.enterText(campo, '2,100');
+      await tester.pumpAndSettle();
+      expect(textoQueContiene(r'faltan $150.00. Lo que falta se carga'), findsOneWidget);
+
       await tester.ensureVisible(find.byKey(const Key('boton_cerrar_corte_vendedor')));
       await tester.tap(find.byKey(const Key('boton_cerrar_corte_vendedor')));
       await tester.pumpAndSettle();
 
       expect(servidor.posts.single.$1, '/v1/cierres/cortes/k1/cerrar');
+      expect(servidor.posts.single.$2, {'efectivo_recibido': '2100.00'});
       expect(textoQueContiene('Liquidación LQ-000004 cerrada'), findsOneWidget);
-      // Cerrado, ya no está por cerrar.
+      // Cerrado, ya no está por cerrar, y dice lo que se recibió.
       expect(find.byKey(const Key('corte_vendedor_VEND01')), findsNothing);
+      expect(textoQueContiene(r'Entregó $2,100.00 de $2,250.00 (declaró $2,200.00)'),
+          findsOneWidget);
     });
 
     testWidgets('en «Cargas», con el corte abierto la carga espera', (tester) async {
@@ -297,8 +309,11 @@ class _ServidorDeCierres implements Transporte {
         'corte_por_cerrar': null,
         'corte': {
           'id': 'k1', 'fecha_operativa': '2026-09-24', 'estado': estado,
-          'efectivo_declarado': '2200.00', 'efectivo_esperado': '2250.00',
-          'diferencia_efectivo': '-50.00', 'observaciones': null,
+          'efectivo_declarado': '2200.00',
+          'efectivo_recibido': estado == 'cerrado' ? '2100.00' : null,
+          'efectivo_esperado': '2250.00',
+          'diferencia_efectivo': estado == 'cerrado' ? '-150.00' : '-50.00',
+          'observaciones': null,
           'recibido_en': '2026-09-25T01:30:00Z', 'resuelto_en': null,
           'liquidacion_folio': estado == 'cerrado' ? 'LQ-000004' : null, 'nota': null,
           'renglones': [

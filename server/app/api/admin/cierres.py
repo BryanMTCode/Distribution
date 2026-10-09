@@ -2,8 +2,8 @@
 
 El vendedor hace su corte y pide la carga de mañana desde el teléfono. Aquí la
 oficina los resuelve POR SEPARADO (ADR 0002 §82): primero cierra el corte —el
-camión no se cuenta, se queda con lo que calcula el sistema; si no entregó el
-efectivo, lo que falte va a su cuenta— y después acepta la carga, que se crea y
+camión no se cuenta, se queda con lo que calcula el sistema; el efectivo lo
+cuenta quien lo recibe (§87) y lo que falte va a su cuenta— y después acepta la carga, que se crea y
 se confirma desde la bodega principal. Todo lo que decide algo está en
 `app/infra/cierre_del_vendedor.py`, el mismo que usa la app del gerente
 (`/v1/cierres`).
@@ -73,7 +73,10 @@ async def cerrar_corte(peticion: Request, actor: ActorWeb, sesion: SesionDep, co
     formulario = await peticion.form()
     exigir_csrf(peticion, str(formulario.get("csrf", "")))
     try:
-        aviso = await cerrar_corte_del_vendedor(sesion, corte_id, quien=actor.usuario_id)
+        aviso = await cerrar_corte_del_vendedor(
+            sesion, corte_id, quien=actor.usuario_id,
+            efectivo_recibido=str(formulario.get("efectivo_recibido") or ""),
+        )
     except (CierreNoExiste, CierreRechazado) as e:
         return _volver(error=str(e))
     return _volver(guardado=aviso)

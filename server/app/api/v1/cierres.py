@@ -75,7 +75,10 @@ class CorteDelVendedor(BaseModel):
     fecha_operativa: date
     estado: str
     efectivo_declarado: Dinero
+    # Lo que contó el gerente al cerrar (§87); nulo mientras no se cierra.
+    efectivo_recibido: Dinero | None = None
     efectivo_esperado: Dinero
+    # Contra lo recibido si ya se cerró; si no, contra lo declarado.
     diferencia_efectivo: Dinero
     observaciones: str | None
     recibido_en: datetime
@@ -143,6 +146,12 @@ class PeticionAceptar(BaseModel):
     bultos: dict[str, str] = Field(default_factory=dict, max_length=500)
 
 
+class PeticionCerrarCorte(BaseModel):
+    # Lo que el gerente contó en la mano. Vacío vale lo declarado por el
+    # vendedor: así cerraba la app anterior a la versión +30.
+    efectivo_recibido: str | None = Field(default=None, max_length=20)
+
+
 class PeticionAceptarSolicitud(BaseModel):
     # De id de producto a cuántos bultos (de la presentación que pidió); «0» lo
     # quita. Lo que no viene se acepta como se pidió.
@@ -173,10 +182,19 @@ async def cortes(actor: ActorDep, sesion: SesionDep) -> Cierres:
 
 
 @router.post("/cortes/{corte_id}/cerrar", response_model=Cierre)
-async def cerrar_corte(corte_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> Cierre:
+async def cerrar_corte(
+    corte_id: uuid.UUID,
+    actor: ActorDep,
+    sesion: SesionDep,
+    peticion: PeticionCerrarCorte | None = None,
+) -> Cierre:
+    """Cierra el corte con el efectivo que contó el gerente."""
     actor.exigir(PERMISO_CERRAR)
     try:
-        aviso = await cerrar_corte_del_vendedor(sesion, corte_id, quien=actor.usuario_id)
+        aviso = await cerrar_corte_del_vendedor(
+            sesion, corte_id, quien=actor.usuario_id,
+            efectivo_recibido=peticion.efectivo_recibido if peticion else None,
+        )
     except (CierreNoExiste, CierreRechazado) as e:
         raise _error(e) from e
     return Cierre(**await un_cierre(sesion, corte_id=corte_id), mensaje=aviso)

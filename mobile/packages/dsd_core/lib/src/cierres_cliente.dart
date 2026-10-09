@@ -71,6 +71,7 @@ class CorteRecibido {
     required this.diferenciaEfectivo,
     required this.recibidoEn,
     required this.renglones,
+    this.efectivoRecibido,
     this.observaciones,
     this.liquidacionFolio,
     this.nota,
@@ -81,6 +82,8 @@ class CorteRecibido {
         fechaOperativa: j['fecha_operativa']! as String,
         estado: j['estado']! as String,
         efectivoDeclarado: _d(j['efectivo_declarado']),
+        efectivoRecibido:
+            j['efectivo_recibido'] == null ? null : _d(j['efectivo_recibido']),
         efectivoEsperado: _d(j['efectivo_esperado']),
         diferenciaEfectivo: _d(j['diferencia_efectivo']),
         observaciones: j['observaciones'] as String?,
@@ -98,10 +101,15 @@ class CorteRecibido {
 
   /// 'pendiente' | 'cerrado' | 'reemplazado'.
   final String estado;
+  /// Lo que el vendedor dijo que entrega.
   final Dinero efectivoDeclarado;
+
+  /// Lo que el gerente contó al cerrar (ADR 0002 §87). Nulo mientras no se cierra.
+  final Dinero? efectivoRecibido;
   final Dinero efectivoEsperado;
 
-  /// Negativo: faltan. Positivo: sobran.
+  /// Negativo: faltan. Positivo: sobran. Contra lo recibido si ya se cerró; si
+  /// no, contra lo declarado.
   final Dinero diferenciaEfectivo;
   final String? observaciones;
   final DateTime recibidoEn;
@@ -314,8 +322,10 @@ class ClienteCierres {
   /// Las cargas pedidas por aceptar y las resueltas esta semana.
   Future<Cierres> solicitudes() => _lista('/v1/cierres/solicitudes');
 
-  Future<CierreDeVendedor> cerrarCorte(String corteId) =>
-      _post('/v1/cierres/cortes/$corteId/cerrar', const {});
+  /// Cierra el corte con el efectivo que contó el gerente: de ahí sale el
+  /// arqueo, no de lo que declaró el vendedor.
+  Future<CierreDeVendedor> cerrarCorte(String corteId, {required Dinero efectivoRecibido}) =>
+      _post('/v1/cierres/cortes/$corteId/cerrar', {'efectivo_recibido': efectivoRecibido.texto});
 
   /// Crea y confirma la carga. `bultos` corrige lo pedido (de id de producto a
   /// bultos de la misma presentación; «0» lo quita).

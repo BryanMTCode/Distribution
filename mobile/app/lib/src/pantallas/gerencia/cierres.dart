@@ -33,11 +33,29 @@ ClienteCierres? _cliente(WidgetRef ref) {
   return t == null ? null : ClienteCierres(t);
 }
 
+/// Por cerrar, lo que declaró el vendedor; cerrado, lo que recibió el gerente
+/// (ADR 0002 §87), con lo declarado al lado si no coincidió.
 String _efectivoEnPalabras(CorteRecibido c) {
   final d = c.diferenciaEfectivo;
-  final base = 'Entrega ${pesos(c.efectivoDeclarado)} de ${pesos(c.efectivoEsperado)}';
-  if (d.esCero) return '$base · cuadra';
-  return d.esNegativo ? '$base · faltan ${pesos(-d)}' : '$base · sobran ${pesos(d)}';
+  final recibido = c.efectivoRecibido;
+  final base = recibido == null
+      ? 'Declara ${pesos(c.efectivoDeclarado)} de ${pesos(c.efectivoEsperado)}'
+      : 'Entregó ${pesos(recibido)} de ${pesos(c.efectivoEsperado)}'
+          '${recibido == c.efectivoDeclarado ? '' : ' (declaró ${pesos(c.efectivoDeclarado)})'}';
+  return '$base · ${_cuadre(d)}';
+}
+
+String _cuadre(Dinero d) {
+  if (d.esCero) return 'cuadra';
+  return d.esNegativo ? 'faltan ${pesos(-d)}' : 'sobran ${pesos(d)}';
+}
+
+/// «2,100.50» → `Dinero`. Nulo si no se entiende; el vacío también.
+Dinero? _leerPesos(String texto) {
+  final limpio = texto.trim().replaceAll(',', '').replaceAll(r'$', '');
+  final m = RegExp(r'^(\d{1,9})(?:\.(\d{1,2}))?$').firstMatch(limpio);
+  if (m == null) return null;
+  return Dinero.deTexto('${m.group(1)}.${(m.group(2) ?? '').padRight(2, '0')}');
 }
 
 /// La lista de una de las dos secciones, que se carga sola.
@@ -163,18 +181,37 @@ class PantallaCorteDeVendedor extends ConsumerStatefulWidget {
 }
 
 class _EstadoCorteDeVendedor extends ConsumerState<PantallaCorteDeVendedor> {
+  // Arranca en lo que declaró el vendedor: si cuadra con lo que se cuenta, no
+  // hay nada que escribir.
+  late final _recibido = TextEditingController(
+    text: widget.cierre.corte!.efectivoDeclarado.texto,
+  );
   bool _ocupado = false;
   String? _error;
+
+  @override
+  void dispose() {
+    _recibido.dispose();
+    super.dispose();
+  }
 
   Future<void> _cerrar() async {
     final cliente = _cliente(ref);
     if (cliente == null) return;
+    final recibido = _leerPesos(_recibido.text);
+    if (recibido == null) {
+      setState(() => _error = 'Escribe el efectivo que recibes, por ejemplo 2250.50.');
+      return;
+    }
     setState(() {
       _ocupado = true;
       _error = null;
     });
     try {
-      final hecho = await cliente.cerrarCorte(widget.cierre.corte!.id);
+      final hecho = await cliente.cerrarCorte(
+        widget.cierre.corte!.id,
+        efectivoRecibido: recibido,
+      );
       if (!mounted) return;
       final mensajero = ScaffoldMessenger.of(context);
       Navigator.of(context).pop();
@@ -213,9 +250,40 @@ class _EstadoCorteDeVendedor extends ConsumerState<PantallaCorteDeVendedor> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (corte.diferenciaEfectivo.esNegativo)
-            const Text('Lo que falta de efectivo se le carga a su cuenta al cerrar.'),
           if ((corte.observaciones ?? '').isNotEmpty) Text('«${corte.observaciones}»'),
+          if (corte.pendiente) ...[
+            const SizedBox(height: 12),
+            // Lo cuenta quien lo recibe (ADR 0002 §87): el arqueo y lo que se le
+            // carga al vendedor salen de este número, no de lo que él declaró.
+            TextField(
+              key: const Key('campo_efectivo_recibido'),
+              controller: _recibido,
+              enabled: !_ocupado,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Efectivo que recibes (cuéntalo)',
+                prefixText: r'$ ',
+                helperText: 'Él declaró ${pesos(corte.efectivoDeclarado)}',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Builder(builder: (context) {
+              final recibido = _leerPesos(_recibido.text);
+              if (recibido == null) return const SizedBox.shrink();
+              final d = recibido - corte.efectivoEsperado;
+              return Text(
+                'Contra lo vendido en efectivo: ${_cuadre(d)}'
+                '${d.esNegativo ? '. Lo que falta se carga a su cuenta.' : ''}',
+                key: const Key('cuadre_recibido'),
+                style: TextStyle(
+                  color: d.esNegativo ? colores.error : null,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            }),
+          ],
           const Divider(height: 32),
           Text('Lo que le queda en el camión', style: estilo.titleMedium),
           const Text('Nadie lo cuenta: lo que traía, más la carga, menos lo vendido.'),

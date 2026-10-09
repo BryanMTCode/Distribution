@@ -4832,3 +4832,22 @@ de venta.
 
 (versionCode 29)
 
+## 87. El efectivo del corte lo cuenta quien lo recibe
+
+**Decisión (octubre 2026).** El corte del vendedor se cerraba con el efectivo que
+el vendedor **decía** que entregaba: si declaraba $2,250 y entregaba $2,000, el
+sistema no se enteraba y nadie le cobraba la diferencia.
+
+- **Al cerrar el corte** (app: Almacén → Corte del día; panel: Cortes y cargas
+  por aceptar) el gerente escribe el **efectivo que recibe**. El campo arranca en
+  lo declarado —si cuadra, no hay nada que escribir— y la app dice al momento si
+  falta o sobra contra lo vendido en efectivo.
+- **El arqueo y el cargo a la cuenta del vendedor salen de lo recibido**, no de lo
+  declarado. Los dos quedan guardados (`cortes_vendedor.efectivo_declarado` y
+  `efectivo_recibido`); si no coinciden, el aviso y la nota del corte lo dicen
+  («declaró $2,250.00 y se recibieron $2,100.00: faltan $150.00 de lo que dijo»),
+  y la lista de cerrados muestra «Entregó $X (declaró $Y)».
+- Sin el dato —la app anterior a la versión +30— vale lo declarado, como antes.
+
+(migración 0044_efectivo_recibido; versionCode 30)
+

@@ -4,8 +4,9 @@
 <h1>Cortes y cargas por aceptar</h1>
 <p class="subtitulo">
   Cada vendedor hace su corte en el teléfono —el efectivo que entrega— y pide la
-  carga de mañana. Se resuelven por separado: primero se cierra el corte (el
-  camión no se cuenta: se queda con lo que traía, más la carga, menos lo vendido)
+  carga de mañana. Se resuelven por separado: primero se cierra el corte con el
+  efectivo que <strong>tú</strong> cuentas (el camión no se cuenta: se queda con
+  lo que traía, más la carga, menos lo vendido)
   y después se acepta la carga, que sale de la bodega principal. Solo hay una
   carga al día, y es para el día siguiente.
 </p>
@@ -44,8 +45,17 @@
     </table>
   </div>
   {% if puede_cerrar %}
-  <form method="post" action="/panel/cierres/cortes/{{ c.corte.id }}/cerrar" style="margin-top:12px">
+  <form method="post" action="/panel/cierres/cortes/{{ c.corte.id }}/cerrar"
+        class="fila-forma" style="margin-top:12px; align-items:flex-end">
     <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="campo" style="margin:0">
+      <label for="recibido_{{ c.vendedor_codigo }}">Efectivo que recibes (cuéntalo)</label>
+      <input type="text" inputmode="decimal" name="efectivo_recibido" required
+             id="recibido_{{ c.vendedor_codigo }}" style="width:140px"
+             value="{{ '%.2f'|format(c.corte.efectivo_declarado) }}">
+      <div class="ayuda">Él declaró {{ c.corte.efectivo_declarado|dinero }}. Lo que falte contra lo
+        vendido en efectivo va a su cuenta.</div>
+    </div>
     <button type="submit" id="cerrar_corte_{{ c.vendedor_codigo }}">Cerrar el corte</button>
   </form>
   {% else %}

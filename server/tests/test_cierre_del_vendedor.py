@@ -334,6 +334,60 @@ async def test_cerrar_el_corte_deja_el_camion_en_lo_calculado_y_solo_cobra_efect
     assert viejo == "liquidada"
 
 
+async def test_el_arqueo_es_con_lo_que_recibe_el_gerente(cliente, sesion, semilla, dia):
+    # Declara que entrega todo ($2,250) y en la mano llegan $2,100.
+    corte_id = await _corte(sesion, dia, semilla, efectivo="2250.00")
+    cab = await _cab(cliente, "GER01")
+    r = await cliente.post(
+        f"/v1/cierres/cortes/{corte_id}/cerrar",
+        json={"efectivo_recibido": "2,100"}, headers=cab,
+    )
+    assert r.status_code == 200, r.text
+    assert "declaró $2,250.00 y se recibieron $2,100.00: faltan $150.00" in r.json()["mensaje"]
+    assert r.json()["corte"]["efectivo_recibido"] == "2100.00"
+    assert r.json()["corte"]["diferencia_efectivo"] == "-150.00"
+
+    corte = (
+        await sesion.execute(text("SELECT * FROM cortes_vendedor WHERE id = :c"),
+                             {"c": corte_id})
+    ).mappings().one()
+    assert corte["efectivo_declarado"] == Decimal("2250.00")
+    assert corte["efectivo_recibido"] == Decimal("2100.00")
+    assert "el gerente recibió $2,100.00" in corte["nota"]
+    entregado = (
+        await sesion.execute(text("SELECT efectivo_entregado FROM liquidaciones WHERE id = :l"),
+                             {"l": corte["liquidacion_id"]})
+    ).scalar_one()
+    assert entregado == Decimal("2100.00")
+    # A su cuenta va lo que no llegó a la mano, no lo que dijo.
+    cargo = (
+        await sesion.execute(
+            text("SELECT importe FROM cuenta_vendedor "
+                 " WHERE liquidacion_id = :l AND origen = 'faltante_efectivo'"),
+            {"l": corte["liquidacion_id"]},
+        )
+    ).scalar_one()
+    assert cargo == Decimal("150.00")
+
+    [cerrado] = (await cliente.get("/v1/cierres/cortes", headers=cab)).json()["recientes"]
+    assert cerrado["corte"]["efectivo_recibido"] == "2100.00"
+
+
+async def test_lo_recibido_mal_escrito_no_cierra(cliente, sesion, semilla, dia):
+    corte_id = await _corte(sesion, dia, semilla)
+    cab = await _cab(cliente, "GER01")
+    for malo in ("dos mil", "-5"):
+        r = await cliente.post(f"/v1/cierres/cortes/{corte_id}/cerrar",
+                               json={"efectivo_recibido": malo}, headers=cab)
+        assert r.status_code == 409, malo
+        assert "efectivo recibido" in r.json()["detail"].lower()
+    estado = (
+        await sesion.execute(text("SELECT estado FROM cortes_vendedor WHERE id = :c"),
+                             {"c": corte_id})
+    ).scalar_one()
+    assert estado == "pendiente"
+
+
 async def test_un_corte_cerrado_no_se_cierra_otra_vez(cliente, sesion, semilla, dia):
     corte_id = await _corte(sesion, dia, semilla)
     cab = await _cab(cliente, "GER01")
@@ -561,13 +615,16 @@ async def test_el_panel_cierra_el_corte_y_despues_acepta_la_carga(cliente, sesio
     assert "Atún en agua 140 g" in plano
     assert "Primero cierra su corte" in plano
 
+    # El gerente escribe lo que contó; arranca en lo declarado.
+    assert 'name="efectivo_recibido"' in r.text and 'value="2200.00"' in r.text
     r = await cliente.post(
         f"/panel/cierres/cortes/{corte_id}/cerrar",
-        data={"csrf": csrf_del_panel(cliente, r)},
+        data={"csrf": csrf_del_panel(cliente, r), "efectivo_recibido": "2150"},
         follow_redirects=True,
     )
     assert r.status_code == 200
     assert "cerrada" in solo_texto(r)
+    assert "Entregó $2,150.00 de $2,250.00 (declaró $2,200.00)" in solo_texto(r)
     assert "Primero cierra su corte" not in solo_texto(r)
 
     r = await cliente.post(

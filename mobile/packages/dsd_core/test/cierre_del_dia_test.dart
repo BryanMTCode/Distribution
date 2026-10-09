@@ -338,7 +338,8 @@ void main() {
         'camion': 'Camión 01',
         'corte': {
           'id': 'k1', 'fecha_operativa': '2026-10-07', 'estado': 'cerrado',
-          'efectivo_declarado': '2200.00', 'efectivo_esperado': '2250.00',
+          'efectivo_declarado': '2250.00', 'efectivo_recibido': '2200.00',
+          'efectivo_esperado': '2250.00',
           'diferencia_efectivo': '-50.00', 'observaciones': null,
           'recibido_en': '2026-10-08T01:30:00Z', 'resuelto_en': null,
           'liquidacion_folio': 'LQ-000004', 'nota': null,
@@ -363,6 +364,9 @@ void main() {
         'mensaje': 'Listo.',
       });
       expect(c.corte!.diferenciaEfectivo, Dinero.deTexto('-50.00'));
+      // Declaró todo; el gerente contó $50 menos (ADR 0002 §87).
+      expect(c.corte!.efectivoDeclarado, Dinero.deTexto('2250.00'));
+      expect(c.corte!.efectivoRecibido, Dinero.deTexto('2200.00'));
       expect(c.corte!.renglones.single.queda, Cantidad.deEnteros(60));
       expect(c.corte!.renglones.single.vendida, Cantidad.deEnteros(180));
       expect(c.cortePorCerrar, isNull);

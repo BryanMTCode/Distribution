@@ -435,10 +435,11 @@ pantalla es solo para cuadrar el dinero que no llegó en la mano.
 
 Dos secciones, cada una con sus botones (ADR 0002 §82). **Primero el corte, después la carga.**
 
-1. **Cortes por cerrar.** Cada vendedor que hizo su corte en el teléfono, con el efectivo («Entrega
+1. **Cortes por cerrar.** Cada vendedor que hizo su corte en el teléfono, con el efectivo («Declara
    $X de $Y · faltan $Z») y, por producto, lo que **traía, cargó, vendió y le queda**. Nadie lo
-   contó: es el cálculo. **Cerrar el corte** deja el camión en ese cálculo, sin ajustes; lo que falte
-   de efectivo va a su cuenta. Si el teléfono tiene algo sin subir, no deja y dice por qué.
+   contó: es el cálculo. Escribe en «Efectivo que recibes» lo que **tú** contaste y **Cerrar el
+   corte**: el camión queda en ese cálculo, sin ajustes, y lo que falte de efectivo —contra lo que
+   recibiste, no contra lo que él dijo— va a su cuenta. Si el teléfono tiene algo sin subir, no deja.
 2. **Cargas por aceptar.** La que pidió cada vendedor para mañana. Mientras su corte siga abierto,
    sale el aviso «Primero cierra su corte» y el botón no responde.
 3. En «Se carga», deja vacío para cargar lo que pidió; escribe otro número para cambiarlo, o 0 para
@@ -874,7 +875,9 @@ indistinguible de «no fui».
 ### Cerrar cortes y aceptar cargas — app de Gerencia → Almacén
 
 1. **Corte del día** → arriba, «Cortes de los vendedores». Abre uno: el efectivo y lo que le queda en
-   el camión (traía, cargó, vendió). **Cerrar el corte**.
+   el camión (traía, cargó, vendió). **Cuenta el dinero que te entrega** y escríbelo en «Efectivo que
+   recibes» (arranca en lo que él declaró); abajo dice al momento si falta o sobra. **Cerrar el
+   corte**: lo que falte contra lo vendido va a su cuenta, con lo que tú contaste (ADR 0002 §87).
 2. **Cargas** → arriba, «Cargas que pidieron los vendedores». Si su corte sigue abierto dice «Espera
    su corte» y no deja aceptar. Ya cerrado: corrige un renglón si hace falta y **Aceptar y confirmar
    la carga**. Sale el ticket para compartir. **Rechazar** pide motivo.
