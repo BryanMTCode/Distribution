@@ -19,16 +19,23 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.cli import base_en_blanco
-from app.infra.base_en_blanco import (
-    ArticulosInvalidos,
-    leer_articulos,
-    poner_en_blanco,
-    quien_registra,
-)
 from tests.test_panel_liquidacion import sembrar_dia_de_trabajo
 
 pytestmark = pytest.mark.asyncio
+
+
+def _bb():
+    """El módulo, importado DENTRO de cada prueba y nunca aquí arriba.
+
+    Importa `app.core.db`, que crea el motor de la base al importarse: hacerlo al
+    recolectar las pruebas —antes de que `conftest` apunte a la base de pruebas—
+    deja el motor con la URL de desarrollo, y fallan otras pruebas que lo usan
+    (las del job de poda, el comando de arranque, el tablero). Ver
+    `test_zona_horaria.py`.
+    """
+    from app.infra import base_en_blanco
+
+    return base_en_blanco
 
 
 async def _cuantos(sesion, tabla: str) -> int:
@@ -44,7 +51,7 @@ async def _cuantos_deltas(sesion, entidad: str) -> int:
 
 
 async def test_el_archivo_es_el_de_la_direccion():
-    articulos = leer_articulos()
+    articulos = _bb().leer_articulos()
     assert len(articulos) == 25
     assert len({a.familia for a in articulos}) == 5
     assert [a.sku for a in articulos][:3] == ["S-100", "S-101", "S-102"]
@@ -58,13 +65,13 @@ async def test_lo_mal_escrito_se_dice_antes_de_borrar(tmp_path):
         "sku,nombre,familia,existencia,precio\nS-1,Uno,F,1,10\ns-1,Otro,F,1,10\n",
         encoding="utf-8",
     )
-    with pytest.raises(ArticulosInvalidos, match="dos veces"):
-        leer_articulos(archivo)
+    with pytest.raises(_bb().ArticulosInvalidos, match="dos veces"):
+        _bb().leer_articulos(archivo)
     archivo.write_text(
         "sku,nombre,familia,existencia,precio\nS-1,Uno,F,1.5,10\n", encoding="utf-8"
     )
-    with pytest.raises(ArticulosInvalidos, match="piezas enteras"):
-        leer_articulos(archivo)
+    with pytest.raises(_bb().ArticulosInvalidos, match="piezas enteras"):
+        _bb().leer_articulos(archivo)
 
 
 async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
@@ -72,8 +79,8 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     usuarios = await _cuantos(sesion, "usuarios")
     almacenes = await _cuantos(sesion, "almacenes")
 
-    resultado = await poner_en_blanco(
-        sesion, leer_articulos(), quien=await quien_registra(sesion)
+    resultado = await _bb().poner_en_blanco(
+        sesion, _bb().leer_articulos(), quien=await _bb().quien_registra(sesion)
     )
     assert resultado.borrado["ventas"] == 1
     assert resultado.articulos == 25
@@ -139,7 +146,9 @@ async def test_un_telefono_de_cero_recibe_lo_nuevo_y_nada_de_lo_de_antes(sesion,
     await sesion.commit()
     listas = await _cuantos_deltas(sesion, "lista_precios")
     assert listas >= 1
-    await poner_en_blanco(sesion, leer_articulos(), quien=await quien_registra(sesion))
+    await _bb().poner_en_blanco(
+        sesion, _bb().leer_articulos(), quien=await _bb().quien_registra(sesion)
+    )
     assert await _cuantos_deltas(sesion, "lista_precios") == listas
 
     entidades = dict(
@@ -166,6 +175,8 @@ async def test_sin_la_frase_no_se_borra_nada(motor, sesion, semilla, monkeypatch
         "app.core.db.CrearSesion",
         async_sessionmaker(motor, expire_on_commit=False, class_=AsyncSession),
     )
+    from app.cli import base_en_blanco
+
     await sembrar_dia_de_trabajo(sesion, semilla)
     monkeypatch.setattr("builtins.input", lambda _="": "no")
     assert await base_en_blanco() == 1
