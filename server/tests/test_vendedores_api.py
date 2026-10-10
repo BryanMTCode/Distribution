@@ -254,8 +254,10 @@ async def test_la_pantalla_empresa_del_panel_dice_lo_mismo(cliente, sesion, semi
     assert 'id="resumen_clientes"' in r.text
     assert "vendedores activos" in r.text
     assert "artículos activos" in r.text
-    # Y está en el menú.
-    assert 'href="/panel/empresa"' in (await cliente.get("/panel")).text
+    # Y al final del tablero, que desde ADR 0002 §98 la lleva en lugar de una
+    # entrada propia en el menú.
+    tablero = (await cliente.get("/panel")).text
+    assert 'id="empresa"' in tablero and 'id="resumen_clientes"' in tablero
 
 
 async def test_el_vendedor_no_ve_el_resumen_de_la_empresa(cliente, sesion, semilla):

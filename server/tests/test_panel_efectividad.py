@@ -541,13 +541,16 @@ async def test_una_merma_cancelada_no_cuenta(cliente, sesion, semana, semilla):
 
 
 async def test_efectividad_aparece_en_la_navegacion(cliente, semana):
-    """Una pantalla que no está en la navegación no existe para quien usa el panel."""
+    """Una pantalla que no está en la navegación no existe para quien usa el panel.
+
+    Desde ADR 0002 §98 es la pestaña «Visitas» de Desempeño, y el tablero la
+    enlaza desde las visitas sin venta."""
     await _entrar(cliente)
-    tablero = await cliente.get("/panel")
+    desempeno = await cliente.get("/panel/desempeno")
     # La etiqueta que se ve, y el enlace que la lleva. Afirmar solo una de las dos
     # dejaría pasar un menú con el texto correcto apuntando a otra parte.
-    assert "Efectividad" in solo_texto(tablero)
-    assert "/panel/efectividad" in texto_plano(tablero)
+    assert '<a href="/panel/efectividad" >Visitas</a>' in desempeno.text
+    assert "/panel/efectividad" in texto_plano(await cliente.get("/panel"))
 
 
 async def test_sin_sesion_manda_a_entrar(cliente, semana):
