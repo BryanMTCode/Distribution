@@ -180,6 +180,13 @@ todavía conserva, y el pull lo compara contra el cursor del dispositivo. Si que
 por debajo, responde `resincronizar: true` y el teléfono vuelve a empezar desde
 cero. Es caro y es lo único correcto.
 
+> **Corrección (octubre 2026, ADR 0002 §90).** El teléfono **no** volvía a empezar:
+> `dsd_core` no leía `resincronizar`, y con `cambios` vacío el cursor no se movía.
+> Se notó al poner la base en blanco, que usa la misma respuesta (con
+> `base_en_blanco: true`): las tiendas borradas seguían en la app. Desde la
+> versión +31 el teléfono, con la cola ya entregada, olvida su copia
+> (`AplicadorDeltas.olvidarLoDeAntes`) y vuelve a pedir desde 0.
+
 Después el job, `podar_change_log`, con dos cautelas:
 
 - **Un margen** por debajo del dispositivo más atrasado: un teléfono puede haber

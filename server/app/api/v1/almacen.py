@@ -104,6 +104,9 @@ class Existencia(BaseModel):
     # existencia. Nulos si el artículo no tiene precio en ninguna lista.
     precio: Dinero | None = None
     valor: Dinero | None = None
+    # La familia del artículo (§89); nula si no tiene. Vienen ordenadas por
+    # familia —en el orden de la hoja de la dirección— y luego por clave.
+    familia: str | None = None
 
 
 class ExistenciasDelAlmacen(BaseModel):
@@ -356,13 +359,15 @@ async def existencias(
                 f"""
                 SELECT e.producto_id, p.sku, p.nombre, p.unidad_base, e.cantidad,
                        pres.presentaciones,
-                       pv.precio, round(e.cantidad * pv.precio, 2) AS valor
+                       pv.precio, round(e.cantidad * pv.precio, 2) AS valor,
+                       cat.nombre AS familia
                   FROM existencias e
                   JOIN productos p ON p.id = e.producto_id
+                  LEFT JOIN categorias cat ON cat.id = p.categoria_id
                   {SQL_PRESENTACIONES}
                   {precio_de_venta("p.id")}
                  WHERE e.almacen_id = :a AND e.cantidad <> 0 {filtro}
-                 ORDER BY p.nombre
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.sku
                  LIMIT 1000
                 """  # noqa: S608 — fragmentos constantes del código
             ),
@@ -374,7 +379,7 @@ async def existencias(
         existencias=[
             Existencia(
                 **{k: f[k] for k in ("producto_id", "sku", "nombre", "unidad_base", "cantidad",
-                                     "precio", "valor")},
+                                     "precio", "valor", "familia")},
                 presentaciones=_presentaciones(f["presentaciones"]),
             )
             for f in filas

@@ -82,8 +82,17 @@
         {% if puede_ajustar %}<th></th>{% endif %}
       </tr>
     </thead>
+    {% for g in grupos %}
     <tbody>
-      {% for f in filas %}
+      <tr class="grupo">
+        <td style="background:var(--fondo);font-weight:700">{{ g.familia }}</td>
+        <td class="numero" style="background:var(--fondo)"><strong>{{ g.piezas|entero }}</strong></td>
+        <td style="background:var(--fondo)"></td>
+        <td class="numero" style="background:var(--fondo)" id="subtotal_{{ loop.index }}">
+          <strong>{{ g.valor|dinero }}</strong></td>
+        <td colspan="{% if puede_ajustar %}3{% else %}2{% endif %}" style="background:var(--fondo)"></td>
+      </tr>
+      {% for f in g.filas %}
       <tr>
         <td>
           <a href="/panel/inventario/{{ elegido.id }}/{{ f.id }}">
@@ -129,6 +138,7 @@
       </tr>
       {% endfor %}
     </tbody>
+    {% endfor %}
     <tbody>
       <tr>
         <td><strong>Total</strong></td>

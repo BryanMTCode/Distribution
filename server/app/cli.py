@@ -196,11 +196,15 @@ async def recalcular_tablero() -> int:
     return 0
 
 
-async def base_en_blanco() -> int:
-    """Vacía la base —se quedan los usuarios— y carga los artículos reales.
+async def base_en_blanco(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
+    """Vacía la base —se quedan los usuarios y sus teléfonos— y carga los artículos.
 
     Lo que se queda y lo que se va está en `app/infra/base_en_blanco.py`. Pide
     escribir una frase para confirmar: no se deshace sin el respaldo.
+
+    `--resumen` solo dice lo que borraría, y `--confirmado` no pregunta: así
+    `scripts/base_en_blanco.sh` pregunta ANTES de detener la API, y la página no
+    se queda caída mientras alguien decide qué teclear.
     """
     from app.core.db import CrearSesion
     from app.infra.base_en_blanco import (
@@ -225,15 +229,20 @@ async def base_en_blanco() -> int:
         se_queda = await lo_que_se_queda(sesion)
         print("BASE EN BLANCO\n")
         print("Se QUEDAN: " + ", ".join(f"{n} {t}" for t, n in se_queda.items())
-              + ", con roles, permisos, listas de precios y motivos.")
+              + " (los teléfonos vinculados), con roles, permisos, listas de precios y "
+              "motivos.")
         print("Se BORRA todo lo demás, entre ello: "
               + ", ".join(f"{n} {t}" for t, n in se_va.items()) + ".")
-        print(f"Se cargan {len(articulos)} artículos con su precio y su existencia en bodega.\n")
-        print("Haz el respaldo ANTES:  bash scripts/en_el_servidor.sh respaldar.sh")
-        print("Esto no se deshace sin ese respaldo.\n")
-        if input(f"Para seguir escribe {PALABRA}: ").strip().upper() != PALABRA:
-            print("No se borró nada.")
-            return 1
+        print(f"Se crea la Bodega principal y entran {len(articulos)} artículos con su "
+              "precio y su existencia.\n")
+        if solo_resumen:
+            return 0
+        if not confirmado:
+            print("Haz el respaldo ANTES:  bash scripts/en_el_servidor.sh respaldar.sh")
+            print("Esto no se deshace sin ese respaldo.\n")
+            if input(f"Para seguir escribe {PALABRA}: ").strip().upper() != PALABRA:
+                print("No se borró nada.")
+                return 1
 
         try:
             resultado = await poner_en_blanco(
@@ -253,8 +262,8 @@ async def base_en_blanco() -> int:
               f"{resultado.aviso_inventario}.")
     elif resultado.aviso_inventario:
         print(f"OJO: {resultado.aviso_inventario}")
-    print("\nEn cada teléfono: Ajustes → Apps → la app → Almacenamiento → Borrar datos, y")
-    print("vincúlalo otra vez con su clave (Panel → Teléfonos). Sin eso conserva lo de antes.")
+    print("\nLos teléfonos vinculados olvidan lo de antes en su próxima sincronización")
+    print("(con la app al día): entregan su cola, se vacían y bajan lo nuevo.")
     return 0
 
 
@@ -265,10 +274,18 @@ def main() -> int:
         "recalcular-tablero": recalcular_tablero,
         "base-en-blanco": base_en_blanco,
     }
-    if len(sys.argv) != 2 or sys.argv[1] not in comandos:
+    if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2
-    return asyncio.run(comandos[sys.argv[1]]())
+    comando, opciones = sys.argv[1], set(sys.argv[2:])
+    if comando == "base-en-blanco" and opciones <= {"--resumen", "--confirmado"}:
+        return asyncio.run(base_en_blanco(
+            solo_resumen="--resumen" in opciones, confirmado="--confirmado" in opciones,
+        ))
+    if opciones:
+        print(f"«{comando}» no lleva opciones: {' '.join(sorted(opciones))}")
+        return 2
+    return asyncio.run(comandos[comando]())
 
 
 if __name__ == "__main__":

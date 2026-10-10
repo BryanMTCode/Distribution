@@ -63,13 +63,14 @@ void main() {
         'almacen': _bodega,
         'existencias': [
           {'producto_id': 'p1', 'sku': 'ATUN', 'nombre': 'Atún', 'unidad_base': 'PZA',
-           'cantidad': '-3.000',
+           'cantidad': '-3.000', 'familia': 'Abarrotes',
            'presentaciones': [{'unidad': 'CAJA', 'factor': '24.000'},
                               {'unidad': 'PZA', 'factor': '1.000'}]},
         ],
       });
       final e = await ClienteAlmacen(t).existencias('b1', busqueda: ' atun ');
       expect(e.existencias.single.negativa, isTrue);
+      expect(e.existencias.single.familia, 'Abarrotes');
       expect(e.existencias.single.presentaciones.first.unidad, 'CAJA');
       expect(t.pedidas.single.$1, '/v1/almacen/b1/existencias');
       expect(t.pedidas.single.$2, {'q': 'atun'});

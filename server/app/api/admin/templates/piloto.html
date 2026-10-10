@@ -73,7 +73,7 @@
   {% for m in veredicto.mediciones %}
     <tr>
       <td style="text-align:center">
-        {% if m.semaforo == 'bien' %}<span title="cumple" style="color:var(--acento)">●</span>
+        {% if m.semaforo == 'bien' %}<span title="cumple" style="color:var(--bien)">●</span>
         {% elif m.semaforo == 'mal' %}<span title="no cumple" style="color:var(--alerta)">●</span>
         {% elif m.semaforo == 'no_evaluable' %}<span title="este piloto no lo evalúa" style="color:var(--suave)">○</span>
         {% else %}<span title="sin medir" style="color:var(--aviso)">◐</span>{% endif %}
@@ -234,7 +234,7 @@
       <td class="numero">
         {% if papel %}
           {% set dif = d.documentos - papel.documentos_papel %}
-          {% if dif == 0 %}<span style="color:var(--acento)">cuadra</span>
+          {% if dif == 0 %}<span style="color:var(--bien)">cuadra</span>
           {% elif dif < 0 %}<strong style="color:var(--alerta)">{{ dif }}</strong>
           {% else %}<strong style="color:var(--aviso)">+{{ dif }}</strong>{% endif %}
         {% else %}<span class="sutil">—</span>{% endif %}

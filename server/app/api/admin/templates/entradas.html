@@ -206,7 +206,7 @@
       </td>
       <td>
         {% if e.estado == 'confirmada' %}
-          <span style="color:var(--acento)">confirmada</span>
+          <span style="color:var(--bien)">confirmada</span>
         {% elif e.estado == 'borrador' %}
           <span style="color:var(--aviso)">borrador</span>
         {% else %}
@@ -215,7 +215,7 @@
       </td>
       <td>
         {% if e.estado_pago == 'liquidada' %}
-          <span style="color:var(--acento)">pagada</span>
+          <span style="color:var(--bien)">pagada</span>
         {% elif e.estado_pago %}
           <a href="/panel/compras/cuenta/{{ e.id }}">
             debe ${{ '{:,.2f}'.format(e.saldo_por_pagar) }}</a>

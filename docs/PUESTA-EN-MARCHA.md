@@ -839,13 +839,15 @@ de tener el servidor en la oficina.
 
 **DÓNDE:** en el **servidor**, por SSH.
 
-Vacía la base y deja **solo** a los usuarios —con sus roles, permisos y rutas—,
-los almacenes (bodegas y camiones), los teléfonos vinculados con su clave, las
-listas de precios y los motivos. Se borra todo lo demás: productos, clientes,
-ventas, cargas, cortes, mermas, entradas, existencias, cuentas y la bitácora.
-Después carga los **25 artículos** de `server/db/semillas/articulos_distribuciones_se.csv`
-(el Excel de la dirección, en cinco familias) con su precio de venta, y su
-existencia entra a la bodega principal como **inventario inicial** (`EN-000001`).
+Vacía la base y deja **solo** a los usuarios —con sus roles y permisos— y sus
+**teléfonos vinculados** con su clave, más lo que el sistema necesita para
+funcionar (listas de precios, motivos, unidades, sucursales). Se borra todo lo
+demás: productos, clientes, **rutas, bodegas y camiones**, ventas, cargas, cortes,
+mermas, entradas, existencias, cuentas y la bitácora. Después crea una **Bodega
+principal** nueva y carga los **25 artículos** de
+`server/db/semillas/articulos_distribuciones_se.csv` (el Excel de la dirección, en
+sus cinco familias y en ese orden) con su precio de venta; su existencia entra a
+esa bodega como **inventario inicial** (`EN-000001`).
 
 **Actualizar el código no borra nada:** hay que correr esto una vez.
 
@@ -854,19 +856,34 @@ cd ~/Distribution
 bash scripts/base_en_blanco.sh
 ```
 
-Hace el respaldo (si falla, se detiene sin borrar), detiene la API y el worker,
-vacía la base y carga los artículos, recalcula el laboratorio de análisis y
-vuelve a arrancar la API y el worker. Antes de borrar dice cuánto hay y pide
-escribir `EN BLANCO`; con cualquier otra cosa no toca nada.
+Primero dice cuánto hay y pide escribir `EN BLANCO` —con cualquier otra cosa no
+toca nada, y la API sigue arriba—. Con la frase hace el respaldo (si falla, se
+detiene sin borrar), detiene la API y el worker, vacía la base, carga los
+artículos, recalcula el laboratorio de análisis y vuelve a arrancar la API y el
+worker **aunque algo falle a la mitad**.
 
 **✅ Debes ver** «Listo. 25 artículos en 5 familias» y «Inventario inicial
-EN-000001: 10,561 piezas en …». En el panel, *Productos* tiene los 25 y
-*Inventario* muestra la bodega con su existencia.
+EN-000001: 10,561 piezas en Bodega principal». En el panel, *Productos* tiene los
+25 agrupados por familia y *Inventario* muestra la bodega con su existencia y lo
+que vale ($417,237.00).
 
-**⚠️ Los teléfonos guardan lo de antes.** En cada uno —vendedores y gerente—:
-*Ajustes → Apps → la app → Almacenamiento → Borrar datos*, y vincúlalo otra vez
-con su **clave** (Panel → Teléfonos; si no tiene, «Poner clave»). Sin eso seguiría
-ofreciendo los productos y los clientes viejos.
+**⚠️ Si después el panel dice «HTTP ERROR 502»**, la API quedó detenida (por
+ejemplo, si se cortó el SSH a la mitad). Se levanta con:
+
+```bash
+cd ~/Distribution
+docker compose up -d
+docker compose ps            # api y worker en «running»
+docker compose logs --tail=60 api
+```
+
+**Los teléfonos se limpian solos** (ADR 0002 §90): cada teléfono vinculado queda
+marcado, y en su próxima sincronización entrega lo que tenga en la cola, olvida lo
+de antes —tiendas, artículos, camión, ventas— y baja lo nuevo. **No hay que
+borrarle los datos a la app ni volver a vincularlo**, pero sí necesita la app
+**+31 o posterior**: una anterior no entiende la orden y se queda con lo viejo.
+Como las rutas y los camiones se borraron, hay que volver a darlos de alta y
+asignárselos a cada vendedor en el panel.
 
 **⚠️ Para cambiar los artículos** edita el CSV —una fila por artículo: SKU,
 nombre, familia, existencia en piezas y precio de venta por pieza— antes de

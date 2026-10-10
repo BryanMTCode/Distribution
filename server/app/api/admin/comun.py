@@ -320,6 +320,26 @@ def texto_o_nulo(valor: str | None, *, maximo: int = 200) -> str | None:
     return limpio[:maximo]
 
 
+SIN_FAMILIA = "Sin familia"
+
+
+def agrupar_por_familia(filas) -> list[dict]:
+    """Las filas, ya ordenadas por familia, en grupos: `[{familia, filas}]`.
+
+    Respeta el orden en que llegan —el de la familia (`categorias.orden`), que es
+    el de la hoja de la dirección— en vez de ordenar por nombre: agruparlas
+    alfabéticamente desordenaría lo que la oficina acomodó a propósito. Lo que no
+    tiene familia va al final, como «Sin familia».
+    """
+    grupos: list[dict] = []
+    for f in filas:
+        nombre = f["familia"] or SIN_FAMILIA
+        if not grupos or grupos[-1]["familia"] != nombre:
+            grupos.append({"familia": nombre, "familia_id": f.get("familia_id"), "filas": []})
+        grupos[-1]["filas"].append(f)
+    return grupos
+
+
 async def borrar_si_nadie_lo_usa(sesion: AsyncSession, sql: str, parametros: dict) -> bool:
     """Intenta el DELETE en un punto de guardado. `False` si algo lo referencia.
 

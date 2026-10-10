@@ -44,6 +44,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.api.admin.comun import (
     CapturaInvalida,
@@ -251,12 +252,25 @@ async def eliminar_usuario(
     confirmo: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Lo borra si nunca hizo nada; si tiene historia, lo desactiva.
+    """Lo borra de verdad. Si tiene documentos firmados, no lo toca y dice cuáles.
 
-    Un usuario con una sola venta, un cobro o un movimiento firmado no se puede
-    borrar sin borrar esos papeles. Desactivarlo tiene el efecto que se busca —no
-    entra al panel ni a la app, sus sesiones mueren— y su firma sigue en sus
-    documentos.
+    ───────────────────────────────────────────────────────────────────────
+    ANTES SE «DESACTIVABA», Y CASI SIEMPRE
+    ───────────────────────────────────────────────────────────────────────
+    La regla era «si algo lo usa, se da de baja». Pero casi todo usuario tiene
+    algo que lo apunta sin ser historia —su teléfono vinculado, una sesión, los
+    avisos que esperaban a su teléfono, la ruta de la que es titular—, así que
+    «Eliminar» terminaba siempre en «desactivado». La dirección pidió que se
+    borre (octubre 2026, ADR 0002 §88).
+
+    Ahora se suelta primero todo lo que es SUYO y no es historia: sus teléfonos
+    (con sus folios y sesiones), los avisos pendientes de su teléfono, su
+    asignación a rutas, su camión si está vacío; y donde aparece como «quién lo
+    capturó» (un cliente, un proveedor, la auditoría) se queda sin nombre. Lo que
+    sí es historia —ventas, cargas, cortes, movimientos de inventario, cuentas—
+    no se borra: si existe, no se borra NADA, se dice qué tiene y se ofrece
+    desactivarlo. Todo va en un punto de guardado: o se borra completo, o no
+    cambia nada.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -285,37 +299,125 @@ async def eliminar_usuario(
             "usuarios.",
         )
 
-    borrado = await borrar_si_nadie_lo_usa(
-        sesion, "DELETE FROM usuarios WHERE id = :u", {"u": usuario_id}
-    )
-    if not borrado:
-        await sesion.execute(
-            text("UPDATE usuarios SET activo = false, actualizado_en = now() WHERE id = :u"),
-            {"u": usuario_id},
-        )
-        await sesion.execute(
-            text(
-                "UPDATE sesiones SET revocada_en = now() "
-                " WHERE usuario_id = :u AND revocada_en IS NULL"
+    camiones: list[str] = []
+    try:
+        async with sesion.begin_nested():
+            camiones = await _soltar_lo_suyo(sesion, usuario_id, usuario["codigo"])
+            await sesion.execute(text("DELETE FROM usuarios WHERE id = :u"), {"u": usuario_id})
+    except IntegrityError:
+        documentos = await _sus_documentos(sesion, usuario_id)
+        return _a_ficha(
+            "usuarios",
+            usuario_id,
+            error=(
+                f"{usuario['codigo']} no se puede borrar: tiene "
+                f"{documentos or 'documentos firmados'}, y borrarlo borraría esos "
+                "papeles. No se cambió nada. Si era de prueba, pon la base en blanco "
+                "y elimínalo después; si no, usa «Desactivar»."
             ),
-            {"u": usuario_id},
         )
+
     await auditar(
         sesion,
         entidad="usuario",
         entidad_id=usuario_id,
-        accion="eliminar" if borrado else "dar_de_baja",
+        accion="eliminar",
         quien=actor.usuario_id,
         antes=dict(usuario),
     )
     await sesion.commit()
+    aviso = f"{usuario['codigo']} se eliminó, con sus teléfonos vinculados."
+    if camiones:
+        aviso += f" También su camión, que estaba vacío: {', '.join(camiones)}."
+    return _a_equipo(guardado=aviso)
 
-    if borrado:
-        return _a_equipo(guardado=f"{usuario['codigo']} se eliminó: nunca había hecho nada.")
-    return _a_equipo(
-        guardado=f"{usuario['codigo']} tiene documentos firmados, así que se desactivó en "
-        "vez de borrarse: ya no entra al panel ni a la app, y su firma sigue en sus papeles."
+
+async def _soltar_lo_suyo(sesion, usuario_id: uuid.UUID, codigo: str) -> list[str]:
+    """Quita o suelta lo que apunta al usuario sin ser historia. Ver arriba."""
+    p = {"u": usuario_id}
+    # Sus teléfonos, con lo que cuelga de ellos y no es un documento.
+    equipos = "SELECT id FROM dispositivos WHERE usuario_id = :u"
+    await sesion.execute(text(f"DELETE FROM folios_rangos WHERE dispositivo_id IN ({equipos})"), p)
+    await sesion.execute(
+        text(f"UPDATE auditoria SET dispositivo_id = NULL WHERE dispositivo_id IN ({equipos})"), p
     )
+    await sesion.execute(
+        text(f"DELETE FROM sync_operaciones WHERE dispositivo_id IN ({equipos})"), p
+    )
+    await sesion.execute(text(f"DELETE FROM sync_lotes WHERE dispositivo_id IN ({equipos})"), p)
+    await sesion.execute(text("DELETE FROM dispositivos WHERE usuario_id = :u"), p)
+    await sesion.execute(
+        text("UPDATE dispositivos SET borrado_ordenado_por = NULL WHERE borrado_ordenado_por = :u"),
+        p,
+    )
+    # Su camión: si está vacío y sin historia se va con él; un camión no existe
+    # sin responsable. Si tiene historia, el DELETE de abajo lo rechaza.
+    await sesion.execute(
+        text("UPDATE usuarios SET almacen_id = NULL WHERE id = :u"), p
+    )
+    camiones = (
+        await sesion.execute(
+            text("SELECT id, nombre FROM almacenes WHERE responsable_id = :u AND tipo = 'camion'"),
+            p,
+        )
+    ).mappings().all()
+    for camion in camiones:
+        await sesion.execute(
+            text("DELETE FROM existencias WHERE almacen_id = :a AND cantidad = 0"),
+            {"a": camion["id"]},
+        )
+        await sesion.execute(
+            text("UPDATE usuarios SET almacen_id = NULL WHERE almacen_id = :a"), {"a": camion["id"]}
+        )
+        await sesion.execute(text("DELETE FROM almacenes WHERE id = :a"), {"a": camion["id"]})
+    await sesion.execute(
+        text("UPDATE almacenes SET responsable_id = NULL WHERE responsable_id = :u"), p
+    )
+    # Donde solo es «quién lo capturó» o «de quién es la ruta»: sin nombre.
+    for tabla, columna in (
+        ("rutas", "vendedor_id"),
+        ("clientes", "creado_por"),
+        ("proveedores", "creado_por"),
+        ("pilotos", "creado_por"),
+        ("objetivos_ruta", "fijado_por"),
+    ):
+        await sesion.execute(
+            text(f"UPDATE {tabla} SET {columna} = NULL WHERE {columna} = :u"), p  # noqa: S608
+        )
+    await sesion.execute(
+        text(
+            "UPDATE auditoria SET usuario_id = NULL, "
+            "       motivo = concat_ws(' · ', motivo, CAST(:quien AS text)) "
+            " WHERE usuario_id = :u"
+        ),
+        {"u": usuario_id, "quien": f"lo hizo {codigo} (usuario eliminado)"},
+    )
+    # Los avisos que esperaban a su teléfono: ya no hay teléfono que los lea.
+    await sesion.execute(text("DELETE FROM change_log WHERE vendedor_id = :u"), p)
+    return [c["nombre"] for c in camiones]
+
+
+async def _sus_documentos(sesion, usuario_id: uuid.UUID) -> str:
+    """«3 venta(s), 1 carga(s)»: lo que impide borrarlo, dicho con palabras."""
+    partes = []
+    for tabla, columna, nombre in (
+        ("ventas", "vendedor_id", "venta(s)"),
+        ("cargas", "vendedor_id", "carga(s)"),
+        ("cortes_vendedor", "vendedor_id", "corte(s)"),
+        ("mermas", "vendedor_id", "merma(s)"),
+        ("cuenta_vendedor", "vendedor_id", "movimiento(s) en su cuenta"),
+        ("movimientos_inventario", "usuario_id", "movimiento(s) de inventario"),
+        ("entradas", "creado_por", "entrada(s) de mercancía"),
+    ):
+        n = (
+            await sesion.execute(
+                text(f"SELECT count(*) FROM {tabla} WHERE {columna} = :u"),  # noqa: S608
+                {"u": usuario_id},
+            )
+        ).scalar_one()
+        if n:
+            partes.append(f"{n} {nombre}")
+    return ", ".join(partes)
 
 
 # ===========================================================================

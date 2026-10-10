@@ -303,6 +303,28 @@ class _EstadoExistencias extends ConsumerState<PantallaExistencias> {
   }
 }
 
+/// Una familia de artículos con lo que vale lo suyo (lo negativo no suma).
+class _Familia {
+  _Familia(this.familia);
+
+  final String familia;
+  final List<ExistenciaDeProducto> existencias = [];
+  Dinero valor = Dinero.cero;
+}
+
+/// En el orden en que llegan —el servidor ya las manda por familia, en el
+/// orden de la hoja—; lo que no tiene familia, como «Sin familia».
+List<_Familia> _porFamilia(List<ExistenciaDeProducto> existencias) {
+  final grupos = <_Familia>[];
+  for (final e in existencias) {
+    final nombre = e.familia ?? 'Sin familia';
+    if (grupos.isEmpty || grupos.last.familia != nombre) grupos.add(_Familia(nombre));
+    grupos.last.existencias.add(e);
+    if (e.valor != null && !e.negativa) grupos.last.valor = grupos.last.valor + e.valor!;
+  }
+  return grupos;
+}
+
 /// Lo que hay en un almacén, producto por producto.
 class PantallaExistenciasDelAlmacen extends ConsumerStatefulWidget {
   const PantallaExistenciasDelAlmacen({super.key, required this.almacen});
@@ -414,7 +436,30 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Text('Este almacén no tiene existencias.'),
                 ),
-              for (final e in visibles)
+              for (final g in _porFamilia(visibles)) ...[
+                // La familia con su subtotal, como los totales de la hoja de la
+                // dirección (ADR 0002 §89).
+                Container(
+                  key: Key('familia_${g.familia}'),
+                  margin: const EdgeInsets.only(top: 12, bottom: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: colores.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${g.familia} · ${g.existencias.length}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(pesos(g.valor), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+                for (final e in g.existencias)
                 ListTile(
                   key: Key('existencia_${e.sku}'),
                   contentPadding: EdgeInsets.zero,
@@ -445,6 +490,7 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
                     ],
                   ),
                 ),
+              ],
             ],
           ],
         ),

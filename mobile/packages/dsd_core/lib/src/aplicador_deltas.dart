@@ -102,6 +102,79 @@ class AplicadorDeltas {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // Empezar de cero
+  // -------------------------------------------------------------------------
+
+  /// Lo que llenan los deltas del servidor: el espejo. Al resincronizar se
+  /// vacía y vuelve a bajar entero desde el cursor 0.
+  static const tablasDelEspejo = [
+    'precios', 'producto_unidades', 'productos', 'listas_precios', 'clientes',
+    'motivos_merma', 'motivos_no_drop',
+    'existencias_camion', 'cargas_aplicadas', 'ajustes_camion_aplicados',
+    'deltas_desconocidos',
+  ];
+
+  /// Lo que nació en este teléfono —o el gerente le corrigió— y ya se entregó.
+  /// Solo se olvida cuando la base se puso en blanco: tras una poda el servidor
+  /// todavía lo tiene, y son las ventas de hoy del vendedor.
+  static const tablasDeDocumentos = [
+    'venta_partidas', 'cobros', 'ventas', 'merma_detalle', 'mermas', 'no_drops',
+    'corte_vendedor_conteo', 'cortes_vendedor',
+    'solicitud_carga_detalle', 'solicitudes_carga',
+    'traspaso_detalle', 'traspasos', 'carrito_borrador',
+  ];
+
+  /// Olvida lo que vino del servidor para volver a pedirlo desde el cursor 0.
+  ///
+  /// Reporte de la dirección (octubre 2026, ADR 0002 §90): tras poner la base
+  /// en blanco, «aparecen tiendas en la app que se borraron». El servidor no
+  /// publica bajas de lo que vació, así que el teléfono nunca se enteraba; ahora
+  /// el pull le dice `resincronizar` y aquí se vacía el espejo.
+  ///
+  /// Con [baseEnBlanco] también se van los documentos ya entregados y su
+  /// rastro en la cola: el servidor ya no los tiene, y el vendedor vería las
+  /// ventas de antes en «Mi día». Lo que NO se toca nunca:
+  ///
+  /// · **La cola pendiente.** El sincronizador solo llama esto con la cola
+  ///   vacía —nunca se borra lo que no se ha entregado—.
+  /// · **Los rangos de folios.** Un folio local ya impreso no se repite.
+  /// · **La credencial, el dispositivo y el cursor**: el teléfono sigue
+  ///   vinculado y el cursor lo escribe quien sincroniza.
+  ///
+  /// Las llaves foráneas se apagan mientras se vacía (como en `borrarTodo`):
+  /// tras una poda, las ventas que se quedan apuntan a productos que se van y
+  /// vuelven en seguida con el mismo id.
+  void olvidarLoDeAntes({required bool baseEnBlanco}) {
+    _db.execute('PRAGMA foreign_keys = OFF');
+    try {
+      _db.execute('BEGIN IMMEDIATE');
+      try {
+        for (final tabla in [
+          ...tablasDelEspejo,
+          if (baseEnBlanco) ...tablasDeDocumentos,
+        ]) {
+          _db.execute('DELETE FROM $tabla');
+        }
+        if (baseEnBlanco) {
+          _db.execute(
+            "DELETE FROM outbox WHERE estado IN ('confirmada', 'cuarentena')",
+          );
+        }
+        _db.execute(
+          "DELETE FROM sync_estado "
+          " WHERE clave IN ('carga_id_activa', 'almacen_asignado')",
+        );
+        _db.execute('COMMIT');
+      } catch (_) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+    } finally {
+      _db.execute('PRAGMA foreign_keys = ON');
+    }
+  }
+
   bool _aplicarUno(Delta delta, String recibidoEn) => switch (delta.entidad) {
         'producto' => _producto(delta),
         'producto_unidad' => _productoUnidad(delta),

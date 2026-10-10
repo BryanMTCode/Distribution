@@ -40,7 +40,7 @@ from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
-from app.api.admin.comun import CapturaInvalida, SesionDep, render
+from app.api.admin.comun import CapturaInvalida, SesionDep, agrupar_por_familia, render
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.infra.valor_de_inventario import precio_de_venta
 
@@ -152,12 +152,14 @@ async def listar(
                        e.cantidad, e.actualizado_en,
                        pu.presentaciones,
                        pv.precio, round(e.cantidad * pv.precio, 2) AS valor,
+                       cat.id AS familia_id, cat.nombre AS familia,
                        -- La suma del libro mayor para este almacén y producto.
                        -- Si no cuadra con la caché, alguna transacción escribió
                        -- una y no la otra: es un bug, no un dato.
                        COALESCE(m.entradas, 0) - COALESCE(m.salidas, 0) AS segun_libro
                   FROM existencias e
                   JOIN productos p ON p.id = e.producto_id
+                  LEFT JOIN categorias cat ON cat.id = p.categoria_id
                   LEFT JOIN LATERAL (
                         SELECT json_agg(json_build_object(
                                  'unidad', u.unidad_codigo, 'factor', u.factor::text)
@@ -178,7 +180,8 @@ async def listar(
                   ) m ON true
                   {precio_de_venta("p.id")}
                  WHERE {" AND ".join(condiciones)}
-                 ORDER BY p.nombre
+                 -- Por familia, en el orden de la hoja de la dirección (§89).
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.sku
                  LIMIT 500
                 """  # noqa: S608 — las condiciones son constantes del código
             ),
@@ -189,6 +192,15 @@ async def listar(
     descuadres = [
         f for f in filas if Decimal(f["cantidad"]) != Decimal(f["segun_libro"])
     ]
+    # Cada familia con su subtotal, como los totales de la hoja de la dirección.
+    grupos = agrupar_por_familia(filas)
+    for g in grupos:
+        g["piezas"] = sum((Decimal(f["cantidad"]) for f in g["filas"]), Decimal(0))
+        g["valor"] = sum(
+            (Decimal(f["valor"]) for f in g["filas"]
+             if f["valor"] is not None and f["cantidad"] > 0),
+            Decimal(0),
+        )
 
     return render(
         peticion,
@@ -197,6 +209,7 @@ async def listar(
             "almacenes": almacenes,
             "elegido": elegido,
             "filas": filas,
+            "grupos": grupos,
             "descuadres": descuadres,
             "q": busqueda,
             "filtro": filtro,

@@ -129,7 +129,7 @@
           piso, no una caída.
         {% elif referencia.suficiente %}
           {% if referencia.lectura == 'arriba' %}
-            <strong style="color:var(--acento)">+{{ referencia.variacion }}%</strong>
+            <strong style="color:var(--bien)">+{{ referencia.variacion }}%</strong>
           {% elif referencia.lectura == 'abajo' %}
             <strong style="color:var(--alerta)">{{ referencia.variacion }}%</strong>
           {% else %}
@@ -237,7 +237,7 @@
       <td class="numero">{{ r.venta }}</td>
       <td class="numero">
         {% if r.lectura == 'arriba' %}
-          <span style="color:var(--acento)">+{{ r.variacion }}%</span>
+          <span style="color:var(--bien)">+{{ r.variacion }}%</span>
         {% elif r.lectura == 'abajo' %}
           <span style="color:var(--alerta)">{{ r.variacion }}%</span>
         {% elif r.lectura == 'parejo' %}

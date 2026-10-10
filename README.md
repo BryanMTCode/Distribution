@@ -124,7 +124,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1350 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **642 de Dart** y **286 de widget**, todas en verde.
+**1350 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **646 de Dart** y **287 de widget**, todas en verde.
 
 ## Stack
 
@@ -233,7 +233,7 @@ mobile/
                      compartir, credencial, folios, outbox, sobres,
                      ubicación, alta de clientes, sincronizador, aplicador de
                      deltas, esquema, TABLERO, TRASPASO, login en línea
-    test/            642 pruebas que corren en segundos
+    test/            646 pruebas que corren en segundos
     tool/            genera los sobres de ejemplo y el esquema embebido
   app/               APP FLUTTER:
     lib/src/datos/   base local, almacén seguro, repositorios
@@ -243,7 +243,7 @@ mobile/
                      CORTE y SOLICITUD DE CARGA,
                      MI CAMIÓN, DEVOLVER A LA BODEGA,
                      gerencia/ (tablero, mapa del día, cortes y cargas por aceptar)
-    test/            286 pruebas de widget, sin emulador
+    test/            287 pruebas de widget, sin emulador
 analytics/           LABORATORIO ANALÍTICO (Streamlit, solo lectura)
                      app.py  dibuja; las DEFINICIONES viven en
                              server/app/domain/analitica.py
@@ -263,7 +263,7 @@ make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
 make pruebas                        # 1375 pruebas de Python
-make movil                          # 646 de Dart + 326 de widget
+make movil                          # 646 de Dart + 287 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor

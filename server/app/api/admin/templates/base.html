@@ -17,22 +17,37 @@
 
   Los estilos van aquí embebidos: son doscientas líneas y un archivo aparte sería
   una petición más en una red local que no lo necesita.
+
+  ───────────────────────────────────────────────────────────────────────────
+  LOS COLORES SON LOS DE LA APP
+  ───────────────────────────────────────────────────────────────────────────
+  El rojo del bordado de Distribuciones SE (#E0282E, `rojoDistribucionesSE` en
+  `mobile/app/lib/src/marca.dart`): la barra de arriba en rojo con letra blanca,
+  como la de la app, y el rojo en botones, enlaces y en lo que está elegido. Dos
+  cosas no se pintan de rojo para no confundirse con la marca: lo que salió
+  bien sigue en verde (`--bien`), y el botón que borra va con orilla, no relleno
+  —en un panel rojo, un botón rojo más oscuro no se distingue del de guardar—.
 #}
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block titulo %}Panel{% endblock %} · DSD</title>
+  <title>{% block titulo %}Panel{% endblock %} · Distribuciones SE</title>
+  <meta name="theme-color" content="#E0282E">
   <style>
     :root {
-      --tinta: #16211a;
-      --suave: #5b6b60;
-      --linea: #d6ded8;
-      --fondo: #f6f8f6;
+      --tinta: #1f1b1b;
+      --suave: #645b5b;
+      --linea: #e2d9d9;
+      --fondo: #f8f6f6;
       --papel: #ffffff;
-      --acento: #1b5e20;
-      --acento-suave: #e8f1e9;
+      /* La marca: el rojo de la app, y uno más hondo para letra sobre blanco. */
+      --marca: #E0282E;
+      --acento: #b71c22;
+      --acento-suave: #fdecec;
+      --bien: #1b5e20;
+      --bien-suave: #e8f1e9;
       --alerta: #8c1d18;
       --alerta-suave: #fbe9e7;
       --aviso: #7a4f01;
@@ -48,7 +63,7 @@
     a { color: var(--acento); }
     /* ── El armazón: barra arriba, menú a la izquierda, contenido al centro ── */
     header.principal {
-      background: var(--acento);
+      background: var(--marca);
       color: #fff;
       padding: 10px 20px;
       display: flex;
@@ -56,6 +71,7 @@
       gap: 20px;
     }
     header.principal .marca { font-weight: 700; letter-spacing: .3px; }
+    header.principal .marca span { font-weight: 400; opacity: .85; }
     header.principal .quien { margin-left: auto; font-size: 13px; opacity: .9; }
     .armazon { display: flex; align-items: flex-start; }
     /* El menú lateral: cinco módulos que se abren. `<details>` es nativo —se
@@ -139,12 +155,16 @@
     }
     button {
       padding: 8px 16px; border: 0; border-radius: 7px; font: inherit;
-      font-weight: 600; background: var(--acento); color: #fff; cursor: pointer;
+      font-weight: 600; background: var(--marca); color: #fff; cursor: pointer;
     }
-    button.secundario {
+    button:hover:not(:disabled) { background: var(--acento); }
+    button.secundario, button.secundario:hover:not(:disabled) {
       background: var(--papel); color: var(--tinta); border: 1px solid var(--linea);
     }
-    button.peligro { background: var(--alerta); }
+    button.peligro, button.peligro:hover:not(:disabled) {
+      background: var(--papel); color: var(--alerta); border: 1px solid var(--alerta);
+    }
+    button.peligro:hover:not(:disabled) { background: var(--alerta-suave); }
     button:disabled { opacity: .5; cursor: not-allowed; }
     .campo { margin-bottom: 14px; }
     .campo label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
@@ -153,11 +173,16 @@
     .aviso-caja {
       border-radius: 8px; padding: 12px 14px; margin: 0 0 18px; font-size: 14px;
     }
-    .aviso-caja.error { background: var(--alerta-suave); color: var(--alerta); }
+    .aviso-caja.error {
+      background: var(--alerta-suave); color: var(--alerta);
+      border-left: 4px solid var(--alerta);
+    }
     /* Siete pantallas usaban «aviso-caja aviso» y la regla no existía: el aviso
        ámbar salía como texto plano, sin fondo, y se perdía entre los párrafos. */
     .aviso-caja.aviso { background: var(--aviso-suave); color: var(--aviso); }
-    .aviso-caja.bien { background: var(--acento-suave); color: var(--acento); }
+    .aviso-caja.bien {
+      background: var(--bien-suave); color: var(--bien); border-left: 4px solid var(--bien);
+    }
     /* Botones dentro de una tabla: Editar, Eliminar, Ajustar. Chicos y en
        renglón, para que la columna de acciones no se coma la tabla. */
     td.acciones { white-space: nowrap; text-align: right; }
@@ -184,14 +209,21 @@
     .paginacion { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
     .entrar {
       max-width: 340px; margin: 12vh auto; background: var(--papel);
-      border: 1px solid var(--linea); border-radius: 12px; padding: 28px;
+      border: 1px solid var(--linea); border-top: 6px solid var(--marca);
+      border-radius: 12px; padding: 28px;
+    }
+    /* La letra manuscrita del logo, si el equipo la tiene; si no, la cursiva del
+       sistema. Sin descargarla de internet (ver arriba). */
+    .marca-entrar {
+      color: var(--marca); font-size: 30px;
+      font-family: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
     }
   </style>
 </head>
 <body>
 {% if actor %}
 <header class="principal">
-  <span class="marca">DSD · Operación</span>
+  <span class="marca">Distribuciones SE <span>· Operación</span></span>
   <span class="quien">
     {{ actor.rol }}
     · <a href="/panel/salir" style="color:#fff">Salir</a>

@@ -234,6 +234,15 @@ class DeltaSalida(BaseModel):
             "empezar desde el cursor 0: lo que falta ya no se puede entregar."
         ),
     )
+    base_en_blanco: bool = Field(
+        default=False,
+        description=(
+            "Acompaña a `resincronizar`: la base se puso en blanco después de que "
+            "el dispositivo bajó datos. Además de volver a pedir desde 0, tiene que "
+            "olvidar sus documentos ya entregados —ventas, mermas, cortes—: el "
+            "servidor ya no los tiene. Sin esto solo olvida lo que bajó."
+        ),
+    )
 
 
 async def _anotar_bajada(
@@ -318,6 +327,32 @@ async def pull(
         await _anotar_bajada(sesion, actor, cursor, 0, 0, {}, resincronizar=True)
         await sesion.commit()
         return DeltaSalida(cursor=0, hay_mas=True, cambios=[], resincronizar=True)
+
+    # ------------------------------------------------------------------
+    # ¿La base se puso en blanco después de que este teléfono bajó datos?
+    # ------------------------------------------------------------------
+    # La base en blanco no publica bajas (TRUNCATE), así que el teléfono se
+    # quedaría con las tiendas y los artículos de antes para siempre (ADR 0002
+    # §90). Se le pide empezar de cero hasta que lo haga: su pull desde 0 es la
+    # prueba, y solo entonces se apaga la marca. Apagarla al contestar dejaría
+    # al teléfono sin limpiar si la respuesta se pierde en el camino.
+    de_cero = (
+        await sesion.execute(
+            text("SELECT empezar_de_cero FROM dispositivos WHERE id = :dev"),
+            {"dev": actor.dispositivo_id},
+        )
+    ).scalar_one_or_none()
+    if de_cero and cursor:
+        await _anotar_bajada(sesion, actor, cursor, 0, 0, {}, resincronizar=True)
+        await sesion.commit()
+        return DeltaSalida(
+            cursor=0, hay_mas=True, cambios=[], resincronizar=True, base_en_blanco=True
+        )
+    if de_cero:
+        await sesion.execute(
+            text("UPDATE dispositivos SET empezar_de_cero = false WHERE id = :dev"),
+            {"dev": actor.dispositivo_id},
+        )
 
     rutas = list(actor.rutas)
     filas = (

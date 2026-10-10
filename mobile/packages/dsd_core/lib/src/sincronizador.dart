@@ -86,6 +86,7 @@ class ResultadoSincronizacion {
     this.detalle,
     this.ordenes,
     this.productosCuadrados = 0,
+    this.empezoDeCero = false,
   });
 
   final FinDeSync fin;
@@ -105,6 +106,11 @@ class ResultadoSincronizacion {
   /// corrida. Cero es lo normal; otro número dice que el teléfono se había
   /// desviado y ya no.
   final int productosCuadrados;
+
+  /// En esta corrida el teléfono olvidó lo que tenía y lo volvió a bajar desde
+  /// cero, porque el servidor se lo pidió (`resincronizar`). La app refresca
+  /// todas sus pantallas: lo que mostraban ya no existe.
+  final bool empezoDeCero;
 
   bool get huboActividad =>
       sobresConfirmados > 0 || sobresEnCuarentena > 0 || deltasAplicados > 0;
@@ -358,6 +364,7 @@ class Sincronizador {
     var desconocidos = 0;
     var vueltas = 0;
     var alDia = false;
+    var empezoDeCero = false;
 
     while (vueltas < maxTandas) {
       final RespuestaPull delta;
@@ -371,6 +378,7 @@ class Sincronizador {
           deltasAplicados: aplicados,
           deltasDesconocidos: desconocidos,
           cursor: cursor,
+          empezoDeCero: empezoDeCero,
           detalle: e.mensaje,
           // Las órdenes viajan aunque la corrida termine mal: el equipo con
           // orden de borrado tiene que quedar bloqueado también cuando se
@@ -383,6 +391,7 @@ class Sincronizador {
           sobresConfirmados: confirmados,
           deltasAplicados: aplicados,
           cursor: cursor,
+          empezoDeCero: empezoDeCero,
           detalle: e.toString(),
           // Las órdenes viajan aunque la corrida termine mal: el equipo con
           // orden de borrado tiene que quedar bloqueado también cuando se
@@ -395,6 +404,7 @@ class Sincronizador {
           sobresConfirmados: confirmados,
           deltasAplicados: aplicados,
           cursor: cursor,
+          empezoDeCero: empezoDeCero,
           detalle: e.toString(),
           // Las órdenes viajan aunque la corrida termine mal: el equipo con
           // orden de borrado tiene que quedar bloqueado también cuando se
@@ -404,6 +414,32 @@ class Sincronizador {
       }
 
       vueltas++;
+
+      // ---- EMPEZAR DE CERO: el servidor ya no puede entregar lo que falta --
+      //
+      // Tras una poda, o tras poner la base en blanco (ADR 0002 §90). Se olvida
+      // lo bajado y se vuelve a pedir desde 0 en esta misma corrida. Con cola
+      // pendiente NO: nunca se borra lo que no se ha entregado. Se intenta en la
+      // siguiente, cuando la cola ya se vació; el cursor no se mueve, así que el
+      // servidor lo vuelve a pedir.
+      if (delta.resincronizar) {
+        if (_outbox.resumen().pendientes > 0) {
+          return ResultadoSincronizacion(
+            fin: FinDeSync.parcial,
+            sobresConfirmados: confirmados,
+            sobresEnCuarentena: enCuarentena,
+            deltasAplicados: aplicados,
+            cursor: cursor,
+            ordenes: ordenes,
+            detalle: 'el servidor pide empezar de cero; primero se entrega la cola',
+          );
+        }
+        _aplicador.olvidarLoDeAntes(baseEnBlanco: delta.baseEnBlanco);
+        empezoDeCero = true;
+        cursor = 0;
+        continue;
+      }
+
       if (delta.cambios.isNotEmpty) {
         final r = _aplicador.aplicar(delta.cambios, recibidoEn: _ahora());
         aplicados += r.aplicados;
@@ -446,6 +482,7 @@ class Sincronizador {
       deltasDesconocidos: desconocidos,
       cursor: cursor,
       productosCuadrados: cuadrados,
+      empezoDeCero: empezoDeCero,
       // Las órdenes viajan incluso cuando no hay nada que hacer con ellas: de
       // ahí sale el aviso de «tu acceso vence en 2 días», que no es una orden
       // pero sí algo que el vendedor tiene que ver.

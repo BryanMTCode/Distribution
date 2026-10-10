@@ -221,9 +221,9 @@
       </select>
     </div>
     <div class="campo">
-      <label for="categoria_id">Categoría</label>
+      <label for="categoria_id">Familia</label>
       <select id="categoria_id" name="categoria_id" style="width:100%">
-        <option value="">— sin categoría —</option>
+        <option value="">— sin familia —</option>
         {% for c in categorias %}
           <option value="{{ c.id }}"
             {% if producto.categoria_id == c.id %}selected{% endif %}>{{ c.nombre }}</option>

@@ -99,7 +99,7 @@
             <span class="etiqueta-motivo">Borrador · sin salir de bodega</span>
           {% elif f.estado == 'confirmada' %}
             <span class="etiqueta-motivo"
-                  style="background:var(--acento-suave);color:var(--acento)">Confirmada</span>
+                  style="background:var(--bien-suave);color:var(--bien)">Confirmada</span>
             <div class="sutil">{{ f.confirmada_en.strftime('%d/%m %H:%M') }}</div>
           {% else %}
             <span class="sutil">{{ f.estado }}</span>

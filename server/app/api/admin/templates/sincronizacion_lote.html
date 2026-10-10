@@ -32,7 +32,7 @@
           <div class="sutil mono">{{ o.operacion_id }}</div>
         </td>
         <td>
-          {% if o.resultado == 'aceptada' %}<span style="color:var(--acento);font-weight:700">Aceptada</span>
+          {% if o.resultado == 'aceptada' %}<span style="color:var(--bien);font-weight:700">Aceptada</span>
           {% elif o.resultado == 'duplicada' %}Ya estaba
           {% else %}<span style="color:var(--alerta);font-weight:700">Rechazada</span>{% endif %}
         </td>

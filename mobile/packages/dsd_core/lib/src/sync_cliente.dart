@@ -84,11 +84,17 @@ class RespuestaPull {
     required this.cursor,
     required this.hayMas,
     required this.cambios,
+    this.resincronizar = false,
+    this.baseEnBlanco = false,
   });
 
   factory RespuestaPull.deJson(Map<String, Object?> json) => RespuestaPull(
         cursor: json['cursor']! as int,
         hayMas: json['hay_mas']! as bool,
+        // Opcionales: un servidor viejo no los manda, y entonces no hay nada
+        // que olvidar.
+        resincronizar: json['resincronizar'] == true,
+        baseEnBlanco: json['base_en_blanco'] == true,
         cambios: ((json['cambios'] ?? const <Object?>[]) as List)
             .cast<Map<String, Object?>>()
             .map(
@@ -106,6 +112,15 @@ class RespuestaPull {
   final int cursor;
   final bool hayMas;
   final List<Delta> cambios;
+
+  /// El servidor ya no puede entregarle lo que le falta desde su cursor: hay
+  /// que olvidar lo que se bajó y volver a pedir desde 0. Pasa tras una poda
+  /// del `change_log` y tras poner la base en blanco.
+  final bool resincronizar;
+
+  /// Acompaña a [resincronizar]: la base se puso en blanco, y el servidor ya no
+  /// tiene ni los documentos que este teléfono entregó. También se olvidan.
+  final bool baseEnBlanco;
 }
 
 /// Lo que el servidor dice que trae el camión, y desde qué punto lo dice.

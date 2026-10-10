@@ -7,6 +7,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/estado/sincronizacion.dart';
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +64,27 @@ class TransporteDePrueba implements Transporte {
   }
 }
 
+/// El servidor después de poner la base en blanco (ADR 0002 §90): al teléfono
+/// que pide desde su cursor viejo le contesta «empieza de cero»; desde 0, lo nuevo.
+class ServidorEnBlanco extends TransporteDePrueba {
+  final List<String> cursores = [];
+
+  @override
+  Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
+    if (!ruta.contains('pull')) return super.obtener(ruta, parametros: parametros);
+    llamadas.add(ruta);
+    cursores.add(parametros?['cursor'] ?? '?');
+    if (parametros?['cursor'] != '0') {
+      return const RespuestaHttp(
+        200,
+        '{"cursor":0,"hay_mas":true,"cambios":[],'
+        '"resincronizar":true,"base_en_blanco":true}',
+      );
+    }
+    return const RespuestaHttp(200, '{"cursor":7,"hay_mas":false,"cambios":[]}');
+  }
+}
+
 void main() {
   Future<void> entrarYSincronizar(
     WidgetTester tester, {
@@ -85,6 +107,36 @@ void main() {
 
   testWidgets('una sincronización sin nada pendiente lo dice', (tester) async {
     await entrarYSincronizar(tester, transporte: TransporteDePrueba());
+    expect(find.text('Todo al día.'), findsOneWidget);
+  });
+
+  testWidgets('tras la base en blanco, las tiendas borradas se van del teléfono',
+      (tester) async {
+    // El reporte: «aparecen tiendas en la app que se borraron, y en el
+    // dashboard no están».
+    final servidor = ServidorEnBlanco();
+    late BaseLocal base;
+    await entrarYSincronizar(
+      tester,
+      transporte: servidor,
+      sembrar: (b) {
+        base = b as BaseLocal;
+        sembrarCliente(base, id: 'c1', nombre: 'Abarrotes Lupita');
+        base.db.execute(
+          "INSERT INTO sync_estado (clave, valor) VALUES ('cursor_pull', '40')",
+        );
+      },
+    );
+
+    expect(servidor.cursores, ['40', '0']);
+    expect(base.db.select('SELECT id FROM clientes'), isEmpty);
+    // Empezó de cero: el cursor viejo ya no vale. Sin cambios que aplicar no
+    // avanza, así que la siguiente vuelve a pedir desde 0.
+    expect(
+      base.db.select("SELECT valor FROM sync_estado WHERE clave = 'cursor_pull'")
+          .single['valor'],
+      '0',
+    );
     expect(find.text('Todo al día.'), findsOneWidget);
   });
 

@@ -112,3 +112,23 @@ async def test_se_abre_el_modulo_de_la_pantalla_actual(cliente, semilla):
 async def test_los_titulos_dicen_corte_del_dia(cliente, semilla):
     await _entrar(cliente)
     assert "Corte del día" in solo_texto(await cliente.get("/panel/liquidaciones"))
+
+
+@pytest.mark.asyncio
+async def test_el_panel_lleva_los_colores_de_la_app(cliente, semilla):
+    """Pedido de la dirección (octubre 2026): «ajustar el servidor a los colores
+    de la app». La barra en el rojo del bordado, el nombre de la empresa, y lo
+    que salió bien en verde —en rojo se leería como un error—."""
+    entrar = await cliente.get("/panel/entrar")
+    assert "Distribuciones SE" in solo_texto(entrar)
+    await _entrar(cliente)
+    html = (await cliente.get("/panel/liquidaciones")).text
+    rojo_de_la_app = re.search(
+        r"rojoDistribucionesSE = Color\(0xFF([0-9A-F]{6})\)",
+        (Path(__file__).resolve().parents[2] / "mobile" / "app" / "lib" / "src"
+         / "marca.dart").read_text(encoding="utf-8"),
+    ).group(1)
+    assert f"--marca: #{rojo_de_la_app};" in html
+    assert "header.principal {\n      background: var(--marca);" in html
+    assert re.search(r"\.aviso-caja\.bien \{\s*background: var\(--bien-suave\)", html)
+    assert "· Distribuciones SE</title>" in html

@@ -57,6 +57,8 @@ from app.api.admin.comun import (
     DIEZMILESIMA,
     CapturaInvalida,
     SesionDep,
+    agrupar_por_familia,
+    borrar_si_nadie_lo_usa,
     leer_factor,
     leer_precio,
     precio_corto,
@@ -91,9 +93,11 @@ async def listar(
     sesion: SesionDep,
     q: str = "",
     filtro: str = "todos",
+    familia: str = "",
     guardado: str = "",
+    error: str = "",
 ) -> HTMLResponse:
-    """El catálogo, con la advertencia de lo que el vendedor no puede vender.
+    """El catálogo, agrupado por familia, con lo que el vendedor no puede vender.
 
     `filtro=sin_precio` es el que importa: un producto sin precio en la lista por
     omisión **no le aparece al vendedor**. No falla, no avisa: simplemente no
@@ -113,6 +117,15 @@ async def listar(
         parametros["q"] = f"%{busqueda}%"
         parametros["exacto"] = busqueda
 
+    if familia == "sin":
+        condiciones.append("p.categoria_id IS NULL")
+    elif familia:
+        try:
+            parametros["familia"] = uuid.UUID(familia)
+            condiciones.append("p.categoria_id = :familia")
+        except ValueError:
+            familia = ""
+
     if filtro == "sin_precio":
         condiciones.append(
             "NOT EXISTS (SELECT 1 FROM precios pr "
@@ -126,6 +139,7 @@ async def listar(
                 f"""
                 SELECT p.id, p.sku, p.nombre, p.unidad_base, p.activo,
                        p.codigo_barras, p.tasa_iva, cat.nombre AS categoria,
+                       cat.id AS familia_id, cat.nombre AS familia,
                        COALESCE(pres.presentaciones, '[]'::json) AS presentaciones
                   FROM productos p
                   LEFT JOIN categorias cat ON cat.id = p.categoria_id
@@ -146,7 +160,9 @@ async def listar(
                          WHERE u.producto_id = p.id AND u.activo
                   ) pres ON true
                  WHERE {" AND ".join(condiciones)}
-                 ORDER BY p.nombre
+                 -- Por familia, en el orden en que se acomodaron (el de la hoja
+                 -- de la dirección), y dentro de cada una por clave.
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.sku
                  LIMIT 300
                 """  # noqa: S608 — las condiciones son constantes del código
             ),
@@ -159,13 +175,157 @@ async def listar(
         "productos.html",
         {
             "filas": filas,
+            "grupos": agrupar_por_familia(filas),
+            "familias": await _familias(sesion),
+            "familia": familia,
             "q": busqueda,
             "filtro": filtro,
             "puede_editar": actor.puede(PERMISO),
             "guardado": guardado,
+            "error": error,
         },
         actor=actor,
         seccion="Productos",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Familias: cómo se agrupan los artículos (ADR 0002 §89)
+# ---------------------------------------------------------------------------
+# Son las `categorias` de la base; en pantalla se llaman «familias», como en la
+# hoja de la dirección («FAMILIA GANADOR MININO»). El orden es el de la hoja:
+# una familia nueva va al final.
+
+
+async def _familias(sesion) -> list[dict]:
+    return [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text(
+                    "SELECT c.id, c.nombre, c.orden, "
+                    "       (SELECT count(*) FROM productos p "
+                    "         WHERE p.categoria_id = c.id AND p.activo) AS articulos "
+                    "  FROM categorias c WHERE c.activo ORDER BY c.orden, c.nombre"
+                )
+            )
+        ).mappings()
+    ]
+
+
+def _a_lista(*, guardado: str = "", error: str = "") -> RedirectResponse:
+    destino = "/panel/productos"
+    if guardado:
+        destino += f"?guardado={quote(guardado)}"
+    elif error:
+        destino += f"?error={quote(error)}"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _codigo_de_familia(nombre: str) -> str:
+    sin_acentos = nombre.upper().translate(str.maketrans("ÁÉÍÓÚÜÑ", "AEIOUUN"))
+    base = "-".join("".join(c if c.isalnum() else " " for c in sin_acentos).split())
+    return (base or "FAMILIA")[:32]
+
+
+@router.post("/familias")
+async def crear_familia(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    nombre: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    limpio = " ".join(nombre.split())[:80]
+    if not limpio:
+        return _a_lista(error="Escribe el nombre de la familia: «Botanas Javi».")
+    ya = (
+        await sesion.execute(
+            text("SELECT 1 FROM categorias WHERE lower(nombre) = lower(:n)"), {"n": limpio}
+        )
+    ).first()
+    if ya is not None:
+        return _a_lista(error=f"Ya hay una familia «{limpio}».")
+    codigo = _codigo_de_familia(limpio)
+    if (
+        await sesion.execute(text("SELECT 1 FROM categorias WHERE codigo = :c"), {"c": codigo})
+    ).first() is not None:
+        codigo = f"{codigo[:27]}-{uuid.uuid4().hex[:4].upper()}"
+    await sesion.execute(
+        text(
+            "INSERT INTO categorias (id, codigo, nombre, orden, activo) "
+            "VALUES (:id, :codigo, :nombre, "
+            "        (SELECT COALESCE(max(orden), 0) + 1 FROM categorias), true)"
+        ),
+        {"id": uuid.uuid4(), "codigo": codigo, "nombre": limpio},
+    )
+    await sesion.commit()
+    return _a_lista(
+        guardado=f"Familia «{limpio}» creada. Para meterle artículos, cámbialos de familia "
+        "en su ficha."
+    )
+
+
+@router.post("/familias/{familia_id}")
+async def renombrar_familia(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    familia_id: uuid.UUID,
+    nombre: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    limpio = " ".join(nombre.split())[:80]
+    if not limpio:
+        return _a_lista(error="La familia necesita un nombre.")
+    hecho = await sesion.execute(
+        text("UPDATE categorias SET nombre = :n WHERE id = :f"), {"n": limpio, "f": familia_id}
+    )
+    if hecho.rowcount == 0:
+        return _a_lista(error="Esa familia no existe.")
+    await sesion.commit()
+    return _a_lista(guardado=f"La familia ahora se llama «{limpio}».")
+
+
+@router.post("/familias/{familia_id}/eliminar")
+async def eliminar_familia(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    familia_id: uuid.UUID,
+    csrf: Annotated[str, Form()] = "",
+):
+    """Borra la familia. Sus artículos NO se borran: quedan «Sin familia»."""
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    nombre = (
+        await sesion.execute(text("SELECT nombre FROM categorias WHERE id = :f"), {"f": familia_id})
+    ).scalar_one_or_none()
+    if nombre is None:
+        return _a_lista(error="Esa familia no existe.")
+    sueltos = (
+        await sesion.execute(
+            text("UPDATE productos SET categoria_id = NULL, actualizado_en = now() "
+                 " WHERE categoria_id = :f"),
+            {"f": familia_id},
+        )
+    ).rowcount
+    borrada = await borrar_si_nadie_lo_usa(
+        sesion, "DELETE FROM categorias WHERE id = :f", {"f": familia_id}
+    )
+    if not borrada:
+        await sesion.rollback()
+        return _a_lista(
+            error=f"«{nombre}» no se puede borrar: una promoción o una subfamilia la usa."
+        )
+    await sesion.commit()
+    return _a_lista(
+        guardado=f"Familia «{nombre}» borrada."
+        + (f" Sus {sueltos} artículo(s) quedaron «Sin familia»." if sueltos else "")
     )
 
 

@@ -9,11 +9,19 @@
 </p>
 
 {% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
 
 <form class="barra" method="get" action="/panel/productos">
   <input type="search" name="q" value="{{ q }}" placeholder="Nombre, SKU o código de barras"
          style="min-width:260px">
   <input type="hidden" name="filtro" value="{{ filtro }}">
+  <select name="familia" aria-label="Familia" id="filtro_familia">
+    <option value="">Todas las familias</option>
+    {% for fa in familias %}
+      <option value="{{ fa.id }}" {% if familia == fa.id|string %}selected{% endif %}>{{ fa.nombre }}</option>
+    {% endfor %}
+    <option value="sin" {% if familia == 'sin' %}selected{% endif %}>Sin familia</option>
+  </select>
   <button type="submit">Buscar</button>
 </form>
 
@@ -43,14 +51,20 @@
         {% if puede_editar %}<th></th>{% endif %}
       </tr>
     </thead>
+    {% for g in grupos %}
     <tbody>
-      {% for f in filas %}
+      <tr class="grupo" id="familia_{{ loop.index }}">
+        <td colspan="{% if puede_editar %}4{% else %}3{% endif %}"
+            style="background:var(--fondo);font-weight:700">
+          {{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span>
+        </td>
+      </tr>
+      {% for f in g.filas %}
       <tr>
         <td>
           <a href="/panel/productos/{{ f.id }}"><strong>{{ f.nombre }}</strong></a>
           <div class="sutil">
             <span class="mono">{{ f.sku }}</span>
-            {% if f.categoria %} · {{ f.categoria }}{% endif %}
             {% if not f.activo %} · desactivado{% endif %}
           </div>
         </td>
@@ -85,6 +99,7 @@
       </tr>
       {% endfor %}
     </tbody>
+    {% endfor %}
   </table>
 </div>
 {% else %}
@@ -100,5 +115,55 @@
     sin él el vendedor no tiene qué ofrecer.
   {% endif %}
 </div>
+{% endif %}
+
+<h2 id="familias">Familias</h2>
+<p class="sutil">
+  Así se agrupan los artículos aquí, en el Inventario y en la app. Un artículo se
+  cambia de familia en su ficha. Borrar una familia no borra sus artículos: quedan
+  «Sin familia».
+</p>
+{% if familias %}
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Familia</th><th class="numero">Artículos</th>{% if puede_editar %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+      {% for fa in familias %}
+      <tr>
+        <td>
+          {% if puede_editar %}
+          <form method="post" action="/panel/productos/familias/{{ fa.id }}" class="fila-forma"
+                style="display:flex;gap:6px">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="text" name="nombre" value="{{ fa.nombre }}" maxlength="80"
+                   aria-label="Nombre de la familia {{ fa.nombre }}" style="min-width:220px">
+            <button type="submit" class="secundario">Renombrar</button>
+          </form>
+          {% else %}{{ fa.nombre }}{% endif %}
+        </td>
+        <td class="numero"><a href="/panel/productos?familia={{ fa.id }}">{{ fa.articulos }}</a></td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <form method="post" action="/panel/productos/familias/{{ fa.id }}/eliminar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="boton-chico peligro">Borrar</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Todavía no hay familias.</div>
+{% endif %}
+{% if puede_editar %}
+<form method="post" action="/panel/productos/familias" class="barra" style="margin-top:12px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="text" name="nombre" maxlength="80" placeholder="Nueva familia: «Botanas Javi»"
+         aria-label="Nombre de la nueva familia" style="min-width:260px">
+  <button type="submit">Agregar familia</button>
+</form>
 {% endif %}
 {% endblock %}

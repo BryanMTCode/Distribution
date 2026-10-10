@@ -91,9 +91,10 @@
 
 <h2 id="eliminar">Eliminar</h2>
 <p class="sutil">
-  Si nunca hizo nada, se borra. Si tiene ventas, cobros, movimientos o cualquier
-  documento firmado, <strong>se desactiva</strong>: deja de entrar al panel y a la app,
-  y su firma sigue en sus papeles.
+  Se borra de verdad, con sus teléfonos vinculados y su camión si está vacío. Si
+  tiene ventas, cargas, cortes o movimientos de inventario, <strong>no se
+  borra</strong> —borrarlo borraría esos papeles— y te dice cuáles; no se cambia
+  nada. Para que solo deje de entrar, usa <strong>Desactivar</strong>.
 </p>
 <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/eliminar" id="forma_eliminar">
   <input type="hidden" name="csrf" value="{{ csrf }}">

@@ -3,18 +3,19 @@
 ────────────────────────────────────────────────────────────────────────────
 QUÉ SE QUEDA Y QUÉ SE VA
 ────────────────────────────────────────────────────────────────────────────
-Pedido de la dirección (octubre 2026): «deja la base en cero; solo quiero
-quedarme con los usuarios que tengo y agregar estos artículos».
+Pedido de la dirección (octubre 2026): «quiero borrar todo a excepción de los
+usuarios y sus teléfonos vinculados», y tener el inventario de su Excel.
 
-**Se queda** lo que hace falta para que esos usuarios entren y trabajen: los
-usuarios con sus roles y permisos, sus rutas, los almacenes (bodegas y
-camiones), los teléfonos vinculados con su clave, las listas de precios, los
-motivos de merma y de no-drop, los objetivos por ruta y los catálogos que
-siembran las migraciones (unidades, canales, criterios del piloto).
+**Se quedan** los usuarios —con sus roles y permisos— y sus teléfonos
+vinculados con su clave. También lo que el sistema necesita para funcionar y
+siembran las migraciones: roles y permisos, unidades, canales, sucursales,
+listas de precios, motivos de merma y de no-drop, criterios del piloto.
 
-**Se va** todo lo demás: productos y precios, clientes, ventas, cargas, cortes,
-mermas, entradas y salidas, existencias y su libro mayor, cuentas, la bitácora
-de sincronización y la auditoría. Los folios vuelven a empezar en 1.
+**Se va** todo lo demás: productos y precios, clientes, rutas, bodegas y
+camiones, ventas, cargas, cortes, mermas, entradas y salidas, existencias y su
+libro mayor, cuentas, objetivos, la bitácora de sincronización y la auditoría.
+Los folios vuelven a empezar en 1. Se crea una **Bodega principal** nueva y ahí
+entra la existencia de los artículos del Excel.
 
 ────────────────────────────────────────────────────────────────────────────
 POR QUÉ TRUNCATE Y NO DELETE
@@ -32,9 +33,14 @@ LO QUE VEN LOS TELÉFONOS
 De `change_log` se quitan los deltas de lo que ya no existe y se dejan los de lo
 que se queda (lista de precios, motivos, identidad del equipo): un teléfono que
 empieza de cero los necesita. Los artículos nuevos se publican solos al darse
-de alta. Pero un teléfono que ya tenía datos los conserva —el teléfono no
-recibe «olvida todo»—, así que hay que borrarle los datos a la app y vincularlo
-otra vez con su clave.
+de alta.
+
+Un teléfono que ya tenía datos no se entera por los deltas —TRUNCATE no publica
+bajas—, así que cada teléfono vinculado queda marcado para **empezar de cero**
+(migración 0052, ADR 0002 §90): en su siguiente sincronización entrega lo que
+tenga en la cola, olvida lo de antes —tiendas, artículos, camión, ventas— y
+vuelve a bajar todo. No hay que borrarle los datos a la app ni volver a
+vincularlo.
 """
 
 from __future__ import annotations
@@ -78,7 +84,7 @@ TABLAS_QUE_SE_VACIAN = (
     "sync_cuarentena", "sync_operaciones", "sync_lotes", "sync_bajadas",
     "folios_rangos", "sesiones",
     # Piloto, tablero, analítica y cola
-    "piloto_incidencias", "piloto_jornadas", "pilotos",
+    "piloto_incidencias", "piloto_jornadas", "pilotos", "objetivos_ruta",
     "tablero_dia", "tablero_mes_ruta", "tablero_refrescos", "analitica_refrescos",
     "jobs", "auditoria",
 )
@@ -153,8 +159,9 @@ def leer_articulos(ruta: Path = ARTICULOS) -> list[Articulo]:
 async def lo_que_se_borra(sesion) -> dict[str, int]:
     """Cuántos renglones tiene hoy cada cosa que se va, para decirlo antes."""
     cuantos = {}
-    for tabla in ("ventas", "clientes", "productos", "cargas", "cortes_vendedor",
-                  "liquidaciones", "mermas", "entradas", "movimientos_inventario"):
+    for tabla in ("ventas", "clientes", "productos", "rutas", "almacenes", "cargas",
+                  "cortes_vendedor", "liquidaciones", "mermas", "entradas",
+                  "movimientos_inventario"):
         cuantos[tabla] = (
             await sesion.execute(text(f"SELECT count(*) FROM {tabla}"))
         ).scalar_one()
@@ -163,7 +170,7 @@ async def lo_que_se_borra(sesion) -> dict[str, int]:
 
 async def lo_que_se_queda(sesion) -> dict[str, int]:
     cuantos = {}
-    for tabla in ("usuarios", "rutas", "almacenes", "dispositivos"):
+    for tabla in ("usuarios", "dispositivos"):
         cuantos[tabla] = (
             await sesion.execute(text(f"SELECT count(*) FROM {tabla}"))
         ).scalar_one()
@@ -195,18 +202,38 @@ async def poner_en_blanco(
             "la base está ocupada (¿la API o el worker siguen arriba?). Detenlos con "
             "«docker compose stop api worker» y vuelve a correrlo"
         ) from e
+    # Rutas, bodegas y camiones: los usuarios cuelgan de ellos, así que primero
+    # se sueltan —eso publica a cada teléfono que ya no tiene camión— y luego se
+    # borran con DELETE (TRUNCATE no se puede: `usuarios` las apunta).
     await sesion.execute(
-        text("DELETE FROM change_log WHERE entidad <> ALL(:quedan)"),
+        text("UPDATE usuarios SET almacen_id = NULL, actualizado_en = now() "
+             " WHERE almacen_id IS NOT NULL")
+    )
+    await sesion.execute(text("DELETE FROM usuarios_rutas"))
+    await sesion.execute(
+        text("DELETE FROM change_log WHERE entidad <> ALL(:quedan) OR ruta_id IS NOT NULL"),
         {"quedan": list(ENTIDADES_QUE_SE_QUEDAN)},
+    )
+    await sesion.execute(text("DELETE FROM rutas"))
+    await sesion.execute(text("DELETE FROM almacenes"))
+    # La bodega donde entra el inventario del Excel.
+    await sesion.execute(
+        text(
+            "INSERT INTO almacenes (id, codigo, nombre, tipo, sucursal_id) "
+            "VALUES (:id, 'BODEGA_PRINCIPAL', 'Bodega principal', 'bodega', "
+            "        (SELECT id FROM sucursales ORDER BY codigo LIMIT 1))"
+        ),
+        {"id": uuid.uuid4()},
     )
     for secuencia in SECUENCIAS_DE_FOLIO:
         await sesion.execute(text(f"ALTER SEQUENCE {secuencia} RESTART WITH 1"))
-    # Los teléfonos se quedan vinculados, sin el rastro de su sincronización.
+    # Los teléfonos se quedan vinculados, sin el rastro de su sincronización, y
+    # con la marca de empezar de cero: en su próximo pull olvidan lo de antes.
     await sesion.execute(
         text(
             "UPDATE dispositivos SET ultimo_cursor_pull = 0, ultima_sync_push_en = NULL, "
             "       ultima_sync_pull_en = NULL, cola_pendiente = NULL, "
-            "       cola_reportada_en = NULL"
+            "       cola_reportada_en = NULL, empezar_de_cero = true"
         )
     )
 

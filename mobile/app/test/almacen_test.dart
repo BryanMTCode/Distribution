@@ -84,7 +84,7 @@ class _ServidorDeAlmacen implements Transporte {
           'existencias': [
             {'producto_id': 'p1', 'sku': 'ATUN-140', 'nombre': 'Atún en agua 140 g',
              'unidad_base': 'PZA', 'cantidad': '760.000', 'presentaciones': _presentaciones,
-             'precio': '10.00', 'valor': '7600.00'},
+             'precio': '10.00', 'valor': '7600.00', 'familia': 'Abarrotes'},
             {'producto_id': 'p2', 'sku': 'COCA600', 'nombre': 'Coca 600 ml',
              'unidad_base': 'PZA', 'cantidad': '12.000', 'presentaciones': _presentaciones,
              'precio': null, 'valor': null},
@@ -265,6 +265,11 @@ void main() {
       expect(tester.widget<Text>(find.byKey(const Key('valor_COCA600'))).data, '—');
       expect(textoQueContiene('Vale \$7,600.00 a precio de venta'), findsOneWidget);
       expect(textoQueContiene('1 artículo(s) sin precio no suman'), findsOneWidget);
+      // Agrupados por familia, como en la hoja de la dirección; lo que no tiene
+      // familia va al final, en «Sin familia».
+      expect(find.byKey(const Key('familia_Abarrotes')), findsOneWidget);
+      expect(find.byKey(const Key('familia_Sin familia')), findsOneWidget);
+      expect(textoQueContiene('Abarrotes · 1'), findsOneWidget);
 
       await tester.enterText(find.byKey(const Key('campo_buscar_existencia')), 'coca');
       await tester.pumpAndSettle();

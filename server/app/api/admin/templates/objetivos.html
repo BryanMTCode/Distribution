@@ -112,7 +112,7 @@
                       border-radius:4px;margin-top:5px;overflow:hidden">
             <div style="position:absolute;left:0;top:0;bottom:0;
                         width:{{ '%.1f'|format([logrado, 100]|min) }}%;
-                        background:{% if logrado >= esperado|float %}var(--acento)
+                        background:{% if logrado >= esperado|float %}var(--bien)
                                    {% elif logrado >= esperado|float - 10 %}var(--aviso)
                                    {% else %}var(--alerta){% endif %}"></div>
           </div>

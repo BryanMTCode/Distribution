@@ -161,15 +161,50 @@ async def test_un_usuario_sin_historia_se_borra(cliente, sesion, semilla):
     assert await _uno(sesion, "SELECT 1 FROM usuarios WHERE id = :u", u=nuevo) is None
 
 
-async def test_un_usuario_con_historia_se_desactiva(cliente, sesion, semilla):
-    """El vendedor de la semilla es titular de una ruta y responsable de un camión."""
+async def test_un_vendedor_sin_documentos_se_borra_con_su_telefono_y_su_camion(
+    cliente, sesion, semilla
+):
+    """Titular de una ruta, responsable de un camión vacío y con su teléfono
+    vinculado: nada de eso es historia, y antes lo dejaba «desactivado» (§88)."""
+    telefono = uuid.uuid4()
+    await sesion.execute(
+        text("INSERT INTO dispositivos (id, usuario_id, etiqueta, estado) "
+             "VALUES (:d, :u, 'POCO de Juan', 'activo')"),
+        {"d": telefono, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
     await _entrar(cliente)
     r = await _post(
         cliente, f"/panel/equipo/usuarios/{semilla['vendedor']}", "eliminar", confirmo="1"
     )
-    assert "se desactivó" in solo_texto(r)
+    assert "se eliminó, con sus teléfonos vinculados" in solo_texto(r)
+    assert "Camión 01" in solo_texto(r)
+    for sql in ("SELECT 1 FROM usuarios WHERE id = :u",
+                "SELECT 1 FROM dispositivos WHERE usuario_id = :u",
+                "SELECT 1 FROM almacenes WHERE responsable_id = :u"):
+        assert await _uno(sesion, sql, u=semilla["vendedor"]) is None, sql
+    ruta = await _uno(sesion, "SELECT vendedor_id FROM rutas WHERE id = :r", r=semilla["ruta"])
+    assert ruta["vendedor_id"] is None
+
+
+async def test_con_documentos_no_se_borra_ni_se_desactiva(cliente, sesion, semilla):
+    from tests.test_panel_liquidacion import sembrar_dia_de_trabajo
+
+    await sembrar_dia_de_trabajo(sesion, semilla)
+    await _entrar(cliente)
+    r = await _post(
+        cliente, f"/panel/equipo/usuarios/{semilla['vendedor']}", "eliminar", confirmo="1"
+    )
+    plano = solo_texto(r)
+    assert "no se puede borrar: tiene 1 venta(s), 1 carga(s)" in plano
+    assert "No se cambió nada" in plano
     fila = await _uno(sesion, "SELECT activo FROM usuarios WHERE id = :u", u=semilla["vendedor"])
-    assert fila["activo"] is False
+    assert fila["activo"] is True
+    telefonos = await _uno(
+        sesion, "SELECT count(*) AS n FROM dispositivos WHERE usuario_id = :u",
+        u=semilla["vendedor"],
+    )
+    assert telefonos["n"] == 1
 
 
 async def test_eliminar_pide_confirmar_y_no_a_uno_mismo(cliente, sesion, semilla):

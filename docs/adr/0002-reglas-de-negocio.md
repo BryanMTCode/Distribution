@@ -4851,3 +4851,89 @@ sistema no se enteraba y nadie le cobraba la diferencia.
 
 (migración 0044_efectivo_recibido; versionCode 30)
 
+## 88. Eliminar un usuario lo elimina de verdad
+
+**Decisión (octubre 2026).** «Quiero poder eliminar usuarios y que no se queden
+desactivados.» Antes, «Eliminar» desactivaba en silencio al que ya tenía historia,
+y la lista se llenaba de usuarios de prueba que no se podían quitar.
+
+- **Sin documentos se borra**, con sus teléfonos vinculados (y sus rangos de
+  folios y su rastro de sincronización) y su camión si estaba vacío. Lo que solo
+  lo nombraba —la auditoría, quién creó un cliente, quién fijó un objetivo— se
+  queda sin nombre, y la auditoría guarda «lo hizo {código} (usuario eliminado)».
+- **Con documentos no se borra ni se desactiva**: no cambia nada, y el mensaje
+  dice qué tiene («tiene 3 venta(s), 1 carga(s)»). Borrarlo borraría esos papeles.
+  Si era de prueba, se pone la base en blanco (§90) y después se elimina; si no,
+  «Desactivar» le quita el acceso y conserva la historia.
+- No se puede eliminar a uno mismo ni al último administrador activo.
+
+## 89. Los artículos se agrupan por familia
+
+**Decisión (octubre 2026).** «Quiero que los artículos se puedan agrupar, y los
+que ya agregaste se agrupen según el Excel como vienen.»
+
+- **La familia es la categoría** del producto (`categorias`, que ya existía). Los
+  25 artículos del Excel quedaron en sus cinco familias, en el orden de la hoja:
+  Ganador Minino, Botanas Javi, Sopa Maruchan, Mega Alimentos y Dulcería Valdez.
+- **Dónde se ve:** Productos del panel, agrupado con su encabezado y un filtro
+  por familia; Inventario del panel, con lo que suma y vale cada familia; y en la
+  app del gerente, Almacén → Existencias, con el mismo encabezado y subtotal. Lo
+  que no tiene familia va al final, en «Sin familia».
+- **Se administran en Productos → Familias:** agregar (al final del orden),
+  renombrar y borrar. Borrar una familia no borra sus artículos: quedan «Sin
+  familia». Al dar de alta o editar un artículo se elige su familia.
+- El catálogo de venta del vendedor todavía no se agrupa: necesitaría que la
+  familia viaje al teléfono como un dato nuevo del catálogo.
+
+## 90. Poner la base en blanco, y que el teléfono se entere
+
+**Decisión (octubre 2026).** «Quiero borrar todo a excepción de los usuarios y sus
+teléfonos vinculados.» Y después: «aparecen tiendas en la app que se borraron, y
+en el dashboard no están, como debe de ser».
+
+- **Qué se queda:** los usuarios con sus roles y permisos, sus teléfonos
+  vinculados con su clave, y lo que el sistema necesita para funcionar (listas de
+  precios, motivos, unidades, sucursales). **Se va todo lo demás**, también las
+  rutas, las bodegas y los camiones; se crea una Bodega principal nueva con el
+  inventario del Excel. El comando y el guion están en `PUESTA-EN-MARCHA.md`,
+  anexo «Poner la base en blanco».
+- **El guion pide la frase antes de detener la API**: antes la detenía y después
+  preguntaba, y si nadie contestaba —o se cortaba el SSH— el panel quedaba en 502.
+  Ahora, pase lo que pase, la vuelve a arrancar al salir.
+- **El teléfono se entera solo.** La base en blanco vacía con TRUNCATE, que no
+  publica bajas, así que el teléfono nunca recibía «esta tienda se borró» y se
+  quedaba con lo de antes para siempre —bajar lo nuevo no lo curaba: el cursor
+  avanzaba, pero lo viejo seguía ahí—. Ahora cada teléfono queda marcado
+  (`dispositivos.empezar_de_cero`, migración 0045_telefono_desde_cero) y su pull
+  contesta `resincronizar` + `base_en_blanco`. El teléfono, con la cola ya
+  entregada, olvida su copia —catálogo, tiendas, camión, ventas y su rastro en la
+  cola— y vuelve a pedir desde el cursor 0. **La marca se apaga cuando el
+  teléfono pide desde 0**, no al contestarle: si la respuesta se pierde, se lo
+  vuelve a pedir.
+- **Nunca se olvida lo que no se ha entregado**: con cola pendiente, el teléfono
+  no borra nada y lo intenta en la siguiente. Tampoco se tocan los rangos de
+  folios: un folio ya impreso no se repite.
+- La misma respuesta sin `base_en_blanco` es la de la poda del `change_log`
+  (0034), que el teléfono hasta ahora **ignoraba**: vuelve a bajar el catálogo y
+  las tiendas, pero conserva sus ventas de hoy —el servidor todavía las tiene—.
+- **La base que ya se había puesto en blanco** antes de esta versión: la
+  migración marca los teléfonos registrados antes de ese momento, así que se
+  limpian en su próxima sincronización sin volver a borrar nada.
+
+(migración 0045_telefono_desde_cero; versionCode 31)
+
+## 91. El panel con los colores de la app
+
+**Decisión (octubre 2026).** «Ajustar el servidor a los colores de la app.» El
+panel era verde; la app es roja, con el rojo del bordado de Distribuciones SE
+(`#E0282E`).
+
+- La barra de arriba en rojo con letra blanca, como la de la app, y el nombre de
+  la empresa en vez de «DSD»; el rojo en botones, enlaces y en lo elegido del
+  menú. La pantalla de entrada lleva el nombre en rojo y letra manuscrita, como
+  el logo.
+- **Lo que salió bien sigue en verde** —«guardado», «confirmada», «cuadra», «al
+  día»—: en rojo se leería como un error. Los errores llevan una orilla roja.
+- **El botón que borra va con orilla, no relleno**: en un panel rojo, un botón
+  rojo más oscuro no se distingue del de guardar.
+

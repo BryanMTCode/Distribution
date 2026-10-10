@@ -3,10 +3,12 @@
 1. **El archivo de artículos** es el de la dirección: 25 artículos en cinco
    familias, y su valor en bodega cuadra con el total de la hoja ($417,237).
    Lo que viene mal escrito se dice antes de borrar nada.
-2. **Se va** lo de operación —ventas, cargas, clientes, productos, existencias,
-   libro mayor— y **se quedan** los usuarios, sus almacenes y sus teléfonos.
+2. **Se va** todo —ventas, cargas, clientes, productos, rutas, bodegas y
+   camiones, existencias, libro mayor— y **se quedan** los usuarios y sus
+   teléfonos vinculados.
 3. **Los artículos entran** con su precio en la lista por omisión y su
-   existencia en la bodega principal, por una entrada de inventario inicial.
+   existencia en una Bodega principal nueva, por una entrada de inventario
+   inicial.
 4. **Un teléfono que empieza de cero** recibe lo nuevo y nada de lo de antes.
 5. **El comando pide la frase**: sin ella no se borra nada.
 """
@@ -77,7 +79,6 @@ async def test_lo_mal_escrito_se_dice_antes_de_borrar(tmp_path):
 async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     dia = await sembrar_dia_de_trabajo(sesion, semilla)
     usuarios = await _cuantos(sesion, "usuarios")
-    almacenes = await _cuantos(sesion, "almacenes")
 
     resultado = await _bb().poner_en_blanco(
         sesion, _bb().leer_articulos(), quien=await _bb().quien_registra(sesion)
@@ -88,18 +89,27 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     assert resultado.piezas == Decimal("10561")
 
     for tabla in ("ventas", "cargas", "clientes", "cortes_vendedor", "liquidaciones",
-                  "mermas", "sesiones", "folios_rangos"):
+                  "mermas", "sesiones", "folios_rangos", "rutas", "usuarios_rutas"):
         assert await _cuantos(sesion, tabla) == 0, tabla
     assert await _cuantos(sesion, "usuarios") == usuarios
-    assert await _cuantos(sesion, "almacenes") == almacenes
-    # El teléfono sigue vinculado, sin el rastro de su sincronización.
-    cursor = (
+    # De los almacenes solo queda la Bodega principal nueva; nadie trae camión.
+    almacenes = (
+        await sesion.execute(text("SELECT codigo, tipo FROM almacenes"))
+    ).all()
+    assert [tuple(a) for a in almacenes] == [("BODEGA_PRINCIPAL", "bodega")]
+    sin_camion = (
+        await sesion.execute(text("SELECT count(*) FROM usuarios WHERE almacen_id IS NOT NULL"))
+    ).scalar_one()
+    assert sin_camion == 0
+    # El teléfono sigue vinculado, sin el rastro de su sincronización, y marcado
+    # para olvidar lo de antes en su próximo pull (ADR 0002 §90).
+    cursor, de_cero = (
         await sesion.execute(
-            text("SELECT ultimo_cursor_pull FROM dispositivos WHERE id = :d"),
+            text("SELECT ultimo_cursor_pull, empezar_de_cero FROM dispositivos WHERE id = :d"),
             {"d": dia["dispositivo"]},
         )
-    ).scalar_one()
-    assert cursor == 0
+    ).one()
+    assert (cursor, de_cero) == (0, True)
 
     # Los artículos, con su precio y su existencia en la bodega principal.
     assert await _cuantos(sesion, "productos") == 25
@@ -110,24 +120,16 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
                 "  FROM productos p "
                 "  JOIN categorias c ON c.id = p.categoria_id "
                 "  JOIN precios pr ON pr.producto_id = p.id AND pr.unidad_codigo = 'PZA' "
-                "  JOIN existencias e ON e.producto_id = p.id AND e.almacen_id = :b "
+                "  JOIN existencias e ON e.producto_id = p.id "
+                "  JOIN almacenes a ON a.id = e.almacen_id AND a.codigo = 'BODEGA_PRINCIPAL' "
                 " WHERE p.sku = 'S-108'"
             ),
-            {"b": semilla["bodega"]},
         )
     ).mappings().one()
     assert dict(fila) == {
         "nombre": "Costal Minino 15 kilos", "familia": "Ganador Minino",
         "precio": Decimal("579.00"), "cantidad": Decimal("197.000"),
     }
-    # El camión quedó vacío: lo de antes ya no existe.
-    en_camion = (
-        await sesion.execute(
-            text("SELECT count(*) FROM existencias WHERE almacen_id = :c"),
-            {"c": semilla["camion"]},
-        )
-    ).scalar_one()
-    assert en_camion == 0
     # Y queda escrito que se hizo.
     accion = (
         await sesion.execute(text("SELECT accion FROM auditoria"))

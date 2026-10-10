@@ -8,6 +8,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../datos/transporte_http.dart';
 import '../datos/transporte_renovable.dart';
+import 'carrito.dart';
+import 'mermas.dart';
+import 'mi_dia.dart';
 import 'sesion.dart';
 
 /// Dirección del servidor.
@@ -254,6 +257,16 @@ class ControladorSync extends Notifier<EstadoSync> {
     // y devoluciones recibidas: todo eso mueve el camión. Antes no se avisaba a
     // nadie, y la carga de la mañana no aparecía en «Mi camión» hasta reiniciar.
     elCamionCambio(ref);
+    // Empezó de cero porque el servidor se lo pidió (ADR 0002 §90): la tienda
+    // abierta, el carrito y los motivos que tenían las pantallas ya no existen.
+    if (resultado.empezoDeCero) {
+      ref.invalidate(clienteEnVisitaProvider);
+      ref.invalidate(carritoProvider);
+      ref.invalidate(catalogoProvider);
+      ref.invalidate(motivosDeMermaProvider);
+      ref.invalidate(motivosDeNoDropProvider);
+      ref.invalidate(miDiaDelProvider);
+    }
 
     // ---- Orden de borrado (Fase 9) --------------------------------------
     //

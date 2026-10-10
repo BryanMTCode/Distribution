@@ -95,6 +95,7 @@ class ExistenciaDeProducto {
     required this.presentaciones,
     this.precio,
     this.valor,
+    this.familia,
   });
 
   factory ExistenciaDeProducto.deJson(Map<String, Object?> j) => ExistenciaDeProducto(
@@ -106,6 +107,7 @@ class ExistenciaDeProducto {
         presentaciones: _presentaciones(j['presentaciones']),
         precio: _dineroONulo(j['precio']),
         valor: _dineroONulo(j['valor']),
+        familia: j['familia'] as String?,
       );
 
   final String productoId;
@@ -122,6 +124,10 @@ class ExistenciaDeProducto {
 
   /// Existencia × precio. Nulo si el artículo no tiene precio.
   final Dinero? valor;
+
+  /// La familia en la que se agrupa (ADR 0002 §89). Nula si no tiene. El
+  /// servidor las manda ya ordenadas por familia.
+  final String? familia;
 
   bool get negativa => double.parse(cantidad) < 0;
 }
