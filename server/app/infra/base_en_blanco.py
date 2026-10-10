@@ -301,6 +301,23 @@ async def poner_en_blanco(
     return resultado
 
 
+async def limpiar_el_laboratorio(sesion) -> str | None:
+    """Recalcula las vistas del laboratorio de análisis con la base ya vacía.
+
+    Son vistas materializadas (migración 0020): guardan su propia copia y no se
+    enteran del TRUNCATE hasta que se recalculan. Sin esto el laboratorio
+    seguiría enseñando las ventas de antes hasta el refresco de la noche.
+    Devuelve el problema, si hubo; no detiene nada: la base ya quedó en blanco.
+    """
+    from app.workers.analitica import refrescar_todo
+
+    try:
+        await refrescar_todo(sesion)
+    except RuntimeError as e:
+        return str(e)
+    return None
+
+
 async def quien_registra(sesion) -> uuid.UUID | None:
     """El usuario de oficina a cuyo nombre queda el inventario inicial."""
     return (

@@ -169,6 +169,24 @@ async def test_un_telefono_de_cero_recibe_lo_nuevo_y_nada_de_lo_de_antes(sesion,
     assert del_viejo == 0
 
 
+async def test_el_laboratorio_tambien_queda_en_blanco(sesion, semilla):
+    """Sus vistas guardan su propia copia: sin recalcularlas, seguiría enseñando
+    las ventas de antes aunque la base ya estuviera vacía."""
+    from app.workers.analitica import refrescar_todo
+
+    await sembrar_dia_de_trabajo(sesion, semilla)
+    await refrescar_todo(sesion)
+    assert await _cuantos(sesion, "fact_ventas") > 0
+
+    await _bb().poner_en_blanco(
+        sesion, _bb().leer_articulos(), quien=await _bb().quien_registra(sesion)
+    )
+    assert await _cuantos(sesion, "fact_ventas") > 0  # todavía la copia vieja
+    assert await _bb().limpiar_el_laboratorio(sesion) is None
+    assert await _cuantos(sesion, "fact_ventas") == 0
+    assert await _cuantos(sesion, "dim_producto") == 25
+
+
 async def test_sin_la_frase_no_se_borra_nada(motor, sesion, semilla, monkeypatch):
     # El comando abre su propia sesión con el motor de la app; aquí, el de pruebas.
     monkeypatch.setattr(

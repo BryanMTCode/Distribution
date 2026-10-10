@@ -207,6 +207,7 @@ async def base_en_blanco() -> int:
         PALABRA,
         ArticulosInvalidos,
         leer_articulos,
+        limpiar_el_laboratorio,
         lo_que_se_borra,
         lo_que_se_queda,
         poner_en_blanco,
@@ -241,8 +242,12 @@ async def base_en_blanco() -> int:
         except ArticulosInvalidos as e:
             print(f"ERROR: {e}. No se borró nada.")
             return 1
+        problema = await limpiar_el_laboratorio(sesion)
 
     print(f"\nListo. {resultado.articulos} artículos en {resultado.familias} familias.")
+    if problema:
+        print(f"OJO: el laboratorio de análisis no se recalculó ({problema}); se pone al "
+              "día solo en la noche.")
     if resultado.entrada:
         print(f"Inventario inicial {resultado.entrada}: {resultado.piezas:,} piezas "
               f"{resultado.aviso_inventario}.")

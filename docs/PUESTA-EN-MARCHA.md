@@ -847,16 +847,17 @@ Después carga los **25 artículos** de `server/db/semillas/articulos_distribuci
 (el Excel de la dirección, en cinco familias) con su precio de venta, y su
 existencia entra a la bodega principal como **inventario inicial** (`EN-000001`).
 
+**Actualizar el código no borra nada:** hay que correr esto una vez.
+
 ```bash
 cd ~/Distribution
-bash scripts/en_el_servidor.sh respaldar.sh         # PRIMERO el respaldo
-docker compose stop api worker                       # que nadie escriba mientras
-docker compose run --rm api python -m app.cli base-en-blanco
-docker compose start api worker
+bash scripts/base_en_blanco.sh
 ```
 
-Antes de borrar dice cuánto hay y pide escribir `EN BLANCO`; con cualquier otra
-cosa no toca nada.
+Hace el respaldo (si falla, se detiene sin borrar), detiene la API y el worker,
+vacía la base y carga los artículos, recalcula el laboratorio de análisis y
+vuelve a arrancar la API y el worker. Antes de borrar dice cuánto hay y pide
+escribir `EN BLANCO`; con cualquier otra cosa no toca nada.
 
 **✅ Debes ver** «Listo. 25 artículos en 5 familias» y «Inventario inicial
 EN-000001: 10,561 piezas en …». En el panel, *Productos* tiene los 25 y
