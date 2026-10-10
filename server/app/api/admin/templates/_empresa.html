@@ -1,0 +1,69 @@
+{#
+  La empresa en cifras: lo que se tiene, no lo que pasó en el día. Lo usan la
+  página Empresa y el final del Tablero (ADR 0002 §98). Espera `r`, el resultado
+  de `resumen_de_la_empresa`.
+#}
+<h3>Clientes</h3>
+<div class="tarjetas" id="resumen_clientes">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/clientes">
+    <div class="numero">{{ r.clientes_activos }}</div>
+    <div class="etiqueta">clientes activos</div>
+    <div class="sutil" style="margin-top:6px">{{ r.clientes_nuevos_mes }} nuevo(s) este mes</div>
+  </a>
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/clientes">
+    <div class="numero">{{ r.prospectos }}</div>
+    <div class="etiqueta">prospectos</div>
+    <div class="sutil" style="margin-top:6px">{{ r.clientes_inactivos }} dado(s) de baja</div>
+  </a>
+</div>
+
+<h3>Gente y rutas</h3>
+<div class="tarjetas" id="resumen_gente">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/vendedores">
+    <div class="numero">{{ r.vendedores }}</div>
+    <div class="etiqueta">vendedores activos</div>
+    <div class="sutil" style="margin-top:6px">{{ r.vendedores_con_camion }} con camión asignado</div>
+  </a>
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/equipo">
+    <div class="numero">{{ r.rutas }}</div>
+    <div class="etiqueta">rutas</div>
+    <div class="sutil" style="margin-top:6px">{{ r.usuarios_oficina }} usuario(s) de oficina</div>
+  </a>
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/equipos">
+    <div class="numero">{{ r.telefonos }}</div>
+    <div class="etiqueta">teléfonos activos</div>
+  </a>
+</div>
+
+<h3>Artículos e inventario</h3>
+<div class="tarjetas" id="resumen_articulos">
+  <a class="tarjeta {% if r.productos_sin_precio %}aviso{% endif %}" style="text-decoration:none;color:inherit" href="/panel/productos">
+    <div class="numero">{{ r.productos }}</div>
+    <div class="etiqueta">artículos activos</div>
+    <div class="sutil" style="margin-top:6px">{{ r.productos_sin_precio }} sin precio</div>
+  </a>
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/inventario">
+    <div class="numero">{{ '{:,.0f}'.format(r.piezas_en_bodegas) }}</div>
+    <div class="etiqueta">piezas en bodega</div>
+    <div class="sutil" style="margin-top:6px">{{ r.bodegas }} bodega(s)</div>
+  </a>
+  <a class="tarjeta {% if r.existencias_negativas %}aviso{% endif %}" style="text-decoration:none;color:inherit" href="/panel/inventario">
+    <div class="numero">{{ '{:,.0f}'.format(r.piezas_en_camiones) }}</div>
+    <div class="etiqueta">piezas en camiones</div>
+    <div class="sutil" style="margin-top:6px">
+      {{ r.camiones }} camión(es){% if r.existencias_negativas %} · {{ r.existencias_negativas }} renglón(es) en negativo{% endif %}
+    </div>
+  </a>
+</div>
+
+<h3>Ventas</h3>
+<div class="tarjetas" id="resumen_ventas">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel?periodo=mes">
+    <div class="numero">{{ r.vendido_mes|dinero }}</div>
+    <div class="etiqueta">vendido este mes</div>
+  </a>
+  <div class="tarjeta">
+    <div class="numero">{{ r.vendido_anio|dinero }}</div>
+    <div class="etiqueta">vendido este año</div>
+  </div>
+</div>

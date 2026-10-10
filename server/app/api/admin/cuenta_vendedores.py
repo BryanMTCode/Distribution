@@ -90,7 +90,7 @@ async def listar(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTMLR
             "total": sum((Decimal(f["saldo"]) for f in filas), Decimal(0)),
         },
         actor=actor,
-        seccion="Cuenta de vendedores",
+        seccion="Vendedores",
     )
 
 
@@ -162,7 +162,7 @@ async def detalle(
             "hoy": datetime.now(UTC).date(),
         },
         actor=actor,
-        seccion="Cuenta de vendedores",
+        seccion="Vendedores",
     )
 
 

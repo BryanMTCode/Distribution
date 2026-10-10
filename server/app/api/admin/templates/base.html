@@ -227,6 +227,18 @@
     details.familia table, table.columnas-fijas { table-layout: fixed; }
     details.familia tr:first-child td { border-top: 1px solid var(--linea); }
     .plegar-todas { font-size: 13px; margin: 0 0 8px; text-align: right; }
+    /* Las pestañas de una entrada del menú (ADR 0002 §98): las pantallas que
+       antes eran entradas sueltas, ahora juntas. */
+    nav.pestanas {
+      display: flex; gap: 4px; flex-wrap: wrap; margin: -8px 0 18px;
+      border-bottom: 2px solid var(--linea);
+    }
+    nav.pestanas a {
+      padding: 8px 14px; text-decoration: none; color: var(--suave); font-weight: 600;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+    }
+    nav.pestanas a:hover { color: var(--acento); }
+    nav.pestanas a.actual { color: var(--acento); border-bottom-color: var(--marca); }
     .entrar {
       max-width: 340px; margin: 12vh auto; background: var(--papel);
       border: 1px solid var(--linea); border-top: 6px solid var(--marca);
@@ -263,6 +275,14 @@
 </nav>
 {% endif %}
 <main>
+  {# Las pestañas de la entrada del menú que junta varias pantallas (§98). #}
+  {% if pestanas %}
+  <nav class="pestanas" aria-label="{{ seccion }}">
+    {% for p in pestanas %}
+      <a href="{{ p.ruta }}" {% if p.actual %}class="actual" aria-current="page"{% endif %}>{{ p.etiqueta }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
   {% block contenido %}{% endblock %}
 </main>
 {% if actor %}</div>{% endif %}

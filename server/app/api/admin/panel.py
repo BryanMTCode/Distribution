@@ -34,6 +34,7 @@ from sqlalchemy import text
 
 from app.api.admin.arranque import faltan_para_operar, pendientes_de_hoy, revisar_arranque
 from app.api.admin.comun import SesionDep, dinero, render
+from app.api.admin.empresa import resumen_de_la_empresa
 from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import (
     ActorWeb,
@@ -232,6 +233,10 @@ async def tablero(
             "indicadores": indicadores,
             "pendientes": await pendientes_de_hoy(sesion, actor),
             "faltan_para_operar": faltan_para_operar(await revisar_arranque(sesion)),
+            # La empresa, al final del tablero (§98): ya no tiene entrada propia.
+            "empresa": (
+                await resumen_de_la_empresa(sesion) if actor.puede("tablero.ver") else None
+            ),
             "periodo": rango,
             "periodos": PERIODOS,
             **await cifras_del_periodo(sesion, rango),
@@ -401,7 +406,7 @@ async def cuarentena(
             "conteos": {c["estado"]: c["n"] for c in conteos},
         },
         actor=actor,
-        seccion="Cuarentena",
+        seccion="Teléfonos",
     )
 
 
@@ -452,7 +457,7 @@ async def cuarentena_detalle(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Cuarentena",
+        seccion="Teléfonos",
     )
 
 

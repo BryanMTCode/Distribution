@@ -172,7 +172,7 @@ async def listar(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Corte del día",
+        seccion="Cortes y cargas",
     )
 
 
@@ -414,7 +414,7 @@ async def detalle(
             "origenes": ORIGENES,
         },
         actor=actor,
-        seccion="Corte del día",
+        seccion="Cortes y cargas",
     )
 
 

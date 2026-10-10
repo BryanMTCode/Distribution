@@ -5025,3 +5025,33 @@ artículos, y así con las demás.»
 
 (versionCode 32)
 
+## 98. El panel en doce entradas
+
+**Decisión (octubre 2026).** «¿Qué puedes optimizar en Operación de rutas? Siento
+que hay secciones que pueden ir juntas; no quiero miles de secciones.» El menú
+tenía 26 entradas, y varias eran la misma tarea en dos o tres lugares.
+
+- **Doce entradas** (`NAVEGACION`): Tablero y Desempeño; Cortes y cargas, Ventas y
+  Vendedores; Clientes y Productos; Inventario, Entradas y salidas y Compras;
+  Usuarios y rutas y Teléfonos.
+- **Lo demás son pestañas** (`PESTANAS`), arriba de la página: Desempeño (del
+  día, visitas, objetivos, piloto); Cortes y cargas (por aceptar, cargas, corte a
+  mano); Vendedores (y sus cuentas); Clientes (y el plan de visita); Entradas y
+  salidas; Teléfonos (sincronizaciones, cuarentena). Solo se ven las que la
+  persona puede abrir, y el menú lleva a la primera de ésas.
+- **El Tablero** tiene un solo bloque de **Pendientes** —las tarjetas de
+  cuarentena, ventas por revisar, teléfonos callados y transferencias ya estaban
+  en él— y suma los cortes por cerrar y las cargas pedidas del flujo de §82. Al
+  final, **la Empresa**; el bloque «Catálogo», que la repetía, se fue. La tarjeta
+  «por transferencia» pasó a «clientes con compra», y la transferencia (solo de
+  una app anterior a la +28) se menciona solo si llegó alguna.
+- **Sin entrada propia, pero vivas:** Empresa (al final del Tablero), Arranque
+  (el aviso del Tablero cuando falta algo) y Transferencias (en Pendientes,
+  cuando hay alguna, con su importe). Ninguna URL cambió.
+- **Entradas y Compras siguen separadas** porque contestan cosas distintas:
+  Entradas es la mercancía que llega —sube el inventario: compra, inventario
+  inicial, ajuste, devolución del camión—; Compras es el dinero: a quién se le
+  debe y cuándo vence, los pagos, el catálogo de proveedores y el valor del
+  inventario a costo. Registrar lo que llegó y pagarlo son actos distintos, con
+  permisos distintos.
+

@@ -163,10 +163,10 @@ async def test_gerencia_confirma(cliente, sesion, semilla, dia):
 async def test_el_tablero_avisa_cuanto_espera_al_banco(cliente, sesion, semilla, dia):
     await _entrar(cliente)
     r = await cliente.get("/panel")
-    assert 'id="tarjeta_por_confirmar"' in r.text
-    plano = solo_texto(r)
-    assert "transferencias por confirmar" in plano
-    assert "2,250.00" in plano
+    # En la lista de pendientes, con lo que espera al banco (ADR 0002 §98).
+    pendientes = r.text.split('id="lista_pendientes"')[1].split("</table>")[0]
+    assert 'href="/panel/transferencias"' in pendientes
+    assert "transferencia(s) por confirmar ($2,250.00)" in pendientes
 
 
 async def test_la_transferencia_no_es_efectivo_del_corte(sesion, semilla, dia):

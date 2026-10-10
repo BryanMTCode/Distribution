@@ -126,7 +126,7 @@ async def listar(
             "error": error,
         },
         actor=actor,
-        seccion="Transferencias",
+        seccion="Ventas",
     )
 
 

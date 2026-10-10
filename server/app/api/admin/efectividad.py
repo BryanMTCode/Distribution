@@ -329,7 +329,7 @@ async def listar(
             ),
         },
         actor=actor,
-        seccion="Efectividad",
+        seccion="Desempeño",
     )
 
 

@@ -279,7 +279,7 @@ async def bitacora(
             "periodos": PERIODOS,
         },
         actor=actor,
-        seccion="Sincronizaciones",
+        seccion="Teléfonos",
     )
 
 
@@ -339,5 +339,5 @@ async def lote(
         "sincronizacion_lote.html",
         {"lote": cabecera, "operaciones": operaciones},
         actor=actor,
-        seccion="Sincronizaciones",
+        seccion="Teléfonos",
     )

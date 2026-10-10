@@ -62,7 +62,7 @@ async def listar(
             "error": error,
         },
         actor=actor,
-        seccion="Cortes y cargas por aceptar",
+        seccion="Cortes y cargas",
     )
 
 

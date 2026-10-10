@@ -287,7 +287,7 @@ async def listar(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Entradas",
+        seccion="Entradas y salidas",
     )
 
 
@@ -537,7 +537,7 @@ async def detalle(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Entradas",
+        seccion="Entradas y salidas",
     )
 
 
@@ -1443,7 +1443,7 @@ async def devolucion(
             "guardado": guardado,
         },
         actor=actor,
-        seccion="Entradas",
+        seccion="Entradas y salidas",
     )
 
 

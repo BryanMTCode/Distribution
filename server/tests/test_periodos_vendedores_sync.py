@@ -146,8 +146,8 @@ async def test_lo_que_se_atiende_ahora_no_cambia_con_el_periodo(cliente, sesion,
     await _entrar(cliente)
     for periodo in ("hoy", "mes_pasado"):
         html = (await cliente.get(f"/panel?periodo={periodo}")).text
-        assert "Lo que hay que atender ahora" in html
-        assert 'id="tarjeta_por_confirmar"' in html
+        # Un solo bloque de pendientes, el mismo con cualquier periodo (§98).
+        assert '<h2 id="pendientes">Pendientes</h2>' in html
 
 
 # ---------------------------------------------------------------------------

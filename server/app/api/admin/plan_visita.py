@@ -201,7 +201,7 @@ async def ver(
             "error": error,
         },
         actor=actor,
-        seccion="Plan de visita",
+        seccion="Clientes",
     )
 
 

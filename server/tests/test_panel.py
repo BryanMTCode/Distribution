@@ -161,7 +161,9 @@ async def test_el_tablero_cuenta_lo_que_necesita_atencion(
 
     r = await cliente.get("/panel")
     assert r.status_code == 200
-    assert "sin precio en la lista general" in r.text
+    # El producto sin precio lo delata la Empresa, al final del tablero (§98).
+    empresa = r.text.split('id="empresa"')[1]
+    assert "1 sin precio" in empresa
     assert "Tablero de operación" in r.text
 
 
@@ -250,8 +252,8 @@ async def test_el_tablero_marca_los_equipos_que_no_sincronizan(
     await sesion.commit()
 
     r = await cliente.get("/panel")
-    assert "sin sincronizar hoy" in r.text
-    assert "acumula ventas que nadie ve" in r.text
+    # En la lista de pendientes, que desde §98 junta lo que eran tarjetas.
+    assert "con más de un día sin sincronizar: lo que vendieron no se ve" in r.text
 
 
 # ---------------------------------------------------------------------------

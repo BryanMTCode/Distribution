@@ -324,6 +324,23 @@ Hazlo cada vez que recrees la base. `make doctor` avisa cuando no hay ninguno.
 
 ### Flujos a validar en el panel
 
+> **El menú tiene 12 entradas** (ADR 0002 §98), y lo que antes eran pantallas sueltas son pestañas
+> arriba de su página:
+>
+> | Entrada | Pestañas |
+> |---|---|
+> | Tablero | — (con la Empresa al final y el aviso de Arranque si falta algo) |
+> | Desempeño | Del día · Visitas (antes Efectividad) · Objetivos · Piloto |
+> | Cortes y cargas | Por aceptar · Cargas · Corte a mano (antes Corte del día) |
+> | Ventas | — (Transferencias solo aparece en Pendientes si llega alguna) |
+> | Vendedores | Vendedores · Cuentas |
+> | Clientes | Clientes · Plan de visita |
+> | Entradas y salidas | Entradas · Salidas |
+> | Teléfonos | Teléfonos · Sincronizaciones · Cuarentena |
+>
+> Productos, Inventario, Compras y Usuarios y rutas siguen igual. Las direcciones de abajo no
+> cambiaron.
+
 **Entradas de mercancía** — <http://127.0.0.1:8000/panel/entradas>
 
 Es por donde el inventario **existe**. En un sistema recién instalado es el primer paso de todos:

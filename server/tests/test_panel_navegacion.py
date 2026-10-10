@@ -65,10 +65,31 @@ def test_ninguna_pantalla_aparece_dos_veces():
 
 
 def test_liquidacion_se_llama_corte_del_dia():
+    """«Liquidación» no vuelve. Desde §98 el corte contando el camión es una
+    pestaña de «Cortes y cargas»: «Corte a mano», porque ya es la excepción."""
+    from app.api.admin.comun import PESTANAS
+
     NAVEGACION, _ = _menu()
     etiquetas = {e for _, enlaces in NAVEGACION for _, e in enlaces}
-    assert "Corte del día" in etiquetas
-    assert "Liquidación" not in etiquetas
+    pestanas = {e for grupo in PESTANAS.values() for _, e in grupo}
+    assert "Liquidación" not in etiquetas | pestanas
+    assert ("/panel/liquidaciones", "Corte a mano") in PESTANAS["Cortes y cargas"]
+
+
+def test_el_menu_tiene_doce_entradas_y_las_demas_son_pestanas():
+    """«No quiero miles de secciones» (ADR 0002 §98): 26 entradas se volvieron
+    12, y las pantallas hermanas son pestañas de su entrada."""
+    from app.api.admin.comun import PERMISO_DEL_MENU, PESTANAS
+
+    NAVEGACION, _ = _menu()
+    entradas = [e for _, enlaces in NAVEGACION for _, e in enlaces]
+    assert len(entradas) == 12
+    # Toda pestaña es una pantalla con permiso declarado, y ninguna se repite.
+    rutas = [r for grupo in PESTANAS.values() for r, _ in grupo]
+    assert len(rutas) == len(set(rutas))
+    assert set(rutas) <= set(PERMISO_DEL_MENU)
+    # Cada grupo de pestañas es una entrada del menú.
+    assert set(PESTANAS) <= set(entradas)
 
 
 def test_toda_pantalla_declara_una_seccion_que_esta_en_el_menu():
@@ -105,7 +126,11 @@ async def test_se_abre_el_modulo_de_la_pantalla_actual(cliente, semilla):
 
     assert "open" in apertura("Operación de rutas")
     assert "open" not in apertura("Almacén")
-    assert 'class="activo" aria-current="page">Corte del día<' in html
+    assert 'class="activo" aria-current="page">Cortes y cargas<' in html
+    # Y arriba, sus pestañas, con la del corte a mano marcada.
+    assert '<a href="/panel/cierres" >Por aceptar</a>' in html
+    actual = 'class="actual" aria-current="page">Corte a mano</a>'
+    assert f'<a href="/panel/liquidaciones" {actual}' in html
 
 
 @pytest.mark.asyncio

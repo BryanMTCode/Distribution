@@ -27,7 +27,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
-from app.api.admin.comun import SesionDep, permiso_de_la_pantalla, render
+from app.api.admin.comun import SesionDep, dinero, permiso_de_la_pantalla, render
 from app.api.admin.sesion_web import ActorWeb
 
 router = APIRouter(prefix="/panel/arranque", tags=["panel"], include_in_schema=False)
@@ -287,7 +287,7 @@ async def arranque(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTM
             "listos": sum(1 for p in pasos if p.listo),
         },
         actor=actor,
-        seccion="Arranque",
+        seccion="Tablero",
     )
 
 
@@ -297,6 +297,10 @@ async def arranque(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTM
 
 SQL_PENDIENTES = """
 SELECT
+  -- Lo que mandan los vendedores al terminar el día (§82): su corte y la
+  -- carga que piden para mañana.
+  (SELECT count(*) FROM cortes_vendedor WHERE estado = 'pendiente') AS cortes_por_cerrar,
+  (SELECT count(*) FROM solicitudes_carga WHERE estado = 'pendiente') AS cargas_pedidas,
   (SELECT count(*) FROM cargas
     WHERE estado = 'borrador' AND fecha_operativa <= CURRENT_DATE) AS cargas_borrador,
   (SELECT count(*) FROM cargas
@@ -313,6 +317,8 @@ SELECT
     WHERE t.estado = 'propuesto') AS devoluciones,
   (SELECT count(*) FROM ventas
     WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada') AS por_confirmar,
+  (SELECT COALESCE(sum(total), 0) FROM ventas
+    WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada') AS importe_por_confirmar,
   (SELECT count(*) FROM ventas
     WHERE requiere_revision AND estado = 'confirmada') AS ventas_revision
 """
@@ -337,6 +343,20 @@ async def pendientes_de_hoy(sesion, actor) -> list[Pendiente]:
     """
     f = (await sesion.execute(text(SQL_PENDIENTES))).mappings().one()
     todos = [
+        Pendiente(
+            "Antes de que salgan los camiones",
+            f["cortes_por_cerrar"],
+            "corte(s) de vendedor por cerrar: cuenta el efectivo que entregó.",
+            "/panel/cierres",
+            urgente=True,
+        ),
+        Pendiente(
+            "Antes de que salgan los camiones",
+            f["cargas_pedidas"],
+            "carga(s) pedida(s) por los vendedores, esperando que la aceptes.",
+            "/panel/cierres",
+            urgente=True,
+        ),
         Pendiente(
             "Antes de que salgan los camiones",
             f["cargas_borrador"],
@@ -382,8 +402,8 @@ async def pendientes_de_hoy(sesion, actor) -> list[Pendiente]:
         Pendiente(
             "Al cierre",
             f["por_confirmar"],
-            "transferencia(s) por confirmar contra el banco: hasta entonces la caja "
-            "del día no cuadra.",
+            f"transferencia(s) por confirmar ({dinero(f['importe_por_confirmar'])}) contra "
+            "el banco: vienen de una app anterior, y hasta confirmarlas la caja no cuadra.",
             "/panel/transferencias",
         ),
         Pendiente(

@@ -10,7 +10,7 @@
 
 {% if faltan_para_operar %}
 <div class="aviso-caja aviso" id="aviso_arranque">
-  <strong>Faltan {{ faltan_para_operar }} paso{{ '' if faltan_para_operar == 1 else 's' }}
+  <strong>{{ 'Falta' if faltan_para_operar == 1 else 'Faltan' }} {{ faltan_para_operar }} paso{{ '' if faltan_para_operar == 1 else 's' }}
   para empezar a operar.</strong>
   <a href="/panel/arranque">Ver qué falta y dónde se arregla</a>.
 </div>
@@ -21,7 +21,9 @@
   solo aparecen los que tienen algo. En el orden del día —lo de la mañana arriba—
   para que la lista se lea de corrido, no se busque.
 #}
-<h2 id="pendientes">Pendientes de hoy</h2>
+{# Un solo bloque de pendientes (§98): lo que antes eran tarjetas —cuarentena,
+   ventas por revisar, teléfonos callados, transferencias— ya está aquí. #}
+<h2 id="pendientes">Pendientes</h2>
 {% if pendientes %}
 <div class="tabla-marco">
   <table id="lista_pendientes">
@@ -44,61 +46,6 @@
 <div class="aviso-caja bien" id="sin_pendientes">Nada pendiente. Todo lo que llegó está registrado y cuadrado.</div>
 {% endif %}
 
-<h2>Lo que hay que atender ahora</h2>
-<div class="tarjetas">
-  <a class="tarjeta {% if indicadores.cuarentena %}alerta{% endif %}"
-     href="/panel/cuarentena" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.cuarentena }}</div>
-    <div class="etiqueta">en cuarentena</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.cuarentena %}
-        Operaciones que el servidor rechazó. El vendedor ya entregó.
-      {% else %}
-        Nada rechazado.
-      {% endif %}
-    </div>
-  </a>
-
-  <a class="tarjeta {% if indicadores.en_revision %}aviso{% endif %}"
-     href="/panel/ventas" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.en_revision }}</div>
-    <div class="etiqueta">ventas por revisar</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.en_revision %}
-        Entraron marcadas: precio viejo, fuera de geocerca, sin ubicación.
-      {% else %}
-        Todas las ventas entraron limpias.
-      {% endif %}
-    </div>
-  </a>
-
-  <div class="tarjeta {% if indicadores.equipos_rezagados %}aviso{% endif %}">
-    <div class="numero">{{ indicadores.equipos_rezagados }}</div>
-    <div class="etiqueta">equipos sin sincronizar hoy</div>
-    <div class="sutil" style="margin-top:6px">
-      De {{ indicadores.equipos_activos }} activos.
-      {% if indicadores.equipos_rezagados %}
-        Un equipo que no sincroniza acumula ventas que nadie ve.
-      {% endif %}
-    </div>
-  </div>
-
-  <a class="tarjeta {% if indicadores.transferencias_por_confirmar %}aviso{% endif %}"
-     href="/panel/transferencias" style="text-decoration:none;color:inherit"
-     id="tarjeta_por_confirmar">
-    <div class="numero">{{ indicadores.transferencias_por_confirmar }}</div>
-    <div class="etiqueta">transferencias por confirmar</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.transferencias_por_confirmar %}
-        {{ indicadores.importe_por_confirmar }} que todavía no se ve en el banco.
-        Compáralo contra el estado de cuenta.
-      {% else %}
-        Nada esperando al banco.
-      {% endif %}
-    </div>
-  </a>
-</div>
-
 {#
   Las cifras del periodo. Hoy por omisión; el selector cambia SOLO esta parte:
   los pendientes y el estado de arriba son de ahora, no de un periodo.
@@ -118,22 +65,24 @@
   </div>
 
   {# Lleva al CORTE: es donde ese efectivo se entrega de verdad. #}
-  <a class="tarjeta" href="/panel/liquidaciones"
+  <a class="tarjeta" href="/panel/cierres"
      style="text-decoration:none;color:inherit">
     <div class="numero">{{ indicadores.efectivo_hoy }}</div>
     <div class="etiqueta">{% if periodo.es_hoy %}efectivo a entregar hoy{% else %}efectivo cobrado {{ cuando }}{% endif %}</div>
     <div class="sutil" style="margin-top:6px">
-      Ventas pagadas en efectivo. Todo es de contado; una transferencia entra al
-      sistema pero no a la bolsa del vendedor.
+      Ventas pagadas en efectivo: todo es de contado.
     </div>
   </a>
 
   <div class="tarjeta">
-    <div class="numero">{{ cifras.transferencias|dinero }}</div>
-    <div class="etiqueta">por transferencia {{ cuando }}</div>
+    <div class="numero">{{ cifras.clientes_atendidos }}</div>
+    <div class="etiqueta">clientes con compra {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
-      {{ cifras.clientes_atendidos }} cliente(s) con compra{% if cifras.canceladas %},
-      {{ cifras.canceladas }} venta(s) cancelada(s){% endif %}.
+      {% if cifras.canceladas %}{{ cifras.canceladas }} venta(s) cancelada(s), aparte en
+        <a href="/panel/ventas?ver=canceladas">Ventas</a>.{% endif %}
+      {# Solo efectivo desde la +28: una transferencia viene de una app vieja. #}
+      {% if cifras.transferencias %}{{ cifras.transferencias|dinero }} por transferencia
+        (de una app anterior).{% endif %}
     </div>
   </div>
   <div class="tarjeta">
@@ -141,7 +90,7 @@
     <div class="etiqueta">visitas sin venta</div>
     <div class="sutil" style="margin-top:6px">
       {{ cifras.mermas }} merma(s) y {{ cifras.devoluciones }} devolución(es) de cliente.
-      <a href="/panel/efectividad?desde={{ periodo.inicio.isoformat() }}&hasta={{ periodo.fin.isoformat() }}">Ver en Efectividad</a>
+      <a href="/panel/efectividad?desde={{ periodo.inicio.isoformat() }}&hasta={{ periodo.fin.isoformat() }}">Ver por qué no compraron</a>
     </div>
   </div>
   <div class="tarjeta">
@@ -161,7 +110,8 @@
         <th class="numero">Ventas</th>
         <th class="numero">Importe</th>
         <th class="numero">Efectivo</th>
-        <th class="numero">Transferencia</th>
+        {# Solo efectivo desde la +28: la columna sale si alguna llegó. #}
+        {% if cifras.transferencias %}<th class="numero">Transferencia</th>{% endif %}
         <th class="numero">Sin venta</th>
         <th class="numero">Mermas</th>
       </tr>
@@ -174,7 +124,7 @@
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
         <td class="numero">{{ v.efectivo|dinero }}</td>
-        <td class="numero">{{ v.transferencias|dinero }}</td>
+        {% if cifras.transferencias %}<td class="numero">{{ v.transferencias|dinero }}</td>{% endif %}
         <td class="numero">{{ v.no_ventas }}</td>
         <td class="numero">{{ v.mermas }}</td>
       </tr>
@@ -211,34 +161,11 @@
 </div>
 {% endif %}
 
-<h2>Catálogo</h2>
-<div class="tarjetas">
-  <a class="tarjeta {% if indicadores.sin_precio %}alerta{% endif %}"
-     href="/panel/productos{% if indicadores.sin_precio %}?filtro=sin_precio{% endif %}"
-     style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.productos }}</div>
-    <div class="etiqueta">productos activos</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.sin_precio %}
-        <strong>{{ indicadores.sin_precio }} sin precio en la lista general.</strong>
-        Al vendedor no le aparecen.
-      {% else %}
-        Todos con precio en la lista general.
-      {% endif %}
-    </div>
-  </a>
-  <a class="tarjeta {% if indicadores.prospectos %}aviso{% endif %}"
-     href="/panel/clientes" style="text-decoration:none;color:inherit">
-    <div class="numero">{{ indicadores.clientes }}</div>
-    <div class="etiqueta">clientes</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if indicadores.prospectos %}
-        <strong>{{ indicadores.prospectos }} dados de alta en la calle</strong>,
-        esperando código y lista de precios.
-      {% else %}
-        Ninguno pendiente de revisar.
-      {% endif %}
-    </div>
-  </a>
-</div>
+{# La empresa al final (§98): el tamaño del negocio, que antes tenía su propia
+   entrada en el menú y repetía el bloque «Catálogo» de aquí. #}
+{% if empresa %}
+<h2 id="empresa">La empresa</h2>
+<p class="sutil">Lo que se tiene hoy, no lo que pasó en el periodo. Toca una cifra para ver su lista.</p>
+{% with r = empresa %}{% include "_empresa.html" %}{% endwith %}
+{% endif %}
 {% endblock %}

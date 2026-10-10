@@ -85,5 +85,5 @@ async def ver(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> HTMLResp
         "empresa.html",
         {"r": await resumen_de_la_empresa(sesion)},
         actor=actor,
-        seccion="Empresa",
+        seccion="Tablero",
     )

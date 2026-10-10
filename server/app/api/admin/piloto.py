@@ -239,7 +239,7 @@ async def ver(
                 "error": error,
             },
             actor=actor,
-            seccion="Piloto",
+            seccion="Desempeño",
         )
 
     ventana, dias, jornadas, incidencias, cuarentena, criterios = await _leer_todo(
@@ -306,7 +306,7 @@ async def ver(
             "error": error,
         },
         actor=actor,
-        seccion="Piloto",
+        seccion="Desempeño",
     )
 
 
@@ -587,7 +587,7 @@ async def ver_incidencias(
             "error": error,
         },
         actor=actor,
-        seccion="Piloto",
+        seccion="Desempeño",
     )
 
 

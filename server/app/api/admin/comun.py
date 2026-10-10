@@ -60,74 +60,85 @@ plantillas = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #   Almacén           la bodega: lo que entra, lo que sale, lo que hay
 #   Administración    lo que se revisa por semana, no por hora
 #
-# «Liquidación» se llama ahora «Corte del día»: es lo que la oficina dice en voz
-# alta, y «liquidación» en México también suena a despido. La URL no cambia
-# (/panel/liquidaciones) para no romper enlaces guardados.
+# ─────────────────────────────────────────────────────────────────────────────
+# DOCE ENTRADAS, CON PESTAÑAS (octubre 2026, ADR 0002 §98)
+# ─────────────────────────────────────────────────────────────────────────────
+# «Siento que hay secciones que pueden ir juntas; no quiero miles de secciones.»
+# El menú tenía 26 entradas, y varias eran la misma tarea en dos o tres lugares
+# —el corte y la carga en tres pantallas, el vendedor y su cuenta en dos—. Ahora
+# cada entrada del menú es UNA tarea, y lo que antes eran pantallas hermanas son
+# sus pestañas (`PESTANAS`), que se pintan arriba de la página. Ninguna función
+# se fue: las URL no cambian y cada pantalla dice a qué entrada pertenece con su
+# `seccion`.
 NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
-    (
-        "Hoy",
-        [
-            ("/panel", "Tablero"),
-            # El tamaño del negocio: clientes, vendedores, artículos, cartera.
-            ("/panel/empresa", "Empresa"),
-            ("/panel/desempeno", "Desempeño"),
-            # La lista de «¿qué falta para operar?». Se queda después del arranque:
-            # dar de alta un vendedor nuevo es arrancar otra vez, en chiquito.
-            ("/panel/arranque", "Arranque"),
-        ],
-    ),
-    (
-        "Operación de rutas",
-        [
-            ("/panel/plan-visita", "Plan de visita"),
-            # Lo que mandan los vendedores al terminar el día: su corte y la
-            # carga que piden para mañana (ADR 0002 §82).
-            ("/panel/cierres", "Cortes y cargas por aceptar"),
-            ("/panel/cargas", "Cargas"),
-            ("/panel/ventas", "Ventas"),
-            # Solo para cuadrar el dinero: la operación es de contado.
-            ("/panel/transferencias", "Transferencias"),
-            ("/panel/liquidaciones", "Corte del día"),
-            # Todo lo que hizo cada vendedor, en una línea de tiempo.
-            ("/panel/vendedores", "Vendedores"),
-            # Junto al Corte: es donde terminan sus faltantes.
-            ("/panel/vendedores/cuenta", "Cuenta de vendedores"),
-        ],
-    ),
-    (
-        "Catálogos",
-        [
-            ("/panel/clientes", "Clientes"),
-            ("/panel/productos", "Productos"),
-        ],
-    ),
-    (
-        "Almacén",
-        [
-            # En el orden en que ocurren: sin una entrada, el inventario solo
-            # puede mostrar ceros.
-            ("/panel/inventario", "Inventario"),
-            ("/panel/entradas", "Entradas"),
-            ("/panel/salidas", "Salidas"),
-            ("/panel/compras", "Compras"),
-        ],
-    ),
-    (
-        "Administración",
-        [
-            ("/panel/efectividad", "Efectividad"),
-            ("/panel/objetivos", "Objetivos"),
-            ("/panel/equipo", "Usuarios y rutas"),
-            ("/panel/equipos", "Teléfonos"),
-            # Cada subida y cada bajada entre los teléfonos y el servidor.
-            ("/panel/sincronizaciones", "Sincronizaciones"),
-            ("/panel/cuarentena", "Cuarentena"),
-            # Al final: el piloto es temporal por naturaleza —dos semanas— y la
-            # pantalla misma explica qué hacer cuando no hay uno activo.
-            ("/panel/piloto", "Piloto"),
-        ],
-    ),
+    ("Hoy", [
+        # Con la Empresa al final y el aviso de Arranque cuando falta algo.
+        ("/panel", "Tablero"),
+        ("/panel/desempeno", "Desempeño"),
+    ]),
+    ("Operación de rutas", [
+        # Lo que mandan los vendedores al terminar el día —su corte y la carga de
+        # mañana— y, aparte, la carga y el corte a mano (ADR 0002 §82).
+        ("/panel/cierres", "Cortes y cargas"),
+        ("/panel/ventas", "Ventas"),
+        # Todo lo que hizo cada vendedor, y su cuenta.
+        ("/panel/vendedores", "Vendedores"),
+    ]),
+    ("Catálogos", [
+        ("/panel/clientes", "Clientes"),
+        ("/panel/productos", "Productos"),
+    ]),
+    ("Almacén", [
+        # En el orden en que ocurren: sin una entrada, el inventario solo
+        # puede mostrar ceros.
+        ("/panel/inventario", "Inventario"),
+        ("/panel/entradas", "Entradas y salidas"),
+        ("/panel/compras", "Compras"),
+    ]),
+    ("Administración", [
+        ("/panel/equipo", "Usuarios y rutas"),
+        # Los teléfonos, su sincronización y lo que el servidor les rechazó.
+        ("/panel/equipos", "Teléfonos"),
+    ]),
 ]
+
+# Las pestañas de cada entrada del menú que junta varias pantallas. La primera
+# pestaña que la persona puede abrir es a donde lleva el menú. Las pantallas que
+# ya no tienen entrada propia —Empresa, Arranque, Transferencias— siguen
+# respondiendo: el Tablero las enlaza cuando tienen algo.
+PESTANAS: dict[str, list[tuple[str, str]]] = {
+    "Desempeño": [
+        ("/panel/desempeno", "Del día"),
+        ("/panel/efectividad", "Visitas"),
+        ("/panel/objetivos", "Objetivos"),
+        ("/panel/piloto", "Piloto"),
+    ],
+    "Cortes y cargas": [
+        ("/panel/cierres", "Por aceptar"),
+        ("/panel/cargas", "Cargas"),
+        # «Liquidación» se llama «Corte del día»; aquí, el corte contando el
+        # camión a mano, que ya es la excepción. La URL no cambia.
+        ("/panel/liquidaciones", "Corte a mano"),
+    ],
+    "Vendedores": [
+        ("/panel/vendedores", "Vendedores"),
+        # Donde terminan sus faltantes.
+        ("/panel/vendedores/cuenta", "Cuentas"),
+    ],
+    "Clientes": [
+        ("/panel/clientes", "Clientes"),
+        ("/panel/plan-visita", "Plan de visita"),
+    ],
+    "Entradas y salidas": [
+        ("/panel/entradas", "Entradas"),
+        ("/panel/salidas", "Salidas"),
+    ],
+    "Teléfonos": [
+        ("/panel/equipos", "Teléfonos"),
+        ("/panel/sincronizaciones", "Sincronizaciones"),
+        ("/panel/cuarentena", "Cuarentena"),
+    ],
+}
 
 
 # El permiso que pide cada pantalla para abrirse; `None` si basta con entrar al
@@ -186,14 +197,43 @@ def menu_para(actor) -> list[tuple[str, list[tuple[str, str]]]]:
         return []
     menu = []
     for titulo, enlaces in NAVEGACION:
-        visibles = [
-            (ruta, etiqueta)
-            for ruta, etiqueta in enlaces
-            if (permiso := PERMISO_DEL_MENU[ruta]) is None or actor.puede(permiso)
-        ]
+        visibles = []
+        for ruta, etiqueta in enlaces:
+            # Una entrada con pestañas se ve si alguna se puede abrir, y lleva a
+            # la primera de ésas.
+            if etiqueta in PESTANAS:
+                abiertas = pestanas_para(actor, etiqueta)
+            else:
+                abiertas = [(ruta, etiqueta)] if _puede(actor, ruta) else []
+            if abiertas:
+                visibles.append((abiertas[0][0], etiqueta))
         if visibles:
             menu.append((titulo, visibles))
     return menu
+
+
+def _puede(actor, ruta: str) -> bool:
+    permiso = PERMISO_DEL_MENU[ruta]
+    return permiso is None or actor.puede(permiso)
+
+
+def pestanas_para(actor, seccion: str) -> list[tuple[str, str]]:
+    """Las pestañas de esa entrada del menú que la persona puede abrir."""
+    if actor is None:
+        return []
+    return [(r, e) for r, e in PESTANAS.get(seccion, []) if _puede(actor, r)]
+
+
+def pestanas_de_la_pagina(actor, seccion: str, ruta_actual: str) -> list[dict]:
+    """Las pestañas a pintar arriba de la página, con la actual marcada: la de la
+    ruta más larga que contiene a la actual (`/panel/vendedores/cuenta/…` es
+    «Cuentas», no «Vendedores»). Con una sola, no se pinta nada."""
+    pestanas = pestanas_para(actor, seccion)
+    if len(pestanas) < 2:
+        return []
+    candidatas = [r for r, _ in pestanas if ruta_actual == r or ruta_actual.startswith(r + "/")]
+    actual = max(candidatas, key=len) if candidatas else None
+    return [{"ruta": r, "etiqueta": e, "actual": r == actual} for r, e in pestanas]
 
 
 def modulo_de(seccion: str) -> str | None:
@@ -450,6 +490,7 @@ def render(
             "seccion": seccion,
             "navegacion": menu_para(actor),
             "modulo_activo": modulo_de(seccion),
+            "pestanas": pestanas_de_la_pagina(actor, seccion, peticion.url.path),
             "csrf": token_csrf(peticion),
         },
     )
