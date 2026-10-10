@@ -207,6 +207,26 @@
     }
     .sutil { color: var(--suave); font-size: 13px; }
     .paginacion { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+    /* Las familias de artículos, cada una plegable (ADR 0002 §92). `<details>`
+       como el menú: se abre y se cierra sin JavaScript. Cada familia lleva su
+       propia tabla con las mismas columnas fijas, para que se alineen. */
+    details.familia {
+      border: 1px solid var(--linea); border-radius: 10px; background: var(--papel);
+      margin: 0 0 10px; overflow: hidden;
+    }
+    details.familia > summary {
+      cursor: pointer; list-style: none; padding: 10px 14px; background: var(--fondo);
+      display: flex; gap: 14px; align-items: baseline; font-weight: 700;
+    }
+    details.familia > summary::-webkit-details-marker { display: none; }
+    details.familia > summary::before { content: "▸"; color: var(--acento); }
+    details.familia[open] > summary::before { content: "▾"; }
+    details.familia > summary .resumen {
+      margin-left: auto; font-variant-numeric: tabular-nums; text-align: right;
+    }
+    details.familia table, table.columnas-fijas { table-layout: fixed; }
+    details.familia tr:first-child td { border-top: 1px solid var(--linea); }
+    .plegar-todas { font-size: 13px; margin: 0 0 8px; text-align: right; }
     .entrar {
       max-width: 340px; margin: 12vh auto; background: var(--papel);
       border: 1px solid var(--linea); border-top: 6px solid var(--marca);

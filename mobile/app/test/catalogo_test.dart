@@ -75,6 +75,59 @@ void main() {
     });
   });
 
+  group('por familia (ADR 0002 §92)', () {
+    Future<void> conDosFamilias(WidgetTester tester) => abrirCatalogo(
+          tester,
+          sembrarExtra: (base) {
+            sembrarProducto(base, id: 'p-cacahuate', nombre: 'Cacahuate japonés');
+            sembrarCarga(base, productoId: 'p-cacahuate', unidadesBase: 30);
+            // La oficina pone Botanas antes que Sopas aunque el alfabeto no.
+            sembrarFamilia(base, id: 'f-sopas', nombre: 'Sopas', orden: 2,
+                productos: ['p-sopa']);
+            sembrarFamilia(base, id: 'f-botanas', nombre: 'Botanas', orden: 1,
+                productos: ['p-cacahuate']);
+          },
+        );
+
+    testWidgets('los artículos van agrupados, en el orden de la oficina',
+        (tester) async {
+      await conDosFamilias(tester);
+      final botanas = tester.getTopLeft(find.byKey(const Key('familia_Botanas'))).dy;
+      final sopas = tester.getTopLeft(find.byKey(const Key('familia_Sopas'))).dy;
+      final cacahuate = tester.getTopLeft(find.text('Cacahuate japonés')).dy;
+      final sopa = tester.getTopLeft(find.text('Sopa de fideo 70 g')).dy;
+      expect(botanas < cacahuate && cacahuate < sopas && sopas < sopa, isTrue,
+          reason: 'Botanas, su cacahuate, Sopas y su sopa, en ese orden');
+      expect(textoQueContiene('Botanas · 1'), findsOneWidget);
+    });
+
+    testWidgets('una familia se pliega y se despliega al tocarla', (tester) async {
+      await conDosFamilias(tester);
+      await tocar(tester, const Key('familia_Botanas'));
+      expect(find.text('Cacahuate japonés'), findsNothing);
+      expect(find.text('Sopa de fideo 70 g'), findsOneWidget);
+      await tocar(tester, const Key('familia_Botanas'));
+      expect(find.text('Cacahuate japonés'), findsOneWidget);
+    });
+
+    testWidgets('plegar todas, y desplegarlas otra vez', (tester) async {
+      await conDosFamilias(tester);
+      await tocar(tester, const Key('plegar_familias'));
+      expect(find.text('Cacahuate japonés'), findsNothing);
+      expect(find.text('Sopa de fideo 70 g'), findsNothing);
+      expect(find.byKey(const Key('familia_Sopas')), findsOneWidget);
+      await tocar(tester, const Key('plegar_familias'));
+      expect(find.text('Cacahuate japonés'), findsOneWidget);
+      expect(find.text('Sopa de fideo 70 g'), findsOneWidget);
+    });
+
+    testWidgets('sin familias no hay encabezados ni botón de plegar', (tester) async {
+      await abrirCatalogo(tester);
+      expect(find.byKey(const Key('plegar_familias')), findsNothing);
+      expect(find.byKey(const Key('familia_Sin familia')), findsNothing);
+    });
+  });
+
   group('agregar al pedido', () {
     testWidgets('el total sale del precio de la lista, no de la pantalla',
         (tester) async {

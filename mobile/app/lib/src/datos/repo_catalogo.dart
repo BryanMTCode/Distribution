@@ -28,12 +28,16 @@ class ProductoEnCatalogo {
     required this.existenciaBase,
     this.codigoBarras,
     this.vaEnLaCarga = true,
+    this.familia,
   });
 
   final String id;
   final String sku;
   final String nombre;
   final String? codigoBarras;
+
+  /// El nombre de su familia, o nulo: «Sin familia» (ADR 0002 §92).
+  final String? familia;
 
   /// Ordenadas: la presentación por omisión primero.
   final List<PresentacionVendible> presentaciones;
@@ -74,12 +78,16 @@ class ProductoDelCamion {
     required this.unidades,
     required this.unidadBase,
     this.codigoBarras,
+    this.familia,
   });
 
   final String id;
   final String sku;
   final String nombre;
   final String? codigoBarras;
+
+  /// El nombre de su familia, o nulo: «Sin familia» (ADR 0002 §92).
+  final String? familia;
 
   /// 'PZA'. La unidad en la que está [existenciaBase], y la que se imprime al
   /// lado del número: «5 PZA» se entiende, «5 base» no.
@@ -153,16 +161,21 @@ class RepoCatalogo {
              pr.precio,
              pr.version,
              e.producto_id  AS en_carga,
-             COALESCE(e.cant_actual, 0) AS existencia
+             COALESCE(e.cant_actual, 0) AS existencia,
+             f.nombre AS familia
         FROM productos p
         JOIN producto_unidades u ON u.producto_id = p.id
         JOIN precios pr ON pr.producto_id = p.id
                        AND pr.unidad_codigo = u.unidad_codigo
                        AND pr.lista_id = ?1
         LEFT JOIN existencias_camion e ON e.producto_id = p.id
+        LEFT JOIN familias f ON f.id = p.categoria_id
        WHERE p.activo = 1
          AND (?2 = 0 OR p.nombre LIKE ?3 OR p.sku LIKE ?3 OR p.codigo_barras = ?4)
-       ORDER BY p.nombre, u.es_default DESC, u.factor DESC
+       -- Por familia, en el orden de la oficina (ADR 0002 §92); las que no
+       -- tienen, al final.
+       ORDER BY (f.id IS NULL), f.orden, f.nombre, p.nombre,
+                u.es_default DESC, u.factor DESC
        LIMIT ?5
       ''',
       [listaPreciosId, tieneFiltro ? 1 : 0, '%$filtro%', filtro, limite * 4],
@@ -185,6 +198,7 @@ class RepoCatalogo {
           nombre: primera['nombre'] as String,
           codigoBarras: primera['codigo_barras'] as String?,
           vaEnLaCarga: primera['en_carga'] != null,
+          familia: primera['familia'] as String?,
           existenciaBase: Cantidad.deBase((primera['existencia'] as num).toDouble()),
           presentaciones: [
             for (final f in entrada.value)
@@ -249,12 +263,15 @@ class RepoCatalogo {
              e.cant_actual AS existencia,
              u.unidad_codigo,
              u.factor,
-             u.es_default
+             u.es_default,
+             f.nombre AS familia
         FROM existencias_camion e
         JOIN productos p ON p.id = e.producto_id
         JOIN producto_unidades u ON u.producto_id = p.id
+        LEFT JOIN familias f ON f.id = p.categoria_id
        WHERE (?1 = 0 OR p.nombre LIKE ?2 OR p.sku LIKE ?2 OR p.codigo_barras = ?3)
-       ORDER BY p.nombre, u.es_default DESC, u.factor DESC
+       ORDER BY (f.id IS NULL), f.orden, f.nombre, p.nombre,
+                u.es_default DESC, u.factor DESC
        LIMIT ?4
       ''',
       [tieneFiltro ? 1 : 0, '%$filtro%', filtro, limite * 4],
@@ -276,6 +293,7 @@ class RepoCatalogo {
           nombre: primera['nombre'] as String,
           codigoBarras: primera['codigo_barras'] as String?,
           unidadBase: primera['unidad_base'] as String,
+          familia: primera['familia'] as String?,
           existenciaBase:
               Cantidad.deBase((primera['existencia'] as num).toDouble()),
           unidades: [

@@ -36,7 +36,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app.api.admin.periodo import PERIODOS, Periodo, leer_periodo
+from app.api.admin.periodo import PERIODOS, Periodo, periodo_pedido
 from app.api.admin.vendedores import (
     LIMITE,
     PERMISO_VER,
@@ -45,6 +45,7 @@ from app.api.admin.vendedores import (
     lista_de_vendedores,
     movimientos_del_vendedor,
     telefonos_del_vendedor,
+    vendedores_desactivados,
 )
 from app.api.deps import ActorDep, SesionDep
 from app.api.esquemas import Cantidad, Dinero
@@ -91,6 +92,9 @@ class ListaDeVendedores(BaseModel):
     periodo: PeriodoVisto
     periodos: list[tuple[str, str]]
     vendedores: list[VendedorEnLista]
+    # Cuántos vendedores desactivados hay. No vienen en `vendedores`: se piden
+    # aparte con `?desactivados=true` (ADR 0002 §93).
+    desactivados: int = 0
 
 
 class Ficha(BaseModel):
@@ -194,15 +198,22 @@ class VentaVista(BaseModel):
 # ---------------------------------------------------------------------------
 @router.get("", response_model=ListaDeVendedores)
 async def lista(
-    actor: ActorDep, sesion: SesionDep, periodo: str = "", desde: str = "", hasta: str = ""
+    actor: ActorDep,
+    sesion: SesionDep,
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
+    desactivados: bool = False,
 ) -> ListaDeVendedores:
+    """Los vendedores activos; con `desactivados=true`, solo los desactivados."""
     actor.exigir(PERMISO_VER)
-    rango = leer_periodo(periodo, desde, hasta)
-    filas = await lista_de_vendedores(sesion, rango)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
+    filas = await lista_de_vendedores(sesion, rango, activos=not desactivados)
     return ListaDeVendedores(
         periodo=PeriodoVisto.de(rango),
         periodos=list(PERIODOS),
         vendedores=[VendedorEnLista(**dict(f)) for f in filas],
+        desactivados=await vendedores_desactivados(sesion),
     )
 
 
@@ -258,7 +269,7 @@ async def detalle(
 ) -> DetalleDeVendedor:
     """Su ficha y TODO lo que hizo en el periodo, en orden de hora."""
     actor.exigir(PERMISO_VER)
-    rango = leer_periodo(periodo, desde, hasta)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
     etiquetas = dict(TIPOS)
     if tipo not in etiquetas:
         tipo = ""

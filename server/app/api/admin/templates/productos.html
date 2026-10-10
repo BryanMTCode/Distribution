@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block titulo %}Productos{% endblock %}
+{% macro columnas_productos() %}
+  <colgroup>
+    {% if puede_editar %}
+      <col style="width:44%"><col style="width:32%"><col style="width:9%"><col style="width:15%">
+    {% else %}
+      <col style="width:52%"><col style="width:38%"><col style="width:10%">
+    {% endif %}
+  </colgroup>
+{% endmacro %}
 {% block contenido %}
 <h1>Catálogo</h1>
 <p class="subtitulo">
@@ -41,24 +50,34 @@
 </form>
 
 {% if filas %}
-<div class="tabla-marco">
+{# Cada familia se pliega y despliega (ADR 0002 §92). Con búsqueda, todas
+   abiertas: lo que se busca no se esconde. #}
+{% if grupos|length > 1 and not q %}
+<p class="plegar-todas">
+  {% if plegadas %}
+    <a href="{{ url_familias }}" id="desplegar_todas">Desplegar todas</a>
+  {% else %}
+    <a href="{{ url_familias }}&familias=plegadas" id="plegar_todas">Plegar todas</a>
+  {% endif %}
+</p>
+{% endif %}
+<table class="columnas-fijas" style="background:transparent">
+  {{ columnas_productos() }}
+  <thead>
+    <tr>
+      <th>Producto</th>
+      <th>Presentaciones y precio general</th>
+      <th>IVA</th>
+      {% if puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+</table>
+{% for g in grupos %}
+<details class="familia" id="familia_{{ loop.index }}" {% if not plegadas or q %}open{% endif %}>
+  <summary>{{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span></summary>
   <table>
-    <thead>
-      <tr>
-        <th>Producto</th>
-        <th>Presentaciones y precio general</th>
-        <th>IVA</th>
-        {% if puede_editar %}<th></th>{% endif %}
-      </tr>
-    </thead>
-    {% for g in grupos %}
+    {{ columnas_productos() }}
     <tbody>
-      <tr class="grupo" id="familia_{{ loop.index }}">
-        <td colspan="{% if puede_editar %}4{% else %}3{% endif %}"
-            style="background:var(--fondo);font-weight:700">
-          {{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span>
-        </td>
-      </tr>
       {% for f in g.filas %}
       <tr>
         <td>
@@ -99,9 +118,9 @@
       </tr>
       {% endfor %}
     </tbody>
-    {% endfor %}
   </table>
-</div>
+</details>
+{% endfor %}
 {% else %}
 <div class="vacio">
   {% if q %}

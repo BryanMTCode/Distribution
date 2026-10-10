@@ -1,5 +1,28 @@
 {% extends "base.html" %}
 {% block titulo %}Salidas{% endblock %}
+{% macro renglon_salidas(s) %}
+    <tr>
+      <td><a href="/panel/salidas/{{ s.id }}" class="mono">{{ s.folio }}</a></td>
+      <td>{{ s.fecha_operativa.strftime('%d/%m/%Y') }}</td>
+      <td>{{ tipos.get(s.tipo, (None, s.tipo))[1] }}</td>
+      <td>{{ s.bodega }}</td>
+      <td>
+        {% if s.motivo %}<strong>{{ s.motivo }}</strong><br>{% endif %}
+        <span class="sutil">{{ s.nota or '' }}</span>
+      </td>
+      <td class="numero">{{ s.renglones }}</td>
+      <td class="numero">{{ s.piezas | entero }}</td>
+      <td>
+        {% if s.estado == 'confirmada' %}
+          <span style="color:var(--bien)">confirmada</span>
+        {% elif s.estado == 'borrador' %}
+          <span style="color:var(--aviso)">borrador</span>
+        {% else %}
+          <span class="sutil">cancelada</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endmacro %}
 {% block contenido %}
 <h1>Salidas de bodega</h1>
 <p class="subtitulo">
@@ -121,32 +144,34 @@
     </tr>
   </thead>
   <tbody>
-  {% for s in salidas %}
-    <tr>
-      <td><a href="/panel/salidas/{{ s.id }}" class="mono">{{ s.folio }}</a></td>
-      <td>{{ s.fecha_operativa.strftime('%d/%m/%Y') }}</td>
-      <td>{{ tipos.get(s.tipo, (None, s.tipo))[1] }}</td>
-      <td>{{ s.bodega }}</td>
-      <td>
-        {% if s.motivo %}<strong>{{ s.motivo }}</strong><br>{% endif %}
-        <span class="sutil">{{ s.nota or '' }}</span>
-      </td>
-      <td class="numero">{{ s.renglones }}</td>
-      <td class="numero">{{ s.piezas | entero }}</td>
-      <td>
-        {% if s.estado == 'confirmada' %}
-          <span style="color:var(--bien)">confirmada</span>
-        {% elif s.estado == 'borrador' %}
-          <span style="color:var(--aviso)">borrador</span>
-        {% else %}
-          <span class="sutil">cancelada</span>
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
+  {% for s in salidas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_salidas(s) }}{% endfor %}
   </tbody>
 </table>
 </div>
+{# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}
+{% set canceladas_salidas = salidas|selectattr('estado', 'in', ['cancelada'])|list %}
+{% if canceladas_salidas %}
+<details class="familia" id="salidas_canceladas" style="margin-top:10px">
+  <summary>Salidas canceladas <span class="sutil">· {{ canceladas_salidas|length }}</span></summary>
+  <table>
+  <thead>
+    <tr>
+      <th>Folio</th>
+      <th>Fecha</th>
+      <th>Clase</th>
+      <th>Bodega</th>
+      <th>Motivo / nota</th>
+      <th class="numero">Renglones</th>
+      <th class="numero">Piezas</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in canceladas_salidas %}{{ renglon_salidas(s) }}{% endfor %}
+  </tbody>
+  </table>
+</details>
+{% endif %}
 {% else %}
   <div class="vacio">
     Sin salidas registradas. Es lo normal hasta el primer conteo físico.

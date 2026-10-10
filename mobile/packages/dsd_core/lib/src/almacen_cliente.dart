@@ -85,6 +85,47 @@ class AlmacenResumen {
   bool get esBodega => tipo == 'bodega';
 }
 
+/// Un artículo del catálogo: lo que abre «artículos activos» en Empresa
+/// (ADR 0002 §97).
+class ArticuloDelCatalogo {
+  const ArticuloDelCatalogo({
+    required this.productoId,
+    required this.sku,
+    required this.nombre,
+    required this.unidadBase,
+    required this.enBodegas,
+    required this.enCamiones,
+    this.familia,
+    this.precio,
+  });
+
+  factory ArticuloDelCatalogo.deJson(Map<String, Object?> j) => ArticuloDelCatalogo(
+        productoId: j['producto_id']! as String,
+        sku: j['sku']! as String,
+        nombre: j['nombre']! as String,
+        unidadBase: j['unidad_base']! as String,
+        enBodegas: j['en_bodegas']! as String,
+        enCamiones: j['en_camiones']! as String,
+        familia: j['familia'] as String?,
+        precio: _dineroONulo(j['precio']),
+      );
+
+  final String productoId;
+  final String sku;
+  final String nombre;
+  final String unidadBase;
+
+  /// Texto de tres decimales, como toda cantidad que viaja.
+  final String enBodegas;
+  final String enCamiones;
+
+  /// Nula: «Sin familia». El servidor los manda ya ordenados por familia.
+  final String? familia;
+
+  /// Por pieza, de la lista por omisión. Nulo: no tiene precio.
+  final Dinero? precio;
+}
+
 class ExistenciaDeProducto {
   const ExistenciaDeProducto({
     required this.productoId,
@@ -639,6 +680,12 @@ class ClienteAlmacen {
           },
         ) as List)
           ProductoParaCapturar.deJson((p as Map).cast()),
+      ];
+
+  /// Los artículos activos, por familia (ADR 0002 §97).
+  Future<List<ArticuloDelCatalogo>> articulos() async => [
+        for (final a in await _get('/v1/almacen/articulos') as List)
+          ArticuloDelCatalogo.deJson((a as Map).cast()),
       ];
 
   Future<ListaDeEntradas> entradas() async =>

@@ -176,11 +176,17 @@ async def listar(
         )
     ).mappings().all()
 
+    # Los desactivados no se mezclan con los que trabajan: van en su propia
+    # lista, «Desactivados» (ADR 0002 §93).
+    desactivados = [u for u in usuarios if not u["activo"]]
+    usuarios = [u for u in usuarios if u["activo"]]
+
     return render(
         peticion,
         "equipo.html",
         {
             "usuarios": usuarios,
+            "desactivados": len(desactivados),
             "rutas": rutas,
             "almacenes": almacenes,
             "listas": listas,
@@ -193,6 +199,50 @@ async def listar(
                 u for u in usuarios if u["rol_codigo"] == "vendedor" and not u["rutas"]
             ],
             "minimo_password": MINIMO_PASSWORD,
+            "puede_editar": actor.puede(PERMISO),
+            "error": error,
+            "guardado": guardado,
+        },
+        actor=actor,
+        seccion="Usuarios y rutas",
+    )
+
+
+@router.get("/desactivados", response_class=HTMLResponse)
+async def desactivados(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    error: str = "",
+    guardado: str = "",
+) -> HTMLResponse:
+    """Los usuarios desactivados, aparte de los que trabajan (ADR 0002 §93).
+
+    «Que los desactivados no aparezcan ahí con todos, sino en una distinta.»
+    Aquí se reactivan, se editan o se eliminan.
+    """
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT u.id, u.codigo, u.nombre, u.rol_codigo, u.actualizado_en,
+                       COALESCE(d.equipos, 0) AS equipos
+                  FROM usuarios u
+                  LEFT JOIN LATERAL (
+                        SELECT count(*) AS equipos FROM dispositivos
+                         WHERE usuario_id = u.id AND estado <> 'revocado'
+                  ) d ON true
+                 WHERE NOT u.activo
+                 ORDER BY u.rol_codigo, u.codigo
+                """
+            )
+        )
+    ).mappings().all()
+    return render(
+        peticion,
+        "equipo_desactivados.html",
+        {
+            "usuarios": filas,
             "puede_editar": actor.puede(PERMISO),
             "error": error,
             "guardado": guardado,
@@ -376,6 +426,7 @@ async def cambiar_activo(
     sesion: SesionDep,
     usuario_id: uuid.UUID,
     activo: Annotated[str, Form()] = "",
+    volver: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
     """Activa o desactiva. **No borra.**
@@ -389,13 +440,16 @@ async def cambiar_activo(
     exigir_csrf(peticion, csrf)
 
     quiere_activo = bool(activo)
+    # Se vuelve a la lista de donde se tocó: la de desactivados o la de todos.
+    a = "/panel/equipo/desactivados" if volver == "desactivados" else "/panel/equipo"
 
     if not quiere_activo and usuario_id == actor.usuario_id:
         # Desactivarse a uno mismo deja la oficina sin nadie que pueda reactivar a
         # nadie, y el arreglo sale por línea de comandos en el servidor.
         return _volver(
+            a=a,
             error="No puedes desactivarte a ti mismo: te quedarías fuera del panel "
-            "y reactivarte exigiría entrar al servidor."
+            "y reactivarte exigiría entrar al servidor.",
         )
 
     if not quiere_activo:
@@ -415,8 +469,9 @@ async def cambiar_activo(
         ).scalar_one_or_none()
         if es_admin == "admin" and admins == 0:
             return _volver(
+                a=a,
                 error="Es el último administrador activo. Sin él nadie puede dar de "
-                "alta usuarios ni reactivar a nadie."
+                "alta usuarios ni reactivar a nadie.",
             )
 
     await sesion.execute(
@@ -436,8 +491,10 @@ async def cambiar_activo(
         )
     await sesion.commit()
     return _volver(
-        guardado="Usuario activado." if quiere_activo else
-        "Usuario desactivado y sus sesiones del panel revocadas."
+        a=a,
+        guardado="Usuario activado: ya está otra vez en la lista." if quiere_activo else
+        "Usuario desactivado y sus sesiones del panel revocadas. Ahora está en "
+        "«Desactivados».",
     )
 
 
@@ -700,8 +757,8 @@ async def crear_lista(
 # ---------------------------------------------------------------------------
 
 
-def _volver(*, error: str = "", guardado: str = ""):
-    destino = "/panel/equipo"
+def _volver(*, error: str = "", guardado: str = "", a: str = "/panel/equipo"):
+    destino = a
     if error:
         destino += f"?error={quote(error)}"
     elif guardado:

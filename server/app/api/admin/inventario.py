@@ -34,7 +34,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -58,6 +58,7 @@ async def listar(
     almacen: str = "",
     q: str = "",
     filtro: str = "con_existencia",
+    familias: str = "",
 ) -> HTMLResponse:
     """Las existencias de un almacén.
 
@@ -210,6 +211,12 @@ async def listar(
             "elegido": elegido,
             "filas": filas,
             "grupos": grupos,
+            # Cada familia se pliega (ADR 0002 §92); «Plegar todas» es un enlace,
+            # sin JavaScript, que vuelve con `familias=plegadas`.
+            "plegadas": familias == "plegadas",
+            "url_familias": "/panel/inventario?" + urlencode(
+                {"almacen": str(elegido["id"]), "filtro": filtro, "q": busqueda}
+            ),
             "descuadres": descuadres,
             "q": busqueda,
             "filtro": filtro,

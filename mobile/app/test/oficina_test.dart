@@ -18,7 +18,7 @@ import 'ayudas.dart';
 const _periodos = [
   ['hoy', 'Hoy'], ['ayer', 'Ayer'], ['semana', 'Esta semana'],
   ['semana_pasada', 'Semana pasada'], ['mes', 'Este mes'],
-  ['mes_pasado', 'Mes pasado'], ['rango', 'Personalizado'],
+  ['mes_pasado', 'Mes pasado'], ['todo', 'Todo'], ['rango', 'Personalizado'],
 ];
 
 Map<String, Object?> _periodo(String clave, String desde, String hasta) => {
@@ -36,13 +36,28 @@ class _ServidorDeOficina implements Transporte {
     final clave = parametros?['periodo'] ?? 'hoy';
     final (desde, hasta) = switch (clave) {
       'semana' => ('2026-09-21', '2026-09-24'),
+      'todo' => ('2026-08-03', '2026-09-24'),
       'rango' => (parametros!['desde']!, parametros['hasta']!),
       _ => ('2026-09-24', '2026-09-24'),
     };
     final cuerpo = switch (ruta) {
+      '/v1/vendedores' when parametros?['desactivados'] == 'true' => {
+          'periodo': _periodo(clave, desde, hasta),
+          'periodos': _periodos,
+          'desactivados': 1,
+          'vendedores': [
+            {
+              'id': 'v9', 'codigo': 'VEND09', 'nombre': 'Pedro Baja', 'activo': false,
+              'camion': null, 'rutas': null, 'ventas': 0, 'importe': '0.00',
+              'efectivo': '0.00', 'no_ventas': 0, 'mermas': 0,
+              'ultimo_contacto': null, 'saldo_cuenta': '0.00',
+            },
+          ],
+        },
       '/v1/vendedores' => {
           'periodo': _periodo(clave, desde, hasta),
           'periodos': _periodos,
+          'desactivados': 1,
           'vendedores': [
             {
               'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'activo': true,
@@ -121,6 +136,17 @@ class _ServidorDeOficina implements Transporte {
             {'fecha': '2026-09-23', 'ventas': 0, 'importe': '0.00', 'efectivo': '0.00'},
           ],
         },
+      '/v1/almacen/articulos' => [
+          for (final (sku, nombre, familia, precio) in [
+            ('S-100', 'Sobre Minino salmón', 'Ganador Minino', '10.00'),
+            ('B-100', 'Cacahuate japonés', 'Botanas Javi', null),
+          ])
+            {
+              'producto_id': sku, 'sku': sku, 'nombre': nombre, 'familia': familia,
+              'unidad_base': 'PZA', 'precio': precio, 'en_bodegas': '1056.000',
+              'en_camiones': '24.000',
+            },
+        ],
       '/v1/tablero/empresa' => {
           'clientes_activos': 120, 'prospectos': 4, 'clientes_inactivos': 2,
           'clientes_nuevos_mes': 6, 'vendedores': 5,
@@ -296,6 +322,34 @@ void main() {
       expect(textoQueContiene(r'Debe $35.00'), findsOneWidget);
     });
 
+    testWidgets('los desactivados no se mezclan: van en su propia lista (ADR 0002 §93)',
+        (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('boton_vendedores')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pedro Baja'), findsNothing);
+
+      await tocar(tester, const Key('ver_vendedores_desactivados'));
+      expect(find.byKey(const Key('pantalla_vendedores_desactivados')), findsOneWidget);
+      expect(servidor.pedidas.last.$2, {'periodo': 'hoy', 'desactivados': 'true'});
+      expect(find.text('Pedro Baja'), findsOneWidget);
+      expect(find.text('Juan Pérez'), findsNothing);
+      expect(find.byKey(const Key('ver_vendedores_desactivados')), findsNothing);
+    });
+
+    testWidgets('«Todo» pide todo y dice desde cuándo (ADR 0002 §96)', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('boton_vendedores')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('periodo_todo')).first);
+      await tester.tap(find.byKey(const Key('periodo_todo')).first);
+      await tester.pumpAndSettle();
+
+      expect(servidor.pedidas.last.$2, {'periodo': 'todo'});
+      expect(textoQueContiene('Todo, del lunes 3 de agosto al jueves 24 de septiembre'),
+          findsOneWidget);
+    });
+
     testWidgets('cambiar a la semana pide la semana y lo dice con fechas', (tester) async {
       final servidor = await _montar(tester);
       await tester.tap(find.byKey(const Key('boton_vendedores')));
@@ -396,6 +450,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(servidor.pedidas.last.$1, '/v1/tablero');
       expect(servidor.pedidas.last.$2, isNot(contains('fecha')));
+    });
+
+    testWidgets('cada cifra de Empresa abre su lista (ADR 0002 §97)', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('nav_empresa')));
+      await tester.pumpAndSettle();
+
+      await tocar(tester, const Key('empresa_articulos'));
+      expect(find.byKey(const Key('pantalla_articulos')), findsOneWidget);
+      expect(find.byKey(const Key('familia_Ganador Minino')), findsOneWidget);
+      expect(find.byKey(const Key('articulo_S-100')), findsOneWidget);
+      expect(textoQueContiene('sin precio'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tocar(tester, const Key('empresa_vendido_mes'));
+      expect(find.byKey(const Key('pantalla_vendedores')), findsOneWidget);
+      expect(servidor.pedidas.last.$1, '/v1/vendedores');
+      expect(servidor.pedidas.last.$2, {'periodo': 'mes'});
     });
 
     testWidgets('la empresa: clientes, vendedores, artículos', (tester) async {

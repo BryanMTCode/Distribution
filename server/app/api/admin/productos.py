@@ -47,7 +47,7 @@ import json
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -96,6 +96,7 @@ async def listar(
     familia: str = "",
     guardado: str = "",
     error: str = "",
+    familias: str = "",
 ) -> HTMLResponse:
     """El catálogo, agrupado por familia, con lo que el vendedor no puede vender.
 
@@ -178,6 +179,12 @@ async def listar(
             "grupos": agrupar_por_familia(filas),
             "familias": await _familias(sesion),
             "familia": familia,
+            # Cada familia se pliega (ADR 0002 §92); «Plegar todas» es un enlace,
+            # sin JavaScript, que vuelve con `familias=plegadas`.
+            "plegadas": familias == "plegadas",
+            "url_familias": "/panel/productos?" + urlencode(
+                {"q": busqueda, "filtro": filtro, "familia": familia}
+            ),
             "q": busqueda,
             "filtro": filtro,
             "puede_editar": actor.puede(PERMISO),

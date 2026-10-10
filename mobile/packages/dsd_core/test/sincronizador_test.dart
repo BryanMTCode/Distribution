@@ -437,6 +437,39 @@ void main() {
     expect(fila['sincronizado'], equals(1));
   });
 
+  test('LA FAMILIA LLEGA COMO SU PROPIO DELTA, y se borra si la borran', () async {
+    // ADR 0002 §92: el producto trae su categoria_id; el nombre y el orden de
+    // la familia viajan aparte, para agrupar el catálogo en el teléfono.
+    Map<String, Object?> familia(int cursor, String operacion, {String nombre = 'Botanas'}) => {
+          'cursor': cursor,
+          'entidad': 'categoria',
+          'entidad_id': 'f-1',
+          'operacion': operacion,
+          'payload': operacion == 'delete'
+              ? null
+              : {'id': 'f-1', 'codigo': 'BOTANAS', 'nombre': nombre, 'orden': 2,
+                 'activo': true, 'padre_id': null},
+        };
+
+    final r = await armarSincronizador(
+      db,
+      TransporteFalso([
+        Responde.pull(cambios: [familia(1, 'upsert'), familia(2, 'upsert', nombre: 'Botanas Javi')]),
+      ]),
+    ).sincronizar(cursorActual: 0);
+    expect(r.deltasDesconocidos, 0, reason: 'el teléfono no sabía qué hacer con la familia');
+    expect(
+      db.select('SELECT nombre, orden, activo FROM familias').single,
+      {'nombre': 'Botanas Javi', 'orden': 2, 'activo': 1},
+    );
+
+    await armarSincronizador(
+      db,
+      TransporteFalso([Responde.pull(cambios: [familia(3, 'delete')])]),
+    ).sincronizar(cursorActual: 2);
+    expect(contar('familias'), 0);
+  });
+
   test('un producto retirado se desactiva, no se borra', () async {
     // Puede seguir apareciendo en ventas ya hechas que aún no sincronizan.
     await armarSincronizador(

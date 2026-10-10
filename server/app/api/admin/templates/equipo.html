@@ -1,5 +1,44 @@
 {% extends "base.html" %}
 {% block titulo %}Equipo{% endblock %}
+{# El nombre se cambia aquí mismo, sin abrir la ficha (ADR 0002 §94). #}
+{% macro nombre_editable(tipo, fila) %}
+  {% if puede_editar %}
+  <form method="post" action="/panel/equipo/{{ tipo }}/{{ fila.id }}/nombre"
+        style="display:flex;gap:6px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="nombre" value="{{ fila.nombre }}" maxlength="120" required
+           aria-label="Nombre de {{ fila.codigo }}" style="min-width:150px;flex:1">
+    <button type="submit" class="boton-chico" id="renombrar_{{ tipo }}_{{ fila.codigo }}">Guardar</button>
+  </form>
+  {% else %}{{ fila.nombre }}{% endif %}
+{% endmacro %}
+
+{# Lo desactivado no se mezcla con lo que se usa: va plegado al final de su
+   tabla (ADR 0002 §93). #}
+{% macro desactivadas(tipo, filas, sujeto) %}
+  {% set apagadas = filas|rejectattr('activo')|list %}
+  {% if apagadas %}
+  <details class="familia" id="{{ tipo }}_desactivadas" style="margin-top:8px">
+    <summary>{{ sujeto }} <span class="sutil">· {{ apagadas|length }}</span></summary>
+    <table>
+      <tbody>
+        {% for f in apagadas %}
+        <tr>
+          <td><span class="mono">{{ f.codigo }}</span></td>
+          <td>{{ f.nombre }}</td>
+          {% if puede_editar %}
+          <td class="acciones">
+            <a class="boton-chico" href="/panel/equipo/{{ tipo }}/{{ f.id }}#editar">Editar o activar</a>
+            <a class="boton-chico peligro" href="/panel/equipo/{{ tipo }}/{{ f.id }}#eliminar">Eliminar</a>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+{% endmacro %}
 {% block contenido %}
 <h1>Equipo y estructura</h1>
 <p class="subtitulo">
@@ -34,6 +73,14 @@
 {# Usuarios                                                                 #}
 {# ------------------------------------------------------------------------ #}
 <h2>Usuarios</h2>
+<p class="sutil" id="enlace_desactivados">
+  {% if desactivados %}
+    Los desactivados no salen aquí:
+    <a href="/panel/equipo/desactivados">ver los {{ desactivados }} desactivado(s)</a>.
+  {% else %}
+    Ningún usuario desactivado.
+  {% endif %}
+</p>
 <div class="tabla-marco">
   <table>
     <thead>
@@ -47,10 +94,9 @@
     </thead>
     <tbody>
       {% for u in usuarios %}
-      <tr{% if not u.activo %} style="opacity:.55"{% endif %}>
+      <tr>
         <td>
           <span class="mono">{{ u.codigo }}</span>
-          {% if not u.activo %}<div class="sutil">desactivado</div>{% endif %}
         </td>
         <td>
           {{ u.nombre }}
@@ -91,13 +137,8 @@
           </form>
           <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo">
             <input type="hidden" name="csrf" value="{{ csrf }}">
-            {% if u.activo %}
-              <button type="submit" class="secundario"
-                      style="padding:3px 9px;font-size:12px">Desactivar</button>
-            {% else %}
-              <button type="submit" name="activo" value="1" class="secundario"
-                      style="padding:3px 9px;font-size:12px">Activar</button>
-            {% endif %}
+            <button type="submit" class="secundario"
+                    style="padding:3px 9px;font-size:12px">Desactivar</button>
           </form>
         </td>
         {% endif %}
@@ -107,10 +148,11 @@
   </table>
 </div>
 <p class="sutil">
-  Eliminar a un usuario que ya firmó documentos —ventas, cobros, movimientos— lo
-  <strong>desactiva</strong> en vez de borrarlo: sus sesiones mueren en la siguiente
-  petición, su equipo deja de sincronizar, y su firma sigue en sus papeles. El que
-  nunca hizo nada se borra.
+  <strong>Eliminar</strong> borra al usuario de verdad, con sus teléfonos; si ya
+  firmó documentos —ventas, cargas, movimientos— no se borra y se dice qué tiene.
+  <strong>Desactivar</strong> le quita el acceso y conserva su historia: sus
+  sesiones mueren en la siguiente petición, su equipo deja de sincronizar, y pasa a
+  «Desactivados».
 </p>
 
 {% if puede_editar %}
@@ -192,7 +234,7 @@
 {# ------------------------------------------------------------------------ #}
 {# Rutas                                                                    #}
 {# ------------------------------------------------------------------------ #}
-<h2>Rutas</h2>
+<h2 id="rutas">Rutas</h2>
 {% if rutas %}
 <div class="tabla-marco">
   <table>
@@ -206,10 +248,10 @@
       </tr>
     </thead>
     <tbody>
-      {% for r in rutas %}
-      <tr{% if not r.activo %} style="opacity:.55"{% endif %}>
+      {% for r in rutas if r.activo %}
+      <tr>
         <td><span class="mono">{{ r.codigo }}</span></td>
-        <td>{{ r.nombre }}</td>
+        <td>{{ nombre_editable('rutas', r) }}</td>
         <td class="sutil">
           {% if r.vendedor %}{{ r.vendedor_codigo }} · {{ r.vendedor }}{% else %}
             <span style="color:var(--alerta)">sin titular</span>
@@ -244,6 +286,7 @@
     </tbody>
   </table>
 </div>
+{{ desactivadas('rutas', rutas, 'Rutas desactivadas') }}
 <p class="sutil">
   Cambiar el titular mueve también su <em>alcance</em>: al anterior se le quita, o su
   teléfono seguiría recibiendo —y pudiendo venderle a— los clientes de una ruta que
@@ -274,7 +317,7 @@
 {# ------------------------------------------------------------------------ #}
 {# Almacenes                                                                #}
 {# ------------------------------------------------------------------------ #}
-<h2>Almacenes</h2>
+<h2 id="almacenes">Almacenes</h2>
 {% if almacenes %}
 <div class="tabla-marco">
   <table>
@@ -289,10 +332,10 @@
       </tr>
     </thead>
     <tbody>
-      {% for a in almacenes %}
-      <tr{% if not a.activo %} style="opacity:.55"{% endif %}>
+      {% for a in almacenes if a.activo %}
+      <tr>
         <td><span class="mono">{{ a.codigo }}</span></td>
-        <td>{{ a.nombre }}</td>
+        <td>{{ nombre_editable('almacenes', a) }}</td>
         <td class="sutil">{{ a.tipo }}</td>
         <td class="sutil">{{ a.responsable or '—' }}</td>
         <td class="numero">
@@ -314,6 +357,7 @@
     </tbody>
   </table>
 </div>
+{{ desactivadas('almacenes', almacenes, 'Bodegas y camiones desactivados') }}
 <p class="sutil">
   Un producto en negativo no es un error del sistema: es un conteo que hay que
   revisar. Pasa cuando se carga más de lo que la bodega tenía registrado, y se
@@ -353,7 +397,7 @@
 {# ------------------------------------------------------------------------ #}
 {# Listas de precios                                                        #}
 {# ------------------------------------------------------------------------ #}
-<h2>Listas de precios</h2>
+<h2 id="listas">Listas de precios</h2>
 <div class="tabla-marco">
   <table>
     <thead>
@@ -366,13 +410,13 @@
       </tr>
     </thead>
     <tbody>
-      {% for l in listas %}
-      <tr{% if not l.activo %} style="opacity:.55"{% endif %}>
+      {% for l in listas if l.activo %}
+      <tr>
         <td>
           <span class="mono">{{ l.codigo }}</span>
           {% if l.es_default %}<div class="sutil">por omisión</div>{% endif %}
         </td>
-        <td>{{ l.nombre }}</td>
+        <td>{{ nombre_editable('listas', l) }}</td>
         <td class="numero">
           {{ l.productos }}
           {% if not l.productos %}
@@ -391,6 +435,7 @@
     </tbody>
   </table>
 </div>
+{{ desactivadas('listas', listas, 'Listas desactivadas') }}
 <p class="sutil">
   La lista <strong>por omisión</strong> es la que se le cotiza a un cliente dado de
   alta en la calle, que nace sin lista asignada. Cambiar cuál es mueve el precio de

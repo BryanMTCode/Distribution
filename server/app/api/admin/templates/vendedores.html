@@ -8,8 +8,19 @@
   cuenta.
 </p>
 
-{% set ocultos = {} %}
+{% set ocultos = {"ver": "desactivados" if viendo_desactivados else ""} %}
 {% include "_periodo.html" %}
+
+{# Los desactivados no se mezclan con los que trabajan (ADR 0002 §93). #}
+<form class="barra" method="get">
+  <input type="hidden" name="periodo" value="{{ periodo.clave }}">
+  <input type="hidden" name="desde" value="{{ periodo.inicio.isoformat() }}">
+  <input type="hidden" name="hasta" value="{{ periodo.fin.isoformat() }}">
+  <button type="submit" name="ver" value="" id="ver_activos"
+          class="{% if viendo_desactivados %}secundario{% endif %}">Activos</button>
+  <button type="submit" name="ver" value="desactivados" id="ver_desactivados"
+          class="{% if not viendo_desactivados %}secundario{% endif %}">Desactivados ({{ desactivados }})</button>
+</form>
 
 {% if vendedores %}
 <div class="tabla-marco">
@@ -29,10 +40,10 @@
     </thead>
     <tbody>
       {% for v in vendedores %}
-      <tr {% if not v.activo %}style="opacity:.6"{% endif %}>
+      <tr>
         <td>
           <a href="/panel/vendedores/{{ v.id }}?{{ periodo.como_parametros() }}">{{ v.nombre }}</a>
-          <div class="sutil">{{ v.codigo }}{% if not v.activo %} · dado de baja{% endif %}</div>
+          <div class="sutil">{{ v.codigo }}{% if not v.activo %} · desactivado{% endif %}</div>
         </td>
         <td>
           {{ v.camion or 'sin camión' }}
@@ -55,6 +66,12 @@
   </table>
 </div>
 {% else %}
-<div class="vacio">No hay vendedores. Se dan de alta en <a href="/panel/equipo">Usuarios y rutas</a>.</div>
+<div class="vacio">
+  {% if viendo_desactivados %}
+    Ningún vendedor desactivado.
+  {% else %}
+    No hay vendedores activos. Se dan de alta en <a href="/panel/equipo">Usuarios y rutas</a>.
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

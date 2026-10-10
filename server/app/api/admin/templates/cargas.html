@@ -1,5 +1,32 @@
 {% extends "base.html" %}
 {% block titulo %}Cargas{% endblock %}
+{% macro renglon_filas(f) %}
+      <tr>
+        <td>
+          <a href="/panel/cargas/{{ f.id }}"><span class="mono">{{ f.folio }}</span></a>
+          <div class="sutil">{{ f.fecha_operativa.strftime('%d/%m/%Y') }}</div>
+        </td>
+        <td>
+          {{ f.vendedor }}
+          <div class="sutil">
+            {{ f.camion }}{% if f.ruta %} · {{ f.ruta }}{% endif %}
+          </div>
+        </td>
+        <td class="numero">{{ f.renglones }}</td>
+        <td class="numero">{{ f.piezas|entero }}</td>
+        <td>
+          {% if f.estado == 'borrador' %}
+            <span class="etiqueta-motivo">Borrador · sin salir de bodega</span>
+          {% elif f.estado == 'confirmada' %}
+            <span class="etiqueta-motivo"
+                  style="background:var(--bien-suave);color:var(--bien)">Confirmada</span>
+            <div class="sutil">{{ f.confirmada_en.strftime('%d/%m %H:%M') }}</div>
+          {% else %}
+            <span class="sutil">{{ f.estado }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endmacro %}
 {% block contenido %}
 <h1>Cargas del camión</h1>
 <p class="subtitulo">
@@ -80,36 +107,31 @@
       </tr>
     </thead>
     <tbody>
-      {% for f in filas %}
-      <tr>
-        <td>
-          <a href="/panel/cargas/{{ f.id }}"><span class="mono">{{ f.folio }}</span></a>
-          <div class="sutil">{{ f.fecha_operativa.strftime('%d/%m/%Y') }}</div>
-        </td>
-        <td>
-          {{ f.vendedor }}
-          <div class="sutil">
-            {{ f.camion }}{% if f.ruta %} · {{ f.ruta }}{% endif %}
-          </div>
-        </td>
-        <td class="numero">{{ f.renglones }}</td>
-        <td class="numero">{{ f.piezas|entero }}</td>
-        <td>
-          {% if f.estado == 'borrador' %}
-            <span class="etiqueta-motivo">Borrador · sin salir de bodega</span>
-          {% elif f.estado == 'confirmada' %}
-            <span class="etiqueta-motivo"
-                  style="background:var(--bien-suave);color:var(--bien)">Confirmada</span>
-            <div class="sutil">{{ f.confirmada_en.strftime('%d/%m %H:%M') }}</div>
-          {% else %}
-            <span class="sutil">{{ f.estado }}</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
+      {% for f in filas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_filas(f) }}{% endfor %}
     </tbody>
   </table>
 </div>
+{# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}
+{% set canceladas_filas = filas|selectattr('estado', 'in', ['cancelada'])|list %}
+{% if canceladas_filas %}
+<details class="familia" id="cargas_canceladas" style="margin-top:10px">
+  <summary>Cargas canceladas <span class="sutil">· {{ canceladas_filas|length }}</span></summary>
+  <table>
+    <thead>
+      <tr>
+        <th>Folio</th>
+        <th>Vendedor</th>
+        <th class="numero">Renglones</th>
+        <th class="numero">Piezas</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+  <tbody>
+  {% for f in canceladas_filas %}{{ renglon_filas(f) }}{% endfor %}
+  </tbody>
+  </table>
+</details>
+{% endif %}
 {% else %}
 <div class="vacio">
   {% if filtro == 'abiertas' %}

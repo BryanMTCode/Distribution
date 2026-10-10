@@ -1,5 +1,21 @@
 {% extends "base.html" %}
 {% block titulo %}{{ vendedor.nombre if vendedor else 'Vendedor' }}{% endblock %}
+{% macro renglon_movimientos(m) %}
+      <tr>
+        <td>{% if m.momento %}{{ m.momento.strftime('%d/%m %H:%M') }}{% else %}{{ m.fecha.strftime('%d/%m') }}{% endif %}</td>
+        <td>{{ dict(tipos)[m.tipo] if m.tipo in dict(tipos) else m.tipo }}</td>
+        <td class="mono">
+          {% if m.enlace %}<a href="{{ m.enlace }}">{{ m.folio or 'ver' }}</a>{% else %}{{ m.folio or '' }}{% endif %}
+        </td>
+        <td>{{ m.cliente or '' }}</td>
+        <td>
+          {{ m.detalle }}
+          {% if m.marca %}<span class="etiqueta-motivo">revisar</span>{% endif %}
+        </td>
+        <td class="numero">{% if m.importe is not none %}{{ m.importe|dinero }}{% endif %}</td>
+        <td>{{ m.estado or '' }}</td>
+      </tr>
+      {% endmacro %}
 {% block contenido %}
 <p><a href="/panel/vendedores?{{ periodo.como_parametros() }}">← Vendedores</a></p>
 
@@ -56,25 +72,33 @@
       </tr>
     </thead>
     <tbody>
-      {% for m in movimientos %}
-      <tr>
-        <td>{% if m.momento %}{{ m.momento.strftime('%d/%m %H:%M') }}{% else %}{{ m.fecha.strftime('%d/%m') }}{% endif %}</td>
-        <td>{{ dict(tipos)[m.tipo] if m.tipo in dict(tipos) else m.tipo }}</td>
-        <td class="mono">
-          {% if m.enlace %}<a href="{{ m.enlace }}">{{ m.folio or 'ver' }}</a>{% else %}{{ m.folio or '' }}{% endif %}
-        </td>
-        <td>{{ m.cliente or '' }}</td>
-        <td>
-          {{ m.detalle }}
-          {% if m.marca %}<span class="etiqueta-motivo">revisar</span>{% endif %}
-        </td>
-        <td class="numero">{% if m.importe is not none %}{{ m.importe|dinero }}{% endif %}</td>
-        <td>{{ m.estado or '' }}</td>
-      </tr>
-      {% endfor %}
+      {% for m in movimientos|rejectattr('estado', 'in', ['cancelada', 'cancelado']) %}{{ renglon_movimientos(m) }}{% endfor %}
     </tbody>
   </table>
 </div>
+{# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}
+{% set canceladas_movimientos = movimientos|selectattr('estado', 'in', ['cancelada', 'cancelado'])|list %}
+{% if canceladas_movimientos %}
+<details class="familia" id="movimientos_cancelados" style="margin-top:10px">
+  <summary>Canceladas <span class="sutil">· {{ canceladas_movimientos|length }}</span></summary>
+  <table id="tabla_movimientos">
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Qué</th>
+        <th>Folio</th>
+        <th>Cliente</th>
+        <th>Detalle</th>
+        <th class="numero">Importe</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+  <tbody>
+  {% for m in canceladas_movimientos %}{{ renglon_movimientos(m) }}{% endfor %}
+  </tbody>
+  </table>
+</details>
+{% endif %}
 {% if recortado %}
 <p class="sutil">Se muestran los {{ limite }} más recientes. Elige un tipo o un periodo más corto para ver el resto.</p>
 {% endif %}

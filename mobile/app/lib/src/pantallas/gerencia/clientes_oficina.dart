@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/sincronizacion.dart';
 import '../../estado/vendedores.dart';
+import '../canceladas.dart';
 import '../editor_de_ubicacion.dart';
 import 'comunes.dart';
 import 'vendedores.dart';
@@ -309,25 +310,31 @@ class _EstadoFicha extends ConsumerState<PantallaFichaDeCliente> {
                 child: Text('No ha comprado.'),
               ),
             for (final v in f.ventas)
-              ListTile(
-                key: Key('compra_${v.folio ?? v.id}'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.receipt_long_outlined),
-                // Las ventas a crédito del piloto no tienen forma de pago.
-                title: Text('${diaEnPalabras(v.fecha)} · '
-                    '${v.formaDePago?.etiqueta.toLowerCase() ?? 'crédito (piloto)'}'),
-                subtitle: Text(
-                  '${v.folio ?? ''} · ${v.vendedor}${v.estado == 'confirmada' ? '' : ' · ${v.estado}'}',
-                ),
-                trailing: Text(pesos(v.total)),
-                onTap: () => _verVenta(v.id),
-              ),
+              if (!estaCancelado(v.estado)) _compra(v),
+            // Las canceladas, aparte y plegadas (ADR 0002 §95).
+            SeccionDeCanceladas(
+              renglones: [for (final v in f.ventas) if (estaCancelado(v.estado)) _compra(v)],
+            ),
             const SizedBox(height: 24),
           ],
         ],
       ),
     );
   }
+
+  Widget _compra(VentaDelCliente v) => ListTile(
+        key: Key('compra_${v.folio ?? v.id}'),
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.receipt_long_outlined),
+        // Las ventas a crédito del piloto no tienen forma de pago.
+        title: Text('${diaEnPalabras(v.fecha)} · '
+            '${v.formaDePago?.etiqueta.toLowerCase() ?? 'crédito (piloto)'}'),
+        subtitle: Text(
+          '${v.folio ?? ''} · ${v.vendedor}${v.estado == 'confirmada' ? '' : ' · ${v.estado}'}',
+        ),
+        trailing: Text(pesos(v.total)),
+        onTap: () => _verVenta(v.id),
+      );
 
   void _verVenta(String ventaId) => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => PantallaVentaVista(ventaId: ventaId)),

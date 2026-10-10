@@ -4882,8 +4882,8 @@ que ya agregaste se agrupen según el Excel como vienen.»
 - **Se administran en Productos → Familias:** agregar (al final del orden),
   renombrar y borrar. Borrar una familia no borra sus artículos: quedan «Sin
   familia». Al dar de alta o editar un artículo se elige su familia.
-- El catálogo de venta del vendedor todavía no se agrupa: necesitaría que la
-  familia viaje al teléfono como un dato nuevo del catálogo.
+- El catálogo de venta del vendedor también se agrupa desde la versión +32: ver
+  §92.
 
 ## 90. Poner la base en blanco, y que el teléfono se entere
 
@@ -4936,4 +4936,92 @@ panel era verde; la app es roja, con el rojo del bordado de Distribuciones SE
   día»—: en rojo se leería como un error. Los errores llevan una orilla roja.
 - **El botón que borra va con orilla, no relleno**: en un panel rojo, un botón
   rojo más oscuro no se distingue del de guardar.
+
+## 92. Las familias también en la app, y cada una se pliega
+
+**Decisión (octubre 2026).** «Agrupa también en la app los artículos», y «que las
+agrupaciones se puedan desplegar o no, en el dashboard y la app».
+
+- **La familia viaja al teléfono** como su propia entidad de catálogo,
+  `categoria` (migración 0046_familias_al_telefono): global como los productos,
+  con nombre y orden. El producto ya traía su `categoria_id`. La migración publica
+  una vez las familias que ya existían.
+- **En la app del vendedor** el catálogo de la visita y «Mi camión» van por
+  familia, en el orden de la oficina, con «Sin familia» al final; en la app del
+  gerente, Existencias y la lista de Artículos. Si nada tiene familia no se
+  pinta ningún encabezado. Los buscadores de merma y devolución (que muestran
+  cuatro a ocho resultados) solo heredan el orden.
+- **Cada familia se pliega al tocar su encabezado**, y un botón arriba pliega o
+  despliega todas. Al buscar se despliega todo: lo que se buscó no se esconde.
+- **En el panel**, Productos e Inventario muestran cada familia como un bloque
+  que se abre y se cierra (`<details>`, sin JavaScript); plegada, el Inventario
+  sigue diciendo sus piezas y su valor. «Plegar todas / Desplegar todas» es un
+  enlace.
+
+(migración 0046_familias_al_telefono; versionCode 32)
+
+## 93. Lo desactivado, aparte de lo que se usa
+
+**Decisión (octubre 2026).** «Que los usuarios desactivados no aparezcan ahí con
+todos, sino en una distinta; igual en la app.»
+
+- **Usuarios y rutas** lista solo a los activos y dice cuántos desactivados hay;
+  «Desactivados» los muestra aparte, y ahí se activan, editan o eliminan.
+- **Vendedores** —panel y app— muestra a los activos, con un botón «Desactivados
+  (N)» a su lista aparte (`/v1/vendedores?desactivados=true`).
+- El **Tablero** solo muestra a un vendedor desactivado si vendió en el periodo
+  —sin él la suma por vendedor no daría el total—, y lo marca «desactivado».
+- Las **rutas, bodegas, camiones y listas desactivadas** van plegadas al final de
+  su tabla en Usuarios y rutas.
+
+## 94. Renombrar desde la lista, solo en el panel
+
+**Decisión (octubre 2026).** «Quiero poder editar el nombre de las rutas,
+camiones, almacenes y eso», y después: «en la app no lo habilites».
+
+- En **Usuarios y rutas** del panel, el nombre de cada ruta, bodega, camión y
+  lista de precios se cambia en la misma tabla («Guardar» al lado), sin abrir la
+  ficha. El código no: es la llave con la que la gente busca, y se cambia en la
+  ficha. Queda en la auditoría como «renombrar».
+- En la app no se edita ninguno de estos datos.
+
+## 95. Lo cancelado no se mezcla con lo demás
+
+**Decisión (octubre 2026).** «Si borro una transacción o algo, que no siga
+apareciendo con todas las demás, sino en una parte que diga eliminadas.»
+
+- **Panel:** Ventas tiene su pestaña «Canceladas (N)», y «Todas» ya no las
+  incluye. Entradas, salidas, cargas y los movimientos de cada vendedor llevan lo
+  cancelado en un bloque plegado al final de su tabla.
+- **App del gerente:** entradas, cargas, los movimientos del vendedor y las
+  compras de un cliente llevan lo cancelado en «Canceladas (N)», plegado al
+  final. «Mi día» del vendedor ya lo separaba.
+- Se cuenta como cancelado: «cancelada», «cancelado», «rechazado», «rechazada».
+
+## 96. El periodo «Todo»
+
+**Decisión (octubre 2026).** «Que venga uno que abarque todos los periodos, uno
+general.»
+
+- Junto a hoy, ayer, la semana y el mes, **«Todo»**: desde el primer día con
+  movimientos (ventas, cargas, mermas, visitas o entradas) hasta hoy. No desde una
+  fecha inventada, para que las tablas por día no recorran años vacíos; y sin el
+  tope de un año del rango a mano. Con la base en blanco, es hoy.
+- Está en el panel (Tablero, Vendedores, Sincronizaciones) y en la app (Tablero
+  por periodo y Vendedores).
+
+## 97. Empresa: cada cifra abre su lista
+
+**Decisión (octubre 2026).** «En Empresa de la app del gerente, si cliqueo en las
+secciones que me lleve a esas: en 25 artículos activos, a la lista de
+artículos, y así con las demás.»
+
+- Clientes → la lista de clientes; vendedores y rutas → Vendedores (cada uno dice
+  su ruta y su camión); artículos → la lista de artículos por familia, con su
+  precio y lo que hay en bodegas y camiones (`/v1/almacen/articulos`); piezas en
+  bodega o en camiones → las existencias por almacén; vendido este mes / este año
+  → Vendedores con ese periodo.
+- Una cifra que lleva a una pantalla que el usuario no puede ver no se toca.
+
+(versionCode 32)
 

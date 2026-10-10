@@ -107,7 +107,16 @@ class _ServidorDeAlmacen implements Transporte {
              'presentaciones': _presentaciones},
         ],
       '/v1/almacen/entradas' => {
-          'entradas': <Object?>[],
+          'entradas': <Object?>[
+            for (final (folio, estado) in [('EN-000007', 'confirmada'), ('EN-000008', 'cancelada')])
+              {
+                'id': folio, 'folio': folio, 'motivo': 'compra',
+                'motivo_etiqueta': 'Compra a proveedor', 'estado': estado,
+                'proveedor': 'Abarrotes del Centro', 'referencia': null,
+                'fecha_operativa': '2026-09-23', 'bodega': 'Bodega', 'renglones': 1,
+                'piezas': '24.000', 'importe_total': null,
+              },
+          ],
           'bodegas': _opcionesDeBodega,
           'proveedores': [{'id': 'pr1', 'codigo': 'ABARR01', 'nombre': 'Abarrotes del Centro'}],
           'motivos': [
@@ -270,6 +279,14 @@ void main() {
       expect(find.byKey(const Key('familia_Abarrotes')), findsOneWidget);
       expect(find.byKey(const Key('familia_Sin familia')), findsOneWidget);
       expect(textoQueContiene('Abarrotes · 1'), findsOneWidget);
+      // Y cada familia se pliega al tocarla (ADR 0002 §92).
+      await tester.tap(find.byKey(const Key('familia_Abarrotes')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('existencia_ATUN-140')), findsNothing);
+      expect(find.byKey(const Key('existencia_COCA600')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('familia_Abarrotes')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('existencia_ATUN-140')), findsOneWidget);
 
       await tester.enterText(find.byKey(const Key('campo_buscar_existencia')), 'coca');
       await tester.pumpAndSettle();
@@ -289,6 +306,17 @@ void main() {
   });
 
   group('entradas', () {
+    testWidgets('la cancelada no se mezcla: va plegada al final (ADR 0002 §95)',
+        (tester) async {
+      await _montar(tester);
+      await _irA(tester, 'pestana_entradas');
+      expect(find.byKey(const Key('entrada_EN-000007')), findsOneWidget);
+      expect(find.byKey(const Key('entrada_EN-000008')), findsNothing);
+      expect(textoQueContiene('Canceladas (1)'), findsOneWidget);
+      await tocar(tester, const Key('abrir_canceladas'));
+      expect(find.byKey(const Key('entrada_EN-000008')), findsOneWidget);
+    });
+
     testWidgets('una compra: abrir, capturar con costo, confirmar y ver la deuda',
         (tester) async {
       final servidor = await _montar(tester);

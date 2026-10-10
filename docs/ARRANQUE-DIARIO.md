@@ -316,6 +316,9 @@ Pregunta, en este orden:
 > En la ficha de cada usuario, **Eliminar** lo borra de verdad con sus teléfonos vinculados (y su
 > camión si está vacío). Si ya tiene ventas, cargas u otros documentos no se borra ni se desactiva:
 > dice qué tiene y no cambia nada. Para solo quitarle el acceso, **Desactivar** (ADR 0002 §88).
+>
+> Los desactivados no salen en la lista: están en «ver los N desactivado(s)» (§93). El nombre de
+> una ruta, bodega, camión o lista se cambia ahí mismo, en su tabla (§94).
 
 Hazlo cada vez que recrees la base. `make doctor` avisa cuando no hay ninguno.
 
@@ -457,9 +460,13 @@ al pie y lo que vale cada almacén en su tarjeta (ADR 0002 §86). Un artículo s
 precio» y no suma; el total avisa cuántos son. En la app del gerente lo mismo está en Almacén →
 Existencias.
 
-Los artículos van **agrupados por familia**, con lo que suma y vale cada una (ADR 0002 §89). Las
-familias se agregan, renombran y borran en *Productos → Familias*; borrar una no borra sus
-artículos, que quedan «Sin familia».
+Los artículos van **agrupados por familia**, con lo que suma y vale cada una (ADR 0002 §89). Cada
+familia se pliega o despliega al tocarla, y «Plegar todas» las cierra (§92). Las familias se
+agregan, renombran y borran en *Productos → Familias*; borrar una no borra sus artículos, que
+quedan «Sin familia». En la app, el catálogo del vendedor y «Mi camión» van igual.
+
+**Lo cancelado va aparte** (§95): en Ventas, la pestaña «Canceladas»; en Entradas, Salidas, Cargas y
+los movimientos del vendedor, un bloque plegado al final.
 
 1. Escoge almacén. El camión es un almacén como cualquier otro: ahí ves lo que trae cada vendedor.
 2. Un número **en negativo no es un error del sistema**: es un conteo por revisar. Pasa cuando se cargó

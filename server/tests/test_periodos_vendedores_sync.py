@@ -57,6 +57,18 @@ def test_lo_que_no_se_entiende_cae_en_hoy_y_un_rango_al_reves_se_endereza():
     assert leer_periodo("", "2026-10-01", "2026-10-03", hoy=MIERCOLES).clave == "rango"
 
 
+def test_todo_va_del_primer_dia_con_datos_hasta_hoy_sin_tope():
+    """«Que venga uno que abarque todos los periodos, uno general» (ADR 0002 §96)."""
+    p = leer_periodo("todo", hoy=MIERCOLES, primer_dia=date(2024, 3, 1))
+    assert (p.clave, p.etiqueta, p.inicio, p.fin) == ("todo", "Todo", date(2024, 3, 1), MIERCOLES)
+    assert p.dias > 366  # sin el tope del rango a mano
+    assert p.como_parametros() == "periodo=todo"
+    assert p.descripcion.startswith("desde el principio")
+    # Con la base en blanco no hay primer día: es hoy.
+    vacio = leer_periodo("todo", hoy=MIERCOLES)
+    assert (vacio.inicio, vacio.fin) == (MIERCOLES, MIERCOLES)
+
+
 def test_un_rango_de_varios_anios_se_recorta_a_uno():
     p = leer_periodo("rango", "2020-01-01", "2026-10-07", hoy=MIERCOLES)
     assert p.dias == 366
@@ -109,6 +121,24 @@ async def test_el_tablero_cuenta_el_periodo_elegido(cliente, sesion, semilla):
     assert f'/panel/vendedores/{semilla["vendedor"]}?periodo=rango' in semana.text
     # Y por día, con el día flojo y el bueno.
     assert 'id="tabla_por_dia"' in semana.text
+
+
+async def test_todo_suma_desde_la_primera_venta(cliente, sesion, semilla):
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)  # $2,250 hoy
+    await _venta_de_ayer(sesion, semilla, dia)          # y $999 ayer
+    await _entrar(cliente)
+    todo = await cliente.get("/panel?periodo=todo")
+    texto = solo_texto(todo)
+    assert "$3,249.00 en total" in texto
+    assert "desde el principio" in texto.lower()
+    assert '<option value="todo" selected>Todo</option>' in todo.text
+    # La app pide lo mismo.
+    from tests.test_oficina_clientes_api import _cab
+
+    cab = await _cab(cliente)
+    datos = (await cliente.get("/v1/tablero/periodo?periodo=todo", headers=cab)).json()
+    assert datos["periodo"]["clave"] == "todo"
+    assert ["todo", "Todo"] in datos["periodos"]
 
 
 @pytest.mark.asyncio

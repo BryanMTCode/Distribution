@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_catalogo.dart';
 import '../../estado/carrito.dart';
+import '../familias.dart';
 import 'carrito.dart';
 import 'merma.dart';
 import 'no_drop.dart';
@@ -36,7 +37,8 @@ class PantallaCatalogo extends ConsumerStatefulWidget {
   ConsumerState<PantallaCatalogo> createState() => _EstadoCatalogo();
 }
 
-class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
+class _EstadoCatalogo extends ConsumerState<PantallaCatalogo>
+    with FamiliasPlegables<PantallaCatalogo> {
   final _busqueda = TextEditingController();
 
   @override
@@ -74,6 +76,12 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
         // vender, y dos iconos compitiendo con el carrito harían más lento el
         // caso normal para acelerar el excepcional.
         actions: [
+          // Plegar o desplegar todas las familias (ADR 0002 §92).
+          if (hayFamilias(productos, _familiaDe))
+            BotonPlegarFamilias(
+              algunaPlegada: plegadas.isNotEmpty,
+              alTocar: () => alternarTodas(productos, _familiaDe),
+            ),
           if (cliente != null)
             PopupMenuButton<String>(
               key: const Key('menu_de_visita'),
@@ -196,18 +204,48 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo> {
                       ),
                     ),
                   )
-                : ListView.separated(
-                    key: const Key('lista_catalogo'),
-                    padding: const EdgeInsets.only(bottom: 16),
-                    itemCount: productos.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) => _RenglonProducto(producto: productos[i]),
+                : _ListaPorFamilia(
+                    entradas: entradasPorFamilia(
+                      productos,
+                      _familiaDe,
+                      plegadas: plegadas,
+                      // Lo que se busca no se esconde en una familia plegada.
+                      todoAbierto: ref.watch(busquedaCatalogoProvider).trim().isNotEmpty,
+                    ),
+                    alTocarFamilia: alternarFamilia,
                   ),
           ),
         ],
       ),
     );
   }
+}
+
+String? _familiaDe(ProductoEnCatalogo p) => p.familia;
+
+/// El catálogo por familia: cada encabezado pliega o despliega la suya.
+class _ListaPorFamilia extends StatelessWidget {
+  const _ListaPorFamilia({required this.entradas, required this.alTocarFamilia});
+
+  final List<EntradaPorFamilia<ProductoEnCatalogo>> entradas;
+  final void Function(String) alTocarFamilia;
+
+  @override
+  Widget build(BuildContext context) => ListView.separated(
+        key: const Key('lista_catalogo'),
+        padding: const EdgeInsets.only(bottom: 16),
+        itemCount: entradas.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (_, i) => switch (entradas[i]) {
+          EncabezadoEntrada(:final grupo, :final abierta) => EncabezadoDeFamilia(
+              familia: grupo.familia,
+              cuantos: grupo.elementos.length,
+              abierta: abierta,
+              alTocar: () => alTocarFamilia(grupo.familia),
+            ),
+          ElementoEntrada(:final elemento) => _RenglonProducto(producto: elemento),
+        },
+      );
 }
 
 String _mensajeDeRechazo(ResultadoCarrito rechazo) => switch (rechazo.motivo) {

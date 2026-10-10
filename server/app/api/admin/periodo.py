@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from sqlalchemy import text
+
 # El orden es el del selector: de lo más cercano a lo más amplio.
 PERIODOS: tuple[tuple[str, str], ...] = (
     ("hoy", "Hoy"),
@@ -22,6 +24,8 @@ PERIODOS: tuple[tuple[str, str], ...] = (
     ("semana_pasada", "Semana pasada"),
     ("mes", "Este mes"),
     ("mes_pasado", "Mes pasado"),
+    # Todo lo que hay, desde el primer día con movimientos (ADR 0002 §96).
+    ("todo", "Todo"),
     ("rango", "Personalizado"),
 )
 
@@ -48,6 +52,8 @@ class Periodo:
     @property
     def descripcion(self) -> str:
         """Cómo se dice en una oración: «hoy», «del 1 al 7 de octubre»."""
+        if self.clave == "todo":
+            return f"desde el principio, del {_fecha(self.inicio)} al {_fecha(self.fin)}"
         if self.inicio == self.fin:
             return "hoy" if self.es_hoy else f"el {_fecha(self.inicio)}"
         return f"del {_fecha(self.inicio)} al {_fecha(self.fin)}"
@@ -77,7 +83,12 @@ def _fecha_o(texto: str) -> date | None:
 
 
 def leer_periodo(
-    clave: str = "", desde: str = "", hasta: str = "", *, hoy: date | None = None
+    clave: str = "",
+    desde: str = "",
+    hasta: str = "",
+    *,
+    hoy: date | None = None,
+    primer_dia: date | None = None,
 ) -> Periodo:
     """El periodo del formulario. Lo que no se entienda cae en «hoy».
 
@@ -107,6 +118,11 @@ def leer_periodo(
     elif clave == "mes_pasado":
         fin = hoy.replace(day=1) - timedelta(days=1)
         inicio = fin.replace(day=1)
+    elif clave == "todo":
+        # Sin el tope de un año del rango a mano: «todo» es todo. Empieza en el
+        # primer día con movimientos, no en una fecha inventada, para que las
+        # tablas por día no recorran años vacíos.
+        inicio, fin = min(primer_dia or hoy, hoy), hoy
     else:
         fin = _fecha_o(hasta) or hoy
         inicio = _fecha_o(desde) or fin
@@ -116,3 +132,30 @@ def leer_periodo(
             inicio = fin - timedelta(days=DIAS_MAXIMOS - 1)
 
     return Periodo(clave=clave, etiqueta=etiquetas[clave], inicio=inicio, fin=fin)
+
+
+async def primer_dia_con_datos(sesion) -> date | None:
+    """El primer día operativo con algo registrado: ventas, cargas, mermas,
+    visitas sin venta o entradas. Nulo si la base está en blanco."""
+    return (
+        await sesion.execute(
+            text(
+                """
+                SELECT LEAST(
+                         (SELECT min(fecha_operativa) FROM ventas),
+                         (SELECT min(fecha_operativa) FROM cargas),
+                         (SELECT min(fecha_operativa) FROM mermas),
+                         (SELECT min(fecha_operativa) FROM no_drops),
+                         (SELECT min(fecha_operativa) FROM entradas))
+                """
+            )
+        )
+    ).scalar_one()
+
+
+async def periodo_pedido(sesion, clave: str = "", desde: str = "", hasta: str = "") -> Periodo:
+    """`leer_periodo`, y para «Todo» el primer día con datos (una consulta más,
+    solo cuando se pide)."""
+    primer = await primer_dia_con_datos(sesion) if clave == "todo" else None
+    return leer_periodo(clave, desde, hasta, primer_dia=primer)
+

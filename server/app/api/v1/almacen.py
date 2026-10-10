@@ -387,6 +387,52 @@ async def existencias(
     )
 
 
+class ArticuloDelCatalogo(BaseModel):
+    producto_id: uuid.UUID
+    sku: str
+    nombre: str
+    familia: str | None = None
+    unidad_base: str
+    # Por pieza, de la lista por omisión; nulo si no tiene precio.
+    precio: Dinero | None = None
+    en_bodegas: Cantidad
+    en_camiones: Cantidad
+
+
+@router.get("/articulos", response_model=list[ArticuloDelCatalogo])
+async def articulos(actor: ActorDep, sesion: SesionDep) -> list[ArticuloDelCatalogo]:
+    """Los artículos activos, por familia, con su precio y lo que hay de cada uno.
+
+    Lo que abre «artículos activos» en la pantalla Empresa de la app (ADR 0002
+    §97): la lista del catálogo, no la de un almacén.
+    """
+    _exigir_ver(actor)
+    filas = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT p.id AS producto_id, p.sku, p.nombre, p.unidad_base,
+                       cat.nombre AS familia, pv.precio,
+                       COALESCE(sum(e.cantidad) FILTER (WHERE a.tipo = 'bodega'), 0)
+                         AS en_bodegas,
+                       COALESCE(sum(e.cantidad) FILTER (WHERE a.tipo = 'camion'), 0)
+                         AS en_camiones
+                  FROM productos p
+                  LEFT JOIN categorias cat ON cat.id = p.categoria_id
+                  LEFT JOIN existencias e ON e.producto_id = p.id
+                  LEFT JOIN almacenes a ON a.id = e.almacen_id
+                  {precio_de_venta("p.id")}
+                 WHERE p.activo
+                 GROUP BY p.id, cat.id, pv.precio
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.sku
+                 LIMIT 2000
+                """  # noqa: S608 — fragmentos constantes del código
+            )
+        )
+    ).mappings().all()
+    return [ArticuloDelCatalogo(**dict(f)) for f in filas]
+
+
 @router.get("/productos", response_model=list[ProductoParaCapturar])
 async def productos(
     actor: ActorDep, sesion: SesionDep, almacen_id: uuid.UUID, solo_con_existencia: bool = False

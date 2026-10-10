@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS productos (
 CREATE INDEX IF NOT EXISTS ix_productos_barras ON productos(codigo_barras);
 CREATE INDEX IF NOT EXISTS ix_productos_nombre ON productos(nombre);
 
+-- Las familias del catálogo (ADR 0002 §92): el producto trae su `categoria_id`
+-- y aquí está a qué nombre y en qué orden corresponde, para agrupar el
+-- catálogo, el camión y la merma como en la hoja de la dirección.
+CREATE TABLE IF NOT EXISTS familias (
+    id      TEXT PRIMARY KEY,
+    nombre  TEXT NOT NULL,
+    orden   INTEGER NOT NULL DEFAULT 0,
+    activo  INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS producto_unidades (
     producto_id     TEXT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
     unidad_codigo   TEXT NOT NULL,

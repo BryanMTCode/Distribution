@@ -34,7 +34,7 @@ from sqlalchemy import text
 
 from app.api.admin.arranque import faltan_para_operar, pendientes_de_hoy, revisar_arranque
 from app.api.admin.comun import SesionDep, dinero, render
-from app.api.admin.periodo import PERIODOS, leer_periodo
+from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import (
     ActorWeb,
     abrir_sesion,
@@ -157,7 +157,7 @@ async def tablero(
     ahora: no tiene sentido preguntar cuánta cuarentena había el
     mes pasado, sino cuánta hay que atender.
     """
-    rango = leer_periodo(periodo, desde, hasta)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
     fila = (
         await sesion.execute(
             text(
@@ -291,7 +291,7 @@ WITH v AS (
      WHERE fecha_operativa BETWEEN :desde AND :hasta
      GROUP BY vendedor_id
 )
-SELECT u.id, u.codigo, u.nombre,
+SELECT u.id, u.codigo, u.nombre, u.activo,
        COALESCE(v.ventas, 0) AS ventas, COALESCE(v.importe, 0) AS importe,
        COALESCE(v.efectivo, 0) AS efectivo,
        COALESCE(v.transferencias, 0) AS transferencias,
@@ -301,6 +301,8 @@ SELECT u.id, u.codigo, u.nombre,
   LEFT JOIN m ON m.vendedor_id = u.id
   LEFT JOIN n ON n.vendedor_id = u.id
  WHERE u.rol_codigo = 'vendedor'
+   -- Un desactivado solo sale si vendió en el periodo: sin él, la suma por
+   -- vendedor no daría el total (ADR 0002 §93).
    AND (u.activo OR v.ventas IS NOT NULL)
  ORDER BY COALESCE(v.importe, 0) DESC, u.codigo
 """
@@ -548,6 +550,7 @@ async def ventas(
     actor: ActorWeb,
     sesion: SesionDep,
     solo_revision: int = 1,
+    ver: str = "",
 ) -> HTMLResponse:
     """Las ventas recibidas, con las marcadas primero.
 
@@ -556,7 +559,15 @@ async def ventas(
     nadie mire convierte la bandera en ruido, y entonces el principio se vuelve
     una excusa para no validar.
     """
-    filtro = "WHERE v.requiere_revision AND v.estado = 'confirmada'" if solo_revision else ""
+    # Las canceladas no se mezclan con las demás: tienen su propia pestaña
+    # (ADR 0002 §95).
+    canceladas = ver == "canceladas"
+    if canceladas:
+        filtro = "WHERE v.estado = 'cancelada'"
+    elif solo_revision:
+        filtro = "WHERE v.requiere_revision AND v.estado = 'confirmada'"
+    else:
+        filtro = "WHERE v.estado <> 'cancelada'"
 
     filas = (
         await sesion.execute(
@@ -584,7 +595,13 @@ async def ventas(
         "ventas.html",
         {
             "filas": filas,
-            "solo_revision": bool(solo_revision),
+            "solo_revision": bool(solo_revision) and not canceladas,
+            "viendo_canceladas": canceladas,
+            "cuantas_canceladas": (
+                await sesion.execute(
+                    text("SELECT count(*) FROM ventas WHERE estado = 'cancelada'")
+                )
+            ).scalar_one(),
             "explicacion": EXPLICACION_MOTIVOS,
             "puede_editar": actor.puede("ventas.cancelar"),
         },

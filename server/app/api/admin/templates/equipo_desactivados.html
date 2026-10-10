@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}Usuarios desactivados{% endblock %}
+{% block contenido %}
+<h1>Usuarios desactivados</h1>
+<p class="subtitulo">
+  No entran al panel ni a la app, y no salen en la lista de
+  <a href="/panel/equipo">Usuarios y rutas</a> con los que trabajan. Su historia
+  —ventas, cargas, cortes— sigue a su nombre. Aquí se reactivan o se eliminan.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+
+{% if usuarios %}
+<div class="tabla-marco">
+  <table id="tabla_desactivados">
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre y rol</th>
+        <th>Desactivado</th>
+        <th class="numero">Teléfonos</th>
+        {% if puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in usuarios %}
+      <tr id="desactivado_{{ u.codigo }}">
+        <td><span class="mono">{{ u.codigo }}</span></td>
+        <td>{{ u.nombre }}<div class="sutil">{{ u.rol_codigo }}</div></td>
+        <td class="sutil">{{ u.actualizado_en.strftime('%d/%m/%Y') }}</td>
+        <td class="numero sutil">{{ u.equipos or '—' }}</td>
+        {% if puede_editar %}
+        <td class="acciones">
+          <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo"
+                style="display:inline">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="volver" value="desactivados">
+            <button type="submit" name="activo" value="1" class="boton-chico"
+                    id="activar_{{ u.codigo }}">Activar</button>
+          </form>
+          <a class="boton-chico" href="/panel/equipo/usuarios/{{ u.id }}#editar">Editar</a>
+          <a class="boton-chico peligro" href="/panel/equipo/usuarios/{{ u.id }}#eliminar">Eliminar</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Ningún usuario desactivado.</div>
+{% endif %}
+
+<p><a href="/panel/equipo">← Usuarios y rutas</a></p>
+{% endblock %}

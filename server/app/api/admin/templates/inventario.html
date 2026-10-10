@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block titulo %}Inventario{% endblock %}
+{% macro columnas_inventario() %}
+  <colgroup>
+    <col style="width:30%"><col style="width:13%"><col style="width:9%"><col style="width:13%">
+    <col style="width:13%"><col style="width:10%">{% if puede_ajustar %}<col style="width:12%">{% endif %}
+  </colgroup>
+{% endmacro %}
 {% block contenido %}
 <h1>Inventario</h1>
 <p class="subtitulo">
@@ -69,29 +75,41 @@
 {% endif %}
 
 {% if filas %}
-<div class="tabla-marco">
+{# Cada familia se pliega y despliega, con su subtotal a la vista aunque esté
+   plegada (ADR 0002 §92). Con búsqueda, todas abiertas. #}
+{% if grupos|length > 1 and not q %}
+<p class="plegar-todas">
+  {% if plegadas %}
+    <a href="{{ url_familias }}" id="desplegar_todas">Desplegar todas</a>
+  {% else %}
+    <a href="{{ url_familias }}&familias=plegadas" id="plegar_todas">Plegar todas</a>
+  {% endif %}
+</p>
+{% endif %}
+<table class="columnas-fijas" style="background:transparent">
+  {{ columnas_inventario() }}
+  <thead>
+    <tr>
+      <th>Producto</th>
+      <th class="numero">Existencia</th>
+      <th class="numero">Precio</th>
+      <th class="numero">Valor</th>
+      <th>Equivale a</th>
+      <th class="numero">Actualizado</th>
+      {% if puede_ajustar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+</table>
+{% for g in grupos %}
+<details class="familia" id="familia_{{ loop.index }}" {% if not plegadas or q %}open{% endif %}>
+  <summary>
+    {{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span>
+    <span class="resumen">{{ g.piezas|entero }} piezas ·
+      <span id="subtotal_{{ loop.index }}">{{ g.valor|dinero }}</span></span>
+  </summary>
   <table>
-    <thead>
-      <tr>
-        <th>Producto</th>
-        <th class="numero">Existencia</th>
-        <th class="numero">Precio</th>
-        <th class="numero">Valor</th>
-        <th>Equivale a</th>
-        <th class="numero">Actualizado</th>
-        {% if puede_ajustar %}<th></th>{% endif %}
-      </tr>
-    </thead>
-    {% for g in grupos %}
+    {{ columnas_inventario() }}
     <tbody>
-      <tr class="grupo">
-        <td style="background:var(--fondo);font-weight:700">{{ g.familia }}</td>
-        <td class="numero" style="background:var(--fondo)"><strong>{{ g.piezas|entero }}</strong></td>
-        <td style="background:var(--fondo)"></td>
-        <td class="numero" style="background:var(--fondo)" id="subtotal_{{ loop.index }}">
-          <strong>{{ g.valor|dinero }}</strong></td>
-        <td colspan="{% if puede_ajustar %}3{% else %}2{% endif %}" style="background:var(--fondo)"></td>
-      </tr>
       {% for f in g.filas %}
       <tr>
         <td>
@@ -138,7 +156,12 @@
       </tr>
       {% endfor %}
     </tbody>
-    {% endfor %}
+  </table>
+</details>
+{% endfor %}
+<div class="tabla-marco">
+  <table class="columnas-fijas">
+    {{ columnas_inventario() }}
     <tbody>
       <tr>
         <td><strong>Total</strong></td>

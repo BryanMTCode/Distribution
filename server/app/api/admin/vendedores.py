@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import SesionDep, render
-from app.api.admin.periodo import PERIODOS, Periodo, leer_periodo
+from app.api.admin.periodo import PERIODOS, Periodo, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb
 
 router = APIRouter(prefix="/panel/vendedores", tags=["panel"], include_in_schema=False)
@@ -186,7 +186,9 @@ SELECT u.id, u.codigo, u.nombre, u.activo,
   FROM usuarios u
   LEFT JOIN almacenes a ON a.id = u.almacen_id
  WHERE u.rol_codigo = 'vendedor'
- ORDER BY u.activo DESC, u.codigo
+   -- Los desactivados van en su propia lista (ADR 0002 §93).
+   AND u.activo = :activos
+ ORDER BY u.codigo
 """
 
 
@@ -197,12 +199,24 @@ SELECT u.id, u.codigo, u.nombre, u.activo,
 # teléfono de la oficina y el dashboard digan siempre lo mismo de cada vendedor.
 
 
-async def lista_de_vendedores(sesion, rango: Periodo) -> list:
+async def lista_de_vendedores(sesion, rango: Periodo, *, activos: bool = True) -> list:
+    """Los activos o, con `activos=False`, los desactivados: nunca juntos."""
     return list(
         (
-            await sesion.execute(text(SQL_LISTA), {"desde": rango.inicio, "hasta": rango.fin})
+            await sesion.execute(
+                text(SQL_LISTA),
+                {"desde": rango.inicio, "hasta": rango.fin, "activos": activos},
+            )
         ).mappings().all()
     )
+
+
+async def vendedores_desactivados(sesion) -> int:
+    return (
+        await sesion.execute(
+            text("SELECT count(*) FROM usuarios WHERE rol_codigo = 'vendedor' AND NOT activo")
+        )
+    ).scalar_one()
 
 
 async def ficha_del_vendedor(sesion, vendedor_id: uuid.UUID):
@@ -292,14 +306,22 @@ async def lista(
     periodo: str = "",
     desde: str = "",
     hasta: str = "",
+    ver: str = "",
 ) -> HTMLResponse:
     actor.exigir(PERMISO_VER)
-    rango = leer_periodo(periodo, desde, hasta)
-    filas = await lista_de_vendedores(sesion, rango)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
+    viendo_desactivados = ver == "desactivados"
+    filas = await lista_de_vendedores(sesion, rango, activos=not viendo_desactivados)
     return render(
         peticion,
         "vendedores.html",
-        {"vendedores": filas, "periodo": rango, "periodos": PERIODOS},
+        {
+            "vendedores": filas,
+            "periodo": rango,
+            "periodos": PERIODOS,
+            "viendo_desactivados": viendo_desactivados,
+            "desactivados": await vendedores_desactivados(sesion),
+        },
         actor=actor,
         seccion="Vendedores",
     )
@@ -317,7 +339,7 @@ async def movimientos(
     tipo: str = "",
 ) -> HTMLResponse:
     actor.exigir(PERMISO_VER)
-    rango = leer_periodo(periodo, desde, hasta)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
     if tipo not in dict(TIPOS):
         tipo = ""
 

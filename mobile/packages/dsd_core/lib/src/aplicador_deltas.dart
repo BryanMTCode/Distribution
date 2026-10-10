@@ -109,7 +109,8 @@ class AplicadorDeltas {
   /// Lo que llenan los deltas del servidor: el espejo. Al resincronizar se
   /// vacía y vuelve a bajar entero desde el cursor 0.
   static const tablasDelEspejo = [
-    'precios', 'producto_unidades', 'productos', 'listas_precios', 'clientes',
+    'precios', 'producto_unidades', 'productos', 'familias', 'listas_precios',
+    'clientes',
     'motivos_merma', 'motivos_no_drop',
     'existencias_camion', 'cargas_aplicadas', 'ajustes_camion_aplicados',
     'deltas_desconocidos',
@@ -178,6 +179,7 @@ class AplicadorDeltas {
   bool _aplicarUno(Delta delta, String recibidoEn) => switch (delta.entidad) {
         'producto' => _producto(delta),
         'producto_unidad' => _productoUnidad(delta),
+        'categoria' => _familia(delta),
         'precio' => _precio(delta),
         'cliente' => _cliente(delta),
         'cartera' => _cartera(delta, recibidoEn),
@@ -251,6 +253,34 @@ class AplicadorDeltas {
         p['unidad_base'],
         _aNumero(p['tasa_iva']),
         _aBool(p['activo']),
+      ],
+    );
+    return true;
+  }
+
+  /// La familia de los artículos: su nombre y su lugar (ADR 0002 §92).
+  ///
+  /// Borrarla en la oficina deja a sus artículos «Sin familia» —el servidor
+  /// manda antes su `categoria_id` en nulo—, así que aquí sí se borra.
+  bool _familia(Delta delta) {
+    if (delta.operacion == 'delete') {
+      _db.execute('DELETE FROM familias WHERE id = ?', [delta.entidadId]);
+      return true;
+    }
+    final f = delta.payload!;
+    _db.execute(
+      '''
+      INSERT INTO familias (id, nombre, orden, activo) VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        nombre = excluded.nombre,
+        orden = excluded.orden,
+        activo = excluded.activo
+      ''',
+      [
+        f['id'],
+        f['nombre'],
+        (f['orden'] as num?)?.toInt() ?? 0,
+        f.containsKey('activo') ? _aBool(f['activo']) : 1,
       ],
     );
     return true;

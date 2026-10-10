@@ -54,9 +54,12 @@ class PeriodoVisto {
 
   /// «Hoy, martes 7 de octubre» o «del lunes 6 de octubre al domingo 12 de
   /// octubre»: los días de las cifras, siempre a la vista.
-  String enPalabras({required String hoy}) => desde == hasta
-      ? encabezadoDelDia(desde, hoy: hoy)
-      : 'Del ${diaEnPalabras(desde)} al ${diaEnPalabras(hasta)}';
+  String enPalabras({required String hoy}) => clave == 'todo'
+      // «Todo»: desde el primer día con movimientos (ADR 0002 §96).
+      ? 'Todo, del ${diaEnPalabras(desde)} al ${diaEnPalabras(hasta)}'
+      : desde == hasta
+          ? encabezadoDelDia(desde, hoy: hoy)
+          : 'Del ${diaEnPalabras(desde)} al ${diaEnPalabras(hasta)}';
 }
 
 class VendedorEnLista {
@@ -115,12 +118,15 @@ class ListaDeVendedores {
     required this.periodo,
     required this.periodos,
     required this.vendedores,
+    this.desactivados = 0,
   });
 
   factory ListaDeVendedores.deJson(Map<String, Object?> j) => ListaDeVendedores(
         periodo: PeriodoVisto.deJson((j['periodo']! as Map).cast()),
         periodos: _periodos(j['periodos']),
         vendedores: _lista(j['vendedores'], VendedorEnLista.deJson),
+        // Un servidor viejo no lo manda: mezcla a todos y no hay lista aparte.
+        desactivados: (j['desactivados'] as int?) ?? 0,
       );
 
   final PeriodoVisto periodo;
@@ -128,6 +134,10 @@ class ListaDeVendedores {
   /// `(clave, etiqueta)`, en el orden del selector.
   final List<(String, String)> periodos;
   final List<VendedorEnLista> vendedores;
+
+  /// Cuántos vendedores desactivados hay. No vienen en [vendedores]: se piden
+  /// aparte con `lista(desactivados: true)` (ADR 0002 §93).
+  final int desactivados;
 }
 
 class ResumenDeTipo {
@@ -403,13 +413,18 @@ class ClienteVendedores {
 
   /// Con `desde` y `hasta` (`YYYY-MM-DD`) es un rango a mano; si no, el periodo
   /// con nombre.
+  /// Los activos; con [desactivados], solo los desactivados (ADR 0002 §93).
   Future<ListaDeVendedores> lista({
     String periodo = 'hoy',
     String? desde,
     String? hasta,
+    bool desactivados = false,
   }) async =>
       ListaDeVendedores.deJson(
-        await _get('/v1/vendedores', _periodo(periodo, desde, hasta)),
+        await _get('/v1/vendedores', {
+          ..._periodo(periodo, desde, hasta),
+          if (desactivados) 'desactivados': 'true',
+        }),
       );
 
   Future<DetalleDeVendedor> detalle(

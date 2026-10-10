@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/almacen.dart';
 import '../../estado/vendedores.dart';
+import '../canceladas.dart';
 import 'almacen.dart';
 import 'comunes.dart';
 import 'compras.dart';
@@ -125,7 +126,12 @@ class _EstadoEntradas extends ConsumerState<PantallaEntradas> {
     ];
     final hechas = [
       for (final e in l?.entradas ?? const <EntradaEnLista>[])
-        if (e.estado != 'borrador') e,
+        if (e.estado != 'borrador' && !estaCancelado(e.estado)) e,
+    ];
+    // Las canceladas, aparte y plegadas (ADR 0002 §95).
+    final canceladas = [
+      for (final e in l?.entradas ?? const <EntradaEnLista>[])
+        if (estaCancelado(e.estado)) e,
     ];
     return Scaffold(
       key: const Key('pantalla_entradas'),
@@ -167,6 +173,7 @@ class _EstadoEntradas extends ConsumerState<PantallaEntradas> {
                   child: Text('Todavía no hay entradas.'),
                 ),
               for (final e in hechas) _renglon(e),
+              SeccionDeCanceladas(renglones: [for (final e in canceladas) _renglon(e)]),
             ],
           ],
         ),

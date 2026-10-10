@@ -26,6 +26,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
 import '../../estado/vendedores.dart';
+import '../familias.dart';
 import 'cargas.dart';
 import 'comunes.dart';
 import 'cortes.dart';
@@ -303,27 +304,13 @@ class _EstadoExistencias extends ConsumerState<PantallaExistencias> {
   }
 }
 
-/// Una familia de artículos con lo que vale lo suyo (lo negativo no suma).
-class _Familia {
-  _Familia(this.familia);
+String? _familiaDe(ExistenciaDeProducto e) => e.familia;
 
-  final String familia;
-  final List<ExistenciaDeProducto> existencias = [];
-  Dinero valor = Dinero.cero;
-}
-
-/// En el orden en que llegan —el servidor ya las manda por familia, en el
-/// orden de la hoja—; lo que no tiene familia, como «Sin familia».
-List<_Familia> _porFamilia(List<ExistenciaDeProducto> existencias) {
-  final grupos = <_Familia>[];
-  for (final e in existencias) {
-    final nombre = e.familia ?? 'Sin familia';
-    if (grupos.isEmpty || grupos.last.familia != nombre) grupos.add(_Familia(nombre));
-    grupos.last.existencias.add(e);
-    if (e.valor != null && !e.negativa) grupos.last.valor = grupos.last.valor + e.valor!;
-  }
-  return grupos;
-}
+/// Lo que vale una familia, como los subtotales de la hoja de la dirección
+/// (ADR 0002 §89): lo negativo y lo que no tiene precio no suman.
+Dinero _valorDe(GrupoDeFamilia<ExistenciaDeProducto> g) => g.elementos
+    .where((e) => e.valor != null && !e.negativa)
+    .fold(Dinero.cero, (suma, e) => suma + e.valor!);
 
 /// Lo que hay en un almacén, producto por producto.
 class PantallaExistenciasDelAlmacen extends ConsumerStatefulWidget {
@@ -335,7 +322,8 @@ class PantallaExistenciasDelAlmacen extends ConsumerStatefulWidget {
   ConsumerState<PantallaExistenciasDelAlmacen> createState() => _EstadoDelAlmacen();
 }
 
-class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
+class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen>
+    with FamiliasPlegables<PantallaExistenciasDelAlmacen> {
   ExistenciasDelAlmacen? _datos;
   String? _error;
   String _busqueda = '';
@@ -375,7 +363,17 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
     ];
     return Scaffold(
       key: const Key('pantalla_existencias_almacen'),
-      appBar: AppBar(title: Text(almacen.nombre)),
+      appBar: AppBar(
+        title: Text(almacen.nombre),
+        actions: [
+          // Plegar o desplegar todas las familias (ADR 0002 §92).
+          if (hayFamilias(visibles, _familiaDe))
+            BotonPlegarFamilias(
+              algunaPlegada: plegadas.isNotEmpty,
+              alTocar: () => alternarTodas(visibles, _familiaDe),
+            ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _cargar,
         child: ListView(
@@ -436,30 +434,25 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Text('Este almacén no tiene existencias.'),
                 ),
-              for (final g in _porFamilia(visibles)) ...[
-                // La familia con su subtotal, como los totales de la hoja de la
-                // dirección (ADR 0002 §89).
-                Container(
-                  key: Key('familia_${g.familia}'),
-                  margin: const EdgeInsets.only(top: 12, bottom: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: colores.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${g.familia} · ${g.existencias.length}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
+              for (final entrada in entradasPorFamilia(
+                visibles,
+                _familiaDe,
+                plegadas: plegadas,
+                todoAbierto: b.isNotEmpty,
+              ))
+                switch (entrada) {
+                  // La familia con su subtotal; se toca para plegarla.
+                  EncabezadoEntrada(:final grupo, :final abierta) => Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 2),
+                      child: EncabezadoDeFamilia(
+                        familia: grupo.familia,
+                        cuantos: grupo.elementos.length,
+                        abierta: abierta,
+                        resumen: pesos(_valorDe(grupo)),
+                        alTocar: () => alternarFamilia(grupo.familia),
                       ),
-                      Text(pesos(g.valor), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-                for (final e in g.existencias)
+                    ),
+                  ElementoEntrada(elemento: final e) =>
                 ListTile(
                   key: Key('existencia_${e.sku}'),
                   contentPadding: EdgeInsets.zero,
@@ -490,7 +483,7 @@ class _EstadoDelAlmacen extends ConsumerState<PantallaExistenciasDelAlmacen> {
                     ],
                   ),
                 ),
-              ],
+                },
             ],
           ],
         ),

@@ -132,6 +132,24 @@ void sembrarProducto(
   }
 }
 
+/// Una familia de artículos y, si se dicen, los productos que van en ella
+/// (ADR 0002 §92).
+void sembrarFamilia(
+  BaseLocal base, {
+  required String id,
+  required String nombre,
+  required int orden,
+  List<String> productos = const [],
+}) {
+  base.db.execute(
+    'INSERT INTO familias (id, nombre, orden) VALUES (?, ?, ?)',
+    [id, nombre, orden],
+  );
+  for (final p in productos) {
+    base.db.execute('UPDATE productos SET categoria_id = ? WHERE id = ?', [id, p]);
+  }
+}
+
 /// Pone existencia del producto arriba del camión.
 ///
 /// Sin fila en esta tabla el producto **no va en la carga** y no se puede

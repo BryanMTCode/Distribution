@@ -76,13 +76,72 @@ def _a_ficha(tipo: str, id_, *, guardado: str = "", error: str = "") -> Redirect
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
-def _a_equipo(*, guardado: str = "", error: str = "") -> RedirectResponse:
+def _a_equipo(*, guardado: str = "", error: str = "", ancla: str = "") -> RedirectResponse:
     destino = "/panel/equipo"
     if error:
         destino += f"?error={quote(error)}"
     elif guardado:
         destino += f"?guardado={quote(guardado)}"
+    if ancla:
+        destino += f"#{ancla}"
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+# Lo que se renombra desde la lista de Usuarios y rutas, sin abrir la ficha
+# (ADR 0002 §94): `tipo en la URL → (tabla, entidad en la auditoría, sujeto)`.
+# Solo el nombre: el código es la llave con la que la gente busca, y se cambia
+# en la ficha, donde se ve qué se rompe.
+_RENOMBRABLES = {
+    "rutas": ("rutas", "ruta", "La ruta"),
+    "almacenes": ("almacenes", "almacen", "El almacén"),
+    "listas": ("listas_precios", "lista_precios", "La lista"),
+}
+
+
+@router.post("/{tipo}/{id_}/nombre")
+async def renombrar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    tipo: str,
+    id_: uuid.UUID,
+    nombre: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Cambia el nombre de una ruta, una bodega, un camión o una lista."""
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    if tipo not in _RENOMBRABLES:
+        return _a_equipo(error="Eso no se renombra desde aquí.")
+    tabla, entidad, sujeto = _RENOMBRABLES[tipo]
+    limpio = " ".join((nombre or "").split())[:120]
+    if not limpio:
+        return _a_equipo(error=f"{sujeto} necesita un nombre.", ancla=tipo)
+    antes = (
+        await sesion.execute(
+            text(f"SELECT codigo, nombre FROM {tabla} WHERE id = :i FOR UPDATE"), {"i": id_}
+        )
+    ).mappings().first()
+    if antes is None:
+        return _a_equipo(error=f"{sujeto} ya no existe.", ancla=tipo)
+    if antes["nombre"] == limpio:
+        return _a_equipo(guardado=f"{antes['codigo']}: sin cambios.", ancla=tipo)
+    await sesion.execute(
+        text(f"UPDATE {tabla} SET nombre = :n WHERE id = :i"), {"n": limpio, "i": id_}
+    )
+    await auditar(
+        sesion,
+        entidad=entidad,
+        entidad_id=id_,
+        accion="renombrar",
+        quien=actor.usuario_id,
+        antes={"nombre": antes["nombre"]},
+        despues={"nombre": limpio},
+    )
+    await sesion.commit()
+    return _a_equipo(
+        guardado=f"{antes['codigo']}: ahora se llama «{limpio}».", ancla=tipo
+    )
 
 
 async def _otros_admins_activos(sesion, usuario_id) -> int:

@@ -63,6 +63,7 @@ void main() {
       '       secuencia, estado, creado_en, confirmado_en) '
       "VALUES ('op-v1', 'venta.crear', 'v-1', '{}', 'h', 0, 'confirmada', 'x', 'x')",
     );
+    db.execute("INSERT INTO familias (id, nombre, orden) VALUES ('f-1', 'Atunes', 1)");
     db.execute(
       'INSERT INTO folios_rangos (tipo, desde, hasta, consumido_hasta) '
       "VALUES ('venta', 1, 100, 5)",
@@ -91,6 +92,7 @@ void main() {
       ['S-100'],
     );
     expect(contar('existencias_camion'), 0);
+    expect(contar('familias'), 0);
     expect(contar('ventas'), 0, reason: 'el servidor ya no tiene esa venta');
     expect(contar('outbox'), 0);
     expect(

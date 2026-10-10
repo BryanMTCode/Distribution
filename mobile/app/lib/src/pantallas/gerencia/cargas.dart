@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/cargas.dart';
+import '../canceladas.dart';
 import 'cierres.dart';
 
 /// La lista de cargas abiertas, y el botón para abrir una nueva.
@@ -168,29 +169,36 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                 ),
               ),
             for (final c in cargas ?? const <ResumenDeCarga>[])
-              Card(
-                child: ListTile(
-                  key: Key('carga_${c.folio}'),
-                  leading: Icon(
-                    c.estado == 'borrador'
-                        ? Icons.edit_note
-                        : Icons.local_shipping_outlined,
-                  ),
-                  title: Text('${c.vendedor} · ${c.camion}'),
-                  subtitle: Text(
-                    '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
-                    '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas',
-                  ),
-                  isThreeLine: true,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _abrirDetalle(c.id),
-                ),
-              ),
+              if (!estaCancelado(c.estado)) _renglon(c),
+            // Las canceladas, aparte y plegadas (ADR 0002 §95).
+            SeccionDeCanceladas(
+              renglones: [
+                for (final c in cargas ?? const <ResumenDeCarga>[])
+                  if (estaCancelado(c.estado)) _renglon(c),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _renglon(ResumenDeCarga c) => Card(
+        child: ListTile(
+          key: Key('carga_${c.folio}'),
+          leading: Icon(
+            c.estado == 'borrador' ? Icons.edit_note : Icons.local_shipping_outlined,
+          ),
+          title: Text('${c.vendedor} · ${c.camion}'),
+          subtitle: Text(
+            '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
+            '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas',
+          ),
+          isThreeLine: true,
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _abrirDetalle(c.id),
+        ),
+      );
 }
 
 String _estado(String estado) => switch (estado) {

@@ -24,13 +24,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_catalogo.dart';
 import '../../estado/camion.dart';
+import '../familias.dart';
 import 'devolver_a_bodega.dart';
 
-class PantallaCamion extends ConsumerWidget {
+class PantallaCamion extends ConsumerStatefulWidget {
   const PantallaCamion({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PantallaCamion> createState() => _EstadoCamion();
+}
+
+String? _familiaDe(ProductoDelCamion p) => p.familia;
+
+class _EstadoCamion extends ConsumerState<PantallaCamion>
+    with FamiliasPlegables<PantallaCamion> {
+  @override
+  Widget build(BuildContext context) {
     final productos = ref.watch(inventarioCamionProvider);
     final busqueda = ref.watch(busquedaCamionProvider);
     final ajustes = ref.watch(ajustesDeOficinaProvider);
@@ -43,6 +52,12 @@ class PantallaCamion extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Mi camión'),
         actions: [
+          // Plegar o desplegar todas las familias (ADR 0002 §92).
+          if (hayFamilias(productos, _familiaDe))
+            BotonPlegarFamilias(
+              algunaPlegada: plegadas.isNotEmpty,
+              alTocar: () => alternarTodas(productos, _familiaDe),
+            ),
           // La devolución a la bodega se entra DESDE AQUÍ y no desde el menú de la
           // lista de clientes: la pregunta «¿qué bajo?» se contesta mirando lo que
           // trae, y es la pantalla que el vendedor ya tiene abierta al final de la
@@ -166,16 +181,44 @@ class PantallaCamion extends ConsumerWidget {
                       ),
                     ),
                   )
-                : ListView.separated(
-                    itemCount: productos.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) => _Renglon(producto: productos[i]),
+                : _ListaPorFamilia(
+                    entradas: entradasPorFamilia(
+                      productos,
+                      _familiaDe,
+                      plegadas: plegadas,
+                      todoAbierto: busqueda.trim().isNotEmpty,
+                    ),
+                    alTocarFamilia: alternarFamilia,
                   ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Lo que trae, por familia: cada encabezado pliega o despliega la suya.
+class _ListaPorFamilia extends StatelessWidget {
+  const _ListaPorFamilia({required this.entradas, required this.alTocarFamilia});
+
+  final List<EntradaPorFamilia<ProductoDelCamion>> entradas;
+  final void Function(String) alTocarFamilia;
+
+  @override
+  Widget build(BuildContext context) => ListView.separated(
+        key: const Key('lista_camion_vendedor'),
+        itemCount: entradas.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (_, i) => switch (entradas[i]) {
+          EncabezadoEntrada(:final grupo, :final abierta) => EncabezadoDeFamilia(
+              familia: grupo.familia,
+              cuantos: grupo.elementos.length,
+              abierta: abierta,
+              alTocar: () => alTocarFamilia(grupo.familia),
+            ),
+          ElementoEntrada(:final elemento) => _Renglon(producto: elemento),
+        },
+      );
 }
 
 class _Renglon extends StatelessWidget {

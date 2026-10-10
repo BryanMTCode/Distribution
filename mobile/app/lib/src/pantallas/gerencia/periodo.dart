@@ -35,7 +35,11 @@ class PeriodoElegido {
 }
 
 /// Los periodos que se ofrecen como botones. «Personalizado» abre el calendario.
-const _periodosRapidos = {'hoy', 'ayer', 'semana', 'semana_pasada', 'mes', 'mes_pasado'};
+const _periodosRapidos = {
+  'hoy', 'ayer', 'semana', 'semana_pasada', 'mes', 'mes_pasado',
+  // Todo, desde el primer día con movimientos (ADR 0002 §96).
+  'todo',
+};
 
 /// Los mismos que `PERIODOS` del servidor (`app/api/admin/periodo.py`), para
 /// dibujar el selector antes de la primera respuesta.
@@ -46,6 +50,7 @@ const periodosDeSiempre = [
   ('semana_pasada', 'Semana pasada'),
   ('mes', 'Este mes'),
   ('mes_pasado', 'Mes pasado'),
+  ('todo', 'Todo'),
 ];
 
 /// Botones de periodo en una fila que se desliza, y «Fechas…» al final.

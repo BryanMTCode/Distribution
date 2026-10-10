@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/sesion.dart';
 import '../../estado/vendedores.dart';
+import '../canceladas.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 
@@ -79,14 +80,25 @@ class _Error extends StatelessWidget {
 // La lista
 // ---------------------------------------------------------------------------
 class PantallaVendedores extends ConsumerStatefulWidget {
-  const PantallaVendedores({super.key});
+  const PantallaVendedores({
+    super.key,
+    this.desactivados = false,
+    this.periodoInicial = const PeriodoElegido('hoy'),
+  });
+
+  /// Con qué periodo abre. Desde Empresa, «vendido este mes» abre el mes.
+  final PeriodoElegido periodoInicial;
+
+  /// La lista aparte de los desactivados (ADR 0002 §93): no se mezclan con los
+  /// que trabajan.
+  final bool desactivados;
 
   @override
   ConsumerState<PantallaVendedores> createState() => _EstadoVendedores();
 }
 
 class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
-  PeriodoElegido _periodo = const PeriodoElegido('hoy');
+  late PeriodoElegido _periodo = widget.periodoInicial;
   ListaDeVendedores? _lista;
   String? _error;
 
@@ -107,6 +119,7 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
         periodo: _periodo.clave,
         desde: _periodo.desde,
         hasta: _periodo.hasta,
+        desactivados: widget.desactivados,
       );
       if (!mounted) return;
       setState(() {
@@ -123,9 +136,9 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
   Widget build(BuildContext context) {
     final lista = _lista;
     return Scaffold(
-      key: const Key('pantalla_vendedores'),
+      key: Key(widget.desactivados ? 'pantalla_vendedores_desactivados' : 'pantalla_vendedores'),
       appBar: AppBar(
-        title: const Text('Vendedores'),
+        title: Text(widget.desactivados ? 'Vendedores desactivados' : 'Vendedores'),
         actions: [
           IconButton(
             tooltip: 'Volver a consultar',
@@ -168,12 +181,16 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             if (lista != null && lista.vendedores.isEmpty)
-              const Text('No hay vendedores dados de alta. Se dan de alta en el panel.'),
+              Text(
+                widget.desactivados
+                    ? 'Ningún vendedor desactivado.'
+                    : 'No hay vendedores activos. Se dan de alta en el panel.',
+              ),
             for (final v in lista?.vendedores ?? const <VendedorEnLista>[])
               Card(
                 child: ListTile(
                   key: Key('vendedor_${v.codigo}'),
-                  title: Text(v.activo ? v.nombre : '${v.nombre} (de baja)'),
+                  title: Text(v.nombre),
                   subtitle: Text(
                     '${v.camion ?? 'sin camión'} · ${v.rutas ?? 'sin ruta'}\n'
                     '${v.ventas} venta(s) · ${pesos(v.importe)} · '
@@ -191,6 +208,21 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
                         nombre: v.nombre,
                         periodo: _periodo,
                       ),
+                    ),
+                  ),
+                ),
+              ),
+            // Los desactivados, aparte (ADR 0002 §93).
+            if (!widget.desactivados && (lista?.desactivados ?? 0) > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: OutlinedButton.icon(
+                  key: const Key('ver_vendedores_desactivados'),
+                  icon: const Icon(Icons.person_off_outlined),
+                  label: Text('Desactivados (${lista!.desactivados})'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PantallaVendedores(desactivados: true),
                     ),
                   ),
                 ),
@@ -386,7 +418,15 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Text('Sin movimientos en esos días.'),
             ),
-          for (final m in d.movimientos) _renglon(m),
+          for (final m in d.movimientos)
+            if (!estaCancelado(m.estado)) _renglon(m),
+          // Lo cancelado, aparte y plegado (ADR 0002 §95).
+          SeccionDeCanceladas(
+            renglones: [
+              for (final m in d.movimientos)
+                if (estaCancelado(m.estado)) _renglon(m),
+            ],
+          ),
           if (d.recortado)
             Text(
               'Se muestran los ${d.limite} más recientes. Elige un tipo o un '

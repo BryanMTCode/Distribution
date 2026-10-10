@@ -639,10 +639,10 @@ async def ver_periodo(
     hasta: str = "",
 ) -> TableroDelPeriodo:
     from app.api.admin.panel import cifras_del_periodo
-    from app.api.admin.periodo import PERIODOS, leer_periodo
+    from app.api.admin.periodo import PERIODOS, periodo_pedido
 
     actor.exigir(PERMISO)
-    rango = leer_periodo(periodo, desde, hasta)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
     datos = await cifras_del_periodo(sesion, rango)
     cifras = datos["cifras"]
     return TableroDelPeriodo(

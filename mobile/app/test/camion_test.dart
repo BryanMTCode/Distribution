@@ -92,6 +92,36 @@ void main() {
     expect(textoQueContiene('El camión está vacío'), findsOneWidget);
   });
 
+  testWidgets('va por familia y cada familia se pliega (ADR 0002 §92)', (tester) async {
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarEnElCamion(base, sku: 'SOPA-70G', nombre: 'Sopa de fideo',
+            cargada: 240, actual: 192);
+        sembrarEnElCamion(base, sku: 'FRIJOL-1K', nombre: 'Frijol bayo',
+            cargada: 100, actual: 70);
+        sembrarFamilia(base, id: 'f-sopas', nombre: 'Sopas', orden: 1,
+            productos: ['prod-SOPA-70G']);
+        sembrarFamilia(base, id: 'f-granos', nombre: 'Granos', orden: 2,
+            productos: ['prod-FRIJOL-1K']);
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirCamion(tester);
+
+    expect(textoQueContiene('Sopas · 1'), findsOneWidget);
+    expect(textoQueContiene('Granos · 1'), findsOneWidget);
+    await tocar(tester, const Key('familia_Sopas'));
+    expect(textoQueContiene('Sopa de fideo'), findsNothing);
+    expect(textoQueContiene('Frijol bayo'), findsOneWidget);
+
+    // Lo que se busca no se esconde en una familia plegada.
+    await tester.enterText(find.byKey(const Key('buscar_en_camion')), 'Sopa');
+    await tester.pumpAndSettle();
+    expect(textoQueContiene('Sopa de fideo'), findsOneWidget);
+  });
+
   testWidgets('se puede buscar un producto', (tester) async {
     await montarApp(
       tester,

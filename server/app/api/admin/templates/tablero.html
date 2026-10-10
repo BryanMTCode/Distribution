@@ -170,7 +170,7 @@
       {% for v in por_vendedor %}
       <tr>
         <td><a href="/panel/vendedores/{{ v.id }}?{{ periodo.como_parametros() }}">{{ v.nombre }}</a>
-          <span class="sutil">{{ v.codigo }}</span></td>
+          <span class="sutil">{{ v.codigo }}{% if v.activo == false %} · desactivado{% endif %}</span></td>
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
         <td class="numero">{{ v.efectivo|dinero }}</td>

@@ -27,7 +27,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import SesionDep, render
-from app.api.admin.periodo import PERIODOS, leer_periodo
+from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb
 
 router = APIRouter(prefix="/panel/sincronizaciones", tags=["panel"], include_in_schema=False)
@@ -163,7 +163,7 @@ async def bitacora(
     direccion: str = "",
     problemas: str = "",
 ) -> HTMLResponse:
-    rango = leer_periodo(periodo, desde, hasta)
+    rango = await periodo_pedido(sesion, periodo, desde, hasta)
     try:
         usuario_id = uuid.UUID(usuario) if usuario else None
     except ValueError:
