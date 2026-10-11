@@ -156,6 +156,66 @@ void main() {
     });
   });
 
+  group('por familia, como el catálogo (ADR 0002 §101)', () {
+    Future<void> abrirConFamilias(WidgetTester tester) async {
+      await montarApp(
+        tester,
+        credencial: credencialDelServidor(),
+        sembrar: (base) {
+          sembrarEscenarioDeVenta(base);
+          sembrarParaCobrar(base);
+          sembrarProducto(base, id: 'p-cacahuate', nombre: 'Cacahuate japonés');
+          sembrarCarga(base, productoId: 'p-cacahuate', unidadesBase: 30);
+          sembrarFamilia(base, id: 'f-sopas', nombre: 'Sopas', orden: 2,
+              productos: ['p-sopa']);
+          sembrarFamilia(base, id: 'f-botanas', nombre: 'Botanas', orden: 1,
+              productos: ['p-cacahuate']);
+        },
+      );
+      await entrarCon(tester, pinCorrecto);
+      await tester.tap(find.byKey(const Key('boton_mi_dia')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> verYTocar(WidgetTester tester, Key clave) async {
+      await tester.ensureVisible(find.byKey(clave));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(clave));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('solicitar carga: agrupada, en el orden de la oficina, y se pliega',
+        (tester) async {
+      await abrirConFamilias(tester);
+      await verYTocar(tester, const Key('boton_solicitar_carga'));
+      final botanas = tester.getTopLeft(find.byKey(const Key('familia_Botanas'))).dy;
+      final sopas = tester.getTopLeft(find.byKey(const Key('familia_Sopas'))).dy;
+      final cacahuate = tester.getTopLeft(find.text('Cacahuate japonés')).dy;
+      expect(botanas < cacahuate && cacahuate < sopas, isTrue);
+
+      // Lo escrito en una familia plegada no se pierde.
+      await tester.enterText(find.byKey(const Key('pedido_SOPA-70G')), '4');
+      await verYTocar(tester, const Key('familia_Sopas'));
+      expect(find.byKey(const Key('pedido_SOPA-70G')), findsNothing);
+      await verYTocar(tester, const Key('familia_Sopas'));
+      expect(
+        tester.widget<TextField>(find.byKey(const Key('pedido_SOPA-70G'))).controller!.text,
+        '4',
+      );
+      expect(find.byKey(const Key('plegar_familias')), findsOneWidget);
+    });
+
+    testWidgets('el corte dice lo que queda por familia', (tester) async {
+      await abrirConFamilias(tester);
+      await verYTocar(tester, const Key('boton_corte_del_dia'));
+      expect(find.byKey(const Key('familia_Botanas')), findsOneWidget);
+      expect(find.byKey(const Key('familia_Sopas')), findsOneWidget);
+      final botanas = tester.getTopLeft(find.byKey(const Key('familia_Botanas'))).dy;
+      final sopa = tester.getTopLeft(find.byKey(const Key('queda_SOPA-70G'))).dy;
+      expect(botanas < sopa, isTrue);
+    });
+  });
+
   group('el gerente', () {
     Future<void> abrirPestana(WidgetTester tester, Key pestana) async {
       await tester.tap(find.byKey(const Key('nav_almacen')));

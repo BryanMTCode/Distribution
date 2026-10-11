@@ -415,4 +415,32 @@ void main() {
       expect(find.byKey(const Key('segmento_cambio')), findsNothing);
     });
   });
+
+  group('por familia (ADR 0002 §101)', () {
+    testWidgets('las familias empiezan plegadas y se abre la que se toca', (tester) async {
+      await montarApp(
+        tester,
+        credencial: credencialDelServidor(),
+        sembrar: (b) {
+          sembrarEscenarioDeVenta(b);
+          sembrarParaCobrar(b);
+          sembrarMotivos(b);
+          sembrarFolios(b, tipo: 'merma');
+          sembrarFamilia(b, id: 'f-sopas', nombre: 'Sopas', orden: 1, productos: ['p-sopa']);
+        },
+      );
+      await entrarCon(tester, pinCorrecto);
+      await tocarEnElMenu(tester, const Key('boton_merma'));
+
+      expect(find.byKey(const Key('familia_Sopas')), findsOneWidget);
+      expect(find.byKey(const Key('escoger_p-sopa')), findsNothing);
+      await tocar(tester, const Key('familia_Sopas'));
+      expect(find.byKey(const Key('escoger_p-sopa')), findsOneWidget);
+
+      // Lo que se busca sale abierto.
+      await tocar(tester, const Key('familia_Sopas'));
+      await escribirEn(tester, const Key('buscar_producto_merma'), 'fideo');
+      expect(find.byKey(const Key('escoger_p-sopa')), findsOneWidget);
+    });
+  });
 }

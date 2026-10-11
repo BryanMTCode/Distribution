@@ -189,3 +189,66 @@ mixin FamiliasPlegables<W extends StatefulWidget> on State<W> {
         }
       });
 }
+
+/// Para escoger un artículo dentro de un formulario —la merma, la devolución a
+/// bodega—: las familias empiezan **plegadas** y se abre la que se toca.
+///
+/// Al revés que en el catálogo, y a propósito: aquí la lista va en medio de un
+/// formulario, y entera empujaría el botón de guardar fuera de la pantalla. Lo
+/// que se busca sí sale todo abierto (ADR 0002 §101).
+///
+/// Sin familias se porta como antes: los primeros [sinBuscar] y, buscando, los
+/// primeros [buscando].
+class EscogerPorFamilia<T> extends StatefulWidget {
+  const EscogerPorFamilia({
+    super.key,
+    required this.elementos,
+    required this.familiaDe,
+    required this.renglon,
+    required this.buscando,
+    this.sinBuscar = 4,
+    this.alBuscar = 8,
+  });
+
+  final List<T> elementos;
+  final String? Function(T) familiaDe;
+  final Widget Function(T) renglon;
+  final bool buscando;
+  final int sinBuscar;
+  final int alBuscar;
+
+  @override
+  State<EscogerPorFamilia<T>> createState() => _EstadoEscogerPorFamilia<T>();
+}
+
+class _EstadoEscogerPorFamilia<T> extends State<EscogerPorFamilia<T>> {
+  final Set<String> _abiertas = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget;
+    final visibles = w.buscando ? w.elementos.take(w.alBuscar).toList() : w.elementos;
+    if (!hayFamilias(visibles, w.familiaDe)) {
+      final cuantos = w.buscando ? w.alBuscar : w.sinBuscar;
+      return Column(
+        children: [for (final e in visibles.take(cuantos)) w.renglon(e)],
+      );
+    }
+    return Column(
+      children: [
+        for (final g in porFamilia(visibles, w.familiaDe)) ...[
+          EncabezadoDeFamilia(
+            familia: g.familia,
+            cuantos: g.elementos.length,
+            abierta: w.buscando || _abiertas.contains(g.familia),
+            alTocar: () => setState(() {
+              if (!_abiertas.remove(g.familia)) _abiertas.add(g.familia);
+            }),
+          ),
+          if (w.buscando || _abiertas.contains(g.familia))
+            for (final e in g.elementos) w.renglon(e),
+        ],
+      ],
+    );
+  }
+}

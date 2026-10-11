@@ -43,6 +43,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/repo_catalogo.dart';
 import '../../datos/repo_clientes.dart';
 import '../../estado/mermas.dart';
+import '../familias.dart';
 import 'comunes.dart';
 
 /// Un renglón a medio capturar: producto, presentación y cuántas.
@@ -528,10 +529,14 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
               'El camión no trae carga. Sin carga no hay nada que mermar.',
             ),
           ),
-        // Se muestran pocos: la lista completa empuja el botón de registrar
-        // fuera de la pantalla, y lo que se busca se escribe.
-        for (final p in candidatos.take(filtro.isEmpty ? 4 : 8))
-          ListTile(
+        // Por familia, plegadas hasta que se toca una (ADR 0002 §101): la
+        // lista completa empujaría el botón de registrar fuera de la pantalla,
+        // y lo que se busca se escribe.
+        EscogerPorFamilia<ProductoDelCamion>(
+          elementos: candidatos,
+          familiaDe: (p) => p.familia,
+          buscando: filtro.isNotEmpty,
+          renglon: (p) => ListTile(
             key: Key('escoger_${p.id}'),
             dense: true,
             title: Text(p.nombre),
@@ -539,6 +544,7 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
             trailing: const Icon(Icons.add),
             onTap: () => _agregar(p),
           ),
+        ),
       ],
     );
   }

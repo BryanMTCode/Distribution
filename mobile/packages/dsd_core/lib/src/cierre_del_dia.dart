@@ -54,12 +54,16 @@ class LoQueQueda {
     required this.queda,
     required this.vendido,
     this.presentaciones = const [],
+    this.familia,
   });
 
   final String productoId;
   final String nombre;
   final String sku;
   final String unidadBase;
+
+  /// El nombre de su familia, o nulo (ADR 0002 §92 y §101).
+  final String? familia;
 
   /// El saldo del camión, en unidad base.
   final Cantidad queda;
@@ -117,6 +121,7 @@ class ProductoParaPedir {
     required this.sku,
     required this.unidadBase,
     required this.presentaciones,
+    this.familia,
   });
 
   final String productoId;
@@ -124,6 +129,10 @@ class ProductoParaPedir {
   final String sku;
   final String unidadBase;
   final List<Presentacion> presentaciones;
+
+  /// El nombre de su familia, o nulo: «Sin familia» (ADR 0002 §92). La
+  /// solicitud de carga se ve agrupada como el catálogo (§101).
+  final String? familia;
 
   /// Se pide por la presentación más grande: en la bodega se carga por caja.
   Presentacion get porOmision {
@@ -299,6 +308,7 @@ class RegistroDeCierre {
           '''
           SELECT e.producto_id, COALESCE(p.nombre, e.producto_id) AS nombre,
                  COALESCE(p.sku, '') AS sku, COALESCE(p.unidad_base, 'PZA') AS unidad_base,
+                 f.nombre AS familia,
                  e.cant_actual AS queda,
                  COALESCE((SELECT SUM(vp.cantidad_base)
                              FROM venta_partidas vp JOIN ventas v ON v.id = vp.venta_id
@@ -307,8 +317,10 @@ class RegistroDeCierre {
                    AS vendido
             FROM existencias_camion e
             LEFT JOIN productos p ON p.id = e.producto_id
+            LEFT JOIN familias f ON f.id = p.categoria_id
            WHERE e.cant_actual <> 0 OR e.cant_cargada <> 0
-           ORDER BY nombre
+           -- Por familia, como el camión y el catálogo (ADR 0002 §101).
+           ORDER BY (f.id IS NULL), f.orden, f.nombre, nombre
           ''',
           [dia],
         )
@@ -318,6 +330,7 @@ class RegistroDeCierre {
             nombre: f['nombre'] as String,
             sku: f['sku'] as String,
             unidadBase: f['unidad_base'] as String,
+            familia: f['familia'] as String?,
             queda: Cantidad.deBase(f['queda'] as num),
             vendido: Cantidad.deBase(f['vendido'] as num),
             presentaciones: _presentacionesDe(f['producto_id'] as String),
@@ -346,10 +359,14 @@ class RegistroDeCierre {
     return _db
         .select(
           '''
-          SELECT id, nombre, sku, unidad_base FROM productos
-           WHERE activo = 1
-             AND (?1 = '' OR nombre LIKE ?2 OR sku LIKE ?2 OR codigo_barras = ?1)
-           ORDER BY nombre
+          SELECT p.id, p.nombre, p.sku, p.unidad_base, f.nombre AS familia
+            FROM productos p
+            LEFT JOIN familias f ON f.id = p.categoria_id
+           WHERE p.activo = 1
+             AND (?1 = '' OR p.nombre LIKE ?2 OR p.sku LIKE ?2 OR p.codigo_barras = ?1)
+           -- Por familia, en el orden de la oficina, como el catálogo (ADR 0002
+           -- §92); las que no tienen, al final.
+           ORDER BY (f.id IS NULL), f.orden, f.nombre, p.nombre
            LIMIT 300
           ''',
           [filtro, '%$filtro%'],
@@ -362,6 +379,7 @@ class RegistroDeCierre {
             nombre: f['nombre'] as String,
             sku: f['sku'] as String,
             unidadBase: f['unidad_base'] as String,
+            familia: f['familia'] as String?,
             presentaciones: presentaciones.isEmpty
                 ? [Presentacion(unidad: f['unidad_base'] as String, factor: Factor.uno)]
                 : presentaciones,

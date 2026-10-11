@@ -35,6 +35,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/repo_catalogo.dart';
 import '../../estado/mermas.dart';
 import '../../estado/traspasos.dart';
+import '../familias.dart';
 import 'comunes.dart';
 
 /// Un renglón a medio capturar: producto, presentación y cuántas.
@@ -393,8 +394,12 @@ class _EstadoDevolver extends ConsumerState<PantallaDevolverABodega> {
             padding: EdgeInsets.only(top: 12),
             child: Aviso('El camión está vacío: no hay nada que devolver.'),
           ),
-        for (final p in candidatos.take(filtro.isEmpty ? 4 : 8))
-          ListTile(
+        // Por familia, plegadas hasta que se toca una (ADR 0002 §101).
+        EscogerPorFamilia<ProductoDelCamion>(
+          elementos: candidatos,
+          familiaDe: (p) => p.familia,
+          buscando: filtro.isNotEmpty,
+          renglon: (p) => ListTile(
             key: Key('escoger_${p.id}'),
             dense: true,
             title: Text(p.nombre),
@@ -402,6 +407,7 @@ class _EstadoDevolver extends ConsumerState<PantallaDevolverABodega> {
             trailing: const Icon(Icons.add),
             onTap: () => _agregar(p),
           ),
+        ),
       ],
     );
   }

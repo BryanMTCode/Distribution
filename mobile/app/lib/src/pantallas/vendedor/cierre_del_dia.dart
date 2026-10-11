@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/cierre.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
+import '../familias.dart';
 import '../ticket_compartible.dart';
 import 'comunes.dart';
 
@@ -46,7 +47,8 @@ class PantallaCorteDelDia extends ConsumerStatefulWidget {
   ConsumerState<PantallaCorteDelDia> createState() => _EstadoCorte();
 }
 
-class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
+class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
+    with FamiliasPlegables<PantallaCorteDelDia> {
   final _efectivo = TextEditingController();
   final _observaciones = TextEditingController();
   String? _error;
@@ -163,21 +165,34 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia> {
           const SizedBox(height: 8),
           if (resumen.productos.isEmpty)
             const Aviso('Tu camión no tiene productos registrados.'),
-          for (final p in resumen.productos)
-            ListTile(
-              key: Key('queda_${p.sku}'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(p.nombre),
-              subtitle: Text('Vendiste ${_cuanto(p.vendido, p)}'),
-              trailing: Text(
-                _cuanto(p.queda, p),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: p.queda.esNegativa ? Theme.of(context).colorScheme.error : null,
+          // Por familia, como su camión (ADR 0002 §101).
+          for (final e in entradasPorFamilia(
+            resumen.productos,
+            (LoQueQueda p) => p.familia,
+            plegadas: plegadas,
+          ))
+            switch (e) {
+              EncabezadoEntrada(:final grupo, :final abierta) => EncabezadoDeFamilia(
+                  familia: grupo.familia,
+                  cuantos: grupo.elementos.length,
+                  abierta: abierta,
+                  alTocar: () => alternarFamilia(grupo.familia),
                 ),
-              ),
-            ),
+              ElementoEntrada(elemento: final p) => ListTile(
+                  key: Key('queda_${p.sku}'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(p.nombre),
+                  subtitle: Text('Vendiste ${_cuanto(p.vendido, p)}'),
+                  trailing: Text(
+                    _cuanto(p.queda, p),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: p.queda.esNegativa ? Theme.of(context).colorScheme.error : null,
+                    ),
+                  ),
+                ),
+            },
           const SizedBox(height: 16),
           TextField(
             key: const Key('campo_observaciones_corte'),
@@ -236,7 +251,8 @@ class _EnPedido {
   final bultos = TextEditingController();
 }
 
-class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga> {
+class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga>
+    with FamiliasPlegables<PantallaSolicitarCarga> {
   final _busqueda = TextEditingController();
   final _observaciones = TextEditingController();
   final Map<String, _EnPedido> _pedidos = {};
@@ -308,7 +324,17 @@ class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga> {
 
     return Scaffold(
       key: const Key('pantalla_solicitar_carga'),
-      appBar: AppBar(title: const Text('Solicitar carga')),
+      appBar: AppBar(
+        title: const Text('Solicitar carga'),
+        actions: [
+          // Por familia, como el catálogo (ADR 0002 §92 y §101).
+          if (hayFamilias(productos, _familiaDe))
+            BotonPlegarFamilias(
+              algunaPlegada: plegadas.isNotEmpty,
+              alTocar: () => alternarTodas(productos, _familiaDe),
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -328,58 +354,25 @@ class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga> {
             ),
           ),
           const SizedBox(height: 8),
-          for (final p in productos)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p.nombre),
-                        Text(p.sku, style: estilo.bodySmall),
-                      ],
-                    ),
+          for (final e in entradasPorFamilia(
+            productos,
+            _familiaDe,
+            plegadas: plegadas,
+            // Lo que se busca no se esconde en una familia plegada.
+            todoAbierto: _busqueda.text.trim().isNotEmpty,
+          ))
+            switch (e) {
+              EncabezadoEntrada(:final grupo, :final abierta) => Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: EncabezadoDeFamilia(
+                    familia: grupo.familia,
+                    cuantos: grupo.elementos.length,
+                    abierta: abierta,
+                    alTocar: () => alternarFamilia(grupo.familia),
                   ),
-                  if (p.presentaciones.length > 1)
-                    DropdownButton<String>(
-                      key: Key('presentacion_${p.sku}'),
-                      value: _pedido(p).presentacion.unidad,
-                      items: [
-                        for (final u in p.presentaciones)
-                          DropdownMenuItem(
-                            value: u.unidad,
-                            child: Text(u.factor.esUno
-                                ? u.unidad
-                                : '${u.unidad} ${u.factor.textoCorto}'),
-                          ),
-                      ],
-                      onChanged: (u) => setState(() => _pedido(p).presentacion =
-                          p.presentaciones.firstWhere((x) => x.unidad == u)),
-                    )
-                  else
-                    Text(p.porOmision.unidad),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 72,
-                    child: TextField(
-                      key: Key('pedido_${p.sku}'),
-                      controller: _pedido(p).bultos,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      textAlign: TextAlign.end,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        hintText: '0',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              ElementoEntrada(:final elemento) => _renglon(elemento, estilo),
+            },
           const SizedBox(height: 16),
           TextField(
             key: const Key('campo_observaciones_solicitud'),
@@ -404,7 +397,62 @@ class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga> {
       ),
     );
   }
+
+  /// Un producto de la solicitud: su presentación y cuántos bultos.
+  Widget _renglon(ProductoParaPedir p, TextTheme estilo) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.nombre),
+                  Text(p.sku, style: estilo.bodySmall),
+                ],
+              ),
+            ),
+            if (p.presentaciones.length > 1)
+              DropdownButton<String>(
+                key: Key('presentacion_${p.sku}'),
+                value: _pedido(p).presentacion.unidad,
+                items: [
+                  for (final u in p.presentaciones)
+                    DropdownMenuItem(
+                      value: u.unidad,
+                      child: Text(u.factor.esUno
+                          ? u.unidad
+                          : '${u.unidad} ${u.factor.textoCorto}'),
+                    ),
+                ],
+                onChanged: (u) => setState(() => _pedido(p).presentacion =
+                    p.presentaciones.firstWhere((x) => x.unidad == u)),
+              )
+            else
+              Text(p.porOmision.unidad),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 72,
+              child: TextField(
+                key: Key('pedido_${p.sku}'),
+                controller: _pedido(p).bultos,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.end,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  hintText: '0',
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
+
+String? _familiaDe(ProductoParaPedir p) => p.familia;
 
 // ===========================================================================
 // La tarjeta de «Mi día»
