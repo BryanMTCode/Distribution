@@ -468,9 +468,26 @@ def sin_decimales(valor) -> str:
     return f"{Decimal(str(valor)).to_integral_value():,}"
 
 
+_DIAS_DE_LA_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_MESES_DEL_ANO = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+    "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+
+def dia_en_palabras(dia) -> str:
+    """«sábado 10 de octubre de 2026»: un día como se dice, para encabezar lo que
+    pasó en él (las cargas por fecha, ADR 0002 §102)."""
+    return (
+        f"{_DIAS_DE_LA_SEMANA[dia.weekday()]} {dia.day} de "
+        f"{_MESES_DEL_ANO[dia.month - 1]} de {dia.year}"
+    )
+
+
 plantillas.env.filters["precio"] = precio_corto
 plantillas.env.filters["entero"] = sin_decimales
 plantillas.env.filters["dinero"] = dinero
+plantillas.env.filters["dia_en_palabras"] = dia_en_palabras
 
 
 def render(

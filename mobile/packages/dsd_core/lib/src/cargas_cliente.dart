@@ -254,6 +254,26 @@ class ClienteCargas {
   Future<List<ResumenDeCarga>> abiertas() async =>
       _lista(await _get('/v1/cargas'), ResumenDeCarga.deJson);
 
+  /// Las cargas de un periodo, en cualquier estado: «para ver qué cargas se
+  /// hicieron» (ADR 0002 §102). El periodo es el del tablero —`hoy`, `semana`,
+  /// `todo`…— o, con `desde` y `hasta` (`YYYY-MM-DD`), un rango a mano.
+  Future<List<ResumenDeCarga>> delPeriodo({
+    String periodo = 'hoy',
+    String? desde,
+    String? hasta,
+  }) async {
+    final r = await _transporte.obtener('/v1/cargas', parametros: {
+      if (desde != null && hasta != null) ...{
+        'periodo': 'rango',
+        'desde': desde,
+        'hasta': hasta,
+      } else
+        'periodo': periodo,
+    });
+    _revisar(r);
+    return _lista(jsonDecode(r.cuerpo), ResumenDeCarga.deJson);
+  }
+
   Future<DetalleDeCarga> ver(String id) async =>
       DetalleDeCarga.deJson(await _get('/v1/cargas/$id') as Map<String, Object?>);
 

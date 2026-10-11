@@ -22,6 +22,9 @@ class _ServidorDeCargas implements Transporte {
 
   final List<String> bloqueos;
   final List<(String, Map<String, Object?>)> posts = [];
+
+  /// Lo que se pidió por fecha (ADR 0002 §102).
+  final List<Map<String, String>> porFecha = [];
   final List<Map<String, Object?>> _renglones = [];
   String _estado;
   bool _abierta = false;
@@ -69,6 +72,20 @@ class _ServidorDeCargas implements Transporte {
         ],
         'hoy': '2026-09-24',
       }));
+    }
+    if (ruta == '/v1/cargas' && parametros != null && parametros.isNotEmpty) {
+      porFecha.add(parametros);
+      Map<String, Object?> carga(String folio, String dia, String estado, String piezas) => {
+            'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': dia,
+            'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'renglones': 1,
+            'piezas': piezas,
+          };
+      return RespuestaHttp(200, jsonEncode([
+        carga('CG-000006', '2026-09-23', 'liquidada', '120.000'),
+        carga('CG-000005', '2026-09-23', 'liquidada', '80.000'),
+        carga('CG-000004', '2026-09-22', 'cancelada', '10.000'),
+        carga('CG-000003', '2026-09-21', 'liquidada', '40.000'),
+      ]));
     }
     if (ruta == '/v1/cargas') {
       return RespuestaHttp(200, jsonEncode(_abierta
@@ -159,6 +176,37 @@ Future<void> _abrirCarga(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('por fecha: las cargas de un periodo, por día (ADR 0002 §102)',
+      (tester) async {
+    final servidor = _ServidorDeCargas();
+    await _montar(tester, servidor);
+    await tester.tap(find.byKey(const Key('nav_almacen')));
+    await tester.pumpAndSettle();
+    expect(servidor.porFecha, isEmpty, reason: 'de entrada, las abiertas');
+
+    await tester.tap(find.byKey(const Key('cargas_por_fecha')));
+    await tester.pumpAndSettle();
+    expect(servidor.porFecha.last, {'periodo': 'hoy'});
+    await tester.tap(find.byKey(const Key('periodo_semana')));
+    await tester.pumpAndSettle();
+    expect(servidor.porFecha.last, {'periodo': 'semana'});
+
+    // Un encabezado por día, con lo que se cargó; la cancelada no suma.
+    expect(find.byKey(const Key('dia_de_cargas_2026-09-23')), findsOneWidget);
+    expect(textoQueContiene('2 carga(s) · 200 piezas'), findsOneWidget);
+    expect(find.byKey(const Key('dia_de_cargas_2026-09-22')), findsNothing);
+    expect(find.byKey(const Key('dia_de_cargas_2026-09-21')), findsOneWidget);
+    final dia23 = tester.getTopLeft(find.byKey(const Key('dia_de_cargas_2026-09-23'))).dy;
+    final carga6 = tester.getTopLeft(find.byKey(const Key('carga_CG-000006'))).dy;
+    final dia21 = tester.getTopLeft(find.byKey(const Key('dia_de_cargas_2026-09-21'))).dy;
+    expect(dia23 < carga6 && carga6 < dia21, isTrue);
+
+    // Y de vuelta a las abiertas.
+    await tester.tap(find.byKey(const Key('cargas_abiertas')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('cargas_vacio')), findsOneWidget);
+  });
+
   testWidgets('sin el permiso de cargar, el botón ni aparece', (tester) async {
     await _montar(tester, _ServidorDeCargas(), permisos: const ['tablero.ver']);
     expect(find.byKey(const Key('panel_gerencia')), findsOneWidget);

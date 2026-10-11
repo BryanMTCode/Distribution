@@ -85,14 +85,21 @@
 </form>
 {% endif %}
 
-<form class="barra" method="get" action="/panel/cargas">
-  <button type="submit" name="filtro" value="abiertas"
-          class="{% if filtro != 'abiertas' %}secundario{% endif %}">Abiertas</button>
-  <button type="submit" name="filtro" value="hoy"
-          class="{% if filtro != 'hoy' %}secundario{% endif %}">De hoy</button>
-  <button type="submit" name="filtro" value="todas"
-          class="{% if filtro != 'todas' %}secundario{% endif %}">Todas</button>
-</form>
+{# Las abiertas, o las de una fecha o un periodo (ADR 0002 §102). #}
+<nav class="filtro" id="filtro_cargas" aria-label="Qué cargas ver">
+  <a href="/panel/cargas" id="cargas_abiertas"
+     {% if filtro == 'abiertas' %}class="actual" aria-current="true"{% endif %}>Abiertas</a>
+  <a href="/panel/cargas?filtro=fecha&periodo=hoy" id="cargas_por_fecha"
+     {% if filtro == 'fecha' %}class="actual" aria-current="true"{% endif %}>Por fecha</a>
+</nav>
+{% if filtro == 'fecha' %}
+  {% set ocultos = {'filtro': 'fecha'} %}
+  {% include "_periodo.html" %}
+  <p class="sutil" id="resumen_cargas">
+    {{ dias|sum(attribute='cuantas') }} carga(s) en {{ dias|length }} día(s),
+    {{ dias|sum(attribute='piezas')|entero }} piezas.
+  </p>
+{% endif %}
 
 {% if filas %}
 <div class="tabla-marco">
@@ -107,7 +114,20 @@
       </tr>
     </thead>
     <tbody>
-      {% for f in filas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_filas(f) }}{% endfor %}
+      {% if filtro == 'fecha' %}
+        {# Un encabezado por día: qué se cargó ese día y cuánto. #}
+        {% for d in dias %}
+        <tr class="dia" id="dia_{{ d.fecha.isoformat() }}">
+          <td colspan="5" style="background:var(--acento-suave);font-weight:700">
+            {{ d.fecha|dia_en_palabras|capitalize }}
+            <span class="sutil">· {{ d.cuantas }} carga(s) · {{ d.piezas|entero }} piezas</span>
+          </td>
+        </tr>
+        {% for f in d.filas %}{{ renglon_filas(f) }}{% endfor %}
+        {% endfor %}
+      {% else %}
+        {% for f in filas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_filas(f) }}{% endfor %}
+      {% endif %}
     </tbody>
   </table>
 </div>
@@ -138,7 +158,7 @@
     Ninguna carga abierta. Mientras no haya una carga confirmada, el camión del
     vendedor está vacío y su catálogo no le deja vender nada.
   {% else %}
-    Nada que mostrar con este filtro.
+    Ninguna carga {{ periodo.descripcion }}.
   {% endif %}
 </div>
 {% endif %}

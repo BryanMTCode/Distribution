@@ -26,8 +26,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/cargas.dart';
+import '../../estado/sesion.dart';
 import '../canceladas.dart';
 import 'cierres.dart';
+import 'periodo.dart';
 
 /// La lista de cargas abiertas, y el botón para abrir una nueva.
 class PantallaCargas extends ConsumerStatefulWidget {
@@ -44,6 +46,11 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
   List<ResumenDeCarga>? _cargas;
   String? _error;
 
+  /// «Por fecha»: las cargas de un día o un periodo, en cualquier estado, «para
+  /// ver qué cargas se hicieron» (ADR 0002 §102).
+  bool _porFecha = false;
+  PeriodoElegido _periodo = const PeriodoElegido('hoy');
+
   /// Al deslizar para recargar, la sección de las cargas pedidas se vuelve a leer.
   int _vuelta = 0;
 
@@ -59,9 +66,18 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
       setState(() => _error = 'No hay sesión en línea. Sal y vuelve a entrar con señal.');
       return;
     }
+    final porFecha = _porFecha;
+    final periodo = _periodo;
     try {
-      final cargas = await cliente.abiertas();
-      if (!mounted) return;
+      final cargas = porFecha
+          ? await cliente.delPeriodo(
+              periodo: periodo.clave,
+              desde: periodo.desde,
+              hasta: periodo.hasta,
+            )
+          : await cliente.abiertas();
+      // Si mientras tanto se cambió de vista, esta respuesta ya no es la que se ve.
+      if (!mounted || porFecha != _porFecha || periodo != _periodo) return;
       setState(() {
         _cargas = cargas;
         _error = null;
@@ -151,7 +167,49 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
             // cada tarde (ADR 0002 §82).
             SeccionCargasPedidas(key: ValueKey(_vuelta), alCambiar: _cargar),
             const Divider(height: 32),
-            Text('Cargas abiertas', style: Theme.of(context).textTheme.titleMedium),
+            SegmentedButton<bool>(
+              key: const Key('vista_de_cargas'),
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('Abiertas', key: Key('cargas_abiertas')),
+                  icon: Icon(Icons.local_shipping_outlined),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('Por fecha', key: Key('cargas_por_fecha')),
+                  icon: Icon(Icons.event),
+                ),
+              ],
+              selected: {_porFecha},
+              onSelectionChanged: (v) {
+                setState(() {
+                  _porFecha = v.single;
+                  _cargas = null;
+                  _error = null;
+                });
+                _cargar();
+              },
+            ),
+            const SizedBox(height: 12),
+            if (_porFecha) ...[
+              SelectorDePeriodo(
+                periodos: periodosDeSiempre,
+                elegido: _periodo,
+                hoy: ref.watch(relojProvider)(),
+                conUnDia: true,
+                onElegir: (p) {
+                  setState(() {
+                    _periodo = p;
+                    _cargas = null;
+                    _error = null;
+                  });
+                  _cargar();
+                },
+              ),
+              const SizedBox(height: 8),
+            ] else
+              Text('Cargas abiertas', style: Theme.of(context).textTheme.titleMedium),
             if (_error != null) _Aviso(texto: _error!, esError: true),
             if (cargas == null && _error == null)
               const Padding(
@@ -159,17 +217,34 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             if (cargas != null && cargas.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
+              Padding(
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  'No hay cargas abiertas. Toca «Nueva carga» para subirle '
-                  'mercancía a un camión.',
-                  key: Key('cargas_vacio'),
+                  _porFecha
+                      ? 'No se hizo ninguna carga en esas fechas.'
+                      : 'No hay cargas abiertas. Toca «Nueva carga» para subirle '
+                          'mercancía a un camión.',
+                  key: const Key('cargas_vacio'),
                   textAlign: TextAlign.center,
                 ),
               ),
-            for (final c in cargas ?? const <ResumenDeCarga>[])
-              if (!estaCancelado(c.estado)) _renglon(c),
+            if (_porFecha)
+              // Un encabezado por día: qué se cargó ese día y cuánto.
+              for (final (dia, del) in _porDia(cargas ?? const [])) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Text(
+                    '${_mayuscula(diaEnPalabras(dia))} · ${del.length} carga(s) · '
+                    '${_piezas(del)} piezas',
+                    key: Key('dia_de_cargas_$dia'),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                for (final c in del) _renglon(c),
+              ]
+            else
+              for (final c in cargas ?? const <ResumenDeCarga>[])
+                if (!estaCancelado(c.estado)) _renglon(c),
             // Las canceladas, aparte y plegadas (ADR 0002 §95).
             SeccionDeCanceladas(
               renglones: [
@@ -200,6 +275,24 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
         ),
       );
 }
+
+/// Las cargas vivas por día, del más reciente al más viejo, en el orden en que
+/// llegan. Las canceladas no van aquí: van aparte (ADR 0002 §95).
+List<(String, List<ResumenDeCarga>)> _porDia(List<ResumenDeCarga> cargas) {
+  final dias = <String, List<ResumenDeCarga>>{};
+  for (final c in cargas) {
+    if (estaCancelado(c.estado)) continue;
+    dias.putIfAbsent(c.fecha, () => []).add(c);
+  }
+  return [for (final e in dias.entries) (e.key, e.value)];
+}
+
+String _piezas(List<ResumenDeCarga> cargas) => cargas
+    .fold(Cantidad.cero, (suma, c) => suma + Cantidad.deTexto(c.piezas))
+    .textoCorto;
+
+String _mayuscula(String texto) =>
+    texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 
 String _estado(String estado) => switch (estado) {
       'borrador' => 'capturando',

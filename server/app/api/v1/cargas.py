@@ -53,6 +53,7 @@ from app.api.admin.cargas import (
     mover_y_confirmar,
 )
 from app.api.admin.comun import CapturaInvalida, sin_decimales, texto_o_nulo
+from app.api.admin.periodo import periodo_pedido
 from app.api.deps import ActorDep, SesionDep
 from app.api.esquemas import Cantidad
 from app.domain.importes import CantidadInvalida, cantidad_base
@@ -177,13 +178,27 @@ async def opciones(actor: ActorDep, sesion: SesionDep) -> Opciones:
 
 
 @router.get("", response_model=list[CargaResumen])
-async def abiertas(actor: ActorDep, sesion: SesionDep) -> list[CargaResumen]:
+async def abiertas(
+    actor: ActorDep,
+    sesion: SesionDep,
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
+) -> list[CargaResumen]:
     """Las que siguen vivas: en captura, o cargadas y sin liquidar.
 
     Las de días pasados también, mientras no se liquiden: son justo las que
     bloquean la carga de hoy, y quien la intenta tiene que poder verlas.
+
+    Con `periodo` —el mismo del tablero: `hoy`, `semana`, `todo`… o `rango` con
+    `desde` y `hasta`— son en cambio **las de esas fechas**, en cualquier estado
+    (las canceladas, la app las pone aparte): «para ver qué cargas se hicieron»
+    (ADR 0002 §102).
     """
     actor.exigir(PERMISO)
+    if periodo or desde:
+        elegido = await periodo_pedido(sesion, periodo or "rango", desde, hasta or desde)
+        return await _cargas_de(sesion, elegido.inicio, elegido.fin)
     filas = (
         await sesion.execute(
             text(
@@ -204,6 +219,33 @@ async def abiertas(actor: ActorDep, sesion: SesionDep) -> list[CargaResumen]:
                  LIMIT 100
                 """
             )
+        )
+    ).mappings().all()
+    return [CargaResumen(**dict(f)) for f in filas]
+
+
+async def _cargas_de(sesion, desde: date, hasta: date) -> list[CargaResumen]:
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT c.id, c.folio, c.estado, c.fecha_operativa,
+                       u.nombre AS vendedor, a.nombre AS camion,
+                       COALESCE(d.renglones, 0) AS renglones,
+                       COALESCE(d.piezas, 0) AS piezas
+                  FROM cargas c
+                  JOIN usuarios u ON u.id = c.vendedor_id
+                  JOIN almacenes a ON a.id = c.almacen_destino_id
+                  LEFT JOIN LATERAL (
+                        SELECT count(*) AS renglones, sum(cantidad) AS piezas
+                          FROM carga_detalle WHERE carga_id = c.id
+                  ) d ON true
+                 WHERE c.fecha_operativa BETWEEN :desde AND :hasta
+                 ORDER BY c.fecha_operativa DESC, c.folio DESC
+                 LIMIT 500
+                """
+            ),
+            {"desde": desde, "hasta": hasta},
         )
     ).mappings().all()
     return [CargaResumen(**dict(f)) for f in filas]

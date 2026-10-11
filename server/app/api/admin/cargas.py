@@ -69,6 +69,7 @@ from app.api.admin.comun import (
     sin_decimales,
     texto_o_nulo,
 )
+from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.importes import CantidadInvalida, cantidad_base
 
@@ -94,19 +95,34 @@ async def listar(
     actor: ActorWeb,
     sesion: SesionDep,
     filtro: str = "abiertas",
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
     error: str = "",
     guardado: str = "",
 ) -> HTMLResponse:
+    """Las cargas abiertas, o las de una fecha o un periodo.
+
+    «Que las cargas se puedan ver por fecha, para ver qué cargas se hicieron»
+    (ADR 0002 §102): con el selector de periodo del tablero —hoy, ayer, la
+    semana, un día a mano—, agrupadas por día con sus piezas. «De hoy» y «Todas»,
+    los filtros de antes, son ahora los periodos «Hoy» y «Todo».
+    """
     actor.exigir("inventario.ver")
 
-    if filtro not in ("abiertas", "hoy", "todas"):
-        filtro = "abiertas"
+    if filtro == "hoy" and not periodo:
+        periodo = "hoy"
+    elif filtro == "todas" and not periodo:
+        periodo = "todo"
+    por_fecha = filtro in ("fecha", "hoy", "todas") or bool(periodo or desde or hasta)
+    filtro = "fecha" if por_fecha else "abiertas"
+    elegido = await periodo_pedido(sesion, periodo or "hoy", desde, hasta or desde)
 
-    condicion = {
-        "abiertas": "c.estado IN ('borrador','confirmada','en_ruta')",
-        "hoy": "c.fecha_operativa = CURRENT_DATE",
-        "todas": "true",
-    }[filtro]
+    condicion = (
+        "c.fecha_operativa BETWEEN :inicio AND :fin"
+        if por_fecha
+        else "c.estado IN ('borrador','confirmada','en_ruta')"
+    )
 
     filas = (
         await sesion.execute(
@@ -128,18 +144,36 @@ async def listar(
                   ) d ON true
                  WHERE {condicion}
                  ORDER BY c.fecha_operativa DESC, c.folio DESC
-                 LIMIT 200
+                 LIMIT 500
                 """  # noqa: S608 — `condicion` es una constante del código
-            )
+            ),
+            {"inicio": elegido.inicio, "fin": elegido.fin} if por_fecha else {},
         )
     ).mappings().all()
+
+    # Por día, del más reciente al más viejo, con lo que se cargó ese día. Lo
+    # cancelado no suma: no salió de la bodega.
+    dias: dict[date, dict] = {}
+    for f in filas:
+        if f["estado"] == "cancelada":
+            continue
+        dia = dias.setdefault(
+            f["fecha_operativa"],
+            {"fecha": f["fecha_operativa"], "filas": [], "cuantas": 0, "piezas": 0},
+        )
+        dia["filas"].append(f)
+        dia["cuantas"] += 1
+        dia["piezas"] += f["piezas"] or 0
 
     return render(
         peticion,
         "cargas.html",
         {
             "filas": filas,
+            "dias": list(dias.values()),
             "filtro": filtro,
+            "periodo": elegido,
+            "periodos": PERIODOS,
             "puede_editar": actor.puede(PERMISO),
             "vendedores": await _vendedores(sesion) if actor.puede(PERMISO) else [],
             "bodegas": await _bodegas(sesion) if actor.puede(PERMISO) else [],
