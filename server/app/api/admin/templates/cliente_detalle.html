@@ -275,6 +275,14 @@
   Efectividad cuenta la visita que tocaba y nadie hizo. Para planear toda la ruta
   de una vez, usa <a href="/panel/plan-visita?ruta={{ cliente.ruta_id or '' }}">Plan de visita</a>.
 </p>
+{% if cliente.visita_reprogramada %}
+{# «Ven mañana» (ADR 0002 §103): lo pidió el cliente al no comprar. #}
+<p class="aviso-caja" id="visita_reprogramada">
+  Última visita reprogramada: <strong>{{ cliente.visita_reprogramada|dia_en_palabras }}</strong>.
+  La pidió el cliente cuando no compró; ese día le sale al vendedor en «hoy te
+  tocan». Sus días de siempre no cambian.
+</p>
+{% endif %}
 <form method="post" action="/panel/clientes/{{ cliente.id }}/visita" id="forma_visita">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="barra" style="margin-bottom:8px">

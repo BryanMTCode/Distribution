@@ -32,7 +32,9 @@ class PantallaClientes extends ConsumerWidget {
     // cliente, la pantalla es la de siempre: no hay «hoy» que mostrar. Y al
     // buscar se busca en TODOS: el cliente que llama por teléfono pidiendo
     // mercancía no tiene por qué tocar hoy.
-    final hayPlan = todos.any((c) => c.plan.isNotEmpty);
+    final hayPlan = todos.any(
+      (c) => c.plan.isNotEmpty || c.reprogramadaHoy || c.proximaReprogramada != null,
+    );
     final deHoy = todos.where((c) => c.tocaHoy).toList();
     final filtrando = hayPlan && soloHoy && !buscando;
     final clientes = filtrando ? deHoy : todos;
@@ -411,8 +413,34 @@ class _Renglon extends StatelessWidget {
             ),
         ],
       ),
-      subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
+      subtitle: _subtitulo(context, subtitulo),
       onTap: alTocar,
+    );
+  }
+
+  /// Su código y dirección, y si la visita se movió («ven mañana», ADR 0002
+  /// §103): hoy le toca porque lo pidió, o cuándo hay que volver.
+  Widget? _subtitulo(BuildContext context, String datos) {
+    final proxima = cliente.proximaReprogramada;
+    final aviso = cliente.reprogramadaHoy
+        ? 'Te pidió que volvieras hoy'
+        : proxima != null
+            ? 'Volver el ${diaEnPalabras(proxima)}'
+            : null;
+    if (aviso == null) return datos.isEmpty ? null : Text(datos);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (datos.isNotEmpty) Text(datos),
+        Text(
+          aviso,
+          key: Key('reprogramada_${cliente.id}'),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

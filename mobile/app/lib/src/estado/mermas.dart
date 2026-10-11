@@ -260,6 +260,9 @@ class NoDropFallido extends EstadoNoDrop {
               'servidor le asigne un rango.',
         MotivoNoNoDrop.sinFolios =>
           'Se acabaron los folios de visita. Sincroniza para pedir otro rango.',
+        MotivoNoNoDrop.reprogramacionInvalida =>
+          'La visita se reprograma a un día después de hoy y a lo más a un mes. '
+              'Escoge otro día.',
       };
 }
 
@@ -276,6 +279,7 @@ class ControladorNoDrop extends Notifier<EstadoNoDrop> {
     required String motivoCodigo,
     required Ubicacion? ubicacion,
     String? nota,
+    String? reprogramadaPara,
   }) {
     final registro = ref.read(registroDeNoDropProvider);
     if (registro == null) {
@@ -290,9 +294,11 @@ class ControladorNoDrop extends Notifier<EstadoNoDrop> {
         motivoCodigo: motivoCodigo,
         ubicacion: ubicacion,
         nota: nota,
+        reprogramadaPara: reprogramadaPara,
       );
       ref.invalidate(resumenColaProvider);
-      // Pasó y no le compraron: también es una visita hecha del plan.
+      // Pasó y no le compraron: también es una visita hecha del plan. Y si se
+      // reprogramó, la lista dice cuándo volver.
       ref.invalidate(clientesProvider);
       state = NoDropRegistrado(noDrop);
     } on NoDropRechazado catch (e) {

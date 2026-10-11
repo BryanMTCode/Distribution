@@ -41,6 +41,7 @@ import '../../datos/repo_clientes.dart';
 import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
 import '../../estado/mermas.dart';
+import '../../estado/sesion.dart';
 import 'comunes.dart';
 
 class PantallaNoDrop extends ConsumerStatefulWidget {
@@ -56,6 +57,11 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
   final _nota = TextEditingController();
   String? _motivo;
   String? _error;
+
+  /// «Ven mañana»: el día al que el cliente pidió que se volviera, `YYYY-MM-DD`
+  /// (ADR 0002 §103). Nulo si no pidió nada. Mueve ESTA visita; sus días fijos
+  /// no cambian.
+  String? _reprogramada;
 
   @override
   void initState() {
@@ -92,7 +98,89 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
           motivoCodigo: _motivo!,
           ubicacion: ref.read(ubicacionProvider).ubicacion,
           nota: _nota.text,
+          reprogramadaPara: _reprogramada,
         );
+  }
+
+  /// Hoy, como lo cuenta el teléfono para los documentos.
+  DateTime get _hoy {
+    // El día LOCAL, como `diaOperativoDe`: el reloj puede venir en UTC.
+    final ahora = ref.read(relojProvider)().toLocal();
+    return DateTime(ahora.year, ahora.month, ahora.day);
+  }
+
+  void _reprogramarEn(int dias) => setState(
+        () => _reprogramada = diaOperativoDe(_hoy.add(Duration(days: dias))),
+      );
+
+  Future<void> _escogerDia() async {
+    final hoy = _hoy;
+    final dia = await showDatePicker(
+      context: context,
+      initialDate: _reprogramada != null
+          ? DateTime.parse(_reprogramada!)
+          : hoy.add(const Duration(days: 1)),
+      firstDate: hoy.add(const Duration(days: 1)),
+      lastDate: hoy.add(const Duration(days: diasMaximosParaReprogramar)),
+      helpText: '¿Qué día te pidió que volvieras?',
+    );
+    if (dia == null || !mounted) return;
+    setState(() => _reprogramada = diaOperativoDe(dia));
+  }
+
+  Widget _reprogramar() {
+    final manana = diaOperativoDe(_hoy.add(const Duration(days: 1)));
+    final pasado = diaOperativoDe(_hoy.add(const Duration(days: 2)));
+    final otro = _reprogramada != null && _reprogramada != manana && _reprogramada != pasado;
+    return Column(
+      key: const Key('bloque_reprogramar'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('¿Te pidió que volvieras otro día?'),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            ChoiceChip(
+              key: const Key('reprogramar_no'),
+              label: const Text('No'),
+              selected: _reprogramada == null,
+              onSelected: (_) => setState(() => _reprogramada = null),
+            ),
+            ChoiceChip(
+              key: const Key('reprogramar_manana'),
+              label: const Text('Mañana'),
+              selected: _reprogramada == manana,
+              onSelected: (_) => _reprogramarEn(1),
+            ),
+            ChoiceChip(
+              key: const Key('reprogramar_pasado'),
+              label: const Text('Pasado mañana'),
+              selected: _reprogramada == pasado,
+              onSelected: (_) => _reprogramarEn(2),
+            ),
+            ChoiceChip(
+              key: const Key('reprogramar_otro_dia'),
+              avatar: const Icon(Icons.event, size: 18),
+              label: Text(otro ? diaEnPalabras(_reprogramada!) : 'Otro día…'),
+              selected: otro,
+              onSelected: (_) => _escogerDia(),
+            ),
+          ],
+        ),
+        if (_reprogramada != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Te sale en «Hoy» el ${diaEnPalabras(_reprogramada!)}. Sus días de '
+              'siempre no cambian.',
+              key: const Key('aviso_reprogramada'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -183,6 +271,10 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
               border: const OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 16),
+
+          // «Ven mañana» (ADR 0002 §103).
+          _reprogramar(),
           const SizedBox(height: 20),
 
           _BloqueGps(estado: ubicacion),
@@ -358,6 +450,15 @@ class _NoDropGuardadoVista extends StatelessWidget {
               'si nunca hubieras venido.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (noDrop.reprogramadaPara != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Visita reprogramada para el ${diaEnPalabras(noDrop.reprogramadaPara!)}: '
+                'ese día te sale en «Hoy».',
+                key: const Key('guardado_reprogramada'),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton(
               key: const Key('no_drop_listo'),

@@ -385,6 +385,20 @@ void main() {
     );
   });
 
+  test('la visita reprogramada llega con el cliente (ADR 0002 §103)', () async {
+    final delta = deltaCliente(1, 'c1');
+    (delta['payload']! as Map<String, Object?>)['visita_reprogramada'] = '2026-10-15';
+    await armarSincronizador(db, TransporteFalso([
+      Responde.pull(cambios: [delta]),
+    ])).sincronizar(cursorActual: 0);
+    expect(
+      db
+          .select("SELECT visita_reprogramada FROM clientes WHERE id = 'c1'")
+          .single['visita_reprogramada'],
+      '2026-10-15',
+    );
+  });
+
   test('un cliente de un servidor viejo, sin plan, queda sin plan', () async {
     await armarSincronizador(db, TransporteFalso([
       Responde.pull(cambios: [deltaCliente(1, 'c1')]),

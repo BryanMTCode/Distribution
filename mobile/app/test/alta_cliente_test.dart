@@ -85,6 +85,23 @@ void main() {
     expect(c['es_local'], equals(1));
   });
 
+  testWidgets('los días de visita: el jueves de hoy sale en «Hoy» (ADR 0002 §103)',
+      (tester) async {
+    final base = await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
+    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Doña Mary');
+    // Lunes y jueves. El reloj de prueba es el jueves 24 de septiembre.
+    await tocar(tester, const Key('dia_visita_1'));
+    await tocar(tester, const Key('dia_visita_4'));
+    await tocar(tester, const Key('boton_guardar'));
+
+    final c = base.unaFila('SELECT plan_visita FROM clientes');
+    expect(c['plan_visita'], '[{"dia":1,"semana":null},{"dia":4,"semana":null}]');
+    final sobre = base.unaFila("SELECT payload FROM outbox WHERE tipo = 'cliente.crear'");
+    expect(sobre['payload'] as String, contains('"dias_visita":[1,4]'));
+    expect(find.text('Hoy · 1'), findsOneWidget);
+    expect(find.text('Doña Mary'), findsOneWidget);
+  });
+
   testWidgets('se avisa que se enviará al haber señal', (tester) async {
     await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
     await escribirEn(tester, const Key('campo_nombre'), 'Doña Mary');

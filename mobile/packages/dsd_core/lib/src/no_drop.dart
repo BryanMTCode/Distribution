@@ -79,7 +79,11 @@ enum MotivoNoNoDrop {
   faltaUbicacion('falta_ubicacion'),
 
   sinRangoDeFolios('sin_rango_de_folios'),
-  sinFolios('sin_folios');
+  sinFolios('sin_folios'),
+
+  /// La visita se reprograma a un día después de hoy y a lo más a un mes
+  /// (ADR 0002 §103).
+  reprogramacionInvalida('reprogramacion_invalida');
 
   const MotivoNoNoDrop(this.codigo);
 
@@ -109,6 +113,7 @@ class NoDropGuardado {
     required this.fechaOperativa,
     required this.foliosRestantes,
     this.nota,
+    this.reprogramadaPara,
   });
 
   final String id;
@@ -121,7 +126,14 @@ class NoDropGuardado {
   final String fechaDispositivo;
   final String fechaOperativa;
   final int foliosRestantes;
+
+  /// «Ven mañana»: el día al que se reprogramó la visita, o nulo.
+  final String? reprogramadaPara;
 }
+
+/// Hasta cuántos días adelante se puede reprogramar una visita: lo que un
+/// cliente pide de verdad. El servidor tiene el mismo tope.
+const diasMaximosParaReprogramar = 31;
 
 class RegistroDeNoDrop {
   RegistroDeNoDrop({
@@ -176,6 +188,7 @@ class RegistroDeNoDrop {
     required Ubicacion? ubicacion,
     String? nota,
     String? visitaId,
+    String? reprogramadaPara,
   }) {
     final catalogo = {for (final m in motivos()) m.codigo: m};
     final motivo = catalogo[motivoCodigo];
@@ -221,6 +234,18 @@ class RegistroDeNoDrop {
     // atajo mandaba las ventas de la tarde al día siguiente. Ver
     // `diaOperativoDe`.
     final fechaOperativa = diaOperativoDe(instante);
+
+    // «Ven mañana» (ADR 0002 §103): un día después de hoy, y no más allá de un
+    // mes. Se revisa antes de tomar el folio, para no gastar uno en balde.
+    if (reprogramadaPara != null) {
+      final hoy = DateTime.parse(fechaOperativa);
+      final dia = DateTime.tryParse(reprogramadaPara);
+      if (dia == null ||
+          !dia.isAfter(hoy) ||
+          dia.difference(hoy).inDays > diasMaximosParaReprogramar) {
+        throw NoDropRechazado(MotivoNoNoDrop.reprogramacionInvalida, reprogramadaPara);
+      }
+    }
     final consecutivo = rango.tomar();
 
     final sobre = SobreLocal(
@@ -242,6 +267,7 @@ class RegistroDeNoDrop {
             'nota': limpia.isEmpty ? null : limpia,
             'fecha_dispositivo': momento,
             'fecha_operativa': fechaOperativa,
+            if (reprogramadaPara != null) 'reprogramada_para': reprogramadaPara,
             ...ubicacion.aPayload(),
           },
         ),
@@ -257,8 +283,9 @@ class RegistroDeNoDrop {
           INSERT INTO no_drops (id, folio_consecutivo, visita_id, cliente_id,
                                 motivo_codigo, nota, lat, lng,
                                 ubicacion_precision_m, ubicacion_origen,
-                                fecha_dispositivo, fecha_operativa, sincronizado)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                fecha_dispositivo, fecha_operativa, sincronizado,
+                                reprogramada_para)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
           ''',
           [
             noDropId,
@@ -273,6 +300,7 @@ class RegistroDeNoDrop {
             ubicacion.origen.codigo,
             momento,
             fechaOperativa,
+            reprogramadaPara,
           ],
         );
 
@@ -294,6 +322,7 @@ class RegistroDeNoDrop {
       fechaDispositivo: momento,
       fechaOperativa: fechaOperativa,
       foliosRestantes: rango.restantes,
+      reprogramadaPara: reprogramadaPara,
     );
   }
 }

@@ -124,6 +124,33 @@ void main() {
       expect(camion['cant_actual'], 240);
     });
 
+    testWidgets('«ven mañana»: la visita se reprograma (ADR 0002 §103)', (tester) async {
+      final base = await irAlNoDrop(tester, gps: gpsBueno);
+      final db = BaseLocalDePrueba(base);
+
+      await escoger(tester, const Key('motivo_de_no_drop'), 'Cerrado');
+      await tocar(tester, const Key('reprogramar_manana'));
+      expect(find.byKey(const Key('aviso_reprogramada')), findsOneWidget);
+      await tocar(tester, const Key('registrar_no_drop'));
+
+      // El reloj de prueba es el jueves 24 de septiembre.
+      expect(db.unaFila('SELECT reprogramada_para FROM no_drops')['reprogramada_para'],
+          '2026-09-25');
+      expect(find.byKey(const Key('guardado_reprogramada')), findsOneWidget);
+      expect(textoQueContiene('viernes 25 de septiembre'), findsOneWidget);
+    });
+
+    testWidgets('sin reprogramar, la visita no lleva fecha', (tester) async {
+      final base = await irAlNoDrop(tester, gps: gpsBueno);
+      final db = BaseLocalDePrueba(base);
+      await escoger(tester, const Key('motivo_de_no_drop'), 'Cerrado');
+      await tocar(tester, const Key('reprogramar_pasado'));
+      await tocar(tester, const Key('reprogramar_no'));
+      await tocar(tester, const Key('registrar_no_drop'));
+      expect(db.unaFila('SELECT reprogramada_para FROM no_drops')['reprogramada_para'],
+          isNull);
+    });
+
     testWidgets('después de guardar se dice para qué sirvió', (tester) async {
       await irAlNoDrop(tester, gps: gpsBueno);
 

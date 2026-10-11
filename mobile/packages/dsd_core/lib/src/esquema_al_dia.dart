@@ -71,6 +71,17 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
     'referencia_pago',
     'ALTER TABLE carrito_borrador ADD COLUMN referencia_pago TEXT',
   ),
+  // La visita reprogramada (octubre 2026, migración 0054 del servidor).
+  (
+    'clientes',
+    'visita_reprogramada',
+    'ALTER TABLE clientes ADD COLUMN visita_reprogramada TEXT',
+  ),
+  (
+    'no_drops',
+    'reprogramada_para',
+    'ALTER TABLE no_drops ADD COLUMN reprogramada_para TEXT',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

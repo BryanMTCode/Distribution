@@ -12,6 +12,8 @@
 /// autorice su propia cartera.
 library;
 
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import 'outbox.dart';
@@ -30,6 +32,7 @@ class DatosDeAlta {
     this.referencias,
     this.canalCodigo,
     this.ubicacion,
+    this.diasVisita = const [],
   });
 
   final String nombreComercial;
@@ -46,6 +49,20 @@ class DatosDeAlta {
 
   /// Puede ser nula: el GPS no bloquea el alta.
   final Ubicacion? ubicacion;
+
+  /// Los días que se le va a visitar, cada semana: 0 domingo, 1 lunes … 6
+  /// sábado, como `extract(dow)` (ADR 0002 §103). Los elige el vendedor al darla
+  /// de alta; después los cambia la oficina en el plan de visita.
+  final List<int> diasVisita;
+
+  /// Los días válidos, sin repetir y en orden.
+  List<int> get diasLimpios =>
+      ({for (final d in diasVisita) if (d >= 0 && d <= 6) d}.toList()..sort());
+
+  /// El plan como lo guarda `clientes.plan_visita` (ver `plan_visita.dart`).
+  String? get planVisitaJson => diasLimpios.isEmpty
+      ? null
+      : jsonEncode([for (final d in diasLimpios) {'dia': d, 'semana': null}]);
 
   String get nombreLimpio => nombreComercial.trim();
 
@@ -71,6 +88,7 @@ class DatosDeAlta {
         if (_hay(colonia)) 'colonia': colonia!.trim(),
         if (_hay(referencias)) 'referencias': referencias!.trim(),
         if (_hay(canalCodigo)) 'canal_codigo': canalCodigo!.trim(),
+        if (diasLimpios.isNotEmpty) 'dias_visita': diasLimpios,
         ...?ubicacion?.aPayload(),
       };
 
@@ -194,8 +212,9 @@ class AltaDeClientes {
         INSERT INTO clientes (id, nombre_comercial, telefono, direccion,
                               referencias, lat, lng, ubicacion_precision_m,
                               ubicacion_origen, permite_credito, limite_credito,
-                              saldo_cache, bloqueado, es_local, sincronizado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, 0)
+                              saldo_cache, bloqueado, es_local, sincronizado,
+                              plan_visita)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, 0, ?)
         ''',
         [
           clienteId,
@@ -207,6 +226,8 @@ class AltaDeClientes {
           datos.ubicacion?.lng,
           datos.ubicacion?.precisionMetros,
           datos.ubicacion?.origen.codigo,
+          // Sus días, desde ya: sale en «Hoy» sin esperar a sincronizar.
+          datos.planVisitaJson,
         ],
       ),
     );

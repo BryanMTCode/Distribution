@@ -64,6 +64,32 @@ void main() {
     expect(enCola.hashPayload, hasLength(64));
   });
 
+  test('los días de visita van en el sobre y en el plan local (ADR 0002 §103)', () {
+    altas.registrar(const DatosDeAlta(
+      nombreComercial: 'Doña Mary',
+      // Repetidos y fuera de rango no pasan; el orden no importa.
+      diasVisita: [5, 1, 5, 9, 3],
+    ));
+    final operacion = ((outbox.siguienteLote().single.payload['operaciones']! as List)
+            .single as Map)
+        .cast<String, Object?>();
+    expect((operacion['datos']! as Map)['dias_visita'], [1, 3, 5]);
+    final plan = db.select('SELECT plan_visita FROM clientes').single['plan_visita'] as String?;
+    expect(leerPlanDeVisita(plan), const [DiaDeVisita(1), DiaDeVisita(3), DiaDeVisita(5)]);
+    // Un lunes le toca; un martes no.
+    expect(tocaVisita(leerPlanDeVisita(plan), DateTime(2026, 10, 12)), isTrue);
+    expect(tocaVisita(leerPlanDeVisita(plan), DateTime(2026, 10, 13)), isFalse);
+  });
+
+  test('sin días, el alta no manda plan', () {
+    altas.registrar(const DatosDeAlta(nombreComercial: 'Doña Mary'));
+    final operacion = ((outbox.siguienteLote().single.payload['operaciones']! as List)
+            .single as Map)
+        .cast<String, Object?>();
+    expect((operacion['datos']! as Map).containsKey('dias_visita'), isFalse);
+    expect(db.select('SELECT plan_visita FROM clientes').single['plan_visita'], isNull);
+  });
+
   test('un alta sin nombre no procede', () {
     // Es el único campo sin el que el registro no sirve para nada.
     expect(

@@ -21,7 +21,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -209,6 +209,25 @@ async def crear_cliente(
         )
     )
     await sesion.flush()
+
+    # Los días de visita que eligió el vendedor al darla de alta (ADR 0002
+    # §103): cada semana, desde hoy. El disparador de la 0041 los copia al
+    # cliente y de ahí viajan al teléfono. Un día que no se entiende se ignora:
+    # el cliente ya existe en la calle, y por un día mal escrito no se pierde.
+    crudos = datos.get("dias_visita")
+    dias = (
+        sorted({d for d in crudos if type(d) is int and 0 <= d <= 6})
+        if isinstance(crudos, list)
+        else []
+    )
+    for dia in dias:
+        await sesion.execute(
+            text(
+                "INSERT INTO clientes_frecuencia (cliente_id, dia_semana, semana_del_mes) "
+                "VALUES (:c, :d, NULL) ON CONFLICT DO NOTHING"
+            ),
+            {"c": entidad_id, "d": dia},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -715,6 +734,10 @@ async def _insertar_partida(
 
 MOTIVO_SIN_EXISTENCIA_PARA_MERMA = "merma_sin_existencia"
 MOTIVO_NO_DROP_SIN_NOTA = "no_drop_sin_nota"
+# Una fecha de reprogramación que no es posterior a la visita, o que está más
+# lejos de lo que un cliente pide («ven el mes que entra» ya no es reprogramar).
+MOTIVO_REPROGRAMACION_INVALIDA = "reprogramacion_invalida"
+DIAS_MAXIMOS_PARA_REPROGRAMAR = 31
 
 # Un motivo que la oficina retiró DESPUÉS de que el vendedor capturó.
 #
@@ -1073,6 +1096,27 @@ async def crear_no_drop(
         # explicación venga vacía, y la oficina puede pedirla.
         motivos.append(MOTIVO_NO_DROP_SIN_NOTA)
 
+    fecha_operativa = date.fromisoformat(
+        _texto(datos, "fecha_operativa") or fecha_dispositivo.date().isoformat()
+    )
+    # «Ven mañana»: la visita reprogramada (ADR 0002 §103). Tiene que ser
+    # después de hoy y no más allá de lo que un cliente pide de verdad; si no,
+    # la visita se registra igual —el cliente no compró— y la fecha no.
+    reprogramada = _texto(datos, "reprogramada_para")
+    reprogramada_para: date | None = None
+    if reprogramada:
+        try:
+            reprogramada_para = date.fromisoformat(reprogramada)
+        except ValueError:
+            reprogramada_para = None
+        if reprogramada_para is None or not (
+            fecha_operativa
+            < reprogramada_para
+            <= fecha_operativa + timedelta(days=DIAS_MAXIMOS_PARA_REPROGRAMAR)
+        ):
+            reprogramada_para = None
+            motivos.append(MOTIVO_REPROGRAMACION_INVALIDA)
+
     await sesion.execute(
         text(
             """
@@ -1080,10 +1124,11 @@ async def crear_no_drop(
                                   vendedor_id, ruta_id, visita_id, motivo_codigo,
                                   nota, lat, lng, ubicacion_precision_m,
                                   fecha_dispositivo, fecha_servidor, fecha_operativa,
-                                  requiere_revision, revision_motivos)
+                                  requiere_revision, revision_motivos, reprogramada_para)
             VALUES (:id, :dispositivo, :folio, :cliente, :vendedor, :ruta, :visita,
                     :motivo, :nota, :lat, :lng, :precision,
-                    :fecha_dispositivo, :ahora, :fecha_operativa, :revision, :motivos)
+                    :fecha_dispositivo, :ahora, :fecha_operativa, :revision, :motivos,
+                    :reprogramada)
             """
         ),
         {
@@ -1101,10 +1146,10 @@ async def crear_no_drop(
             "precision": _decimal(datos, "ubicacion_precision_m"),
             "fecha_dispositivo": fecha_dispositivo,
             "ahora": ctx.recibido_en,
-            "fecha_operativa": _texto(datos, "fecha_operativa")
-            or fecha_dispositivo.date().isoformat(),
+            "fecha_operativa": fecha_operativa,
             "revision": bool(motivos),
             "motivos": motivos,
+            "reprogramada": reprogramada_para,
         },
     )
     await sesion.flush()

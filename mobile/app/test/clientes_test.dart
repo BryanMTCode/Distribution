@@ -170,4 +170,39 @@ void main() {
     });
     expect(find.textContaining('Hoy no te toca nadie'), findsOneWidget);
   });
+
+  // -------------------------------------------------------------------------
+  // La visita reprogramada (ADR 0002 §103)
+  // -------------------------------------------------------------------------
+  testWidgets('la tienda reprogramada para hoy sale en «Hoy» y dice por qué',
+      (tester) async {
+    await entrar(tester, (base) {
+      sembrarRutaConPlan(base);
+      // «Toca el lunes» pidió que volvieran hoy, jueves 24.
+      base.db.execute(
+        "UPDATE clientes SET visita_reprogramada = '2026-09-24' WHERE id = 'c2'",
+      );
+    });
+    expect(find.text('Hoy · 2'), findsOneWidget);
+    expect(find.text('Toca el lunes'), findsOneWidget);
+    expect(find.byKey(const Key('reprogramada_c2')), findsOneWidget);
+    expect(textoQueContiene('Te pidió que volvieras hoy'), findsOneWidget);
+  });
+
+  testWidgets('la que se reprogramó en este teléfono dice cuándo volver', (tester) async {
+    await entrar(tester, (base) {
+      sembrarRutaConPlan(base);
+      sembrarMotivos(base);
+      // El no-drop de hoy en el jueves, todavía sin subir: «ven el lunes 28».
+      base.db.execute(
+        "INSERT INTO no_drops (id, folio_consecutivo, cliente_id, motivo_codigo, lat, lng, "
+        "fecha_dispositivo, fecha_operativa, reprogramada_para) "
+        "VALUES ('n1', 1, 'c1', 'CERRADO', 20.6, -103.3, '2026-09-24T07:00:00.000Z', "
+        "'2026-09-24', '2026-09-28')",
+      );
+    });
+    expect(find.byKey(const Key('visitado_c1')), findsOneWidget);
+    expect(find.byKey(const Key('reprogramada_c1')), findsOneWidget);
+    expect(textoQueContiene('Volver el lunes 28 de septiembre'), findsOneWidget);
+  });
 }

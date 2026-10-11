@@ -140,6 +140,7 @@
         "ubicacion_origen": "gps",
         "fecha_dispositivo": null,
         "requiere_revision": false,
+        "visita_reprogramada": null,
         "ubicacion_precision_m": null
       }
     },

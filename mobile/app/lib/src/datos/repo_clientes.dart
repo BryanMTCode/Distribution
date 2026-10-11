@@ -28,6 +28,8 @@ class ClienteEnRuta {
     this.plan = const [],
     this.tocaHoy = false,
     this.visitadoHoy = false,
+    this.reprogramadaHoy = false,
+    this.proximaReprogramada,
   });
 
   final String id;
@@ -51,8 +53,15 @@ class ClienteEnRuta {
   /// Qué días le toca visita, del plan que capturó la oficina.
   final List<DiaDeVisita> plan;
 
-  /// Si hoy le toca, según su plan. Sin plan, nunca.
+  /// Si hoy le toca: por su plan, o porque se reprogramó para hoy.
   final bool tocaHoy;
+
+  /// Hoy le toca porque el cliente pidió que se volviera hoy («ven mañana»,
+  /// ADR 0002 §103), no por sus días fijos.
+  final bool reprogramadaHoy;
+
+  /// La próxima visita reprogramada, después de hoy (`YYYY-MM-DD`), o nula.
+  final String? proximaReprogramada;
 
   /// Si hoy ya hay un papel suyo en este teléfono: venta, no-drop o devolución.
   /// Es la misma definición de «visita» que usa Efectividad en el servidor para
@@ -99,7 +108,20 @@ class RepoClientes {
                           WHERE n.cliente_id = c.id AND n.fecha_operativa = ?4)
               OR EXISTS (SELECT 1 FROM mermas m
                           WHERE m.cliente_id = c.id AND m.fecha_operativa = ?4)
-             ) AS visitado_hoy
+             ) AS visitado_hoy,
+             -- La visita reprogramada (ADR 0002 §103): la que trae el cliente
+             -- desde el servidor, o la que se capturó en este teléfono y todavía
+             -- no sube. Cualquiera de las dos vale.
+             (c.visita_reprogramada = ?4
+              OR EXISTS (SELECT 1 FROM no_drops n
+                          WHERE n.cliente_id = c.id AND n.reprogramada_para = ?4)
+             ) AS reprogramada_hoy,
+             (SELECT min(dia) FROM (
+                 SELECT c.visita_reprogramada AS dia WHERE c.visita_reprogramada > ?4
+                 UNION
+                 SELECT n.reprogramada_para FROM no_drops n
+                  WHERE n.cliente_id = c.id AND n.reprogramada_para > ?4)
+             ) AS proxima_reprogramada
         FROM clientes c
        WHERE c.activo = 1
          AND (?1 = 0 OR c.nombre_comercial LIKE ?2 OR c.codigo LIKE ?2
@@ -136,8 +158,10 @@ class RepoClientes {
       ubicacionOrigen: f['ubicacion_origen'] as String?,
       esLocal: (f['es_local'] as int) == 1,
       plan: plan,
-      tocaHoy: tocaVisita(plan, hoy),
+      tocaHoy: tocaVisita(plan, hoy) || (f['reprogramada_hoy'] as int? ?? 0) == 1,
       visitadoHoy: (f['visitado_hoy'] as int? ?? 0) == 1,
+      reprogramadaHoy: (f['reprogramada_hoy'] as int? ?? 0) == 1,
+      proximaReprogramada: f['proxima_reprogramada'] as String?,
     );
   }
 }

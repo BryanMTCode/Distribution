@@ -347,6 +347,8 @@ async def listar(
 #     hoy no convierte el mes pasado en un mes de visitas perdidas.
 #   · Cuenta como visita CUALQUIER papel de ese cliente ese día: venta (aunque
 #     después se cancelara), no-drop, cobro o devolución. El vendedor estuvo ahí.
+#   · La visita REPROGRAMADA («ven el jueves», ADR 0002 §103) también toca ese
+#     día, además de los días fijos del cliente, que no cambian.
 SQL_PLAN = """
 WITH dias AS (
     SELECT generate_series(CAST(:desde AS date),
@@ -359,6 +361,11 @@ plan AS (
       JOIN clientes_frecuencia f
         ON toca_visita(d.fecha, f.dia_semana, f.semana_del_mes) AND d.fecha >= f.desde
       JOIN clientes c ON c.id = f.cliente_id AND c.estatus <> 'baja'
+    UNION
+    SELECT n.reprogramada_para, n.cliente_id, c.ruta_id
+      FROM no_drops n
+      JOIN dias d ON d.fecha = n.reprogramada_para
+      JOIN clientes c ON c.id = n.cliente_id AND c.estatus <> 'baja'
 ),
 hechas AS (
     SELECT fecha_operativa AS fecha, cliente_id FROM ventas

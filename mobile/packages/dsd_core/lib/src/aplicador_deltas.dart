@@ -1171,8 +1171,8 @@ class AplicadorDeltas {
                             referencias, lat, lng, ubicacion_origen, secuencia,
                             lista_precios_id, permite_credito, limite_credito,
                             bloqueado, es_local, sincronizado, activo,
-                            plan_visita)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
+                            plan_visita, visita_reprogramada)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         codigo = excluded.codigo,
         nombre_comercial = excluded.nombre_comercial,
@@ -1191,7 +1191,8 @@ class AplicadorDeltas {
         es_local = 0,
         sincronizado = 1,
         activo = excluded.activo,
-        plan_visita = excluded.plan_visita
+        plan_visita = excluded.plan_visita,
+        visita_reprogramada = excluded.visita_reprogramada
       ''',
       [
         c['id'],
@@ -1222,6 +1223,8 @@ class AplicadorDeltas {
         // El plan de visita viaja como lista JSON y se guarda como texto. Un
         // servidor anterior a la 0041 no lo manda: nulo es «sin plan».
         c['plan_visita'] == null ? null : jsonEncode(c['plan_visita']),
+        // «Ven el jueves» (migración 0054, ADR 0002 §103): `YYYY-MM-DD` o nulo.
+        c['visita_reprogramada'],
       ],
     );
     return true;

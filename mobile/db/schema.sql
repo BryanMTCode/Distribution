@@ -131,6 +131,11 @@ CREATE TABLE IF NOT EXISTS clientes (
     -- llega dentro del delta del cliente. Ver `plan_visita.dart`.
     plan_visita             TEXT,
 
+    -- La última visita reprogramada («ven el jueves», `YYYY-MM-DD`): ese día el
+    -- cliente sale en «Hoy» aunque no sea uno de sus días fijos (migración 0054
+    -- del servidor, ADR 0002 §103). Llega dentro del delta del cliente.
+    visita_reprogramada     TEXT,
+
     -- 1 cuando el cliente nació en este teléfono y aún no lo confirma el
     -- servidor. Es zona PROPIA hasta que llega su confirmación.
     es_local                INTEGER NOT NULL DEFAULT 0,
@@ -465,7 +470,11 @@ CREATE TABLE IF NOT EXISTS no_drops (
     ubicacion_origen        TEXT NOT NULL DEFAULT 'gps',
     fecha_dispositivo       TEXT NOT NULL,
     fecha_operativa         TEXT NOT NULL,
-    sincronizado            INTEGER NOT NULL DEFAULT 0
+    sincronizado            INTEGER NOT NULL DEFAULT 0,
+    -- «Ven mañana»: el día al que el cliente pidió que se volviera (ADR 0002
+    -- §103). Ese día sale en «Hoy» desde este mismo teléfono, sin esperar a
+    -- sincronizar.
+    reprogramada_para       TEXT
 );
 
 -- =============================================================================

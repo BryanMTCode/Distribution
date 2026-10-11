@@ -482,6 +482,46 @@ void main() {
       expect(folios.leer('no_drop')!.consumidoHasta, equals(0));
     });
 
+    test('«ven mañana»: la visita se reprograma en el sobre y en la base', () {
+      // ADR 0002 §103. El reloj es el martes 29 de septiembre en Mazatlán.
+      final n = registroDeNoDrop().registrar(
+        clienteId: 'cli-1',
+        motivoCodigo: 'CERRADO',
+        ubicacion: donde(),
+        reprogramadaPara: '2026-09-30',
+      );
+      expect(n.reprogramadaPara, '2026-09-30');
+      expect(
+        db.select('SELECT reprogramada_para FROM no_drops').single['reprogramada_para'],
+        '2026-09-30',
+      );
+      final datos = ((outbox.siguienteLote().single.payload['operaciones']! as List)
+              .single as Map)['datos']! as Map;
+      expect(datos['reprogramada_para'], '2026-09-30');
+    });
+
+    test('no se reprograma para hoy, para atrás, ni a más de un mes', () {
+      for (final dia in ['2026-09-29', '2026-09-20', '2026-11-30', 'mañana']) {
+        expect(
+          () => registroDeNoDrop().registrar(
+            clienteId: 'cli-1',
+            motivoCodigo: 'CERRADO',
+            ubicacion: donde(),
+            reprogramadaPara: dia,
+          ),
+          throwsA(isA<NoDropRechazado>().having(
+            (e) => e.motivo,
+            'motivo',
+            MotivoNoNoDrop.reprogramacionInvalida,
+          )),
+          reason: dia,
+        );
+      }
+      // Y no se gastó ningún folio en el intento.
+      expect(db.select('SELECT * FROM no_drops'), isEmpty);
+      expect(folios.leer('no_drop')!.restantes, greaterThan(0));
+    });
+
     test('un punto ajustado a mano SÍ se acepta, y queda marcado', () {
       // Cuando el satélite no aparece, el camino no es registrarlo sin ubicación:
       // es ajustar el punto a mano. Queda marcado y la oficina puede juzgarlo.

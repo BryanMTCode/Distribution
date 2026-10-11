@@ -40,6 +40,11 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
   /// El vendedor ya vio el aviso de cercanos y confirmó que es otra tienda.
   bool _confirmoQueEsNueva = false;
 
+  /// Los días que se le va a visitar, cada semana (0 domingo … 6 sábado, ADR
+  /// 0002 §103). Si un día el cliente pide «ven mañana», esa visita se
+  /// reprograma desde «No me compró»; estos días no cambian.
+  final Set<int> _dias = {};
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +84,7 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
             colonia: _colonia.text,
             referencias: _referencias.text,
             ubicacion: ref.read(ubicacionProvider).ubicacion,
+            diasVisita: _dias.toList(),
           ),
         );
 
@@ -193,6 +199,13 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 16),
+            _DiasDeVisita(
+              elegidos: _dias,
+              alCambiar: (dia) => setState(() {
+                if (!_dias.remove(dia)) _dias.add(dia);
+              }),
+            ),
             const SizedBox(height: 20),
             const _BloqueUbicacion(),
             const SizedBox(height: 24),
@@ -231,6 +244,59 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
       ),
     );
   }
+}
+
+/// Qué días se le va a visitar: un botón por día, en el orden de la semana de
+/// la ruta (lunes primero). Ninguno es válido: sale en «Todos» y la oficina le
+/// pone días después en el plan de visita.
+class _DiasDeVisita extends StatelessWidget {
+  const _DiasDeVisita({required this.elegidos, required this.alCambiar});
+
+  final Set<int> elegidos;
+  final ValueChanged<int> alCambiar;
+
+  // (día como `extract(dow)`, letra en el botón, nombre para el lector).
+  static const _semana = [
+    (1, 'L', 'lunes'),
+    (2, 'M', 'martes'),
+    (3, 'Mi', 'miércoles'),
+    (4, 'J', 'jueves'),
+    (5, 'V', 'viernes'),
+    (6, 'S', 'sábado'),
+    (0, 'D', 'domingo'),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Column(
+        key: const Key('dias_de_visita'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Días de visita'),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final (dia, letra, nombre) in _semana)
+                FilterChip(
+                  key: Key('dia_visita_$dia'),
+                  label: Text(letra, semanticsLabel: nombre),
+                  selected: elegidos.contains(dia),
+                  showCheckmark: false,
+                  onSelected: (_) => alCambiar(dia),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            elegidos.isEmpty
+                ? 'Escoge los días que le toca. Si hoy no le compra y te pide que '
+                    'vuelvas otro día, eso se reprograma aparte.'
+                : 'Te sale en «Hoy» esos días, cada semana.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      );
 }
 
 /// Estado del GPS y corrección manual.
