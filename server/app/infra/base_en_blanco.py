@@ -66,6 +66,7 @@ ARTICULOS = (
 # sola sentencia no depende del orden.
 TABLAS_QUE_SE_VACIAN = (
     # Ventas, cobros y lo que cuelga de ellas
+    "venta_mayoreo_partidas", "ventas_mayoreo",
     "ventas_cancelaciones", "venta_partidas", "cobros_aplicaciones", "cobros",
     "cuentas_por_cobrar", "ventas", "no_drops",
     # El cierre del vendedor y el corte
@@ -84,7 +85,7 @@ TABLAS_QUE_SE_VACIAN = (
     "sync_cuarentena", "sync_operaciones", "sync_lotes", "sync_bajadas",
     "folios_rangos", "sesiones",
     # Piloto, tablero, analítica y cola
-    "piloto_incidencias", "piloto_jornadas", "pilotos", "objetivos_ruta",
+    "piloto_incidencias", "piloto_jornadas", "pilotos", "objetivos_ruta", "objetivos",
     "tablero_dia", "tablero_mes_ruta", "tablero_refrescos", "analitica_refrescos",
     "jobs", "auditoria",
 )
@@ -95,7 +96,7 @@ ENTIDADES_QUE_SE_QUEDAN = ("lista_precios", "motivo_merma", "motivo_no_drop", "i
 # Las series de folios: con la base vacía, vuelven a empezar en 1.
 SECUENCIAS_DE_FOLIO = (
     "seq_codigo_cliente", "seq_folio_ajuste_camion", "seq_folio_carga",
-    "seq_folio_entrada", "seq_folio_liquidacion", "seq_folio_salida",
+    "seq_folio_entrada", "seq_folio_liquidacion", "seq_folio_mayoreo", "seq_folio_salida",
     "seq_folio_traspaso", "seq_folio_venta",
 )
 

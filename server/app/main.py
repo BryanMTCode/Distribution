@@ -25,6 +25,7 @@ from app.api.admin import equipo_fichas as panel_equipo_fichas
 from app.api.admin import equipos as panel_equipos
 from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
+from app.api.admin import mayoreo as panel_mayoreo
 from app.api.admin import motivos as panel_motivos
 from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import panel
@@ -47,6 +48,8 @@ from app.api.v1 import (
     clientes,
     cortes,
     dispositivos,
+    mayoreo,
+    objetivos,
     oficina_clientes,
     salud,
     sync,
@@ -127,6 +130,8 @@ def crear_app() -> FastAPI:
     app.include_router(almacen.router, prefix="/v1")
     app.include_router(oficina_clientes.router, prefix="/v1")
     app.include_router(vendedores.router, prefix="/v1")
+    app.include_router(objetivos.router, prefix="/v1")
+    app.include_router(mayoreo.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una
     # interfaz. Versionar sus rutas obligaría a mantener la vieja viva cuando
@@ -155,6 +160,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_motivos.router)
     app.include_router(panel_arranque.router)
     app.include_router(panel_objetivos.router)
+    app.include_router(panel_mayoreo.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)
 

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block titulo %}{{ venta.folio }}{% endblock %}
+{% block contenido %}
+<p><a href="/panel/mayoreo">← Ventas de mayoreo</a></p>
+<h1>Venta de mayoreo <span class="mono">{{ venta.folio }}</span></h1>
+<p class="subtitulo">
+  {{ venta.fecha|dia_en_palabras|capitalize }} · {{ venta.cliente }} · sale de {{ venta.bodega }}
+  {% if venta.vendida_por_nombre %}· la hizo {{ venta.vendida_por_nombre }}{% endif %}
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+{% if venta.estado == 'cancelada' %}
+<div class="aviso-caja error" id="venta_cancelada">
+  Cancelada{% if venta.cancelada_por_nombre %} por {{ venta.cancelada_por_nombre }}{% endif %}:
+  {{ venta.motivo_cancelacion }}. La mercancía volvió a la bodega.
+</div>
+{% endif %}
+
+<div class="tabla-marco">
+<table>
+  <thead><tr><th>Artículo</th><th class="numero">Cantidad</th><th class="numero">Precio</th><th class="numero">Lista</th><th class="numero">Importe</th></tr></thead>
+  <tbody>
+  {% for p in venta.partidas %}
+    <tr>
+      <td>{{ p.nombre }}<div class="sutil mono">{{ p.sku }}</div></td>
+      <td class="numero">{{ p.bultos|entero }} {{ p.unidad_codigo }}<div class="sutil">{{ p.cantidad|entero }} pzas</div></td>
+      <td class="numero">${{ '{:,.2f}'.format(p.precio) }}</td>
+      <td class="numero sutil">{% if p.precio_lista %}${{ '{:,.2f}'.format(p.precio_lista) }}{% else %}—{% endif %}</td>
+      <td class="numero">${{ '{:,.2f}'.format(p.importe) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><td colspan="4"><strong>Total</strong> · {{ venta.forma_pago }}{% if venta.referencia_pago %} · {{ venta.referencia_pago }}{% endif %}</td>
+    <td class="numero"><strong>${{ '{:,.2f}'.format(venta.total) }}</strong></td></tr></tfoot>
+</table>
+</div>
+{% if venta.nota %}<p class="sutil">Nota: {{ venta.nota }}</p>{% endif %}
+
+<h2>Ticket</h2>
+<pre id="ticket_mayoreo" style="white-space:pre-wrap;background:var(--papel);border:1px solid var(--linea);border-radius:8px;padding:12px">{{ ticket }}</pre>
+
+{% if venta.estado != 'cancelada' %}
+<form method="post" action="/panel/mayoreo/{{ venta.id }}/cancelar" class="barra" id="forma_cancelar_mayoreo">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input name="motivo" placeholder="Por qué se cancela" required minlength="3" maxlength="300">
+  <button type="submit" class="peligro">Cancelar la venta</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -120,6 +120,11 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         # camión a mano, que ya es la excepción. La URL no cambia.
         ("/panel/liquidaciones", "Corte a mano"),
     ],
+    "Ventas": [
+        ("/panel/ventas", "Ventas"),
+        # Las de la oficina a sus clientes de mayoreo (ADR 0002 §105).
+        ("/panel/mayoreo", "Mayoreo"),
+    ],
     "Vendedores": [
         ("/panel/vendedores", "Vendedores"),
         # Donde terminan sus faltantes.
@@ -159,6 +164,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/cierres": "inventario.cargar",
     "/panel/cargas": "inventario.ver",
     "/panel/ventas": None,
+    "/panel/mayoreo": "mayoreo.vender",
     "/panel/transferencias": "cobranza.ver",
     "/panel/liquidaciones": "inventario.ver",
     "/panel/vendedores": "ventas.ver_todas",

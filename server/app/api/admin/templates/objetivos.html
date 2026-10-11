@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block titulo %}Objetivos{% endblock %}
 {% block contenido %}
-<h1>Objetivos de ruta</h1>
+<h1>Objetivos</h1>
 <p class="subtitulo">
-  Contra qué se mide el tablero. El objetivo es <strong>del mes</strong>: un
-  objetivo diario exigiría un calendario de días hábiles por ruta que nadie va a
-  mantener, y un objetivo que nadie mantiene pinta de rojo todos los domingos
-  hasta que la gente deja de mirar el color.
+  Contra qué se mide la venta. Arriba, el <strong>objetivo del mes</strong> de cada
+  ruta: el que dibuja la barra del tablero. Abajo, <a href="#por_periodo">objetivos
+  de cualquier periodo</a> —un día, una semana, un rango—, de una ruta o de toda la
+  empresa; esos también se fijan desde la app.
 </p>
 
 <form class="barra" method="get" action="/panel/objetivos">
@@ -168,6 +168,93 @@
   </tbody>
 </table>
 </div>
+
+{# ----------------------------------------------------------------------- #}
+{# Objetivos de cualquier periodo (ADR 0002 §104)                          #}
+{# ----------------------------------------------------------------------- #}
+<h2 id="por_periodo">Objetivos por periodo</h2>
+<p class="sutil" style="margin-top:-6px">
+  Un día, una semana, del 3 al 17: el periodo que quieras, de una ruta o de toda
+  la empresa (la de toda la empresa suma también el mayoreo). Se ven aquí y en la
+  app. Un mes completo de una ruta es su objetivo del mes, el de arriba.
+</p>
+<div class="tabla-marco">
+<table id="tabla_por_periodo">
+  <thead>
+    <tr>
+      <th>Periodo</th>
+      <th>De quién</th>
+      <th class="numero">Objetivo</th>
+      <th class="numero">Vendido</th>
+      <th>Avance</th>
+      {% if puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for o in por_periodo %}
+    <tr id="objetivo_{{ o.id }}">
+      <td>
+        {% if o.desde == o.hasta %}{{ o.desde|dia_en_palabras }}{% else %}
+        del {{ o.desde.strftime('%d/%m') }} al {{ o.hasta.strftime('%d/%m/%Y') }}{% endif %}
+        <div class="sutil">
+          {% if o.estado == 'por_empezar' %}por empezar{% elif o.estado == 'terminado' %}terminado{% else %}en curso{% endif %}
+          · {{ o.dias }} día(s){% if o.nota %} · {{ o.nota }}{% endif %}
+        </div>
+      </td>
+      <td>{{ o.ruta or 'Toda la empresa' }}</td>
+      <td class="numero">
+        ${{ '{:,.2f}'.format(o.objetivo_venta) }}
+        {% if o.objetivo_visitas %}<div class="sutil">{{ o.objetivo_visitas }} visitas</div>{% endif %}
+      </td>
+      <td class="numero">
+        ${{ '{:,.2f}'.format(o.venta) }}
+        <div class="sutil">{{ o.visitas }} visitas</div>
+      </td>
+      <td>
+        {% if o.avance.logrado is not none %}{{ o.avance.logrado }}%{% endif %}
+        <div class="sutil">esperado {{ o.avance.esperado }}%
+          {% if o.avance.semaforo == 'adelante' %}· adelante{% elif o.avance.semaforo == 'cerca' %}· cerca{% elif o.avance.semaforo == 'atras' %}· atrás{% endif %}
+        </div>
+      </td>
+      {% if puede_editar %}
+      <td>
+        <form method="post" action="/panel/objetivos/periodo/{{ o.id }}/borrar">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="boton-chico peligro">Quitar</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6"><div class="vacio">Ningún objetivo por periodo todavía.</div></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if puede_editar %}
+<form method="post" action="/panel/objetivos/periodo" id="forma_por_periodo"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:16px;margin-top:12px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <strong>Nuevo objetivo por periodo</strong>
+  <div class="barra" style="margin-top:10px;flex-wrap:wrap">
+    <select name="ruta_id" aria-label="De quién">
+      <option value="">Toda la empresa</option>
+      {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
+    </select>
+    <label>Desde <input type="date" name="desde" value="{{ hoy }}" required></label>
+    <label>Hasta <input type="date" name="hasta" value="{{ hoy }}" required></label>
+  </div>
+  <div class="barra" style="flex-wrap:wrap">
+    <input name="objetivo_venta" placeholder="Vender $" inputmode="decimal" required>
+    <input name="objetivo_visitas" placeholder="Visitas (opcional)" inputmode="numeric">
+    <input name="nota" placeholder="Nota (opcional)" maxlength="300">
+    <button type="submit">Guardar objetivo</button>
+  </div>
+  <div class="sutil">Para un solo día, pon la misma fecha en «desde» y «hasta».</div>
+</form>
+{% endif %}
 
 <h2>Qué hace el tablero con esto</h2>
 <p class="sutil">

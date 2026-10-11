@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Mayoreo{% endblock %}
+{% block contenido %}
+<h1>Ventas de mayoreo</h1>
+<p class="subtitulo">
+  Las ventas de la oficina a sus clientes de mayoreo: salen de la bodega, al precio
+  que se decida en cada renglón, de contado. No son de ningún vendedor y no entran
+  en ningún corte. También se hacen desde la app.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+<form method="get" action="/panel/mayoreo/nueva" style="margin:0 0 12px">
+  <button type="submit" id="boton_nueva_mayoreo">Nueva venta de mayoreo</button>
+</form>
+
+{% include "_periodo.html" %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="numero" id="total_mayoreo">${{ '{:,.2f}'.format(total) }}</div>
+    <div class="etiqueta">vendido a mayoreo {{ periodo.descripcion }}</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ ventas|length }}</div>
+    <div class="etiqueta">venta(s), {{ piezas|entero }} piezas</div>
+  </div>
+</div>
+
+{% macro renglon(v) %}
+    <tr>
+      <td><a href="/panel/mayoreo/{{ v.id }}"><span class="mono">{{ v.folio }}</span></a>
+        <div class="sutil">{{ v.fecha.strftime('%d/%m/%Y') }}</div></td>
+      <td>{{ v.cliente }}<div class="sutil">{{ v.bodega }}{% if v.vendida_por %} · {{ v.vendida_por }}{% endif %}</div></td>
+      <td class="numero">{{ v.piezas|entero }}</td>
+      <td class="numero">${{ '{:,.2f}'.format(v.total) }}<div class="sutil">{{ v.forma_pago }}</div></td>
+    </tr>
+{% endmacro %}
+
+{% if ventas %}
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Folio</th><th>Cliente</th><th class="numero">Piezas</th><th class="numero">Total</th></tr></thead>
+    <tbody>{% for v in ventas %}{{ renglon(v) }}{% endfor %}</tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Ninguna venta de mayoreo {{ periodo.descripcion }}.</div>
+{% endif %}
+{% if canceladas %}
+<details class="familia" id="mayoreo_canceladas" style="margin-top:10px">
+  <summary>Ventas canceladas <span class="sutil">· {{ canceladas|length }}</span></summary>
+  <table><tbody>{% for v in canceladas %}{{ renglon(v) }}{% endfor %}</tbody></table>
+</details>
+{% endif %}
+
+<h2 id="clientes_mayoreo">Clientes de mayoreo</h2>
+<p class="sutil" style="margin-top:-6px">
+  Los maneja la oficina: no tienen ruta y no le salen a ningún vendedor.
+</p>
+{% if clientes %}
+<div class="tabla-marco">
+  <table>
+    <thead><tr><th>Cliente</th><th class="numero">Ventas</th><th class="numero">Le hemos vendido</th></tr></thead>
+    <tbody>
+    {% for c in clientes %}
+      <tr>
+        <td><a href="/panel/clientes/{{ c.id }}">{{ c.nombre_comercial }}</a>
+          <div class="sutil">{{ c.codigo }}{% if c.telefono %} · {{ c.telefono }}{% endif %}{% if c.direccion %} · {{ c.direccion }}{% endif %}</div></td>
+        <td class="numero">{{ c.ventas }}{% if c.ultima %}<div class="sutil">última {{ c.ultima.strftime('%d/%m/%Y') }}</div>{% endif %}</td>
+        <td class="numero">${{ '{:,.2f}'.format(c.vendido) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Todavía no hay clientes de mayoreo.</div>
+{% endif %}
+{% include "_mayoreo_cliente_nuevo.html" %}
+{% endblock %}

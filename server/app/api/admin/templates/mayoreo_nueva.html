@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Nueva venta de mayoreo{% endblock %}
+{% block contenido %}
+<p><a href="/panel/mayoreo">← Ventas de mayoreo</a></p>
+<h1>Nueva venta de mayoreo</h1>
+<p class="subtitulo">
+  Sale de la bodega en cuanto la guardas. El precio lo decides tú en cada renglón;
+  si lo dejas en blanco toma el de la lista. La cantidad va en la presentación que
+  escojas (cajas o piezas).
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
+
+{% if not bodega %}
+<div class="vacio">No hay bodegas activas: la venta de mayoreo sale de una bodega.</div>
+{% else %}
+<form class="barra" method="get" action="/panel/mayoreo/nueva">
+  <input type="hidden" name="cliente" value="{{ cliente }}">
+  <label>Bodega
+    <select name="bodega">
+      {% for b in bodegas %}<option value="{{ b.id }}" {% if b.id == bodega.id %}selected{% endif %}>{{ b.nombre }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="secundario">Cambiar</button>
+</form>
+
+<form method="post" action="/panel/mayoreo/nueva" id="forma_venta_mayoreo">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="almacen_id" value="{{ bodega.id }}">
+  <div class="barra" style="flex-wrap:wrap">
+    <label>Cliente
+      <select name="cliente_id" required>
+        <option value="">Escoge el cliente</option>
+        {% for c in clientes %}<option value="{{ c.id }}" {% if c.id|string == cliente %}selected{% endif %}>{{ c.nombre_comercial }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Pago
+      <select name="forma_pago">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transferencia</option>
+      </select>
+    </label>
+    <input name="referencia_pago" placeholder="Referencia (transferencia)" maxlength="80">
+  </div>
+
+  <div class="tabla-marco">
+  <table>
+    <thead><tr><th>Artículo y presentación</th><th class="numero">Cantidad</th><th class="numero">Precio</th></tr></thead>
+    <tbody>
+    {% for i in renglones %}
+      <tr>
+        <td>
+          <select name="articulo_{{ i }}" aria-label="Artículo {{ i + 1 }}" style="max-width:100%">
+            <option value=""></option>
+            {% for p in surtido %}
+              {% for u in p.presentaciones %}
+              <option value="{{ p.producto_id }}|{{ u.unidad }}|{{ u.precio_lista or '' }}">
+                {{ p.nombre }} · {{ u.unidad }}{% if u.factor != 1 %} de {{ u.factor|entero }}{% endif %}
+                {% if u.precio_lista %}(lista ${{ '{:,.2f}'.format(u.precio_lista) }}){% endif %}
+                · hay {{ p.existencia|entero }} pzas
+              </option>
+              {% endfor %}
+            {% endfor %}
+          </select>
+        </td>
+        <td class="numero"><input name="cantidad_{{ i }}" inputmode="numeric" style="width:80px"></td>
+        <td class="numero"><input name="precio_{{ i }}" inputmode="decimal" placeholder="lista" style="width:100px"></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p><input name="nota" placeholder="Nota (opcional)" maxlength="600" style="width:100%;max-width:520px"></p>
+  <button type="submit" id="boton_guardar_mayoreo">Guardar la venta</button>
+</form>
+{% endif %}
+
+{% if not clientes %}<div class="aviso-caja">Todavía no hay clientes de mayoreo: dalo de alta aquí abajo.</div>{% endif %}
+{% set volver = '/panel/mayoreo/nueva' %}
+{% include "_mayoreo_cliente_nuevo.html" %}
+{% endblock %}

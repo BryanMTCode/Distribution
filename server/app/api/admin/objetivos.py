@@ -57,6 +57,12 @@ from app.api.admin.comun import (
 )
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.tablero import inicio_de_mes
+from app.infra.objetivos import (
+    ObjetivoInvalido,
+    borrar_objetivo,
+    guardar_objetivo,
+    objetivos_con_avance,
+)
 
 router = APIRouter(prefix="/panel/objetivos", tags=["panel"], include_in_schema=False)
 
@@ -175,6 +181,11 @@ async def listar(
             ),
             "total_venta": sum(Decimal(f["venta_mes"]) for f in filas),
             "sin_objetivo": sum(1 for f in filas if f["objetivo_venta"] is None),
+            # Los de cualquier periodo (§104); los del mes ya están arriba.
+            "por_periodo": [
+                o for o in await objetivos_con_avance(sesion) if o.clase == "periodo"
+            ],
+            "hoy": hoy.isoformat(),
             "aviso": aviso,
             "error": error,
         },
@@ -310,4 +321,77 @@ async def copiar(
     return RedirectResponse(
         f"/panel/objetivos?mes={periodo:%Y-%m}&aviso={aviso}",
         status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Objetivos de cualquier periodo (ADR 0002 §104)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/periodo")
+async def fijar_por_periodo(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    csrf: str = Form(""),
+    ruta_id: str = Form(""),
+    desde: str = Form(""),
+    hasta: str = Form(""),
+    objetivo_venta: str = Form(""),
+    objetivo_visitas: str = Form(""),
+    nota: str = Form(""),
+) -> RedirectResponse:
+    """Un objetivo de un día, una semana o un rango; de una ruta o de toda la
+    empresa. Un mes completo de una ruta se guarda como su objetivo del mes."""
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+
+    def volver(**que: str) -> RedirectResponse:
+        clave, texto = next(iter(que.items()))
+        return RedirectResponse(
+            f"/panel/objetivos?{clave}={texto}#por_periodo",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        inicio = date.fromisoformat(desde)
+        fin = date.fromisoformat(hasta or desde)
+    except ValueError:
+        return volver(error="Escribe las fechas del periodo.")
+    try:
+        monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
+        visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
+        await guardar_objetivo(
+            sesion,
+            ruta_id=uuid.UUID(ruta_id) if ruta_id else None,
+            desde=inicio,
+            hasta=fin,
+            objetivo_venta=monto,
+            objetivo_visitas=visitas or None,
+            nota=texto_o_nulo(nota, maximo=300),
+            quien=actor.usuario_id,
+        )
+    except (CapturaInvalida, ObjetivoInvalido, ValueError) as e:
+        await sesion.rollback()
+        return volver(error=str(e))
+    await sesion.commit()
+    return volver(aviso="Objetivo guardado.")
+
+
+@router.post("/periodo/{objetivo_id}/borrar")
+async def borrar_por_periodo(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    objetivo_id: str,
+    csrf: str = Form(""),
+) -> RedirectResponse:
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    quitado = await borrar_objetivo(sesion, objetivo_id)
+    await sesion.commit()
+    texto = "aviso=Objetivo quitado." if quitado else "error=Ese objetivo ya no existe."
+    return RedirectResponse(
+        f"/panel/objetivos?{texto}#por_periodo", status_code=status.HTTP_303_SEE_OTHER
     )

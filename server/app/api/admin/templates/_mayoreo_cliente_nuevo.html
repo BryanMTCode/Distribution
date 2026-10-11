@@ -1,0 +1,15 @@
+{# Alta de un cliente de mayoreo. Espera `volver` (opcional). #}
+<form method="post" action="/panel/mayoreo/clientes" id="forma_cliente_mayoreo"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:16px;margin-top:12px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="volver" value="{{ volver or '/panel/mayoreo' }}">
+  <strong>Nuevo cliente de mayoreo</strong>
+  <div class="barra" style="margin-top:10px;flex-wrap:wrap">
+    <input name="nombre" placeholder="Nombre del negocio" required maxlength="200">
+    <input name="telefono" placeholder="Teléfono" maxlength="40">
+    <input name="calle" placeholder="Calle y número" maxlength="200">
+    <input name="colonia" placeholder="Colonia" maxlength="120">
+    <button type="submit" class="secundario">Dar de alta</button>
+  </div>
+</form>
