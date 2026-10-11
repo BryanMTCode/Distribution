@@ -81,6 +81,15 @@
     Ningún usuario desactivado.
   {% endif %}
 </p>
+{# Ver solo los de un rol (ADR 0002 §100). Son enlaces: el filtro vive en la
+   dirección y se puede guardar en favoritos. #}
+<nav class="filtro" id="filtro_rol" aria-label="Ver usuarios por rol">
+  {% for clave, etiqueta, cuantos in filtro_de_rol %}
+    <a href="/panel/equipo{% if clave %}?rol={{ clave }}{% endif %}"
+       id="rol_{{ clave or 'todos' }}"
+       {% if clave == rol %}class="actual" aria-current="true"{% endif %}>{{ etiqueta }} · {{ cuantos }}</a>
+  {% endfor %}
+</nav>
 <div class="tabla-marco">
   <table>
     <thead>
@@ -93,7 +102,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for u in usuarios %}
+      {% for u in usuarios_vistos %}
       <tr>
         <td>
           <span class="mono">{{ u.codigo }}</span>
@@ -143,6 +152,10 @@
         </td>
         {% endif %}
       </tr>
+      {% else %}
+      <tr><td colspan="{{ 5 if puede_editar else 4 }}" class="sutil">
+        Nadie con ese rol. <a href="/panel/equipo">Ver todos</a>.
+      </td></tr>
       {% endfor %}
     </tbody>
   </table>

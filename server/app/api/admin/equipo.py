@@ -33,6 +33,7 @@ petición y su dispositivo deja de poder sincronizar.
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from typing import Annotated
 from urllib.parse import quote
 
@@ -66,6 +67,14 @@ ROLES = [
     ("admin", "Administrador", "Todos los permisos, incluido dar de alta usuarios."),
 ]
 
+# Cómo se llama cada rol en el filtro de la lista: «Vendedores», no «Vendedor».
+PLURAL_DE_ROL = {
+    "vendedor": "Vendedores",
+    "supervisor": "Supervisores",
+    "gerente": "Gerencia",
+    "admin": "Administradores",
+}
+
 
 # ---------------------------------------------------------------------------
 # Lista
@@ -79,11 +88,17 @@ async def listar(
     sesion: SesionDep,
     error: str = "",
     guardado: str = "",
+    rol: str = "",
 ) -> HTMLResponse:
     """Las tres tablas en una pantalla, con los huecos marcados.
 
     Un vendedor sin camión o sin ruta se ve igual que uno completo en una lista de
     usuarios. Aquí se marca, porque es la diferencia entre poder trabajar y no.
+
+    `rol` deja ver solo los de un rol —«solo vendedores, solo administradores»,
+    ADR 0002 §100—. Filtra la tabla de usuarios y nada más: los avisos de
+    vendedores sin camión o sin ruta, y los selectores de responsable, siguen
+    viendo a todos.
     """
     usuarios = (
         await sesion.execute(
@@ -180,12 +195,19 @@ async def listar(
     # lista, «Desactivados» (ADR 0002 §93).
     desactivados = [u for u in usuarios if not u["activo"]]
     usuarios = [u for u in usuarios if u["activo"]]
+    if rol not in {clave for clave, _, _ in ROLES}:
+        rol = ""
+    por_rol = Counter(u["rol_codigo"] for u in usuarios)
 
     return render(
         peticion,
         "equipo.html",
         {
             "usuarios": usuarios,
+            "usuarios_vistos": [u for u in usuarios if not rol or u["rol_codigo"] == rol],
+            "rol": rol,
+            "filtro_de_rol": [("", "Todos", len(usuarios))]
+            + [(clave, PLURAL_DE_ROL[clave], por_rol[clave]) for clave, _, _ in ROLES],
             "desactivados": len(desactivados),
             "rutas": rutas,
             "almacenes": almacenes,

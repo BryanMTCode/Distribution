@@ -1,7 +1,9 @@
 """La base en blanco: se quedan los usuarios, entran los artículos reales.
 
-1. **El archivo de artículos** es el de la dirección: 25 artículos en cinco
-   familias, y su valor en bodega cuadra con el total de la hoja ($417,237).
+1. **El archivo de artículos** es el de la dirección: 32 artículos en cinco
+   familias —los 25 de su primer Excel y siete que trajo el de cargas (ADR 0002
+   §99)—, con los precios verdaderos de ese segundo Excel. Su valor en bodega es
+   el de la hoja ($417,237) más lo que subieron los cuatro costales ($23,932).
    Lo que viene mal escrito se dice antes de borrar nada.
 2. **Se va** todo —ventas, cargas, clientes, productos, rutas, bodegas y
    camiones, existencias, libro mayor— y **se quedan** los usuarios y sus
@@ -54,11 +56,14 @@ async def _cuantos_deltas(sesion, entidad: str) -> int:
 
 async def test_el_archivo_es_el_de_la_direccion():
     articulos = _bb().leer_articulos()
-    assert len(articulos) == 25
+    assert len(articulos) == 32
     assert len({a.familia for a in articulos}) == 5
     assert [a.sku for a in articulos][:3] == ["S-100", "S-101", "S-102"]
-    # El total de la hoja: lo que vale lo que hay en la bodega a precio de venta.
-    assert sum(a.existencia * a.precio for a in articulos) == Decimal("417237")
+    # Lo que vale lo que hay en la bodega a precio de venta: el total de la hoja
+    # con el precio corregido de los costales Minino, adulto, cachorro y Poder
+    # Canino. Los siete nuevos entran sin existencia.
+    assert sum(a.existencia * a.precio for a in articulos) == Decimal("441169")
+    assert sum(a.existencia for a in articulos if a.sku >= "E-103" and a.sku <= "E-109") == 0
 
 
 async def test_lo_mal_escrito_se_dice_antes_de_borrar(tmp_path):
@@ -84,7 +89,7 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
         sesion, _bb().leer_articulos(), quien=await _bb().quien_registra(sesion)
     )
     assert resultado.borrado["ventas"] == 1
-    assert resultado.articulos == 25
+    assert resultado.articulos == 32
     assert resultado.entrada == "EN-000001"
     assert resultado.piezas == Decimal("10561")
 
@@ -112,7 +117,7 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     assert (cursor, de_cero) == (0, True)
 
     # Los artículos, con su precio y su existencia en la bodega principal.
-    assert await _cuantos(sesion, "productos") == 25
+    assert await _cuantos(sesion, "productos") == 32
     fila = (
         await sesion.execute(
             text(
@@ -128,7 +133,7 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     ).mappings().one()
     assert dict(fila) == {
         "nombre": "Costal Minino 15 kilos", "familia": "Ganador Minino",
-        "precio": Decimal("579.00"), "cantidad": Decimal("197.000"),
+        "precio": Decimal("676.00"), "cantidad": Decimal("197.000"),
     }
     # Y queda escrito que se hizo.
     accion = (
@@ -160,8 +165,8 @@ async def test_un_telefono_de_cero_recibe_lo_nuevo_y_nada_de_lo_de_antes(sesion,
             )
         ).all()
     )
-    assert entidades["producto"] == 25
-    assert entidades["precio"] == 25
+    assert entidades["producto"] == 32
+    assert entidades["precio"] == 32
     assert "carga" not in entidades and "venta" not in entidades
     del_viejo = (
         await sesion.execute(
@@ -186,7 +191,7 @@ async def test_el_laboratorio_tambien_queda_en_blanco(sesion, semilla):
     assert await _cuantos(sesion, "fact_ventas") > 0  # todavía la copia vieja
     assert await _bb().limpiar_el_laboratorio(sesion) is None
     assert await _cuantos(sesion, "fact_ventas") == 0
-    assert await _cuantos(sesion, "dim_producto") == 25
+    assert await _cuantos(sesion, "dim_producto") == 32
 
 
 async def test_sin_la_frase_no_se_borra_nada(motor, sesion, semilla, monkeypatch):
@@ -206,4 +211,4 @@ async def test_sin_la_frase_no_se_borra_nada(motor, sesion, semilla, monkeypatch
     monkeypatch.setattr("builtins.input", lambda _="": "en blanco")
     assert await base_en_blanco() == 0
     assert await _cuantos(sesion, "ventas") == 0
-    assert await _cuantos(sesion, "productos") == 25
+    assert await _cuantos(sesion, "productos") == 32

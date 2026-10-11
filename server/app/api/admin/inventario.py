@@ -31,7 +31,6 @@ esta pantalla permite verlo sin esperar a la noche.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import quote, urlencode
@@ -42,6 +41,7 @@ from sqlalchemy import text
 
 from app.api.admin.comun import CapturaInvalida, SesionDep, agrupar_por_familia, render
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.ajuste_de_existencia import existencia_con_candado, registrar_ajuste
 from app.infra.valor_de_inventario import precio_de_venta
 
 # Los almacenes que se pueden ajustar a mano desde el panel.
@@ -445,19 +445,7 @@ async def ajustar(
     # La existencia se lee DENTRO de la transacción y con candado: entre leerla para
     # pintar la pantalla y guardar el ajuste pudo entrar una venta del teléfono, y
     # el conteo se calcularía contra un número que ya no existe.
-    actual = Decimal(
-        (
-            await sesion.execute(
-                text(
-                    "SELECT COALESCE(("
-                    "  SELECT cantidad FROM existencias "
-                    "   WHERE almacen_id = :a AND producto_id = :p FOR UPDATE"
-                    "), 0)"
-                ),
-                {"a": almacen_id, "p": producto_id},
-            )
-        ).scalar_one()
-    )
+    actual = await existencia_con_candado(sesion, almacen_id, producto_id)
 
     try:
         if tipo == "conteo":
@@ -490,87 +478,26 @@ async def ajustar(
             "negativo es un dedazo.",
         )
 
-    ahora = datetime.now(UTC)
-    ajuste_id = uuid.uuid4()
-    consecutivo = (
-        await sesion.execute(text("SELECT nextval('seq_folio_ajuste_camion')"))
-    ).scalar_one()
-
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO ajustes_camion
-              (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
-               contado, delta, motivo_codigo, nota, usuario_id, creado_en)
-            VALUES (:id, :folio, :a, :p, :tipo, :actual, :contado, :delta,
-                    :motivo, :nota, :quien, :ahora)
-            """
-        ),
-        {
-            "id": ajuste_id,
-            # AC para camión, AB para bodega: el folio dice de dónde es sin abrir
-            # el documento. La serie es una sola.
-            "folio": f"{'AC' if es_camion else 'AB'}-{consecutivo:06d}",
-            "a": almacen_id,
-            "p": producto_id,
-            "tipo": tipo,
-            "actual": actual,
-            "contado": cuenta,
-            "delta": delta,
-            "motivo": motivo_codigo or None,
-            "nota": limpia[:600],
-            "quien": actor.usuario_id,
-            "ahora": ahora,
-        },
-    )
-
-    # El asiento en el libro mayor y la caché, juntos y siempre: si divergieran, la
-    # propia pantalla de inventario marcaría un descuadre que no corresponde a nada
-    # físico.
-    #
-    # El tipo del asiento es `ajuste` para los tres casos. Por qué se ajustó vive en
-    # el documento, que es donde se puede leer con su nota; un `merma` en el libro
-    # mayor del camión no entraría de todos modos en la columna de merma de la
-    # liquidación, que se calcula desde los documentos de merma del vendedor.
-    sube = delta > 0
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO movimientos_inventario
-              (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
-               documento_tipo, documento_id, usuario_id, fecha_servidor)
-            VALUES ('ajuste', :origen, :destino, :p, :cant, 'ajuste_camion', :doc,
-                    :quien, :ahora)
-            """
-        ),
-        {
-            "origen": None if sube else almacen_id,
-            "destino": almacen_id if sube else None,
-            "p": producto_id,
-            "cant": abs(delta),
-            "doc": ajuste_id,
-            "quien": actor.usuario_id,
-            "ahora": ahora,
-        },
-    )
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO existencias (almacen_id, producto_id, cantidad, actualizado_en)
-            VALUES (:a, :p, :cant, :ahora)
-            ON CONFLICT (almacen_id, producto_id) DO UPDATE
-               SET cantidad = existencias.cantidad + :cant, actualizado_en = :ahora
-            """
-        ),
-        {"a": almacen_id, "p": producto_id, "cant": delta, "ahora": ahora},
+    folio = await registrar_ajuste(
+        sesion,
+        almacen_id=almacen_id,
+        producto_id=producto_id,
+        es_camion=es_camion,
+        tipo=tipo,
+        actual=actual,
+        delta=delta,
+        contado=cuenta,
+        nota=limpia,
+        quien=actor.usuario_id,
+        motivo_codigo=motivo_codigo,
     )
     await sesion.commit()
 
-    signo = "+" if sube else "−"
+    signo = "+" if delta > 0 else "−"
     return _a(
         volver,
         guardado=(
-            f"Ajuste AC-{consecutivo:06d}: {signo}{abs(delta)} en "
+            f"Ajuste {folio}: {signo}{abs(delta)} en "
             f"{cabecera['nombre']}. Ahora dice {actual + delta}. "
             "El teléfono lo recibe en la siguiente sincronización."
         ),

@@ -467,6 +467,43 @@ async def test_la_pantalla_delata_al_vendedor_sin_camion_y_sin_ruta(
     assert "Sin ruta:" in r.text
 
 
+async def test_los_usuarios_se_filtran_por_rol(cliente, semilla, sesion):
+    """«Poder seleccionar cuáles quiero ver: solo vendedores, solo
+    administradores» (ADR 0002 §100). El filtro toca la tabla de usuarios y nada
+    más: los avisos del vendedor sin ruta siguen viendo a todos."""
+    await _entrar(cliente)
+    await _crear_usuario(cliente, codigo="VEND05", con_camion="")
+
+    def tabla(html: str) -> str:
+        return html.split('id="filtro_rol"')[1].split("<strong>Eliminar</strong>")[0]
+
+    r = await cliente.get("/panel/equipo")
+    filtro = r.text.split('id="filtro_rol"')[1].split("</nav>")[0]
+    for etiqueta in ("Todos · 3", "Vendedores · 2", "Supervisores · 0", "Gerencia · 0",
+                     "Administradores · 1"):
+        assert etiqueta in filtro, etiqueta
+    assert 'id="rol_todos"\n       class="actual"' in r.text
+    assert "VEND05" in tabla(r.text) and "ADMIN01" in tabla(r.text)
+
+    r = await cliente.get("/panel/equipo?rol=vendedor")
+    assert "VEND01" in tabla(r.text) and "VEND05" in tabla(r.text)
+    assert "ADMIN01" not in tabla(r.text)
+    assert 'id="rol_vendedor"\n       class="actual"' in r.text
+    assert "Sin ruta:" in r.text  # los avisos no se filtran
+
+    r = await cliente.get("/panel/equipo?rol=admin")
+    assert "ADMIN01" in tabla(r.text) and "VEND01" not in tabla(r.text)
+    # Y el titular de una ruta nueva se sigue pudiendo escoger entre todos.
+    assert 'value="' + str(semilla["vendedor"]) + '"' in r.text
+
+    r = await cliente.get("/panel/equipo?rol=supervisor")
+    assert "Nadie con ese rol" in r.text
+
+    # Un rol que no existe es «todos», no una tabla vacía sin explicación.
+    r = await cliente.get("/panel/equipo?rol=chofer")
+    assert "VEND01" in tabla(r.text) and "ADMIN01" in tabla(r.text)
+
+
 # ---------------------------------------------------------------------------
 # Listas de precios
 # ---------------------------------------------------------------------------

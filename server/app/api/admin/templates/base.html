@@ -239,6 +239,18 @@
     }
     nav.pestanas a:hover { color: var(--acento); }
     nav.pestanas a.actual { color: var(--acento); border-bottom-color: var(--marca); }
+    /* Filtro de una lista por tipo (los usuarios por rol, ADR 0002 §100): botones
+       que se tocan, uno marcado; son enlaces, sin JavaScript. */
+    nav.filtro {
+      display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px;
+    }
+    nav.filtro a {
+      padding: 5px 12px; border: 1px solid var(--linea); border-radius: 999px;
+      background: var(--papel); color: var(--acento); text-decoration: none;
+      font-size: 13px; font-weight: 600;
+    }
+    nav.filtro a:hover { background: var(--acento-suave); }
+    nav.filtro a.actual { background: var(--marca); border-color: var(--marca); color: #fff; }
     .entrar {
       max-width: 340px; margin: 12vh auto; background: var(--papel);
       border: 1px solid var(--linea); border-top: 6px solid var(--marca);

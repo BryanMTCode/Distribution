@@ -1,6 +1,6 @@
 """Los artículos agrupados por familia (ADR 0002 §89).
 
-1. **Los 25 del Excel** entran en sus cinco familias, en el orden de la hoja, y
+1. **Los 32 del Excel** entran en sus cinco familias, en el orden de la hoja, y
    así se ven en Productos y en el Inventario —con el subtotal de cada una, como
    los totales de la hoja—.
 2. **Las familias se administran** en Productos: agregar, renombrar y borrar.
@@ -35,7 +35,7 @@ async def test_los_del_excel_se_ven_por_familia_y_en_su_orden(cliente, sesion, s
     r = await cliente.get("/panel/productos")
     plano = solo_texto(r)
     orden = [plano.index(f) for f in ("Ganador Minino · 15 artículo(s)",
-                                      "Botanas Javi · 3 artículo(s)",
+                                      "Botanas Javi · 10 artículo(s)",
                                       "Sopa Maruchan · 3 artículo(s)",
                                       "Mega Alimentos · 2 artículo(s)",
                                       "Dulcería Valdez · 2 artículo(s)")]
@@ -52,9 +52,9 @@ async def test_los_del_excel_se_ven_por_familia_y_en_su_orden(cliente, sesion, s
 
     # El inventario, con el subtotal de cada familia: el de la hoja.
     plano = solo_texto(await cliente.get("/panel/inventario"))
-    assert "Ganador Minino · 15 artículo(s) 9,000 piezas · $318,101.00" in plano
+    assert "Ganador Minino · 15 artículo(s) 9,000 piezas · $342,033.00" in plano
     assert "Sopa Maruchan · 3 artículo(s) 343 piezas · $54,880.00" in plano
-    assert "$417,237.00" in plano
+    assert "$441,169.00" in plano
 
 
 async def test_cada_familia_se_pliega_y_se_pueden_plegar_todas(cliente, sesion, semilla):
@@ -77,7 +77,7 @@ async def test_cada_familia_se_pliega_y_se_pueden_plegar_todas(cliente, sesion, 
         assert 'id="desplegar_todas"' in plegado, ruta
         # Plegadas, los subtotales siguen a la vista.
         if ruta == "/panel/inventario":
-            assert "$318,101.00" in solo_texto(respuesta)
+            assert "$342,033.00" in solo_texto(respuesta)
     # Al buscar, todo abierto: lo que se busca no se esconde.
     html = (await cliente.get("/panel/productos?q=Minino&familias=plegadas")).text
     assert '<details class="familia" id="familia_1" open>' in html
@@ -120,12 +120,12 @@ async def test_agregar_renombrar_y_borrar_una_familia(cliente, sesion, semilla):
         data={"csrf": csrf_del_panel(cliente, r)},
         follow_redirects=True,
     )
-    assert "Sus 3 artículo(s) quedaron «Sin familia»" in solo_texto(r)
-    assert "Sin familia · 3 artículo(s)" in solo_texto(r)
+    assert "Sus 10 artículo(s) quedaron «Sin familia»" in solo_texto(r)
+    assert "Sin familia · 10 artículo(s)" in solo_texto(r)
     sueltos = (
         await sesion.execute(text("SELECT count(*) FROM productos WHERE categoria_id IS NULL"))
     ).scalar_one()
-    assert sueltos == 3
+    assert sueltos == 10
 
 
 async def test_la_app_recibe_la_familia(cliente, sesion, semilla):
@@ -146,7 +146,7 @@ async def test_la_app_lista_los_articulos_por_familia(cliente, sesion, semilla):
     articulos = (
         await cliente.get("/v1/almacen/articulos", headers=await _cab(cliente))
     ).json()
-    assert len(articulos) == 25
+    assert len(articulos) == 32
     primero = articulos[0]
     assert (primero["sku"], primero["familia"], primero["precio"]) == (
         "S-100", "Ganador Minino", "10.00"

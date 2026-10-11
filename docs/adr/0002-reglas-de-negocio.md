@@ -5055,3 +5055,61 @@ tenía 26 entradas, y varias eran la misma tarea en dos o tres lugares.
   inventario a costo. Registrar lo que llegó y pagarlo son actos distintos, con
   permisos distintos.
 
+
+## 99. Los camiones de las rutas 1101–1106 al sábado 10, y los precios verdaderos
+
+**Decisión (octubre 2026).** Con su Excel de cargas —una hoja por ruta—: «vas a
+dejar los datos según lo que viene en el Excel… el precio verdadero ahora es el de
+Precio… lo que tenía el sábado 10 viene en Inventario, la carga que hicieron en la
+tarde en Piezas, y lo que quedó en el camión en TOTAL».
+
+- El Excel pasado a limpio vive en `server/db/semillas/camiones_2026-10-10.csv`:
+  175 renglones, uno por ruta y artículo, con el nombre de la hoja y el SKU del
+  catálogo al que corresponde. Los nombres no coinciden y el cruce se hizo a
+  mano: «MIINO 15 KILOS» es el costal Minino (S-108), «ANDY MAX» la Candy box
+  (F-100), «NARUCHAN CAMARON NATURAL» la Maruchan camarón (T-102)…
+- **El comando `camiones-al-sabado`** (`app/infra/camiones_al_sabado.py`) deja
+  cada camión de VEND1101…VEND1106 en el TOTAL de su hoja con un **ajuste de
+  conteo** (folio AC-) por artículo, con la cuenta en la nota («inventario 4 +
+  carga de la tarde 6 = 10»). Lo que el camión tenga y no venga en su hoja queda
+  en cero. Si un vendedor no existe o no es vendedor activo, no toca nada. Al que
+  no tenga camión se le crea `CAMION_<clave>`, como en el alta del panel. Es
+  idempotente: el ajuste es «lo que debe haber menos lo que hay».
+- **La bodega no se descuenta.** El inventario que entró con la base en blanco
+  (§89) ya era el de después de cargar: traía cero salsas y los camiones se
+  llevaron 96 esa tarde. Por eso la carga de la tarde no es una carga del
+  sistema (no hay folio CA-): es parte del estado del camión al cierre.
+- **Los precios de la hoja mandan** en la lista general, en pieza: el costal
+  Minino 15 kg pasa de $579 a $676, el Ganador adulto 15 kg de $900 a $681, el
+  cachorro 20 kg de $649 a $947 y el Poder Canino 20 kg de $423 a $435 (la versión
+  del precio sube y los teléfonos lo bajan). Los demás ya cuadraban. Si un
+  artículo trae dos precios en hojas distintas gana el que más se repite: el
+  Super Mix viene a $19 en la ruta 1101 y a $20 en las otras cinco; queda a $20.
+- **Siete artículos nuevos**, en Botanas Javi y sin existencia en bodega: Papa
+  adobada (E-103) y Papa jalapeño (E-104) a $90, Palomita acaramelada (E-105) a
+  $13, Duros (E-106) y Cuadros (E-107) a $17, Super Mix natural (E-108) y chile
+  (E-109) a $20. Se agregaron también a `articulos_distribuciones_se.csv`, con
+  los precios corregidos, para que una base en blanco futura entre igual: 32
+  artículos que valen $441,169 en bodega.
+- **La hoja de la ruta 1105** dice AUDITORIA 1 y A PAGAR 9 en Maruchan habanero,
+  con TOTAL 10. Se cargan los 10 del TOTAL, como se pidió; por eso esa hoja suma
+  $14,938 y no los $14,778 del Excel. Si el habanero de la auditoría no está, se
+  corrige con un conteo en Inventario.
+- Antes de aplicar, el comando avisa si un camión ya movió mercancía después del
+  sábado (sin contar sus propios ajustes): el ajuste lo deja igual al Excel de
+  todos modos.
+
+## 100. Usuarios: ver solo los de un rol
+
+**Decisión (octubre 2026).** «En usuarios poder seleccionar cuáles quiero ver: si
+solo vendedores, solo administradores, etc.»
+
+- Arriba de la tabla de **Usuarios y rutas**, unos botones: Todos, Vendedores,
+  Supervisores, Gerencia y Administradores, cada uno con cuántos hay. Son enlaces
+  (`/panel/equipo?rol=vendedor`): el filtro vive en la dirección y se puede
+  guardar en favoritos.
+- Filtra **la tabla de usuarios y nada más**. Los avisos de vendedores sin camión
+  o sin ruta, y los selectores de titular o de responsable de rutas y almacenes,
+  siguen viendo a todos: esconderle un vendedor a quien está dando de alta una
+  ruta sería un error difícil de ver.
+- Los desactivados siguen en su propia lista (§93).

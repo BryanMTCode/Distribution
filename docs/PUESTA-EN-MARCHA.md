@@ -844,9 +844,10 @@ Vacía la base y deja **solo** a los usuarios —con sus roles y permisos— y s
 funcionar (listas de precios, motivos, unidades, sucursales). Se borra todo lo
 demás: productos, clientes, **rutas, bodegas y camiones**, ventas, cargas, cortes,
 mermas, entradas, existencias, cuentas y la bitácora. Después crea una **Bodega
-principal** nueva y carga los **25 artículos** de
+principal** nueva y carga los **32 artículos** de
 `server/db/semillas/articulos_distribuciones_se.csv` (el Excel de la dirección, en
-sus cinco familias y en ese orden) con su precio de venta; su existencia entra a
+sus cinco familias y en ese orden, más los siete que trajo el Excel de cargas) con
+su precio de venta verdadero (ADR 0002 §99); su existencia entra a
 esa bodega como **inventario inicial** (`EN-000001`).
 
 **Actualizar el código no borra nada:** hay que correr esto una vez.
@@ -862,10 +863,10 @@ detiene sin borrar), detiene la API y el worker, vacía la base, carga los
 artículos, recalcula el laboratorio de análisis y vuelve a arrancar la API y el
 worker **aunque algo falle a la mitad**.
 
-**✅ Debes ver** «Listo. 25 artículos en 5 familias» y «Inventario inicial
+**✅ Debes ver** «Listo. 32 artículos en 5 familias» y «Inventario inicial
 EN-000001: 10,561 piezas en Bodega principal». En el panel, *Productos* tiene los
-25 agrupados por familia y *Inventario* muestra la bodega con su existencia y lo
-que vale ($417,237.00).
+32 agrupados por familia y *Inventario* muestra la bodega con su existencia y lo
+que vale ($441,169.00).
 
 **⚠️ Si después el panel dice «HTTP ERROR 502»**, la API quedó detenida (por
 ejemplo, si se cortó el SSH a la mitad). Se levanta con:
@@ -888,4 +889,46 @@ asignárselos a cada vendedor en el panel.
 **⚠️ Para cambiar los artículos** edita el CSV —una fila por artículo: SKU,
 nombre, familia, existencia en piezas y precio de venta por pieza— antes de
 correrlo. Los precios entran sin IVA desglosado: el precio es lo que se cobra.
+
+## Anexo · Los camiones de las rutas 1101–1106 al sábado 10
+
+**DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen
+reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
+
+Deja el camión de cada vendedor VEND1101…VEND1106 como quedó el sábado 10 de
+octubre de 2026 según el Excel de cargas, pone los precios verdaderos en la lista
+general y da de alta los siete artículos que faltaban (ADR 0002 §99). No toca la
+bodega. Los seis vendedores tienen que existir antes, con esa clave.
+
+**1. Lo que va a hacer** (no cambia nada):
+
+```bash
+cd ~/Distribution
+docker compose run --rm --no-deps api python -m app.cli camiones-al-sabado --resumen
+```
+
+**✅ Debes ver** los cuatro precios que cambian (S-108 $579.00 → $676.00, S-109
+$900.00 → $681.00, S-110 $649.00 → $947.00, S-111 $423.00 → $435.00), los siete
+artículos nuevos, el aviso del Super Mix a $19 en la ruta 1101 y, camión por
+camión, lo que queda: VEND1101 350 piezas $16,945.00 · VEND1102 331 $17,744.00 ·
+VEND1103 402 $20,119.00 · VEND1104 333 $14,938.00 · VEND1105 333 $14,938.00 ·
+VEND1106 336 $14,819.00. **Si dice «FALTAN estos vendedores»**, dalos de alta en
+*Usuarios y rutas* con esa clave y vuelve a correrlo.
+
+**2. El respaldo y la carga:**
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh
+docker compose run --rm --no-deps api python -m app.cli camiones-al-sabado
+```
+
+Pide escribir `CAMIONES`; con cualquier otra cosa no cambia nada. No hace falta
+detener la API.
+
+**✅ Debes ver** «Listo. N ajuste(s) de conteo (AC-… a AC-…), 4 precio(s), 7
+artículo(s) nuevo(s)…». En el panel, *Inventario* → el camión de cada vendedor
+con lo de su hoja, y cada ajuste con la cuenta en su nota. Cada teléfono recibe su
+camión en su próxima sincronización. Correrlo otra vez no duplica nada: dice 0
+ajustes.
 

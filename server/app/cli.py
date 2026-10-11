@@ -1,4 +1,5 @@
-"""Comandos de línea: el primer usuario de oficina, los recálculos y la base en blanco.
+"""Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco
+y los camiones al sábado.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -267,19 +268,109 @@ async def base_en_blanco(*, solo_resumen: bool = False, confirmado: bool = False
     return 0
 
 
+async def camiones_al_sabado(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
+    """Deja los camiones de las rutas 1101–1106 como quedaron el sábado 10 y pone
+    los precios verdaderos del Excel de cargas (ADR 0002 §99).
+
+    Qué hace y por qué la bodega no se toca está en `app/infra/camiones_al_sabado.py`.
+    `--resumen` solo dice lo que haría; `--confirmado` no pregunta.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import ArticulosInvalidos, leer_articulos, quien_registra
+    from app.infra.camiones_al_sabado import (
+        FECHA,
+        PALABRA,
+        HojaInvalida,
+        aplicar,
+        leer_camiones,
+        planear,
+    )
+
+    try:
+        renglones = leer_camiones()
+        articulos = leer_articulos()
+    except (HojaInvalida, ArticulosInvalidos) as e:
+        print(f"ERROR en los archivos: {e}")
+        return 1
+
+    async with CrearSesion() as sesion:
+        try:
+            plan = await planear(sesion, renglones, articulos)
+        except HojaInvalida as e:
+            print(f"ERROR: {e}")
+            return 1
+        print(f"CAMIONES AL {FECHA.upper()}\n")
+        if plan.faltan_vendedores:
+            print("FALTAN estos vendedores (dalos de alta con esa clave): "
+                  + ", ".join(plan.faltan_vendedores))
+        if plan.no_son_vendedores:
+            print("No son vendedores activos: " + ", ".join(plan.no_son_vendedores))
+        if plan.articulos_nuevos:
+            print("Artículos nuevos: " + ", ".join(
+                f"{a.sku} {a.nombre} ({a.familia})" for a in plan.articulos_nuevos))
+        if plan.precios:
+            print("Precios que cambian en la lista general:")
+            for c in plan.precios:
+                antes = "sin precio" if c.antes is None else f"${c.antes:,.2f}"
+                print(f"  {c.sku} {c.nombre}: {antes} → ${c.despues:,.2f}")
+        else:
+            print("Los precios de la lista general ya son los del Excel.")
+        for aviso in plan.precios_distintos:
+            print(f"  OJO: {aviso}")
+        if plan.camiones_nuevos:
+            print("Se les crea camión a: " + ", ".join(plan.camiones_nuevos))
+        print("\nCamión por camión (lo que queda):")
+        for codigo, piezas in plan.piezas.items():
+            print(f"  {codigo}: {piezas:,.0f} piezas, ${plan.valor[codigo]:,.2f}; "
+                  f"{plan.ajustes.get(codigo, 0)} artículo(s) por ajustar")
+            if plan.movidos_despues.get(codigo):
+                print(f"    OJO: este camión ya movió mercancía después del sábado "
+                      f"({plan.movidos_despues[codigo]} movimiento(s)); el ajuste lo deja "
+                      "igual al Excel de todos modos.")
+        print()
+        if not plan.se_puede:
+            print("No se cambió nada.")
+            return 1
+        if solo_resumen:
+            return 0
+        if not confirmado and input(
+            f"Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        try:
+            resultado = await aplicar(
+                sesion, renglones, quien=await quien_registra(sesion), articulos=articulos
+            )
+        except HojaInvalida as e:
+            await sesion.rollback()
+            print(f"ERROR: {e}. No se cambió nada.")
+            return 1
+
+    print(f"Listo. {resultado.ajustes} ajuste(s) de conteo"
+          + (f" ({resultado.folios[0]} a {resultado.folios[-1]})" if resultado.folios else "")
+          + f", {resultado.precios} precio(s), {resultado.articulos_nuevos} artículo(s) "
+          f"nuevo(s), {resultado.camiones_nuevos} camión(es) nuevo(s).")
+    print("Cada teléfono recibe su camión en su próxima sincronización.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
         "refrescar-analitica": refrescar_analitica,
         "recalcular-tablero": recalcular_tablero,
         "base-en-blanco": base_en_blanco,
+        "camiones-al-sabado": camiones_al_sabado,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2
     comando, opciones = sys.argv[1], set(sys.argv[2:])
-    if comando == "base-en-blanco" and opciones <= {"--resumen", "--confirmado"}:
-        return asyncio.run(base_en_blanco(
+    if comando in ("base-en-blanco", "camiones-al-sabado") and opciones <= {
+        "--resumen", "--confirmado"
+    }:
+        return asyncio.run(comandos[comando](
             solo_resumen="--resumen" in opciones, confirmado="--confirmado" in opciones,
         ))
     if opciones:
