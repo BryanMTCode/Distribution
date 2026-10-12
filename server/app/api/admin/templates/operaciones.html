@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block titulo %}Operaciones{% endblock %}
+{% block contenido %}
+<h1>Operaciones</h1>
+<p class="subtitulo">
+  Todo lo que pasó, junto: ventas, mayoreo, visitas sin venta, mermas, cargas,
+  devoluciones, traspasos, entradas, salidas, ajustes y cortes. Abre cualquiera
+  para <strong>anularla</strong>: se deshace con todo lo que movió —la mercancía
+  regresa a donde estaba y el dinero sale de las cifras—, el teléfono del vendedor
+  se entera, y aquí se queda como <strong>anulada</strong>, con quién, cuándo y por qué.
+</p>
+
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{% set ocultos = {'tipo': tipo, 'persona': persona, 'estado': estado} %}
+{% include "_periodo.html" %}
+
+<form class="barra" method="get" id="filtros_operaciones">
+  <input type="hidden" name="periodo" value="{{ periodo.clave }}">
+  <input type="hidden" name="desde" value="{{ periodo.inicio.isoformat() }}">
+  <input type="hidden" name="hasta" value="{{ periodo.fin.isoformat() }}">
+  <select name="tipo" aria-label="Tipo de operación">
+    <option value="">Todos los tipos</option>
+    {% for clave, nombre in tipos %}
+      <option value="{{ clave }}" {% if clave == tipo %}selected{% endif %}>{{ nombre }}</option>
+    {% endfor %}
+  </select>
+  <select name="persona" aria-label="Quién">
+    <option value="">Todos (vendedor o quien la capturó)</option>
+    {% for p in personas %}
+      <option value="{{ p.id }}" {% if p.id|string == persona %}selected{% endif %}>{{ p.nombre }} · {{ p.codigo }}{% if not p.activo %} (desactivado){% endif %}</option>
+    {% endfor %}
+  </select>
+  <select name="estado" aria-label="Anuladas o no">
+    {% for clave, nombre in estados %}
+      <option value="{{ clave }}" {% if clave == estado %}selected{% endif %}>{{ nombre }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Filtrar</button>
+</form>
+
+<p class="sutil" id="cuantas_operaciones">
+  {{ operaciones|length }} operación(es) {{ periodo.descripcion }}{% if anuladas %} · {{ anuladas }} anulada(s){% endif %}.
+  {% if not puede_anular %}Puedes verlas; anular es solo del administrador.{% endif %}
+</p>
+
+{% if recortada %}
+<div class="aviso-caja aviso">Se muestran las {{ limite }} más recientes. Usa un periodo más corto o un filtro para ver las demás.</div>
+{% endif %}
+
+{% if operaciones %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="tabla_operaciones">
+    <thead>
+      <tr>
+        <th>Cuándo</th><th>Operación</th><th>Quién</th><th>Dónde / detalle</th>
+        <th class="numero">Importe</th><th>Estado</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in operaciones %}
+      <tr id="op_{{ o.ref }}" {% if o.anulada or o.cancelada %}style="color:var(--suave)"{% endif %}>
+        <td style="white-space:nowrap">
+          {{ o.fecha.strftime('%d/%m/%Y') }}
+          {% if o.momento %}<div class="sutil">{{ o.momento.strftime('%H:%M') }}</div>{% endif %}
+        </td>
+        <td>
+          <strong>{{ o.nombre }}</strong>
+          <div><a href="{{ o.pagina }}" class="mono" style="white-space:nowrap">{{ o.folio or 'sin folio' }}</a></div>
+        </td>
+        <td>{{ o.persona or '—' }}</td>
+        <td>
+          {% if o.donde %}{{ o.donde }}{% endif %}
+          {% if o.detalle %}<div class="sutil">{{ o.detalle }}</div>{% endif %}
+        </td>
+        <td class="numero">{% if o.importe is not none %}${{ '{:,.2f}'.format(o.importe) }}{% endif %}</td>
+        <td>
+          {% if o.anulada %}
+            <span class="etiqueta-motivo" style="background:var(--alerta-suave);color:var(--alerta)">anulada</span>
+            <div class="sutil">{{ o.anulada_por or 'alguien' }} · {{ o.anulada_en.strftime('%d/%m %H:%M') }}</div>
+            <div class="sutil">{{ o.anulacion_motivo }}</div>
+          {% elif o.cancelada %}
+            <span class="etiqueta-motivo">{{ o.estado_texto }}</span>
+          {% else %}
+            {{ o.estado_texto }}
+          {% endif %}
+        </td>
+        <td class="acciones">
+          {% if o.anulable and puede_anular %}
+            <a class="boton-chico peligro" href="{{ o.pagina }}" id="anular_{{ o.ref }}">Anular</a>
+          {% else %}
+            <a class="boton-chico" href="{{ o.pagina }}">Ver</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio" id="sin_operaciones">Ninguna operación {{ periodo.descripcion }} con esos filtros.</div>
+{% endif %}
+{% endblock %}

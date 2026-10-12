@@ -102,6 +102,9 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         # Lo que hay que probar, en la app y en el dashboard, con cada versión
         # (ADR 0002 §112): a la vista, no escondida en una pestaña.
         ("/panel/revision-app", "Revisión"),
+        # Todas las operaciones juntas, para anular cualquiera deshaciendo lo que
+        # movió (ADR 0002 §119).
+        ("/panel/operaciones", "Operaciones"),
     ]),
 ]
 
@@ -185,6 +188,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/sincronizaciones": None,
     "/panel/cuarentena": None,
     "/panel/revision-app": "tablero.ver",
+    "/panel/operaciones": "ventas.ver_todas",
     "/panel/piloto": "piloto.administrar",
 }
 

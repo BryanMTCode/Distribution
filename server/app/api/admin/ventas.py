@@ -36,7 +36,8 @@ LO QUE BLOQUEA, Y ES LO MÁS IMPORTANTE DEL ARCHIVO
 contra los documentos del día y alguien firmó el resultado. Cambiar una venta
 después mueve el inventario de un día cerrado: el faltante que se le cobró al
 vendedor deja de corresponder a nada, y el papel que firmó queda explicando otra
-aritmética. Si de verdad hay que corregirla, primero se reabre el cierre — que es
+aritmética. Si de verdad hay que anularla, se hace desde Administración →
+Operaciones (ADR 0002 §119), que pide confirmar que ese corte firmado no cambia —
 una decisión con nombre, no un efecto secundario de esta pantalla.
 
 **Una venta a crédito con cobros aplicados tampoco.** El dinero ya entró y el FIFO
@@ -179,8 +180,33 @@ async def cancelar(
     if bloqueos:
         return _volver(venta_id, error="No se puede cancelar: " + " ".join(bloqueos))
 
-    ahora = datetime.now(UTC)
     devuelve = bool(reingresa_stock)
+    await cancelar_venta(
+        sesion, cabecera, motivo=razon, reingresa=devuelve, quien=actor.usuario_id
+    )
+    await sesion.commit()
+
+    aviso = f"Venta {cabecera['folio_local']} cancelada. "
+    aviso += (
+        "La mercancía volvió al camión y el teléfono lo recibe en la siguiente "
+        "sincronización."
+        if devuelve
+        else "La mercancía NO volvió al camión: sigue fuera, como se indicó."
+    )
+    return _volver(venta_id, guardado=aviso)
+
+
+async def cancelar_venta(
+    sesion, cabecera, *, motivo: str, reingresa: bool, quien: uuid.UUID
+) -> None:
+    """Lo que escribe cancelar una venta. No valida ni hace commit.
+
+    Lo usan esta pantalla y Operaciones (ADR 0002 §119): las dos cancelan igual
+    —el mismo documento, la misma devolución al camión, el mismo delta al
+    teléfono—, y cada una decide antes qué la bloquea.
+    """
+    venta_id = cabecera["id"]
+    ahora = datetime.now(UTC)
 
     cancelacion_id = uuid.uuid4()
     await sesion.execute(
@@ -195,14 +221,14 @@ async def cancelar(
         {
             "id": cancelacion_id,
             "v": venta_id,
-            "motivo": razon[:600],
-            "devuelve": devuelve,
-            "quien": actor.usuario_id,
+            "motivo": motivo[:600],
+            "devuelve": reingresa,
+            "quien": quien,
             "ahora": ahora,
         },
     )
 
-    if devuelve:
+    if reingresa:
         partidas = (
             await sesion.execute(
                 text(
@@ -220,7 +246,7 @@ async def cancelar(
                 cantidad=Decimal(p["base"]),
                 documento_tipo="venta_cancelada",
                 documento_id=cancelacion_id,
-                quien=actor.usuario_id,
+                quien=quien,
                 ahora=ahora,
             )
 
@@ -242,27 +268,17 @@ async def cancelar(
         sesion,
         venta_id,
         accion="cancelar",
-        quien=actor.usuario_id,
-        motivo=razon,
+        quien=quien,
+        motivo=motivo,
         antes={
             "estado": "confirmada",
             "total": str(cabecera["total"]),
             "folio_local": cabecera["folio_local"],
         },
-        despues={"estado": "cancelada", "reingresa_stock": devuelve},
+        despues={"estado": "cancelada", "reingresa_stock": reingresa},
         ahora=ahora,
     )
     await _recalcular(sesion, cabecera["fecha_operativa"])
-    await sesion.commit()
-
-    aviso = f"Venta {cabecera['folio_local']} cancelada. "
-    aviso += (
-        "La mercancía volvió al camión y el teléfono lo recibe en la siguiente "
-        "sincronización."
-        if devuelve
-        else "La mercancía NO volvió al camión: sigue fuera, como se indicó."
-    )
-    return _volver(venta_id, guardado=aviso)
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +592,8 @@ async def _bloqueos(sesion, cabecera) -> list[str]:
             f"el día de esta venta ya se liquidó ({cerrada}). Ese cierre comparó el "
             "conteo del camión contra los documentos del día y alguien firmó el "
             "resultado; cambiar la venta ahora dejaría ese papel explicando otra "
-            "aritmética. Reabre el cierre primero, si de verdad hay que corregirla."
+            "aritmética. Si de verdad hay que anularla, hazlo desde Administración → "
+            "Operaciones: ahí se anula diciendo que ese corte firmado no cambia."
         )
 
     pagado = cabecera["importe_pagado"]

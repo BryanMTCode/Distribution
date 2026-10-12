@@ -1,0 +1,1314 @@
+"""Operaciones: todas juntas, y anular deshaciendo lo que movieron (ADR 0002 §119).
+
+────────────────────────────────────────────────────────────────────────────
+EL PEDIDO
+────────────────────────────────────────────────────────────────────────────
+«Quiero una parte en el dashboard donde aparezcan todas las operaciones juntas
+para borrar lo que yo necesite cuando quiera.» Y al preguntarle qué es
+«borrar»: ANULAR Y DESHACER. La mercancía regresa a donde estaba, el dinero sale
+de las cifras, el teléfono del vendedor se entera, y la operación se queda en la
+lista como «anulada», con quién, cuándo y por qué.
+
+────────────────────────────────────────────────────────────────────────────
+CÓMO SE DESHACE SIN BORRAR EL LIBRO MAYOR
+────────────────────────────────────────────────────────────────────────────
+`movimientos_inventario` es append-only. Lo que deshace un movimiento es el
+mismo movimiento AL REVÉS: de donde llegó a donde salió, por la misma cantidad.
+`_deshacer_movimientos` lee lo que escribió la operación y lo escribe invertido,
+así que sirve igual para una merma, una carga, una entrada o una devolución a
+bodega, y el inventario sigue cuadrando contra su propia historia.
+
+Lo que toca un CAMIÓN tiene que llegarle al teléfono, que ya lo había aplicado
+por su cuenta:
+
+  · la venta y la carga tienen su propio delta (la venta cancelada, migración
+    0031; la carga cancelada, que el teléfono deshace);
+  · la merma, la devolución del cliente, la devolución a bodega y el ajuste
+    viajan como un ajuste del camión de tipo «anulación» (migración 0059): el
+    delta firmado, con el motivo en la nota, aplicado una sola vez.
+
+La venta y la venta de mayoreo no se deshacen aquí: se cancelan con las mismas
+funciones de sus pantallas, para que las dos cancelen igual.
+
+────────────────────────────────────────────────────────────────────────────
+LO QUE NO SE DEJA, Y LO QUE SE DEJA AVISANDO
+────────────────────────────────────────────────────────────────────────────
+No se deja:
+  · dejar un almacén en negativo (la regla de §118): si la mercancía ya se
+    vendió o ya salió, no hay qué regresar;
+  · una carga que ya entró a un corte, una venta a crédito ya cobrada, una
+    compra ya pagada al proveedor: primero se deshace lo que cuelga de ellas;
+  · el corte del día: es el efectivo que el vendedor entregó y alguien firmó.
+
+Se deja, pero hay que confirmarlo: una operación del camión de un día cuyo corte
+ya se cerró. El corte firmado NO cambia —lo contado y lo entregado quedan como
+se firmaron—, y eso es justo lo que la casilla dice antes de anular.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+
+from app.api.admin import ventas as panel_ventas
+from app.api.admin.comun import auditar, dinero, sin_decimales
+from app.infra import mayoreo
+from app.infra.ajuste_de_existencia import existencia_con_candado
+
+# El orden del filtro: lo de la calle primero, lo de la oficina después.
+TIPOS: tuple[tuple[str, str], ...] = (
+    ("venta", "Venta"),
+    ("mayoreo", "Venta de mayoreo"),
+    ("no_venta", "Visita sin venta"),
+    ("merma", "Merma"),
+    ("devolucion", "Devolución del cliente"),
+    ("cambio", "Cambio físico"),
+    ("carga", "Carga"),
+    ("devolucion_bodega", "Devolución a bodega"),
+    ("traspaso", "Traspaso entre bodegas"),
+    ("entrada", "Entrada a bodega"),
+    ("salida", "Salida de bodega"),
+    ("ajuste", "Ajuste de inventario"),
+    ("corte", "Corte del día"),
+)
+NOMBRE = dict(TIPOS)
+
+ESTADOS = (("", "Todas"), ("vivas", "Sin anular"), ("anuladas", "Anuladas"))
+
+# Los estados que ya no cuentan, venga de aquí o de su propia pantalla.
+CANCELADOS = ("cancelada", "cancelado", "rechazado", "rechazada")
+
+# Las que se pueden anular aquí. El corte no (ver arriba).
+ANULABLES = tuple(t for t, _ in TIPOS if t != "corte")
+
+# Más renglones ya no se leen; para eso están los filtros.
+LIMITE = 500
+
+# Almacenes que son cuentas y no anaqueles: lo que se deshace puede dejarlos
+# abajo de cero sin que nada físico falte (la merma ya se tiró; lo que va en
+# tránsito tiene su diferencia con nombre).
+SIN_REVISAR_EXISTENCIA = ("merma", "transito")
+
+DIA_PASADO = date(1900, 1, 1)
+DIA_FUTURO = date(9999, 12, 31)
+
+
+class AnulacionRechazada(Exception):
+    """No se puede anular así; el mensaje dice por qué y qué hacer."""
+
+
+class OperacionNoExiste(Exception):
+    """No hay una operación de ese tipo con ese id."""
+
+
+# ---------------------------------------------------------------------------
+# La lista
+# ---------------------------------------------------------------------------
+
+SQL_OPERACIONES = """
+WITH ops AS (
+    SELECT v.fecha_dispositivo AS momento, v.fecha_operativa AS fecha,
+           'venta'::text AS tipo, v.id AS ref, v.folio_local AS folio,
+           v.vendedor_id AS persona_id, c.nombre_comercial AS donde,
+           CASE WHEN v.forma_pago = 'transferencia' THEN 'Por transferencia'
+                ELSE 'En efectivo' END
+             || ' · ' || COALESCE((SELECT trim_scale(sum(p.cantidad_base))::text
+                                     FROM venta_partidas p WHERE p.venta_id = v.id), '0')
+             || ' pza' AS detalle,
+           v.total AS importe, v.estado, '/panel/ventas/' || v.id AS enlace
+      FROM ventas v
+      LEFT JOIN clientes c ON c.id = v.cliente_id
+     WHERE v.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT m.creada_en, m.fecha, 'mayoreo', m.id, m.folio, m.vendida_por,
+           c.nombre_comercial,
+           'Desde ' || a.nombre || ' · '
+             || COALESCE((SELECT trim_scale(sum(p.cantidad))::text
+                            FROM venta_mayoreo_partidas p WHERE p.venta_id = m.id), '0')
+             || ' pza',
+           m.total, m.estado, '/panel/mayoreo/' || m.id
+      FROM ventas_mayoreo m
+      LEFT JOIN clientes c ON c.id = m.cliente_id
+      LEFT JOIN almacenes a ON a.id = m.almacen_id
+     WHERE m.fecha BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT n.fecha_dispositivo, n.fecha_operativa, 'no_venta', n.id,
+           n.folio_consecutivo::text, n.vendedor_id, c.nombre_comercial,
+           COALESCE(md.nombre, n.motivo_codigo)
+             || COALESCE(' · ' || NULLIF(btrim(n.nota), ''), ''),
+           NULL, 'confirmada', '/panel/clientes/' || n.cliente_id
+      FROM no_drops n
+      LEFT JOIN clientes c ON c.id = n.cliente_id
+      LEFT JOIN motivos_no_drop md ON md.codigo = n.motivo_codigo
+     WHERE n.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    -- La visita sin venta anulada ya no existe: lo que queda es su anulación.
+    SELECT a.anulada_en, a.fecha_operativa, 'no_venta', a.documento_id, a.folio,
+           a.vendedor_id, NULL, a.descripcion, NULL, 'anulada', NULL
+      FROM anulaciones a
+     WHERE a.tipo = 'no_venta' AND a.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT m.fecha_dispositivo, m.fecha_operativa,
+           CASE m.tipo WHEN 'devolucion_cliente' THEN 'devolucion' ELSE m.tipo END,
+           m.id, m.folio_local, m.vendedor_id, COALESCE(c.nombre_comercial, al.nombre),
+           COALESCE(mm.nombre, m.motivo_codigo) || ' · '
+             || COALESCE((SELECT trim_scale(sum(d.cantidad_base))::text
+                            FROM merma_detalle d WHERE d.merma_id = m.id), '0')
+             || ' pza',
+           NULL, m.estado, NULL
+      FROM mermas m
+      LEFT JOIN clientes c ON c.id = m.cliente_id
+      LEFT JOIN almacenes al ON al.id = m.almacen_id
+      LEFT JOIN motivos_merma mm ON mm.codigo = m.motivo_codigo
+     WHERE m.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT COALESCE(g.confirmada_en, g.creado_en), g.fecha_operativa, 'carga', g.id,
+           g.folio, g.vendedor_id, d.nombre,
+           'Desde ' || o.nombre || ' · '
+             || COALESCE((SELECT trim_scale(sum(x.cantidad))::text
+                            FROM carga_detalle x WHERE x.carga_id = g.id), '0')
+             || ' pza',
+           NULL, g.estado, '/panel/cargas/' || g.id
+      FROM cargas g
+      JOIN almacenes o ON o.id = g.almacen_origen_id
+      JOIN almacenes d ON d.id = g.almacen_destino_id
+     WHERE g.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT COALESCE(t.fecha_dispositivo, t.creado_en),
+           COALESCE(t.fecha_operativa, t.creado_en::date),
+           CASE WHEN o.tipo = 'camion' THEN 'devolucion_bodega' ELSE 'traspaso' END,
+           t.id, t.folio, t.solicitado_por, o.nombre || ' → ' || d.nombre,
+           COALESCE((SELECT trim_scale(sum(x.cantidad))::text
+                       FROM traspaso_detalle x WHERE x.traspaso_id = t.id), '0')
+             || ' pza' || COALESCE(' · ' || NULLIF(btrim(t.observaciones), ''), ''),
+           NULL, t.estado,
+           CASE WHEN o.tipo = 'camion' THEN '/panel/entradas/devolucion/' || t.id END
+      FROM traspasos t
+      JOIN almacenes o ON o.id = t.almacen_origen_id
+      JOIN almacenes d ON d.id = t.almacen_destino_id
+     WHERE COALESCE(t.fecha_operativa, t.creado_en::date) BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT COALESCE(e.confirmada_en, e.creado_en), e.fecha_operativa, 'entrada', e.id,
+           e.folio, e.creado_por, a.nombre,
+           CASE e.motivo WHEN 'compra' THEN 'Compra'
+                         WHEN 'inicial' THEN 'Inventario inicial'
+                         ELSE 'Sobrante de conteo' END
+             || COALESCE(' · ' || pr.nombre, ' · ' || NULLIF(btrim(e.proveedor), ''), '')
+             || ' · ' || COALESCE((SELECT trim_scale(sum(x.cantidad))::text
+                                     FROM entrada_detalle x WHERE x.entrada_id = e.id), '0')
+             || ' pza',
+           e.importe_total, e.estado, '/panel/entradas/' || e.id
+      FROM entradas e
+      JOIN almacenes a ON a.id = e.almacen_destino_id
+      LEFT JOIN proveedores pr ON pr.id = e.proveedor_id
+     WHERE e.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT COALESCE(s.confirmada_en, s.creado_en), s.fecha_operativa, 'salida', s.id,
+           s.folio, s.creado_por, a.nombre,
+           CASE s.tipo WHEN 'merma' THEN 'Merma' ELSE 'Faltante de conteo' END
+             || COALESCE(' · ' || mm.nombre, '')
+             || ' · ' || COALESCE((SELECT trim_scale(sum(x.cantidad))::text
+                                     FROM salida_detalle x WHERE x.salida_id = s.id), '0')
+             || ' pza',
+           NULL, s.estado, '/panel/salidas/' || s.id
+      FROM salidas s
+      JOIN almacenes a ON a.id = s.almacen_origen_id
+      LEFT JOIN motivos_merma mm ON mm.codigo = s.motivo_codigo
+     WHERE s.fecha_operativa BETWEEN :desde AND :hasta
+
+    UNION ALL
+    -- Los ajustes de tipo «anulación» no son operaciones: son lo que dejó una
+    -- anulación, y anularlos sería deshacer el deshacer.
+    SELECT j.creado_en, j.creado_en::date, 'ajuste', j.id, j.folio,
+           COALESCE(a.responsable_id, j.usuario_id), a.nombre,
+           p.nombre || ' ' || CASE WHEN j.delta > 0 THEN '+' ELSE '' END
+             || trim_scale(j.delta)::text || ' · ' || j.nota,
+           NULL, 'confirmada', '/panel/inventario/' || j.almacen_id || '/' || j.producto_id
+      FROM ajustes_camion j
+      JOIN almacenes a ON a.id = j.almacen_id
+      JOIN productos p ON p.id = j.producto_id
+     WHERE j.tipo <> 'anulacion' AND j.creado_en::date BETWEEN :desde AND :hasta
+
+    UNION ALL
+    SELECT COALESCE(l.cerrada_en, l.creado_en), l.fecha_operativa, 'corte', l.id, l.folio,
+           l.vendedor_id, NULL,
+           CASE WHEN COALESCE(l.diferencia_efectivo, 0) <> 0
+                THEN 'Con diferencia de efectivo' ELSE 'Corte del día' END,
+           l.efectivo_entregado, l.estado, '/panel/liquidaciones/' || l.id
+      FROM liquidaciones l
+     WHERE l.fecha_operativa BETWEEN :desde AND :hasta
+)
+SELECT o.*, u.nombre AS persona, u.codigo AS persona_codigo,
+       an.id AS anulacion_id, an.motivo AS anulacion_motivo,
+       an.anulada_en, q.nombre AS anulada_por, an.datos AS anulacion_datos
+  FROM ops o
+  LEFT JOIN usuarios u ON u.id = o.persona_id
+  LEFT JOIN anulaciones an ON an.tipo = o.tipo AND an.documento_id = o.ref
+  LEFT JOIN usuarios q ON q.id = an.usuario_id
+ WHERE (:tipo = '' OR o.tipo = :tipo)
+   AND (CAST(:persona AS uuid) IS NULL OR o.persona_id = CAST(:persona AS uuid))
+   AND (CAST(:ref AS uuid) IS NULL OR o.ref = CAST(:ref AS uuid))
+   AND (:estado = ''
+        OR (:estado = 'anuladas' AND an.id IS NOT NULL)
+        OR (:estado = 'vivas' AND an.id IS NULL
+            AND o.estado NOT IN ('cancelada', 'cancelado', 'rechazado', 'rechazada')))
+ ORDER BY o.fecha DESC, o.momento DESC NULLS LAST, o.folio DESC
+ LIMIT :limite
+"""
+
+
+@dataclass
+class Operacion:
+    tipo: str
+    ref: uuid.UUID
+    folio: str | None
+    momento: datetime | None
+    fecha: date
+    persona_id: uuid.UUID | None
+    persona: str | None
+    donde: str | None
+    detalle: str | None
+    importe: Decimal | None
+    estado: str
+    enlace: str | None
+    anulacion_motivo: str | None = None
+    anulada_en: datetime | None = None
+    anulada_por: str | None = None
+    anulacion_datos: dict = field(default_factory=dict)
+
+    @property
+    def nombre(self) -> str:
+        return NOMBRE[self.tipo]
+
+    @property
+    def anulada(self) -> bool:
+        return self.anulada_en is not None
+
+    @property
+    def cancelada(self) -> bool:
+        return self.estado in CANCELADOS
+
+    @property
+    def estado_texto(self) -> str:
+        if self.anulada:
+            return "anulada"
+        return self.estado.replace("_", " ")
+
+    @property
+    def anulable(self) -> bool:
+        """Si vale la pena ofrecer «Anular». Lo que de verdad lo impide se revisa
+        al abrirla (`revisar`): es caro por renglón."""
+        return self.tipo in ANULABLES and not self.anulada and not self.cancelada
+
+    @property
+    def pagina(self) -> str:
+        return f"/panel/operaciones/{self.tipo}/{self.ref}"
+
+
+def _operacion(fila) -> Operacion:
+    return Operacion(
+        tipo=fila["tipo"],
+        ref=fila["ref"],
+        folio=fila["folio"],
+        momento=fila["momento"],
+        fecha=fila["fecha"],
+        persona_id=fila["persona_id"],
+        persona=fila["persona"],
+        donde=fila["donde"],
+        detalle=fila["detalle"],
+        importe=fila["importe"],
+        estado=fila["estado"] or "",
+        enlace=fila["enlace"],
+        anulacion_motivo=fila["anulacion_motivo"],
+        anulada_en=fila["anulada_en"],
+        anulada_por=fila["anulada_por"],
+        anulacion_datos=fila["anulacion_datos"] or {},
+    )
+
+
+async def listar(
+    sesion,
+    *,
+    desde: date,
+    hasta: date,
+    tipo: str = "",
+    persona: uuid.UUID | None = None,
+    estado: str = "",
+    limite: int = LIMITE,
+) -> list[Operacion]:
+    filas = (
+        await sesion.execute(
+            text(SQL_OPERACIONES),
+            {
+                "desde": desde,
+                "hasta": hasta,
+                "tipo": tipo if tipo in NOMBRE else "",
+                "persona": persona,
+                "ref": None,
+                "estado": estado if estado in dict(ESTADOS) else "",
+                "limite": limite,
+            },
+        )
+    ).mappings().all()
+    return [_operacion(f) for f in filas]
+
+
+async def una(sesion, tipo: str, ref: uuid.UUID) -> Operacion | None:
+    if tipo not in NOMBRE:
+        return None
+    fila = (
+        await sesion.execute(
+            text(SQL_OPERACIONES),
+            {
+                "desde": DIA_PASADO,
+                "hasta": DIA_FUTURO,
+                "tipo": tipo,
+                "persona": None,
+                "ref": ref,
+                "estado": "",
+                "limite": 1,
+            },
+        )
+    ).mappings().first()
+    return _operacion(fila) if fila is not None else None
+
+
+async def personas(sesion) -> list[dict]:
+    """Quién puede aparecer en la lista: los vendedores y quien captura en la
+    oficina. Todos, aunque estén desactivados: su historia sigue ahí."""
+    return [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text("SELECT id, codigo, nombre, activo FROM usuarios ORDER BY nombre")
+            )
+        ).mappings().all()
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Lo que va a pasar
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Renglon:
+    producto: str
+    cantidad: Decimal
+    de: str
+    a: str
+
+
+@dataclass
+class Plan:
+    """Lo que anular va a hacer, lo que lo impide y lo que hay que confirmar."""
+
+    efectos: list[str] = field(default_factory=list)
+    bloqueos: list[str] = field(default_factory=list)
+    renglones: list[Renglon] = field(default_factory=list)
+    # El folio del corte ya cerrado de ese día: no cambia, y hay que decir que
+    # se entiende antes de anular.
+    corte_cerrado: str | None = None
+
+
+# El documento con el que cada operación escribió el libro mayor.
+DOCUMENTO_DEL_LIBRO = {
+    "merma": "merma",
+    "devolucion": "merma",
+    "cambio": "merma",
+    "carga": "carga",
+    "devolucion_bodega": "traspaso",
+    "traspaso": "traspaso",
+    "entrada": "entrada",
+    "salida": "salida",
+    "ajuste": "ajuste_camion",
+}
+
+
+async def revisar(sesion, op: Operacion, *, candado: bool = False) -> Plan:
+    """Lo que pasaría al anular `op`, sin escribir nada.
+
+    Con `candado` bloquea las existencias que va a revisar: es como lo llama
+    `anular`, para que entre revisar y escribir no se vaya la mercancía.
+    """
+    plan = Plan()
+    if op.anulada:
+        cuando = op.anulada_en.strftime("%d/%m/%Y %H:%M") if op.anulada_en else ""
+        plan.bloqueos.append(
+            f"Ya se anuló el {cuando} ({op.anulada_por or 'alguien'}): {op.anulacion_motivo}"
+        )
+        return plan
+    if op.tipo == "corte":
+        plan.bloqueos.append(
+            "Un corte no se anula: es el efectivo que el vendedor entregó y alguien "
+            "recibió y firmó. Si algo de ese día estuvo mal, anula esa operación —la "
+            "venta, la merma—: el corte se queda como se firmó."
+        )
+        return plan
+    if op.cancelada:
+        plan.bloqueos.append(
+            f"Ya está {op.estado}: no movió nada que deshacer, o ya se deshizo."
+        )
+        return plan
+
+    revisor = _REVISORES[op.tipo]
+    await revisor(sesion, op, plan, candado)
+    return plan
+
+
+async def _revisar_venta(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    cab = await panel_ventas._cabecera(sesion, op.ref)
+    pagado = cab["importe_pagado"]
+    if pagado is not None and Decimal(pagado) > 0:
+        plan.bloqueos.append(
+            f"Esta venta a crédito ya tiene {dinero(pagado)} cobrados y aplicados. "
+            "Reversa el cobro primero: si no, quedaría un pago aplicado a una "
+            "factura que ya no existe."
+        )
+    partidas = (
+        await sesion.execute(
+            text(
+                "SELECT p.nombre, sum(vp.cantidad_base) AS cantidad "
+                "  FROM venta_partidas vp JOIN productos p ON p.id = vp.producto_id "
+                " WHERE vp.venta_id = :v GROUP BY p.nombre ORDER BY p.nombre"
+            ),
+            {"v": op.ref},
+        )
+    ).mappings().all()
+    plan.renglones = [
+        Renglon(f["nombre"], Decimal(f["cantidad"]), "el cliente", cab["camion"])
+        for f in partidas
+    ]
+    piezas = sum((r.cantidad for r in plan.renglones), Decimal(0))
+    plan.efectos.append(
+        f"La venta pasa a cancelada y sus {sin_decimales(piezas)} piezas vuelven a "
+        f"{cab['camion']}."
+    )
+    efectivo = cab["tipo"] == "contado" and cab["forma_pago"] == "efectivo"
+    plan.efectos.append(
+        f"Sale de las ventas del {op.fecha:%d/%m} ({dinero(cab['total'])})"
+        + (" y del efectivo que el vendedor tiene que entregar." if efectivo else ".")
+    )
+    if cab["tipo"] == "credito":
+        plan.efectos.append("La deuda del cliente por esta venta se borra.")
+    plan.efectos.append(
+        f"El teléfono de {cab['vendedor']} la ve cancelada, con tu motivo, en su "
+        "siguiente sincronización."
+    )
+    plan.corte_cerrado = await _corte_cerrado(
+        sesion, cab["vendedor_id"], cab["fecha_operativa"], carga=cab["carga_id"]
+    )
+
+
+async def _revisar_mayoreo(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    filas = (
+        await sesion.execute(
+            text(
+                "SELECT p.nombre, sum(x.cantidad) AS cantidad, a.nombre AS bodega "
+                "  FROM venta_mayoreo_partidas x "
+                "  JOIN ventas_mayoreo v ON v.id = x.venta_id "
+                "  JOIN almacenes a ON a.id = v.almacen_id "
+                "  JOIN productos p ON p.id = x.producto_id "
+                " WHERE x.venta_id = :v GROUP BY p.nombre, a.nombre ORDER BY p.nombre"
+            ),
+            {"v": op.ref},
+        )
+    ).mappings().all()
+    plan.renglones = [
+        Renglon(f["nombre"], Decimal(f["cantidad"]), "el cliente", f["bodega"]) for f in filas
+    ]
+    bodega = filas[0]["bodega"] if filas else "su bodega"
+    plan.efectos.append(
+        f"La venta de mayoreo pasa a cancelada y la mercancía vuelve a {bodega}."
+    )
+    plan.efectos.append(
+        f"Sale de las ventas de mayoreo del {op.fecha:%d/%m} ({dinero(op.importe)})."
+    )
+
+
+async def _revisar_no_venta(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    reprogramada = (
+        await sesion.execute(
+            text("SELECT reprogramada_para FROM no_drops WHERE id = :n"), {"n": op.ref}
+        )
+    ).scalar_one_or_none()
+    plan.efectos.append(
+        "Se borra la visita sin venta: deja de contar en las visitas, la "
+        "efectividad y el desempeño del día. Aquí queda anotada como anulada."
+    )
+    if reprogramada is not None:
+        plan.efectos.append(
+            f"La visita que se reprogramó para el {reprogramada:%d/%m} se quita: el "
+            "cliente vuelve a su día de siempre."
+        )
+    plan.efectos.append(
+        "No movió mercancía ni dinero. En el teléfono del vendedor se queda en el "
+        "historial de su día."
+    )
+
+
+async def _revisar_merma(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    merma = (
+        await sesion.execute(
+            text(
+                "SELECT m.vendedor_id, m.fecha_operativa, m.almacen_id, a.nombre AS camion, "
+                "       u.nombre AS vendedor, mm.afecta_vendedor "
+                "  FROM mermas m JOIN almacenes a ON a.id = m.almacen_id "
+                "  JOIN usuarios u ON u.id = m.vendedor_id "
+                "  LEFT JOIN motivos_merma mm ON mm.codigo = m.motivo_codigo "
+                " WHERE m.id = :m"
+            ),
+            {"m": op.ref},
+        )
+    ).mappings().one()
+    movimientos = await _movimientos(sesion, "merma", op.ref)
+    await _llenar_movimientos(sesion, plan, movimientos, candado)
+    if op.tipo == "devolucion":
+        plan.efectos.append(
+            f"Las piezas salen de {merma['camion']}: el cliente no las devolvió."
+        )
+    else:
+        plan.efectos.append(
+            f"Las piezas regresan a {merma['camion']}"
+            + (" y salen del almacén de merma." if _toca_merma(movimientos) else ".")
+        )
+        plan.efectos.append(
+            "Deja de contar en las mermas del día"
+            + (" y en lo que se le cobra al vendedor." if merma["afecta_vendedor"] else ".")
+        )
+    plan.efectos.append(
+        f"El teléfono de {merma['vendedor']} recibe un ajuste del camión con tu "
+        "motivo y lo suma solo en su siguiente sincronización."
+    )
+    plan.corte_cerrado = await _corte_cerrado(
+        sesion, merma["vendedor_id"], merma["fecha_operativa"]
+    )
+
+
+async def _revisar_carga(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    carga = (
+        await sesion.execute(
+            text(
+                "SELECT g.estado, o.nombre AS bodega, d.nombre AS camion, u.nombre AS vendedor "
+                "  FROM cargas g JOIN almacenes o ON o.id = g.almacen_origen_id "
+                "  JOIN almacenes d ON d.id = g.almacen_destino_id "
+                "  LEFT JOIN usuarios u ON u.id = g.vendedor_id "
+                " WHERE g.id = :c"
+            ),
+            {"c": op.ref},
+        )
+    ).mappings().one()
+    if carga["estado"] == "borrador":
+        plan.efectos.append("Es un borrador: no ha movido nada. Se cancela y ya.")
+        return
+    if carga["estado"] == "liquidada":
+        plan.bloqueos.append(
+            "Su corte ya se cerró: la mercancía de esta carga ya se contó y se firmó "
+            "con el camión. Lo que haya que regresar a la bodega es una devolución, "
+            "no una carga anulada."
+        )
+    corte = (
+        await sesion.execute(
+            text("SELECT folio FROM liquidaciones WHERE carga_id = :c LIMIT 1"), {"c": op.ref}
+        )
+    ).scalar_one_or_none()
+    if corte and carga["estado"] != "liquidada":
+        plan.bloqueos.append(
+            f"Ya tiene un corte abierto ({corte}): ciérralo o anula primero lo que "
+            "falte, porque el corte se hace sobre esta carga."
+        )
+    del_vendedor = (
+        await sesion.execute(
+            text(
+                "SELECT count(*) FROM cortes_vendedor "
+                " WHERE carga_id = :c AND estado <> 'reemplazado'"
+            ),
+            {"c": op.ref},
+        )
+    ).scalar_one()
+    if del_vendedor and not corte:
+        plan.bloqueos.append(
+            "El vendedor ya hizo su corte con esta carga: ciérralo primero en Cortes "
+            "y cargas."
+        )
+    await _llenar_movimientos(sesion, plan, await _movimientos(sesion, "carga", op.ref), candado)
+    plan.efectos.append(
+        f"La mercancía regresa de {carga['camion']} a {carga['bodega']}."
+    )
+    plan.efectos.append(
+        f"El teléfono de {carga['vendedor'] or 'su vendedor'} deshace la carga en su "
+        "siguiente sincronización. Ese día se le puede hacer otra carga."
+    )
+
+
+async def _revisar_traspaso(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    t = (
+        await sesion.execute(
+            text(
+                "SELECT t.estado, o.nombre AS origen, d.nombre AS destino, "
+                "       u.nombre AS quien "
+                "  FROM traspasos t JOIN almacenes o ON o.id = t.almacen_origen_id "
+                "  JOIN almacenes d ON d.id = t.almacen_destino_id "
+                "  LEFT JOIN usuarios u ON u.id = t.solicitado_por "
+                " WHERE t.id = :t"
+            ),
+            {"t": op.ref},
+        )
+    ).mappings().one()
+    await _llenar_movimientos(
+        sesion, plan, await _movimientos(sesion, "traspaso", op.ref), candado
+    )
+    if op.tipo == "devolucion_bodega":
+        plan.efectos.append(
+            f"La mercancía regresa a {t['origen']}"
+            + (": sale de la bodega lo que se recibió y de tránsito lo que faltó."
+               if t["estado"] == "aceptado" else ", desde tránsito.")
+        )
+        plan.efectos.append(
+            f"El teléfono de {t['quien'] or 'su vendedor'} la ve cancelada y recibe un "
+            "ajuste del camión con tu motivo en su siguiente sincronización."
+        )
+    else:
+        plan.efectos.append(f"La mercancía regresa de {t['destino']} a {t['origen']}.")
+
+
+async def _revisar_entrada(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    if op.estado == "borrador":
+        plan.efectos.append("Es un borrador: no ha movido nada. Se cancela y ya.")
+        return
+    await _llenar_movimientos(
+        sesion, plan, await _movimientos(sesion, "entrada", op.ref), candado
+    )
+    cuenta = (
+        await sesion.execute(
+            text(
+                "SELECT c.importe_original, p.nombre AS proveedor, "
+                "       (SELECT COALESCE(sum(importe), 0) FROM pagos_proveedor "
+                "         WHERE entrada_id = c.entrada_id) AS pagado "
+                "  FROM cuentas_por_pagar c JOIN proveedores p ON p.id = c.proveedor_id "
+                " WHERE c.entrada_id = :e"
+            ),
+            {"e": op.ref},
+        )
+    ).mappings().first()
+    plan.efectos.append(f"La mercancía sale de {op.donde}: la entrada no ocurrió.")
+    if cuenta is not None:
+        if Decimal(cuenta["pagado"]) > 0:
+            plan.bloqueos.append(
+                f"Ya tiene {dinero(cuenta['pagado'])} pagados a {cuenta['proveedor']}. "
+                "Quita primero el pago en Compras: si no, quedaría un pago de una "
+                "compra que no existe."
+            )
+        plan.efectos.append(
+            f"Se borra la cuenta por pagar de {dinero(cuenta['importe_original'])} "
+            f"a {cuenta['proveedor']}."
+        )
+    plan.efectos.append(
+        "El costo promedio de los productos no se recalcula: queda como lo dejó "
+        "esta entrada."
+    )
+
+
+async def _revisar_salida(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    if op.estado == "borrador":
+        plan.efectos.append("Es un borrador: no ha movido nada. Se cancela y ya.")
+        return
+    await _llenar_movimientos(
+        sesion, plan, await _movimientos(sesion, "salida", op.ref), candado
+    )
+    plan.efectos.append(f"La mercancía regresa a {op.donde}: la salida no ocurrió.")
+
+
+async def _revisar_ajuste(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    ajuste = (
+        await sesion.execute(
+            text(
+                "SELECT a.tipo AS almacen_tipo, u.nombre AS responsable "
+                "  FROM ajustes_camion j JOIN almacenes a ON a.id = j.almacen_id "
+                "  LEFT JOIN usuarios u ON u.id = a.responsable_id "
+                " WHERE j.id = :j"
+            ),
+            {"j": op.ref},
+        )
+    ).mappings().one()
+    await _llenar_movimientos(
+        sesion, plan, await _movimientos(sesion, "ajuste_camion", op.ref), candado
+    )
+    plan.efectos.append(f"Se escribe el ajuste contrario en {op.donde}.")
+    if ajuste["almacen_tipo"] == "camion":
+        plan.efectos.append(
+            f"El teléfono de {ajuste['responsable'] or 'su vendedor'} lo recibe con tu "
+            "motivo en su siguiente sincronización."
+        )
+
+
+_REVISORES = {
+    "venta": _revisar_venta,
+    "mayoreo": _revisar_mayoreo,
+    "no_venta": _revisar_no_venta,
+    "merma": _revisar_merma,
+    "devolucion": _revisar_merma,
+    "cambio": _revisar_merma,
+    "carga": _revisar_carga,
+    "devolucion_bodega": _revisar_traspaso,
+    "traspaso": _revisar_traspaso,
+    "entrada": _revisar_entrada,
+    "salida": _revisar_salida,
+    "ajuste": _revisar_ajuste,
+}
+
+
+# ---------------------------------------------------------------------------
+# Los movimientos de la operación, y al revés
+# ---------------------------------------------------------------------------
+
+
+async def _movimientos(sesion, documento_tipo: str, documento_id: uuid.UUID) -> list[dict]:
+    """Lo que la operación escribió en el libro mayor, con nombres para leerlo."""
+    return [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text(
+                    """
+                    SELECT m.almacen_origen_id AS origen, m.almacen_destino_id AS destino,
+                           m.producto_id, m.cantidad, m.lote,
+                           o.nombre AS origen_nombre, o.tipo AS origen_tipo,
+                           d.nombre AS destino_nombre, d.tipo AS destino_tipo,
+                           p.nombre AS producto
+                      FROM movimientos_inventario m
+                      LEFT JOIN almacenes o ON o.id = m.almacen_origen_id
+                      LEFT JOIN almacenes d ON d.id = m.almacen_destino_id
+                      JOIN productos p ON p.id = m.producto_id
+                     WHERE m.documento_tipo = :t AND m.documento_id = :d
+                     ORDER BY p.nombre, m.fecha_servidor
+                    """
+                ),
+                {"t": documento_tipo, "d": documento_id},
+            )
+        ).mappings().all()
+    ]
+
+
+def _neto(movimientos: list[dict]) -> dict[tuple, Decimal]:
+    """Lo que DESHACER le cambia a cada almacén y producto: al revés de lo que
+    hizo la operación (lo que entró, sale; lo que salió, entra)."""
+    neto: dict[tuple, Decimal] = {}
+    for m in movimientos:
+        cantidad = Decimal(m["cantidad"])
+        if m["destino"] is not None:
+            clave = (m["destino"], m["producto_id"])
+            neto[clave] = neto.get(clave, Decimal(0)) - cantidad
+        if m["origen"] is not None:
+            clave = (m["origen"], m["producto_id"])
+            neto[clave] = neto.get(clave, Decimal(0)) + cantidad
+    return neto
+
+
+def _toca_merma(movimientos: list[dict]) -> bool:
+    return any(m["destino_tipo"] == "merma" for m in movimientos)
+
+
+async def _llenar_movimientos(sesion, plan: Plan, movimientos: list[dict], candado: bool) -> None:
+    """Los renglones que se van a regresar, y lo que lo impide: dejar un almacén
+    abajo de cero (§118). Si ya se vendió o ya salió, no hay qué regresar."""
+    plan.renglones = [
+        Renglon(
+            m["producto"],
+            Decimal(m["cantidad"]),
+            m["destino_nombre"] or "fuera del sistema",
+            m["origen_nombre"] or "fuera del sistema",
+        )
+        for m in movimientos
+    ]
+    if not movimientos:
+        # Anular solo cambiaría el estado, y el teléfono deshará lo que crea que
+        # se movió: el inventario del servidor y el del camión se separarían.
+        plan.bloqueos.append(
+            "No encontré lo que movió en el inventario, así que no hay qué "
+            "regresar. Corrígelo con un ajuste de inventario."
+        )
+        return
+    tipos ={m["origen"]: m["origen_tipo"] for m in movimientos} | {
+        m["destino"]: m["destino_tipo"] for m in movimientos
+    }
+    nombres = {m["origen"]: m["origen_nombre"] for m in movimientos} | {
+        m["destino"]: m["destino_nombre"] for m in movimientos
+    }
+    productos = {m["producto_id"]: m["producto"] for m in movimientos}
+    for (almacen, producto), cambio in sorted(
+        _neto(movimientos).items(), key=lambda par: (str(par[0][0]), productos[par[0][1]])
+    ):
+        if cambio >= 0 or tipos.get(almacen) in SIN_REVISAR_EXISTENCIA:
+            continue
+        hay = (
+            await existencia_con_candado(sesion, almacen, producto)
+            if candado
+            else await _existencia(sesion, almacen, producto)
+        )
+        if hay + cambio < 0:
+            plan.bloqueos.append(
+                f"{nombres[almacen]} ya no tiene {sin_decimales(-cambio)} de "
+                f"{productos[producto]} (hay {sin_decimales(hay)}): ya se vendió o ya "
+                "salió, y anular la dejaría en negativo."
+            )
+
+
+async def _existencia(sesion, almacen, producto) -> Decimal:
+    return Decimal(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT COALESCE((SELECT cantidad FROM existencias "
+                    " WHERE almacen_id = :a AND producto_id = :p), 0)"
+                ),
+                {"a": almacen, "p": producto},
+            )
+        ).scalar_one()
+    )
+
+
+async def _corte_cerrado(sesion, vendedor_id, dia, *, carga=None) -> str | None:
+    """El folio del corte ya cerrado del vendedor ese día, si lo hay."""
+    return (
+        await sesion.execute(
+            text(
+                "SELECT folio FROM liquidaciones "
+                " WHERE estado = 'cerrada' "
+                "   AND ((CAST(:carga AS uuid) IS NOT NULL AND carga_id = CAST(:carga AS uuid)) "
+                "        OR (vendedor_id = :v AND fecha_operativa = :d)) "
+                " ORDER BY cerrada_en DESC NULLS LAST LIMIT 1"
+            ),
+            {"carga": carga, "v": vendedor_id, "d": dia},
+        )
+    ).scalar_one_or_none()
+
+
+async def _deshacer_movimientos(
+    sesion,
+    movimientos: list[dict],
+    *,
+    anulacion_id: uuid.UUID,
+    nota: str,
+    quien: uuid.UUID,
+    ahora: datetime,
+    avisar_al_telefono: bool,
+) -> list[str]:
+    """Escribe cada movimiento al revés y mueve las existencias. Devuelve los
+    folios de los ajustes del camión que le avisan al teléfono.
+
+    Con `avisar_al_telefono`, lo que cambia en un camión se documenta con un
+    ajuste de tipo «anulación» por producto (su delta viaja al teléfono), y el
+    movimiento que toca el camión apunta a ese ajuste —como cualquier ajuste—.
+    Lo demás apunta a la anulación.
+    """
+    ajustes: dict[tuple, uuid.UUID] = {}
+    folios: list[str] = []
+    if avisar_al_telefono:
+        camiones = {m["origen"] for m in movimientos if m["origen_tipo"] == "camion"} | {
+            m["destino"] for m in movimientos if m["destino_tipo"] == "camion"
+        }
+        for (almacen, producto), delta in _neto(movimientos).items():
+            if almacen not in camiones or delta == 0:
+                continue
+            ajuste_id, folio = await _ajuste_de_anulacion(
+                sesion, almacen, producto, delta, nota=nota, quien=quien, ahora=ahora
+            )
+            ajustes[(almacen, producto)] = ajuste_id
+            folios.append(folio)
+
+    for m in movimientos:
+        # Al revés: sale de donde llegó y entra a donde salió.
+        origen, destino = m["destino"], m["origen"]
+        documento_tipo, documento_id = "anulacion", anulacion_id
+        for almacen in (origen, destino):
+            if almacen is not None and (almacen, m["producto_id"]) in ajustes:
+                documento_tipo = "ajuste_camion"
+                documento_id = ajustes[(almacen, m["producto_id"])]
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO movimientos_inventario
+                  (tipo, almacen_origen_id, almacen_destino_id, producto_id, cantidad,
+                   lote, documento_tipo, documento_id, usuario_id, fecha_servidor)
+                VALUES ('ajuste', :origen, :destino, :p, :cant, :lote, :dtipo, :doc,
+                        :quien, :ahora)
+                """
+            ),
+            {
+                "origen": origen,
+                "destino": destino,
+                "p": m["producto_id"],
+                "cant": m["cantidad"],
+                "lote": m["lote"],
+                "dtipo": documento_tipo,
+                "doc": documento_id,
+                "quien": quien,
+                "ahora": ahora,
+            },
+        )
+        cantidad = Decimal(m["cantidad"])
+        for almacen, delta in ((origen, -cantidad), (destino, cantidad)):
+            if almacen is None:
+                continue
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO existencias (almacen_id, producto_id, cantidad, actualizado_en)
+                    VALUES (:a, :p, :delta, :ahora)
+                    ON CONFLICT (almacen_id, producto_id) DO UPDATE
+                       SET cantidad = existencias.cantidad + :delta, actualizado_en = :ahora
+                    """
+                ),
+                {"a": almacen, "p": m["producto_id"], "delta": delta, "ahora": ahora},
+            )
+    return folios
+
+
+async def _ajuste_de_anulacion(
+    sesion, almacen, producto, delta: Decimal, *, nota: str, quien, ahora
+) -> tuple[uuid.UUID, str]:
+    """El ajuste del camión que le dice al teléfono «súmale esto». Su disparador
+    (migración 0032) publica el delta al dueño del camión."""
+    actual = await existencia_con_candado(sesion, almacen, producto)
+    consecutivo = (
+        await sesion.execute(text("SELECT nextval('seq_folio_ajuste_camion')"))
+    ).scalar_one()
+    folio = f"AC-{consecutivo:06d}"
+    ajuste_id = uuid.uuid4()
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO ajustes_camion
+              (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
+               contado, delta, nota, usuario_id, creado_en)
+            VALUES (:id, :folio, :a, :p, 'anulacion', :actual, NULL, :delta,
+                    :nota, :quien, :ahora)
+            """
+        ),
+        {
+            "id": ajuste_id,
+            "folio": folio,
+            "a": almacen,
+            "p": producto,
+            "actual": actual,
+            "delta": delta,
+            "nota": nota[:600],
+            "quien": quien,
+            "ahora": ahora,
+        },
+    )
+    return ajuste_id, folio
+
+
+# ---------------------------------------------------------------------------
+# Anular
+# ---------------------------------------------------------------------------
+
+_TABLA_CON_CANDADO = {
+    "venta": "ventas",
+    "mayoreo": "ventas_mayoreo",
+    "no_venta": "no_drops",
+    "merma": "mermas",
+    "devolucion": "mermas",
+    "cambio": "mermas",
+    "carga": "cargas",
+    "devolucion_bodega": "traspasos",
+    "traspaso": "traspasos",
+    "entrada": "entradas",
+    "salida": "salidas",
+    "ajuste": "ajustes_camion",
+    # No se anula, pero se revisa igual: así quien lo intente lee por qué.
+    "corte": "liquidaciones",
+}
+
+
+async def anular(
+    sesion,
+    tipo: str,
+    ref: uuid.UUID,
+    *,
+    motivo: str,
+    quien: uuid.UUID,
+    entiendo_el_corte: bool = False,
+) -> str:
+    """Anula la operación deshaciendo lo que movió. Devuelve el aviso para la
+    pantalla. No hace commit: quien llama decide la transacción."""
+    limpio = " ".join((motivo or "").split())
+    if len(limpio) < 10:
+        raise AnulacionRechazada(
+            "Escribe por qué se anula, con al menos 10 letras: es lo que alguien va "
+            "a leer después, y lo que el vendedor ve en su teléfono."
+        )
+    if tipo not in _TABLA_CON_CANDADO:
+        raise OperacionNoExiste("Esa operación no existe.")
+
+    # El documento primero, con candado: dos personas anulando lo mismo a la vez
+    # se forman, y la segunda ya lo encuentra anulado.
+    await sesion.execute(
+        text(f"SELECT 1 FROM {_TABLA_CON_CANDADO[tipo]} WHERE id = :id FOR UPDATE"),
+        {"id": ref},
+    )
+    op = await una(sesion, tipo, ref)
+    if op is None:
+        raise OperacionNoExiste("Esa operación no existe.")
+    plan = await revisar(sesion, op, candado=True)
+    if plan.bloqueos:
+        raise AnulacionRechazada("No se puede anular: " + " ".join(plan.bloqueos))
+    if plan.corte_cerrado and not entiendo_el_corte:
+        raise AnulacionRechazada(
+            f"El corte de ese día ({plan.corte_cerrado}) ya se cerró. Marca la casilla "
+            "para confirmar que entiendes que ese corte no cambia."
+        )
+
+    ahora = datetime.now(UTC)
+    anulacion_id = uuid.uuid4()
+    nota = f"Anulación de {op.nombre.lower()} {op.folio or ''}: {limpio}"
+    datos = {
+        "estado_antes": op.estado,
+        "detalle": op.detalle,
+        "donde": op.donde,
+        "momento": op.momento.isoformat() if op.momento else None,
+        "renglones": [
+            {"producto": r.producto, "cantidad": str(r.cantidad), "de": r.de, "a": r.a}
+            for r in plan.renglones
+        ],
+        "efectos": plan.efectos,
+        "corte_cerrado": plan.corte_cerrado,
+    }
+    try:
+        async with sesion.begin_nested():
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO anulaciones
+                      (id, tipo, documento_id, folio, descripcion, vendedor_id, importe,
+                       fecha_operativa, motivo, usuario_id, anulada_en, datos)
+                    VALUES (:id, :tipo, :doc, :folio, :descripcion, :vendedor, :importe,
+                            :fecha, :motivo, :quien, :ahora, CAST(:datos AS jsonb))
+                    """
+                ),
+                {
+                    "id": anulacion_id,
+                    "tipo": tipo,
+                    "doc": ref,
+                    "folio": op.folio,
+                    "descripcion": " · ".join(x for x in (op.donde, op.detalle) if x)
+                    or op.nombre,
+                    "vendedor": op.persona_id,
+                    "importe": op.importe,
+                    "fecha": op.fecha,
+                    "motivo": limpio[:600],
+                    "quien": quien,
+                    "ahora": ahora,
+                    "datos": _json(datos),
+                },
+            )
+    except IntegrityError as e:
+        raise AnulacionRechazada("Esa operación ya se había anulado.") from e
+
+    folios = await _ANULADORES[tipo](
+        sesion, op, motivo=limpio, nota=nota, quien=quien, ahora=ahora,
+        anulacion_id=anulacion_id,
+    )
+    if folios:
+        await sesion.execute(
+            text(
+                "UPDATE anulaciones SET datos = datos || jsonb_build_object('ajustes', "
+                "CAST(:f AS jsonb)) WHERE id = :id"
+            ),
+            {"f": _json(folios), "id": anulacion_id},
+        )
+    await auditar(
+        sesion,
+        entidad=tipo,
+        entidad_id=ref,
+        accion="anular",
+        quien=quien,
+        antes=datos,
+        despues={"estado": "anulada", "ajustes": folios},
+        motivo=limpio,
+    )
+    await panel_ventas._recalcular(sesion, op.fecha)
+    return (
+        f"{op.nombre} {op.folio or ''} anulada. "
+        + " ".join(plan.efectos[:1])
+        + (f" Ajuste(s) al teléfono: {', '.join(folios)}." if folios else "")
+    ).replace("  ", " ")
+
+
+def _json(valor) -> str:
+    return json.dumps(valor, ensure_ascii=False, default=str)
+
+
+async def _anular_venta(sesion, op, *, motivo, quien, **_) -> list[str]:
+    cabecera = await panel_ventas._cabecera(sesion, op.ref, para_escribir=True)
+    await panel_ventas.cancelar_venta(
+        sesion, cabecera, motivo=motivo, reingresa=True, quien=quien
+    )
+    return []
+
+
+async def _anular_mayoreo(sesion, op, *, motivo, quien, **_) -> list[str]:
+    await mayoreo.cancelar(sesion, op.ref, motivo=motivo, quien=quien)
+    return []
+
+
+async def _anular_no_venta(sesion, op, **_) -> list[str]:
+    # No tiene estado: se borra, y lo que la describía queda en la anulación.
+    # Ya no vuelve aunque el teléfono reintente: `sync_operaciones` recuerda que
+    # esa operación ya se aplicó.
+    await sesion.execute(text("DELETE FROM no_drops WHERE id = :n"), {"n": op.ref})
+    return []
+
+
+async def _anular_merma(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -> list[str]:
+    folios = await _deshacer_movimientos(
+        sesion,
+        await _movimientos(sesion, "merma", op.ref),
+        anulacion_id=anulacion_id,
+        nota=nota,
+        quien=quien,
+        ahora=ahora,
+        avisar_al_telefono=True,
+    )
+    await sesion.execute(
+        text("UPDATE mermas SET estado = 'cancelada' WHERE id = :m"), {"m": op.ref}
+    )
+    return folios
+
+
+async def _anular_carga(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -> list[str]:
+    if op.estado != "borrador":
+        # El teléfono se entera por el delta de la carga cancelada, que la deshace:
+        # aquí no va ajuste, o se restaría dos veces.
+        await _deshacer_movimientos(
+            sesion,
+            await _movimientos(sesion, "carga", op.ref),
+            anulacion_id=anulacion_id,
+            nota=nota,
+            quien=quien,
+            ahora=ahora,
+            avisar_al_telefono=False,
+        )
+    await sesion.execute(
+        text("UPDATE cargas SET estado = 'cancelada' WHERE id = :c"), {"c": op.ref}
+    )
+    return []
+
+
+async def _anular_traspaso(
+    sesion, op, *, motivo, nota, quien, ahora, anulacion_id, **_
+) -> list[str]:
+    folios = await _deshacer_movimientos(
+        sesion,
+        await _movimientos(sesion, "traspaso", op.ref),
+        anulacion_id=anulacion_id,
+        nota=nota,
+        quien=quien,
+        ahora=ahora,
+        avisar_al_telefono=True,
+    )
+    # El cambio de estado es lo que publica el traspaso al teléfono de quien lo
+    # pidió (migración 0036): ahí lo ve cancelado.
+    await sesion.execute(
+        text(
+            "UPDATE traspasos SET estado = 'cancelado', motivo_rechazo = :m, "
+            "       resuelto_por = :q, resuelto_en = :ahora WHERE id = :t"
+        ),
+        {"m": motivo[:300], "q": quien, "ahora": ahora, "t": op.ref},
+    )
+    return folios
+
+
+async def _anular_entrada(
+    sesion, op, *, motivo, nota, quien, ahora, anulacion_id, **_
+) -> list[str]:
+    if op.estado == "confirmada":
+        await _deshacer_movimientos(
+            sesion,
+            await _movimientos(sesion, "entrada", op.ref),
+            anulacion_id=anulacion_id,
+            nota=nota,
+            quien=quien,
+            ahora=ahora,
+            avisar_al_telefono=False,
+        )
+        await sesion.execute(
+            text("DELETE FROM cuentas_por_pagar WHERE entrada_id = :e"), {"e": op.ref}
+        )
+    await sesion.execute(
+        text(
+            "UPDATE entradas SET estado = 'cancelada', cancelada_en = :ahora, "
+            "       cancelada_por = :q, cancelacion_motivo = :m WHERE id = :e"
+        ),
+        {"ahora": ahora, "q": quien, "m": motivo[:600], "e": op.ref},
+    )
+    return []
+
+
+async def _anular_salida(
+    sesion, op, *, motivo, nota, quien, ahora, anulacion_id, **_
+) -> list[str]:
+    if op.estado == "confirmada":
+        await _deshacer_movimientos(
+            sesion,
+            await _movimientos(sesion, "salida", op.ref),
+            anulacion_id=anulacion_id,
+            nota=nota,
+            quien=quien,
+            ahora=ahora,
+            avisar_al_telefono=False,
+        )
+    await sesion.execute(
+        text(
+            "UPDATE salidas SET estado = 'cancelada', cancelada_en = :ahora, "
+            "       cancelada_por = :q, cancelacion_motivo = :m WHERE id = :s"
+        ),
+        {"ahora": ahora, "q": quien, "m": motivo[:600], "s": op.ref},
+    )
+    return []
+
+
+async def _anular_ajuste(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -> list[str]:
+    # El ajuste no tiene estado: lo que lo anula es el ajuste contrario, que en
+    # un camión viaja al teléfono.
+    return await _deshacer_movimientos(
+        sesion,
+        await _movimientos(sesion, "ajuste_camion", op.ref),
+        anulacion_id=anulacion_id,
+        nota=nota,
+        quien=quien,
+        ahora=ahora,
+        avisar_al_telefono=True,
+    )
+
+
+_ANULADORES = {
+    "venta": _anular_venta,
+    "mayoreo": _anular_mayoreo,
+    "no_venta": _anular_no_venta,
+    "merma": _anular_merma,
+    "devolucion": _anular_merma,
+    "cambio": _anular_merma,
+    "carga": _anular_carga,
+    "devolucion_bodega": _anular_traspaso,
+    "traspaso": _anular_traspaso,
+    "entrada": _anular_entrada,
+    "salida": _anular_salida,
+    "ajuste": _anular_ajuste,
+}

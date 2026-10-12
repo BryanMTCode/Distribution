@@ -379,6 +379,7 @@ hechas AS (
     UNION
     SELECT fecha_operativa, cliente_id FROM mermas
      WHERE fecha_operativa BETWEEN :desde AND :hasta AND cliente_id IS NOT NULL
+       AND estado = 'confirmada'
 ),
 cruzado AS (
     SELECT p.fecha, p.cliente_id, p.ruta_id, h.cliente_id IS NOT NULL AS hecha

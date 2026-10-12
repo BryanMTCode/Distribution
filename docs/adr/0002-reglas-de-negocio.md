@@ -5478,3 +5478,56 @@ negativo; tendría que bajar la cantidad primero.»
   cada renglón al aceptar.
 - Solo servidor: la app no cambia.
 
+
+## 119. Operaciones: todas juntas, y anular deshaciendo lo que movieron
+
+**Decisión (octubre 2026).** «Quiero una parte en el dashboard donde aparezcan
+todas las operaciones juntas para borrar lo que yo necesite cuando quiera.» Al
+preguntar qué es «borrar», la dirección eligió **anular y deshacer**.
+
+- **Administración → Operaciones** (entrada catorce del menú, §98): ventas,
+  ventas de mayoreo, visitas sin venta, mermas, devoluciones del cliente, cambios
+  físicos, cargas, devoluciones a bodega, traspasos entre bodegas, entradas,
+  salidas, ajustes de inventario y cortes, en una sola lista. Con el periodo de
+  siempre y filtros por tipo, por quién (el vendedor, o quien la capturó en la
+  oficina) y «Sin anular / Anuladas». Lo más reciente arriba, hasta 500.
+- Cada operación abre su página: lo que movió (de dónde → a dónde), **«Si la
+  anulas»** —lo que va a pasar, en palabras— y el motivo (al menos 10 letras).
+  Se anula desde ahí y no desde la lista: quien anula ve antes lo que se deshace.
+- **Anular deshace todo lo que movió.** El libro mayor no se borra (es
+  append-only): cada movimiento de la operación se escribe **al revés**, con el
+  documento `anulacion`. La venta vuelve al camión, la merma también (y sale del
+  almacén de merma), la devolución del cliente sale del camión, la carga regresa
+  a la bodega, la devolución a bodega regresa al camión (de la bodega lo que se
+  recibió y de tránsito lo que faltó), la entrada sale de la bodega y se borra su
+  cuenta por pagar, la salida regresa, el ajuste se compensa. La venta y la
+  venta de mayoreo se cancelan con las mismas funciones de sus pantallas.
+- **El dinero sale de las cifras**: la venta anulada deja de sumar en ventas,
+  efectivo esperado, tablero y objetivos; la merma anulada deja de contar en las
+  mermas del día y en lo que se le cobra al vendedor; la visita sin venta deja de
+  contar en visitas y efectividad (y se quita la visita que reprogramó).
+- **El teléfono del vendedor se entera**: la venta llega cancelada con el motivo
+  (migración 0031) y la carga cancelada se deshace sola; la merma, la devolución a
+  bodega y el ajuste viajan como un **ajuste del camión de tipo «anulación»**
+  (migración 0059) con el delta firmado y el motivo en la nota. El teléfono ya
+  sabía aplicarlo: **no hace falta APK nuevo**.
+- **Queda en la lista como «anulada»**, con quién, cuándo y por qué, y su página
+  dice lo que se deshizo. La visita sin venta no tiene estado: se borra, y lo
+  que la describía queda en su anulación (tabla `anulaciones`). Una operación se
+  anula una sola vez.
+- **Lo que no se deja**, con su razón en la página: dejar un almacén en negativo
+  (la regla de §118: si ya se vendió o ya salió, no hay qué regresar); una carga
+  que ya entró a un corte; una venta a crédito ya cobrada; una compra ya pagada al
+  proveedor; algo cuyo movimiento no está en el inventario; y **el corte del
+  día**, que es el efectivo que el vendedor entregó y alguien firmó: lo que se
+  corrige es la operación, no el corte.
+- **Un día con el corte ya cerrado se deja, pero se confirma**: una casilla dice
+  que ese corte **no cambia** —lo contado y lo entregado quedan como se
+  firmaron— y que, si le cargó algo al vendedor por esa operación, se corrige en
+  su cuenta. La pantalla de la venta ya no manda a «reabrir el cierre» (no
+  existe): manda aquí.
+- Ver la lista es de quien ve las ventas de todos (`ventas.ver_todas`); **anular
+  es del administrador** (`operaciones.anular`, que no se concede a ningún rol).
+- El costo promedio no se recalcula al anular una compra; se dice en la página.
+- Solo servidor (migración 0059: tabla `anulaciones`, el tipo «anulación» del
+  ajuste del camión y el permiso).

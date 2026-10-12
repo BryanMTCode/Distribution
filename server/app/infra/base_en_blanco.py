@@ -69,6 +69,8 @@ TABLAS_QUE_SE_VACIAN = (
     "venta_mayoreo_partidas", "ventas_mayoreo",
     "ventas_cancelaciones", "venta_partidas", "cobros_aplicaciones", "cobros",
     "cuentas_por_cobrar", "ventas", "no_drops",
+    # Las anulaciones (ADR 0002 §119): de operaciones que ya no van a existir.
+    "anulaciones",
     # El cierre del vendedor y el corte
     "solicitud_carga_detalle", "solicitudes_carga", "corte_vendedor_conteo",
     "cortes_vendedor", "liquidacion_detalle", "liquidaciones", "cuenta_vendedor",

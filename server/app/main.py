@@ -28,6 +28,7 @@ from app.api.admin import liquidaciones as panel_liquidaciones
 from app.api.admin import mayoreo as panel_mayoreo
 from app.api.admin import motivos as panel_motivos
 from app.api.admin import objetivos as panel_objetivos
+from app.api.admin import operaciones as panel_operaciones
 from app.api.admin import panel
 from app.api.admin import piloto as panel_piloto
 from app.api.admin import plan_visita as panel_plan_visita
@@ -162,6 +163,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_arranque.router)
     app.include_router(panel_objetivos.router)
     app.include_router(panel_revision_app.router)
+    app.include_router(panel_operaciones.router)
     app.include_router(panel_mayoreo.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)

@@ -60,7 +60,7 @@
           <div class="sutil">{{ a.creado_en.strftime('%d/%m/%Y %H:%M') }}</div>
         </td>
         <td>
-          {{ a.tipo }}
+          {{ 'anulación' if a.tipo == 'anulacion' else a.tipo }}
           {% if a.contado is not none %}
             <div class="sutil">contó {{ a.contado|entero }}</div>
           {% endif %}
@@ -177,7 +177,7 @@
       <tr>
         <td class="sutil">{{ m.fecha_servidor.strftime('%d/%m/%Y %H:%M') }}</td>
         <td>
-          <strong>{{ m.tipo }}</strong>
+          <strong>{{ 'anulación' if m.documento_tipo == 'anulacion' else m.tipo }}</strong>
           <div class="sutil">
             {% if m.origen and m.destino %}
               {{ m.origen }} → {{ m.destino }}

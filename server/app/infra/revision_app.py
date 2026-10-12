@@ -681,6 +681,45 @@ SECCIONES: tuple[Seccion, ...] = (
         ),
         parte="dashboard",
     ),
+    Seccion(
+        "panel_operaciones", "Operaciones: todas juntas, y anular",
+        "La computadora, entrando como admin, y el teléfono del vendedor a la mano",
+        (
+            Punto(
+                "panel_operaciones_lista", "Todas las operaciones juntas",
+                "Administración → Operaciones: cambia el periodo y filtra por tipo, por "
+                "vendedor y por «Anuladas».",
+                "Ventas, mayoreo, visitas sin venta, mermas, cargas, devoluciones, "
+                "traspasos, entradas, salidas, ajustes y cortes en una sola lista, la más "
+                "reciente arriba; cada una abre su página.",
+            ),
+            Punto(
+                "panel_operaciones_anular_venta", "Anular una venta de prueba",
+                "Haz una venta de prueba en el teléfono y sincroniza. En Operaciones ábrela, "
+                "lee «Si la anulas», escribe el motivo → «Anular y deshacer». Sincroniza "
+                "el teléfono.",
+                "En la lista queda «anulada» con tu nombre, la hora y el motivo; la "
+                "mercancía vuelve al camión (Inventario), sale de las ventas del día, y en "
+                "el teléfono la venta aparece cancelada con el motivo.",
+            ),
+            Punto(
+                "panel_operaciones_anular_merma", "Anular una merma de prueba",
+                "Registra una merma de prueba en el teléfono y sincroniza. Anúlala en "
+                "Operaciones y vuelve a sincronizar el teléfono.",
+                "Las piezas regresan al camión en el dashboard y en el teléfono (llega un "
+                "ajuste «Anulación de merma…» con tu motivo), y deja de contar en las "
+                "mermas del día.",
+            ),
+            Punto(
+                "panel_operaciones_no_deja", "Lo que no deja anular",
+                "Abre una carga cuyo camión ya vendió parte, y un corte del día.",
+                "La carga dice que el camión ya no tiene esas piezas y no ofrece anular; "
+                "el corte dice que no se anula. Un supervisor ve la lista pero no el botón "
+                "«Anular».",
+            ),
+        ),
+        parte="dashboard",
+    ),
 )
 
 PUNTOS: dict[str, Punto] = {p.clave: p for s in SECCIONES for p in s.puntos}

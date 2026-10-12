@@ -276,10 +276,12 @@ SELECT
   (SELECT count(*) FROM ventas
     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado = 'cancelada') AS canceladas,
   (SELECT count(*) FROM mermas
-    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente')
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente'
+      AND estado = 'confirmada')
     AS mermas,
   (SELECT count(*) FROM mermas
-    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo = 'devolucion_cliente')
+    WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo = 'devolucion_cliente'
+      AND estado = 'confirmada')
     AS devoluciones,
   (SELECT count(*) FROM no_drops
     WHERE fecha_operativa BETWEEN :desde AND :hasta) AS no_ventas,
@@ -306,6 +308,7 @@ WITH v AS (
     SELECT vendedor_id, count(*) AS mermas
       FROM mermas
      WHERE fecha_operativa BETWEEN :desde AND :hasta AND tipo <> 'devolucion_cliente'
+       AND estado = 'confirmada'
      GROUP BY vendedor_id
 ), n AS (
     SELECT vendedor_id, count(*) AS no_ventas

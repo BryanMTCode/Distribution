@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block titulo %}{{ op.nombre }} {{ op.folio or '' }}{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/operaciones">← Operaciones</a></p>
+<h1>{{ op.nombre }} <span class="mono">{{ op.folio or '' }}</span></h1>
+
+{% if guardado %}<div class="aviso-caja bien" id="aviso_anulada">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="error_anular">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta">
+    <div class="etiqueta">Cuándo</div>
+    <div style="font-weight:600">{{ op.fecha.strftime('%d/%m/%Y') }}{% if op.momento %} · {{ op.momento.strftime('%H:%M') }}{% endif %}</div>
+    <div class="etiqueta" style="margin-top:8px">Quién</div>
+    <div style="font-weight:600">{{ op.persona or '—' }}</div>
+  </div>
+  <div class="tarjeta">
+    <div class="etiqueta">Dónde / detalle</div>
+    <div style="font-weight:600">{{ op.donde or '—' }}</div>
+    {% if op.detalle %}<div class="sutil">{{ op.detalle }}</div>{% endif %}
+    {% if op.importe is not none %}<div class="numero" style="font-size:22px;margin-top:6px">${{ '{:,.2f}'.format(op.importe) }}</div>{% endif %}
+  </div>
+  <div class="tarjeta {% if op.anulada %}alerta{% endif %}" id="estado_operacion">
+    <div class="etiqueta">Estado</div>
+    <div class="numero" style="font-size:22px">{{ op.estado_texto }}</div>
+    {% if op.anulada %}
+      <div class="sutil">{{ op.anulada_por or 'alguien' }} · {{ op.anulada_en.strftime('%d/%m/%Y %H:%M') }}</div>
+      <div style="margin-top:4px">«{{ op.anulacion_motivo }}»</div>
+    {% endif %}
+    {% if op.enlace %}<div style="margin-top:8px"><a href="{{ op.enlace }}">Ver en su pantalla →</a></div>{% endif %}
+  </div>
+</div>
+
+{% if op.anulada %}
+  {% set hecho = op.anulacion_datos %}
+  {% if hecho.efectos %}
+  <h2>Lo que se deshizo</h2>
+  <ul id="lo_que_se_deshizo">{% for e in hecho.efectos %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if hecho.ajustes %}<p class="sutil">Ajustes del camión que recibió el teléfono: {{ hecho.ajustes|join(', ') }}.</p>{% endif %}
+  {% if hecho.corte_cerrado %}<p class="sutil">El corte {{ hecho.corte_cerrado }} ya estaba cerrado y no cambió.</p>{% endif %}
+  {% if hecho.renglones %}
+  <div class="tabla-marco" style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Producto</th><th class="numero">Piezas</th><th>De</th><th>A</th></tr></thead>
+      <tbody>{% for r in hecho.renglones %}<tr><td>{{ r.producto }}</td><td class="numero">{{ r.cantidad|entero }}</td><td>{{ r.de }}</td><td>{{ r.a }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+{% else %}
+
+  {% if plan.renglones %}
+  <h2>Lo que regresa</h2>
+  <div class="tabla-marco" style="overflow-x:auto">
+    <table id="renglones_operacion">
+      <thead><tr><th>Producto</th><th class="numero">Piezas</th><th>De</th><th>A</th></tr></thead>
+      <tbody>
+        {% for r in plan.renglones %}
+        <tr><td>{{ r.producto }}</td><td class="numero">{{ r.cantidad|entero }}</td><td>{{ r.de }}</td><td>{{ r.a }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if plan.bloqueos %}
+  <div class="aviso-caja error" id="no_se_puede" style="margin-top:16px">
+    <strong>No se puede anular.</strong>
+    <ul style="margin:6px 0 0">{% for b in plan.bloqueos %}<li>{{ b }}</li>{% endfor %}</ul>
+  </div>
+  {% else %}
+  <h2>Si la anulas</h2>
+  <ul id="lo_que_va_a_pasar">{% for e in plan.efectos %}<li>{{ e }}</li>{% endfor %}</ul>
+
+  {% if puede_anular %}
+  <form method="post" action="{{ op.pagina }}/anular" id="forma_anular"
+        style="margin-top:16px;padding:14px;border:1px solid var(--alerta);border-radius:10px;background:var(--papel)">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="campo">
+      <label for="motivo_anular">Por qué se anula</label>
+      <textarea name="motivo" id="motivo_anular" rows="2" maxlength="600" required minlength="10"
+                style="width:100%" placeholder="Por ejemplo: se capturó dos veces; el cliente no la recibió"></textarea>
+      <div class="ayuda">Al menos 10 letras. Lo lee quien revise después, y el vendedor en su teléfono.</div>
+    </div>
+    {% if plan.corte_cerrado %}
+    <div class="aviso-caja aviso" id="corte_cerrado">
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600">
+        <input type="checkbox" name="entiendo" value="1" id="entiendo_el_corte">
+        <span>El corte de ese día ({{ plan.corte_cerrado }}) ya se cerró y NO cambia: lo
+        que se contó y el efectivo que se entregó quedan como se firmaron. Si ese corte
+        le cargó algo al vendedor por esto, corrígelo en su cuenta.</span>
+      </label>
+    </div>
+    {% endif %}
+    <button type="submit" class="peligro" id="boton_anular">Anular y deshacer</button>
+  </form>
+  {% else %}
+  <p class="sutil">Anular es solo del administrador.</p>
+  {% endif %}
+  {% endif %}
+{% endif %}
+{% endblock %}

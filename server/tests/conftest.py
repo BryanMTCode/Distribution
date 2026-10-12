@@ -69,6 +69,8 @@ def solo_texto(respuesta) -> str:
 
 
 TABLAS_VOLATILES = [
+    # Las anulaciones de Operaciones (migración 0059) cuelgan de `usuarios`.
+    "anulaciones",
     # El cierre del vendedor (migración 0047) cuelga de `usuarios`; explícito por
     # lo mismo que las demás.
     "solicitud_carga_detalle",

@@ -177,7 +177,7 @@ SELECT u.id, u.codigo, u.nombre, u.activo,
          WHERE n.vendedor_id = u.id
            AND n.fecha_operativa BETWEEN :desde AND :hasta) AS no_ventas,
        (SELECT count(*) FROM mermas m
-         WHERE m.vendedor_id = u.id
+         WHERE m.vendedor_id = u.id AND m.estado = 'confirmada'
            AND m.fecha_operativa BETWEEN :desde AND :hasta) AS mermas,
        (SELECT max(GREATEST(d.ultima_sync_push_en, d.ultima_sync_pull_en))
           FROM dispositivos d WHERE d.usuario_id = u.id) AS ultimo_contacto,
