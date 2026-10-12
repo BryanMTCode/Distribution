@@ -20,7 +20,6 @@ from app.infra.objetivos import (
     ObjetivoInvalido,
     borrar_objetivo,
     guardar_objetivo,
-    guardar_objetivos_por_dia,
     objetivos_con_avance,
     rutas_para_objetivos,
 )
@@ -70,6 +69,13 @@ class Objetivos(BaseModel):
     hoy: date
 
 
+POR_DIA_YA_NO = (
+    "«Cada día» ya no se pone desde la app: el objetivo diario se pone una vez en "
+    "el panel (Objetivos → Objetivo diario) y vale hasta que lo cambies. "
+    "Actualiza la app."
+)
+
+
 class PeticionObjetivo(BaseModel):
     # Nulo = toda la empresa.
     ruta_id: uuid.UUID | None = None
@@ -78,8 +84,10 @@ class PeticionObjetivo(BaseModel):
     objetivo_venta: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     objetivo_visitas: int | None = Field(default=None, ge=0, le=100000)
     nota: str | None = Field(default=None, max_length=300)
-    # «Esta semana, todos los días 3,500»: el mismo objetivo para cada día del
-    # periodo, uno por día (ADR 0002 §109).
+    # «Cada día» (§109) ya no existe: lo reemplazó el objetivo diario fijo del
+    # panel (§110, §111). Se sigue leyendo solo para rechazarlo, porque una app
+    # +34 sin actualizar lo manda, y si se ignorara guardaría en silencio UN
+    # objetivo para toda la semana en vez de uno por día.
     por_dia: bool = False
 
 
@@ -109,8 +117,10 @@ async def listar(actor: ActorDep, sesion: SesionDep) -> Objetivos:
 async def fijar(peticion: PeticionObjetivo, actor: ActorDep, sesion: SesionDep) -> Objetivos:
     _exigir_ver(actor)
     actor.exigir(PERMISO_FIJAR)
+    if peticion.por_dia:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, POR_DIA_YA_NO)
     try:
-        await (guardar_objetivos_por_dia if peticion.por_dia else guardar_objetivo)(
+        await guardar_objetivo(
             sesion,
             ruta_id=peticion.ruta_id,
             desde=peticion.desde,

@@ -260,63 +260,6 @@ async def guardar_objetivo(
     return str(nuevo)
 
 
-# «Esta semana, todos los días 3,500» (§109): un objetivo por día. Un mes a lo
-# más: más días serían una lista que nadie va a leer.
-DIAS_MAXIMOS_POR_DIA = 31
-
-
-async def guardar_objetivos_por_dia(
-    sesion,
-    *,
-    ruta_id: uuid.UUID | None,
-    desde: date,
-    hasta: date,
-    objetivo_venta: Decimal,
-    objetivo_visitas: int | None,
-    nota: str | None,
-    quien: uuid.UUID | None,
-) -> list[str]:
-    """El mismo objetivo para CADA día del periodo, uno por día: «esta semana,
-    todos los días $3,500». Cada día se mide solo. No hace commit.
-
-    Si ese día ya tenía su objetivo de un día —de la misma ruta, o de la
-    empresa—, este lo reemplaza: corregir «3,500» por «4,000» no deja dos.
-    """
-    if hasta < desde:
-        desde, hasta = hasta, desde
-    dias = (hasta - desde).days + 1
-    if dias > DIAS_MAXIMOS_POR_DIA:
-        raise ObjetivoInvalido(
-            f"Uno por día se pone para {DIAS_MAXIMOS_POR_DIA} días a lo más; "
-            f"escogiste {dias}."
-        )
-    guardados = []
-    for i in range(dias):
-        dia = desde + timedelta(days=i)
-        await sesion.execute(
-            text(
-                """
-                DELETE FROM objetivos
-                 WHERE ruta_id IS NOT DISTINCT FROM :r AND desde = :d AND hasta = :d
-                """
-            ),
-            {"r": ruta_id, "d": dia},
-        )
-        guardados.append(
-            await guardar_objetivo(
-                sesion,
-                ruta_id=ruta_id,
-                desde=dia,
-                hasta=dia,
-                objetivo_venta=objetivo_venta,
-                objetivo_visitas=objetivo_visitas,
-                nota=nota,
-                quien=quien,
-            )
-        )
-    return guardados
-
-
 async def borrar_objetivo(sesion, objetivo_id: str) -> bool:
     """Quita un objetivo de cualquiera de las dos clases. No hace commit."""
     if objetivo_id.startswith("mes-"):

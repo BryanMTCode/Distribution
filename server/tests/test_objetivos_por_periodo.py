@@ -198,45 +198,20 @@ async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
     assert "Objetivo quitado." in solo_texto(r)
 
 
-async def test_esta_semana_todos_los_dias_3500(cliente, sesion, semilla):
-    """«Quiero poder poner el objetivo por día por semana: esta semana todos los
-    días 3,500» (ADR 0002 §109): uno por día, cada uno medido solo."""
+async def test_cada_dia_ya_no_se_pone_desde_la_app(cliente, sesion, semilla):
+    """«Cada día» (§109) se quitó: el objetivo diario fijo del panel lo
+    reemplaza (§110, §111). Una app +34 sin actualizar lo sigue mandando, y se
+    le dice qué hacer en vez de guardar en silencio UN objetivo para la semana."""
     hoy = date.today()
-    await _venta(sesion, semilla, total="2000.00", dia=hoy)
-    lunes = hoy - timedelta(days=hoy.weekday())
-    domingo = lunes + timedelta(days=6)
     cab = await _cab(cliente)
     r = await cliente.post(
         "/v1/objetivos",
-        json={"ruta_id": str(semilla["ruta"]), "desde": lunes.isoformat(),
-              "hasta": domingo.isoformat(), "objetivo_venta": "3500", "por_dia": True},
+        json={"ruta_id": str(semilla["ruta"]), "desde": hoy.isoformat(),
+              "hasta": (hoy + timedelta(days=6)).isoformat(), "objetivo_venta": "3500",
+              "por_dia": True},
         headers=cab,
     )
-    assert r.status_code == 201, r.text
-    de_la_ruta = [o for o in r.json()["objetivos"] if o["ruta"] is not None]
-    assert [o["desde"] for o in de_la_ruta] == [
-        (lunes + timedelta(days=i)).isoformat() for i in range(7)
-    ]
-    assert all(o["dias"] == 1 and o["objetivo_venta"] == "3500.00" for o in de_la_ruta)
-    de_hoy = next(o for o in de_la_ruta if o["desde"] == hoy.isoformat())
-    assert (de_hoy["venta"], de_hoy["estado"]) == ("2000.00", "en_curso")
-
-    # Corregir la semana a 4,000 reemplaza cada día: siguen siendo siete.
-    r = await cliente.post(
-        "/v1/objetivos",
-        json={"ruta_id": str(semilla["ruta"]), "desde": lunes.isoformat(),
-              "hasta": domingo.isoformat(), "objetivo_venta": "4000", "por_dia": True},
-        headers=cab,
-    )
-    assert r.status_code == 201, r.text
-    de_la_ruta = [o for o in r.json()["objetivos"] if o["ruta"] is not None]
-    assert [o["objetivo_venta"] for o in de_la_ruta] == ["4000.00"] * 7
-
-    # Más de un mes, uno por día, no.
-    r = await cliente.post(
-        "/v1/objetivos",
-        json={"desde": hoy.isoformat(), "hasta": (hoy + timedelta(days=40)).isoformat(),
-              "objetivo_venta": "100", "por_dia": True},
-        headers=cab,
-    )
-    assert r.status_code == 422 and "31 días a lo más" in r.json()["detail"]
+    assert r.status_code == 422
+    assert "Objetivos → Objetivo diario" in r.json()["detail"]
+    assert "Actualiza la app." in r.json()["detail"]
+    assert (await sesion.execute(text("SELECT count(*) FROM objetivos"))).scalar_one() == 0

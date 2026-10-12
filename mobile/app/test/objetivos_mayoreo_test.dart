@@ -1,7 +1,6 @@
 /// Objetivos y mayoreo en el portal de la oficina (ADR 0002 §104 y §105).
 ///
-/// · Objetivos: la lista con su avance, uno nuevo de un solo día, y «esta
-///   semana, todos los días 3,500» (§109).
+/// · Objetivos: la lista con su avance, y uno nuevo de un solo día.
 /// · Mayoreo: la pestaña solo con el permiso; una venta con el precio cambiado,
 ///   su ticket, y el total del periodo.
 library;
@@ -82,24 +81,12 @@ class _Servidor implements Transporte {
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     posts.add((ruta, cuerpo));
     if (ruta == '/v1/objetivos') {
-      // Con «por_dia», uno por cada día del rango, como el servidor de verdad.
-      final desde = DateTime.parse(cuerpo['desde']! as String);
-      final hasta = DateTime.parse(cuerpo['hasta']! as String);
-      final dias = cuerpo['por_dia'] == true
-          ? [
-              for (var d = desde; !d.isAfter(hasta); d = d.add(const Duration(days: 1)))
-                d.toIso8601String().substring(0, 10),
-            ]
-          : [null];
-      for (final dia in dias) {
-        objetivos.add({
-          ...objetivos.first, 'id': 'o${objetivos.length + 1}', 'ruta_id': cuerpo['ruta_id'],
-          'ruta': cuerpo['ruta_id'] == null ? null : 'R1101 · Ruta 1101',
-          'desde': dia ?? cuerpo['desde'], 'hasta': dia ?? cuerpo['hasta'],
-          'objetivo_venta': cuerpo['objetivo_venta'], 'venta': '0.00', 'logrado': '0.0',
-          'estado': 'por_empezar', 'nota': null,
-        });
-      }
+      objetivos.add({
+        ...objetivos.first, 'id': 'o2', 'ruta_id': cuerpo['ruta_id'], 'ruta': 'R1101 · Ruta 1101',
+        'desde': cuerpo['desde'], 'hasta': cuerpo['hasta'],
+        'objetivo_venta': cuerpo['objetivo_venta'], 'venta': '0.00', 'logrado': '0.0',
+        'estado': 'por_empezar', 'nota': null,
+      });
       return RespuestaHttp(201, jsonEncode(_objetivos));
     }
     if (ruta == '/v1/mayoreo') {
@@ -155,6 +142,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('boton_nuevo_objetivo')));
     await tester.pumpAndSettle();
+    // El objetivo diario fijo vive en el panel (§110, §111): aquí se dice dónde.
+    expect(textoQueContiene('Objetivos → Objetivo diario'), findsOneWidget);
     await tester.tap(find.byKey(const Key('campo_ruta_objetivo')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('R1101 · Ruta 1101').last);
@@ -173,43 +162,6 @@ void main() {
     });
     expect(textoQueContiene('Por empezar'), findsOneWidget);
     expect(find.text('R1101 · Ruta 1101'), findsOneWidget);
-  });
-
-  testWidgets('esta semana, todos los días 3,500: uno por día (§109)', (tester) async {
-    final servidor = _Servidor();
-    await _montar(tester, servidor);
-    // En el ancho del teléfono de la empresa (Hyundai HYLine Pro, 360).
-    tester.view.physicalSize = const Size(360, 760);
-    await tester.tap(find.byKey(const Key('boton_objetivos')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('boton_nuevo_objetivo')));
-    await tester.pumpAndSettle();
-
-    // Un solo día no se puede repartir: el interruptor ni aparece.
-    expect(find.byKey(const Key('objetivo_cada_dia')), findsNothing);
-
-    await tester.tap(find.byKey(const Key('objetivo_semana')));
-    await tester.pumpAndSettle();
-    expect(textoQueContiene('Del lunes 21 de septiembre al domingo 27 de septiembre'),
-        findsOneWidget);
-    expect(textoQueContiene('Un solo objetivo para los 7 días juntos'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('objetivo_cada_dia')));
-    await tester.pumpAndSettle();
-    expect(textoQueContiene('7 objetivos, uno por día'), findsOneWidget);
-    expect(find.text('Vender cada día'), findsOneWidget);
-
-    await tester.enterText(find.byKey(const Key('campo_venta_objetivo')), '3,500');
-    await tester.ensureVisible(find.byKey(const Key('boton_guardar_objetivo')));
-    await tester.tap(find.byKey(const Key('boton_guardar_objetivo')));
-    await tester.pumpAndSettle();
-
-    expect(servidor.posts.last.$2, {
-      'ruta_id': null, 'desde': '2026-09-21', 'hasta': '2026-09-27',
-      'objetivo_venta': '3500.00', 'por_dia': true,
-    });
-    // Siete objetivos de un día, más el que ya estaba.
-    expect(servidor.objetivos, hasLength(8));
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('sin el permiso, la pestaña de mayoreo no aparece', (tester) async {

@@ -5301,3 +5301,20 @@ en el dashboard nada más».
 
 (Solo servidor y panel: la app sigue en versionCode 34.)
 
+## 111. «Cada día» también sale de la app
+
+**Corrección (octubre 2026).** «Sí, quítalo también de la app.»
+
+- El interruptor «Cada día» de «Nuevo objetivo» (§109) se quitó de la app. La
+  misma cifra todos los días es el objetivo diario fijo, y se pone **solo en el
+  panel** (§110). El formulario de la app lo dice: «¿La misma cifra todos los
+  días, hasta que la cambies? Esa se pone en el panel: Objetivos → Objetivo
+  diario.»
+- Los objetivos de un día, una semana o un rango siguen en la app como en §104.
+- El servidor ya no guarda «uno por día». Una app +34 sin actualizar todavía
+  manda `por_dia`, y se le **rechaza con un aviso** que pide actualizar la app:
+  ignorarlo guardaría en silencio un solo objetivo para toda la semana.
+- Los objetivos de un día que ya se habían puesto con «Cada día» se quedan como
+  están: se ven y se quitan como cualquier otro.
+
+(versionCode 35)
