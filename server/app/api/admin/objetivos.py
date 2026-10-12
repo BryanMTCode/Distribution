@@ -1,56 +1,33 @@
-"""Objetivos mensuales por ruta: contra qué se mide el tablero.
+"""Objetivos: el diario de cada vendedor, y lo que suma (ADR 0002 §110, §115).
 
-────────────────────────────────────────────────────────────────────────────
-POR QUÉ ESTA PANTALLA EXISTE ANTES QUE LA TARJETA QUE LA USA
-────────────────────────────────────────────────────────────────────────────
-La Fase 6 dejó una lección: se construyó la captura de motivos de merma y
-no-drop, y nada publicaba los catálogos al dispositivo. La pantalla estaba
-perfecta y no servía para nada, porque el dato no llegaba.
+«Quiero que todo se sume.» Se captura UNA sola cosa: el objetivo diario de cada
+vendedor —por ejemplo $3,500 de lunes a sábado—, que vale hasta que se cambie.
+Lo demás no se captura, se calcula:
 
-La tarjeta "avance vs objetivo" del tablero tiene exactamente el mismo riesgo:
-sin un lugar donde fijar el objetivo, la tarjeta se queda en blanco para
-siempre y nadie sabe si es un error o si falta capturar algo. Así que el
-objetivo se captura aquí, y el tablero dice explícitamente "sin objetivo" en
-las rutas que no lo tienen en vez de mostrar una barra vacía.
+  · la semana, el mes o las fechas que se escojan son la suma de sus días;
+  · toda la empresa es la suma de todos los vendedores.
 
-────────────────────────────────────────────────────────────────────────────
-POR QUÉ MENSUAL Y NO DIARIO
-────────────────────────────────────────────────────────────────────────────
-Un objetivo diario obligaría a mantener un calendario de días hábiles por ruta
-—y a decidir qué pasa con un puente, o con el día que el camión estuvo en el
-taller—. Nadie mantiene eso, y un objetivo que nadie mantiene es peor que
-ninguno: el tablero pintaría rojo todos los domingos y en dos semanas la gente
-dejaría de mirar el color.
+Antes había además un objetivo del mes por ruta y objetivos de periodo, cada
+uno capturado aparte y sin sumarse con nada; tres cifras que podían decir cosas
+distintas de la misma ruta. Se quitaron (§115).
 
-El objetivo es del MES, y el tablero prorratea por días naturales
-transcurridos, diciendo que lo hace (ver `domain/tablero.Avance`).
+El objetivo del mes de cada ruta —la barra del Tablero de la app— ahora es la
+suma de sus objetivos diarios del mes, y lo esperado a la fecha es lo que suman
+los días ya transcurridos: un domingo de descanso no atrasa a nadie, que era el
+temor original de un objetivo diario.
 
-Desde §110 hay además un OBJETIVO DIARIO fijo («3,500 cada día, hasta que lo
-cambie»), y no cae en lo de arriba: se escogen los días de la semana en que
-aplica —de lunes a sábado por omisión—, así que el domingo no pinta rojo. Ver
-`app/infra/objetivos_diarios.py`.
-
-────────────────────────────────────────────────────────────────────────────
-POR QUÉ SE COPIA EL MES ANTERIOR CON UN BOTÓN
-────────────────────────────────────────────────────────────────────────────
-Porque si fijar los objetivos de ocho rutas cuesta ocho capturas cada mes, el
-mes que haya prisa no se van a fijar, y el tablero va a mentir todo ese mes
-mostrando "sin objetivo" en rutas que sí tienen una meta en la cabeza de
-alguien. Copiar y ajustar es el flujo real.
+Sin JavaScript, como todo el panel.
 """
 
 from __future__ import annotations
 
-import calendar
+import dataclasses
 import uuid
 from datetime import date, timedelta
-from decimal import Decimal
-from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import text
 from starlette import status
 
 from app.api.admin.comun import (
@@ -61,20 +38,16 @@ from app.api.admin.comun import (
     render,
     texto_o_nulo,
 )
+from app.api.admin.periodo import PERIODOS, Periodo, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
-from app.domain.tablero import inicio_de_mes
-from app.infra.objetivos import (
-    ObjetivoInvalido,
-    borrar_objetivo,
-    guardar_objetivo,
-    objetivos_con_avance,
-    rutas_para_objetivos,
-)
+from app.infra.objetivos import ObjetivoInvalido, fin_de_mes, rutas_para_objetivos
 from app.infra.objetivos_diarios import (
     DIAS_CORTOS,
     LUNES_A_SABADO,
     cancelar_cambio,
+    de_toda_la_empresa,
     fijar_objetivo_diario,
+    metas_del_rango,
     objetivos_diarios,
     quitar_objetivo_diario,
 )
@@ -84,8 +57,19 @@ router = APIRouter(prefix="/panel/objetivos", tags=["panel"], include_in_schema=
 PERMISO = "objetivos.administrar"
 
 # «Todos los vendedores» en «De quién»: la MISMA meta a cada ruta activa, una
-# por ruta. No es «Toda la empresa», que es UNA meta para la suma de todas.
+# por ruta (§113).
 TODAS = "todas"
+
+
+def completo(periodo: Periodo) -> Periodo:
+    """«Esta semana» y «Este mes» completos, no a la fecha: el objetivo de la
+    semana es de lunes a domingo, y el del mes, del 1 al último. Lo que va a la
+    fecha es lo «esperado»."""
+    if periodo.clave == "semana":
+        return dataclasses.replace(periodo, fin=periodo.inicio + timedelta(days=6))
+    if periodo.clave == "mes":
+        return dataclasses.replace(periodo, fin=fin_de_mes(periodo.inicio))
+    return periodo
 
 
 async def _rutas_activas(sesion) -> list[dict]:
@@ -95,403 +79,43 @@ async def _rutas_activas(sesion) -> list[dict]:
     return rutas
 
 
-# Lo máximo que se acepta como objetivo mensual de una ruta. No es una regla de
-# negocio: es un filtro de error de dedo. Un objetivo de $50,000,000 teclea un
-# cero de más y deja la barra de avance en 0.1% todo el mes.
-OBJETIVO_MAXIMO = Decimal("50000000")
-
-MESES = (
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-)
-
-
-def _periodo(texto: str) -> date:
-    """Lee el mes del formulario (`YYYY-MM`). Lo inválido cae en el mes actual.
-
-    Un mes mal escrito no es un error que valga la pena mostrar: lo que la
-    persona quiere ver es un mes, y el mes en curso es la respuesta útil.
-    """
-    hoy = inicio_de_mes(date.today())
-    if not texto:
-        return hoy
-    try:
-        anio, mes = texto.split("-")[:2]
-        return date(int(anio), int(mes), 1)
-    except (ValueError, TypeError):
-        return hoy
-
-
-def _nombre_periodo(periodo: date) -> str:
-    return f"{MESES[periodo.month - 1]} de {periodo.year}"
-
-
-def _mes_anterior(periodo: date) -> date:
-    return inicio_de_mes(periodo.replace(day=1) - timedelta(days=1))
-
-
 @router.get("", response_class=HTMLResponse)
 async def listar(
     peticion: Request,
     actor: ActorWeb,
     sesion: SesionDep,
-    mes: str = "",
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
     aviso: str = "",
     error: str = "",
 ) -> HTMLResponse:
-    """Las rutas activas con su objetivo del mes y lo que llevan vendido.
-
-    El avance se muestra aquí mismo, y no es un adorno: fijar un objetivo sin
-    ver qué pasó el mes pasado es adivinar. La cifra sale de `tablero_mes_ruta`,
-    el mismo modelo de lectura que alimenta el tablero del gerente, así que las
-    dos pantallas no pueden discrepar.
-    """
+    """El objetivo diario de cada vendedor con su última semana, y lo que suma
+    en el periodo que se escoja (el mes, por omisión)."""
     actor.exigir("tablero.ver")
-    periodo = _periodo(mes)
-    anterior = _mes_anterior(periodo)
-
-    filas = (
-        await sesion.execute(
-            text(
-                """
-                SELECT r.id AS ruta_id, r.codigo, r.nombre,
-                       o.objetivo_venta, o.objetivo_visitas, o.nota,
-                       o.actualizado_en,
-                       u.nombre AS fijado_por,
-                       COALESCE(m.venta_mes, 0)   AS venta_mes,
-                       COALESCE(m.visitas_mes, 0) AS visitas_mes,
-                       COALESCE(p.venta_mes, 0)   AS venta_anterior,
-                       ant.objetivo_venta         AS objetivo_anterior
-                  FROM rutas r
-                  LEFT JOIN objetivos_ruta   o   ON o.ruta_id = r.id AND o.periodo = :periodo
-                  LEFT JOIN usuarios         u   ON u.id = o.fijado_por
-                  LEFT JOIN tablero_mes_ruta m   ON m.ruta_id = r.id AND m.periodo = :periodo
-                  LEFT JOIN tablero_mes_ruta p   ON p.ruta_id = r.id AND p.periodo = :anterior
-                  LEFT JOIN objetivos_ruta   ant ON ant.ruta_id = r.id
-                                                AND ant.periodo = :anterior
-                 WHERE r.activo
-                 ORDER BY r.codigo
-                """
-            ),
-            {"periodo": periodo, "anterior": anterior},
-        )
-    ).mappings().all()
-
-    dias_del_mes = calendar.monthrange(periodo.year, periodo.month)[1]
-    hoy = date.today()
-    # El prorrateo solo tiene sentido en el mes en curso. En un mes terminado el
-    # esperado es 100%, y en uno futuro es 0: mostrar "esperado 45%" de un mes
-    # que ya pasó invitaría a felicitar a una ruta que cerró en 60%.
-    if inicio_de_mes(hoy) == periodo:
-        dia_del_mes = hoy.day
-    elif periodo < inicio_de_mes(hoy):
-        dia_del_mes = dias_del_mes
-    else:
-        dia_del_mes = 0
-
+    diarios = await objetivos_diarios(sesion)
+    elegido = completo(await periodo_pedido(sesion, periodo or "mes", desde, hasta or desde))
+    metas, empresa, mayoreo = await metas_del_rango(sesion, elegido.inicio, elegido.fin)
     return render(
         peticion,
         "objetivos.html",
         {
-            "filas": filas,
-            "periodo": periodo.strftime("%Y-%m"),
-            "nombre_periodo": _nombre_periodo(periodo),
-            "nombre_anterior": _nombre_periodo(anterior),
-            "dia_del_mes": dia_del_mes,
-            "dias_del_mes": dias_del_mes,
-            "esperado": (
-                (Decimal(dia_del_mes) * 100 / Decimal(dias_del_mes)).quantize(Decimal("0.1"))
-            ),
+            "diarios": diarios,
+            "empresa_dias": de_toda_la_empresa(diarios),
+            "metas": metas,
+            "empresa": empresa,
+            "mayoreo": mayoreo,
+            "periodo": elegido,
+            "periodos": PERIODOS,
             "puede_editar": actor.puede(PERMISO),
-            "total_objetivo": sum(
-                Decimal(f["objetivo_venta"] or 0) for f in filas
-            ),
-            "total_venta": sum(Decimal(f["venta_mes"]) for f in filas),
-            "sin_objetivo": sum(1 for f in filas if f["objetivo_venta"] is None),
-            # Los de cualquier periodo (§104); los del mes ya están arriba.
-            "por_periodo": [
-                o for o in await objetivos_con_avance(sesion) if o.clase == "periodo"
-            ],
-            # El diario fijo (§110): el que vale hoy y la última semana.
-            "diarios": await objetivos_diarios(sesion),
             "dias_cortos": DIAS_CORTOS,
             "lunes_a_sabado": LUNES_A_SABADO,
-            "hoy": hoy.isoformat(),
+            "hoy": date.today().isoformat(),
             "aviso": aviso,
             "error": error,
         },
         actor=actor,
         seccion="Desempeño",
-    )
-
-
-@router.post("/fijar")
-async def fijar(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    ruta_id: Annotated[uuid.UUID, Form()],
-    csrf: str = Form(""),
-    mes: str = Form(""),
-    objetivo_venta: str = Form(""),
-    objetivo_visitas: str = Form(""),
-    nota: str = Form(""),
-) -> RedirectResponse:
-    """Fija o cambia el objetivo de una ruta.
-
-    Un objetivo en blanco BORRA el renglón en vez de guardar cero. Son dos cosas
-    distintas y el tablero las muestra distinto: "sin objetivo" (nadie le puso
-    meta) frente a "objetivo $0" (que daría 100% de avance con la primera venta).
-    """
-    exigir_csrf(peticion, csrf)
-    actor.exigir(PERMISO)
-    periodo = _periodo(mes)
-
-    try:
-        monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
-        visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-    except CapturaInvalida as e:
-        return RedirectResponse(
-            f"/panel/objetivos?mes={periodo:%Y-%m}&error={e}",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    if monto > OBJETIVO_MAXIMO:
-        return RedirectResponse(
-            f"/panel/objetivos?mes={periodo:%Y-%m}"
-            f"&error=Un objetivo de {monto:,.2f} parece un error de dedo.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    if monto == 0:
-        await sesion.execute(
-            text("DELETE FROM objetivos_ruta WHERE ruta_id = :r AND periodo = :p"),
-            {"r": ruta_id, "p": periodo},
-        )
-        await sesion.commit()
-        return RedirectResponse(
-            f"/panel/objetivos?mes={periodo:%Y-%m}&aviso=Objetivo quitado.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    await sesion.execute(
-        text(
-            """
-            INSERT INTO objetivos_ruta
-                (ruta_id, periodo, objetivo_venta, objetivo_visitas, nota, fijado_por)
-            VALUES (:r, :p, :monto, :visitas, :nota, :quien)
-            ON CONFLICT (ruta_id, periodo) DO UPDATE SET
-                objetivo_venta  = excluded.objetivo_venta,
-                objetivo_visitas = excluded.objetivo_visitas,
-                nota            = excluded.nota,
-                fijado_por      = excluded.fijado_por,
-                actualizado_en  = now()
-            """
-        ),
-        {
-            "r": ruta_id,
-            "p": periodo,
-            "monto": monto,
-            # Cero visitas es "no hay meta de visitas", no "la meta es cero".
-            "visitas": visitas or None,
-            "nota": texto_o_nulo(nota),
-            "quien": actor.usuario_id,
-        },
-    )
-    await sesion.commit()
-    return RedirectResponse(
-        f"/panel/objetivos?mes={periodo:%Y-%m}&aviso=Objetivo guardado.",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-@router.post("/fijar-todas")
-async def fijar_a_todas(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    csrf: str = Form(""),
-    mes: str = Form(""),
-    objetivo_venta: str = Form(""),
-    objetivo_visitas: str = Form(""),
-) -> RedirectResponse:
-    """El mismo objetivo del mes a todos los vendedores (§113): cada ruta activa
-    con su propia meta, la misma cifra. Pisa la que tuviera ese mes: es lo que
-    se pidió; para ajustar una, su renglón."""
-    exigir_csrf(peticion, csrf)
-    actor.exigir(PERMISO)
-    periodo = _periodo(mes)
-
-    def volver(clave: str, texto: str) -> RedirectResponse:
-        return RedirectResponse(
-            f"/panel/objetivos?mes={periodo:%Y-%m}&{clave}={quote(texto)}#del_mes",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    try:
-        monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
-        visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-        if monto <= 0:
-            raise CapturaInvalida("Escribe cuánto tiene que vender cada vendedor en el mes.")
-        if monto > OBJETIVO_MAXIMO:
-            raise CapturaInvalida(f"Un objetivo de {monto:,.2f} parece un error de dedo.")
-        rutas = await _rutas_activas(sesion)
-    except (CapturaInvalida, ObjetivoInvalido) as e:
-        return volver("error", str(e))
-    for ruta in rutas:
-        await sesion.execute(
-            text(
-                """
-                INSERT INTO objetivos_ruta
-                    (ruta_id, periodo, objetivo_venta, objetivo_visitas, nota, fijado_por)
-                VALUES (:r, :p, :monto, :visitas, NULL, :quien)
-                ON CONFLICT (ruta_id, periodo) DO UPDATE SET
-                    objetivo_venta   = excluded.objetivo_venta,
-                    objetivo_visitas = excluded.objetivo_visitas,
-                    fijado_por       = excluded.fijado_por,
-                    actualizado_en   = now()
-                """
-            ),
-            {"r": ruta["id"], "p": periodo, "monto": monto, "visitas": visitas or None,
-             "quien": actor.usuario_id},
-        )
-    await sesion.commit()
-    return volver(
-        "aviso",
-        f"Objetivo de {_nombre_periodo(periodo)} guardado para las {len(rutas)} rutas: "
-        f"${monto:,.2f} a cada vendedor.",
-    )
-
-
-@router.post("/copiar")
-async def copiar(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    csrf: str = Form(""),
-    mes: str = Form(""),
-) -> RedirectResponse:
-    """Copia los objetivos del mes anterior a este, sin pisar los ya fijados.
-
-    `ON CONFLICT DO NOTHING` y no `DO UPDATE`: quien ya ajustó una ruta a mano
-    este mes no quiere que un clic en "copiar" le devuelva la cifra del mes
-    pasado. El botón sirve para rellenar los huecos, no para reiniciar.
-    """
-    exigir_csrf(peticion, csrf)
-    actor.exigir(PERMISO)
-    periodo = _periodo(mes)
-    anterior = _mes_anterior(periodo)
-
-    copiados = (
-        await sesion.execute(
-            text(
-                """
-                INSERT INTO objetivos_ruta
-                    (ruta_id, periodo, objetivo_venta, objetivo_visitas, nota, fijado_por)
-                SELECT o.ruta_id, :periodo, o.objetivo_venta, o.objetivo_visitas,
-                       o.nota, :quien
-                  FROM objetivos_ruta o
-                  JOIN rutas r ON r.id = o.ruta_id AND r.activo
-                 WHERE o.periodo = :anterior
-                ON CONFLICT (ruta_id, periodo) DO NOTHING
-                RETURNING ruta_id
-                """
-            ),
-            {"periodo": periodo, "anterior": anterior, "quien": actor.usuario_id},
-        )
-    ).scalars().all()
-    await sesion.commit()
-
-    aviso = (
-        f"Se copiaron {len(copiados)} objetivo(s) de {_nombre_periodo(anterior)}."
-        if copiados
-        else f"No había objetivos en {_nombre_periodo(anterior)} que copiar."
-    )
-    return RedirectResponse(
-        f"/panel/objetivos?mes={periodo:%Y-%m}&aviso={aviso}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Objetivos de cualquier periodo (ADR 0002 §104)
-# ---------------------------------------------------------------------------
-
-
-@router.post("/periodo")
-async def fijar_por_periodo(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    csrf: str = Form(""),
-    ruta_id: str = Form(""),
-    desde: str = Form(""),
-    hasta: str = Form(""),
-    objetivo_venta: str = Form(""),
-    objetivo_visitas: str = Form(""),
-    nota: str = Form(""),
-) -> RedirectResponse:
-    """Un objetivo de un día, una semana o un rango; de una ruta, de toda la
-    empresa o el mismo a todos los vendedores (§113). Un mes completo de una
-    ruta se guarda como su objetivo del mes. El de «cada día» es el diario fijo
-    de abajo (§110)."""
-    exigir_csrf(peticion, csrf)
-    actor.exigir(PERMISO)
-
-    def volver(**que: str) -> RedirectResponse:
-        clave, texto = next(iter(que.items()))
-        return RedirectResponse(
-            f"/panel/objetivos?{clave}={quote(texto)}#por_periodo",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    try:
-        inicio = date.fromisoformat(desde)
-        fin = date.fromisoformat(hasta or desde)
-    except ValueError:
-        return volver(error="Escribe las fechas del periodo.")
-    try:
-        monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
-        visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-        if ruta_id == TODAS:
-            duenos = [r["id"] for r in await _rutas_activas(sesion)]
-        else:
-            duenos = [uuid.UUID(ruta_id) if ruta_id else None]
-        for dueno in duenos:
-            await guardar_objetivo(
-                sesion,
-                ruta_id=dueno,
-                desde=inicio,
-                hasta=fin,
-                objetivo_venta=monto,
-                objetivo_visitas=visitas or None,
-                nota=texto_o_nulo(nota, maximo=300),
-                quien=actor.usuario_id,
-            )
-    except (CapturaInvalida, ObjetivoInvalido, ValueError) as e:
-        await sesion.rollback()
-        return volver(error=str(e))
-    await sesion.commit()
-    if ruta_id == TODAS:
-        return volver(aviso=f"{len(duenos)} objetivos guardados: ${monto:,.2f} a cada vendedor.")
-    return volver(aviso="Objetivo guardado.")
-
-
-@router.post("/periodo/{objetivo_id}/borrar")
-async def borrar_por_periodo(
-    peticion: Request,
-    actor: ActorWeb,
-    sesion: SesionDep,
-    objetivo_id: str,
-    csrf: str = Form(""),
-) -> RedirectResponse:
-    exigir_csrf(peticion, csrf)
-    actor.exigir(PERMISO)
-    quitado = await borrar_objetivo(sesion, objetivo_id)
-    await sesion.commit()
-    texto = "aviso=Objetivo quitado." if quitado else "error=Ese objetivo ya no existe."
-    return RedirectResponse(
-        f"/panel/objetivos?{texto}#por_periodo", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -508,15 +132,16 @@ def _al_diario(**que: str) -> RedirectResponse:
 
 
 def _dueno(ruta_id: str) -> uuid.UUID | None:
-    """'' es toda la empresa; lo demás, una ruta."""
+    """El vendedor (su ruta). En blanco no es nadie: la empresa no tiene
+    objetivo propio, es la suma (§115), y `fijar_objetivo_diario` lo dice."""
     return uuid.UUID(ruta_id) if ruta_id else None
 
 
 @router.post("/diario")
 async def fijar_diario(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> RedirectResponse:
     """«Por día 3,500, hasta que yo lo modifique»: pone o cambia el objetivo
-    diario de una ruta, de toda la empresa o el mismo a todos los vendedores
-    (§113), desde la fecha que se diga."""
+    diario de un vendedor, o el mismo a todos los vendedores (§113), desde la
+    fecha que se diga."""
     formulario = await peticion.form()
     exigir_csrf(peticion, str(formulario.get("csrf") or ""))
     actor.exigir(PERMISO)
@@ -567,7 +192,7 @@ async def quitar_diario(
     actor.exigir(PERMISO)
     try:
         await quitar_objetivo_diario(sesion, ruta_id=_dueno(ruta_id), quien=actor.usuario_id)
-    except ValueError as e:
+    except (ObjetivoInvalido, ValueError) as e:
         await sesion.rollback()
         return _al_diario(error=str(e))
     await sesion.commit()

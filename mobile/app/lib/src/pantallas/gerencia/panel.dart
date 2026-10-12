@@ -33,7 +33,9 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../estado/oficina_extra.dart';
 import '../../estado/sesion.dart';
+import '../../estado/vendedores.dart';
 import '../../datos/repo_tablero.dart';
 import '../../estado/tablero.dart';
 import 'comunes.dart';
@@ -324,8 +326,8 @@ class _Cuerpo extends StatelessWidget {
           ),
         ],
 
-        _Titulo('Avance del mes'),
-        _Avance(avance: t.avance),
+        _Titulo('Avance contra el objetivo'),
+        _AvancePorVista(fecha: t.venta.fecha, delMes: t.avance),
 
         _Titulo('Por vendedor'),
         if (t.vendedores.isEmpty)
@@ -436,6 +438,188 @@ class _Rejilla extends StatelessWidget {
           return Column(children: filas);
         },
       );
+}
+
+/// La barra de avance por la vista que se escoja (ADR 0002 §116): hoy, la
+/// semana o el mes del día que se está viendo. Cada vendedor contra la suma de
+/// sus objetivos diarios del periodo, y arriba toda la empresa como la suma de
+/// todos (§115). Las mismas cifras que «Lo que suma» del dashboard.
+///
+/// Con un servidor anterior, que no sabe de vistas, queda la barra del mes de
+/// siempre.
+class _AvancePorVista extends ConsumerStatefulWidget {
+  const _AvancePorVista({required this.fecha, required this.delMes});
+
+  final DateTime fecha;
+  final AvanceDelMes delMes;
+
+  @override
+  ConsumerState<_AvancePorVista> createState() => _EstadoAvancePorVista();
+}
+
+class _EstadoAvancePorVista extends ConsumerState<_AvancePorVista> {
+  String _vista = 'mes';
+  AvancePorVista? _datos;
+  String? _error;
+  bool _servidorSinVistas = false;
+
+  /// Solo la última respuesta cuenta: tocar «Hoy» y luego «Mes» rápido no debe
+  /// pintar la de hoy debajo del botón del mes.
+  int _pedido = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AvancePorVista anterior) {
+    super.didUpdateWidget(anterior);
+    if (diaOperativoDe(anterior.fecha) != diaOperativoDe(widget.fecha)) _cargar();
+  }
+
+  Future<void> _cargar() async {
+    final cliente = ref.read(clienteObjetivosProvider);
+    if (cliente == null) return;
+    final pedido = ++_pedido;
+    setState(() => _error = null);
+    try {
+      final datos = await cliente.avance(_vista, fecha: diaOperativoDe(widget.fecha));
+      if (!mounted || pedido != _pedido) return;
+      setState(() => _datos = datos);
+    } on ServidorSinEstaFuncion {
+      if (!mounted || pedido != _pedido) return;
+      setState(() => _servidorSinVistas = true);
+    } on Object catch (e) {
+      if (!mounted || pedido != _pedido) return;
+      setState(() => _error = explicarErrorDeOficina(e));
+    }
+  }
+
+  void _verVista(String vista) {
+    if (vista == _vista) return;
+    setState(() {
+      _vista = vista;
+      _datos = null;
+    });
+    _cargar();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_servidorSinVistas) return _Avance(avance: widget.delMes);
+    final estilo = Theme.of(context).textTheme.bodySmall;
+    final datos = _datos?.vista == _vista ? _datos : null;
+    return Column(
+      key: const Key('avance_por_vista'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'hoy', label: Text('Hoy', key: Key('vista_hoy'))),
+            ButtonSegment(value: 'semana', label: Text('Semana', key: Key('vista_semana'))),
+            ButtonSegment(value: 'mes', label: Text('Mes', key: Key('vista_mes'))),
+          ],
+          selected: {_vista},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _verVista(s.first),
+        ),
+        const SizedBox(height: 8),
+        if (_error != null) ...[
+          Text(_error!, key: const Key('avance_error'), style: estilo),
+          // Sin señal, la barra del mes que se bajó con el tablero vale más que
+          // una pantalla vacía (§30).
+          if (_vista == 'mes') ...[
+            const SizedBox(height: 8),
+            _Avance(avance: widget.delMes),
+          ],
+        ] else if (datos == null)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else ...[
+          Text(
+            '${datos.desde == datos.hasta ? 'El ${diaEnPalabras(datos.desde)}' : 'Del ${diaEnPalabras(datos.desde)} al ${diaEnPalabras(datos.hasta)}'}. '
+            'El objetivo es la suma de los objetivos diarios; la marca negra es lo '
+            'esperado a la fecha, y un día de descanso no atrasa a nadie.',
+            key: const Key('avance_periodo'),
+            style: estilo,
+          ),
+          const SizedBox(height: 14),
+          _RenglonDeAvanceWidget(renglon: datos.empresa),
+          for (final r in datos.rutas) _RenglonDeAvanceWidget(renglon: r),
+          if (Dinero.deTexto(datos.mayoreo).centavos > 0)
+            Text(
+              'Aparte, ${pesos(Dinero.deTexto(datos.mayoreo))} de mayoreo: no es de '
+              'ningún vendedor, así que no entra en la suma.',
+              key: const Key('avance_mayoreo'),
+              style: estilo,
+            ),
+          if (_vista == 'mes' && widget.delMes.hayVentaSinRuta)
+            Text(
+              '${pesos(widget.delMes.ventaSinRuta)} del mes '
+              '(${widget.delMes.documentosSinRuta} remisiones) no quedó asignado a '
+              'ninguna ruta, así que no está en ninguna barra de arriba.',
+              style: estilo,
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RenglonDeAvanceWidget extends StatelessWidget {
+  const _RenglonDeAvanceWidget({required this.renglon});
+
+  final RenglonDeAvance renglon;
+
+  @override
+  Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+    final empresa = renglon.ruta == null;
+    final logrado = double.tryParse(renglon.logrado ?? '');
+    final esperado = double.tryParse(renglon.esperado ?? '') ?? 0;
+    return Padding(
+      key: Key('avance_${renglon.ruta ?? 'empresa'}'),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  empresa ? 'Toda la empresa (la suma)' : renglon.ruta!,
+                  style: TextStyle(fontWeight: empresa ? FontWeight.w800 : FontWeight.w600),
+                ),
+              ),
+              Text(pesos(Dinero.deTexto(renglon.venta), conCentavos: false)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (renglon.sinObjetivo || logrado == null)
+            Text(
+              empresa
+                  ? 'Ningún vendedor tiene objetivo en este periodo.'
+                  : 'Sin objetivo en este periodo. Se pone en el dashboard: Objetivos.',
+              style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
+            )
+          else ...[
+            BarraDeAvance(logrado: logrado, esperado: esperado, semaforo: renglon.semaforo),
+            const SizedBox(height: 4),
+            Text(
+              '${logrado.toStringAsFixed(1)}% de '
+              '${pesos(Dinero.deTexto(renglon.objetivo!), conCentavos: false)} · '
+              'esperado ${esperado.toStringAsFixed(1)}%',
+              style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _Avance extends StatelessWidget {

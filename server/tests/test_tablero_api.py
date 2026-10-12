@@ -28,6 +28,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
+from app.domain.tablero import porcentaje
 from app.workers.tablero import recalcular_todo
 from tests.conftest import PASSWORD_VENDEDOR
 
@@ -135,10 +136,12 @@ async def dia_con_operacion(sesion, semilla) -> dict:
             "t": ahora, "ayer": hoy - timedelta(days=40),
         },
     )
+    # El objetivo del mes es la suma de los diarios (ADR 0002 §115): $4,000
+    # todos los días desde el día 1.
     await sesion.execute(
         text(
-            "INSERT INTO objetivos_ruta (ruta_id, periodo, objetivo_venta) "
-            "VALUES (:r, date_trunc('month', CURRENT_DATE)::date, 100000)"
+            "INSERT INTO objetivos_diarios (ruta_id, desde, objetivo_venta, dias_semana) "
+            "VALUES (:r, date_trunc('month', CURRENT_DATE)::date, 4000, '{1,2,3,4,5,6,7}')"
         ),
         {"r": semilla["ruta"]},
     )
@@ -258,11 +261,13 @@ async def test_el_avance_trae_el_objetivo_y_lo_esperado(
     avance = cuerpo["avance"]
     assert avance["dias_del_mes"] in (28, 29, 30, 31)
     ruta = next(r for r in avance["rutas"] if r["codigo"] == "R04")
-    assert ruta["objetivo"] == "100000.00"
+    # La suma de $4,000 por cada día del mes.
+    objetivo = Decimal(4000 * avance["dias_del_mes"])
+    assert ruta["objetivo"] == f"{objetivo:.2f}"
     assert ruta["venta_mes"] == "1234.56"
-    # 1234.56 de 100000 el día N: siempre atrás salvo el día 1.
-    assert ruta["logrado"] == "1.2"
-    assert ruta["esperado"] is not None
+    assert ruta["logrado"] == str(porcentaje(Decimal("1234.56"), objetivo))
+    # Lo esperado: lo que suman los días ya transcurridos, hoy incluido.
+    assert ruta["esperado"] == str(porcentaje(date.today().day, avance["dias_del_mes"]))
     assert ruta["semaforo"] in ("adelante", "cerca", "atras")
 
 

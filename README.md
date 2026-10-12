@@ -101,10 +101,11 @@ la bodega sube cuando alguien la cuenta.
 | **Desempeño del día** — cada vendedor contra sus mismos días de la semana, y **de quién** falta información | ✅ 28 + 6 de Dart y 5 de widget |
 | **Panel en cinco módulos** y Editar / Eliminar / Ajustar en las tablas, con delta al teléfono | ✅ 19 pruebas |
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
-| **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
-| **Objetivo diario fijo** en el panel — «$3,500 cada día, de lunes a sábado, hasta que lo cambie» —, con la semana día por día y lo de hoy en el Tablero | ✅ 4 pruebas |
-| **Revisión de la app y el dashboard** en el panel — 47 puntos del teléfono y 34 del dashboard, con cómo probarlos y qué debe pasar, marcados bien o falla por versión | ✅ 5 pruebas |
-| **Una meta a todos los vendedores** a la vez en Objetivos (diario, del mes y por periodo) | ✅ 3 pruebas |
+| **Objetivos: solo el diario de cada vendedor**; la semana, el mes, cualquier periodo y la empresa se suman (§115) | ✅ 5 pruebas |
+| **Objetivo diario fijo** en el panel — «$3,500 cada día, de lunes a sábado, hasta que lo cambie», con sus días de descanso —, con la semana día por día y lo de hoy en el Tablero | ✅ 4 pruebas |
+| **Revisión de la app y el dashboard** en el panel — 48 puntos del teléfono y 34 del dashboard, con cómo probarlos y qué debe pasar, marcados bien o falla por versión | ✅ 5 pruebas |
+| **El mismo objetivo diario a todos los vendedores** a la vez | ✅ 1 prueba |
+| **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
 | **Métricas Prometheus** de salud — apagadas por omisión, y sin dinero dentro | ✅ incluidas en esas 28 |

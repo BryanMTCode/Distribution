@@ -76,8 +76,9 @@ async def test_bien_o_falla_por_version(cliente, sesion, semilla):
     assert f"0 de {DEL_TELEFONO} puntos revisados en el teléfono · 0.1.0+35" in plano
     for s in SECCIONES:
         assert (f'id="seccion_{s.clave}"' in r.text) == (s.parte == "telefono"), s.clave
-    # Lo que llegó en esta versión se distingue.
-    assert "nuevo en esta versión" in r.text.split('id="punto_objetivos_app"')[1][:600]
+    # Lo que llegó en esa versión se distingue.
+    nueva = await cliente.get("/panel/revision-app?version=0.1.0%2B36")
+    assert "nuevo en esta versión" in nueva.text.split('id="punto_vendedores"')[1][:600]
 
     r = await _marcar(cliente, r, version="0.1.0+35", punto="venta_efectivo", estado="bien")
     assert f"1 de {DEL_TELEFONO} puntos revisados" in solo_texto(r)
@@ -124,9 +125,12 @@ async def test_se_llega_desde_el_tablero_y_la_usa_un_supervisor(cliente, sesion,
     await _entrar(cliente)
     tablero = await cliente.get("/panel")
     assert 'href="/panel/revision-app"' in tablero.text
-    # Es una pestaña de Teléfonos.
+    # Es una entrada propia del menú, en Administración (§117), en cualquier
+    # pantalla; ya no es una pestaña de Teléfonos.
     telefonos = await cliente.get("/panel/equipos")
     assert 'href="/panel/revision-app"' in telefonos.text
+    r = await cliente.get("/panel/revision-app")
+    assert 'aria-current' in r.text.split('href="/panel/revision-app"')[1][:200]
 
     # Quien prueba la app no siempre es el admin: un supervisor también marca.
     await cliente.get("/panel/salir")

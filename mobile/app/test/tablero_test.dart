@@ -172,6 +172,7 @@ class TransporteDeGerencia implements Transporte {
   TransporteDeGerencia({
     this.tablero,
     this.mapa,
+    this.avance,
     this.codigo = 200,
     this.cuerpoDeError,
     this.sinRed = false,
@@ -179,11 +180,16 @@ class TransporteDeGerencia implements Transporte {
 
   Map<String, Object?>? tablero;
   Map<String, Object?>? mapa;
+
+  /// La barra por vista (§116). Sin ella contesta como un servidor anterior,
+  /// que no sabe de vistas: la app enseña la barra del mes de siempre.
+  Map<String, Object?> Function(String vista)? avance;
   int codigo;
   String? cuerpoDeError;
   bool sinRed;
 
   final List<String> rutasPedidas = [];
+  final List<Map<String, String>?> parametrosPedidos = [];
 
   @override
   Future<RespuestaHttp> obtener(
@@ -191,9 +197,16 @@ class TransporteDeGerencia implements Transporte {
     Map<String, String>? parametros,
   }) async {
     rutasPedidas.add(ruta);
+    parametrosPedidos.add(parametros);
     if (sinRed) throw const ErrorDeRed('sin conexión');
     if (codigo != 200) {
       return RespuestaHttp(codigo, cuerpoDeError ?? '{"detail":"error"}');
+    }
+    if (ruta == '/v1/objetivos/avance') {
+      final vista = parametros?['vista'] ?? 'mes';
+      return avance == null
+          ? const RespuestaHttp(404, '{"detail":"Not Found"}')
+          : RespuestaHttp(200, jsonEncode(avance!(vista)));
     }
     final cuerpo = ruta.contains('mapa') ? mapa : tablero;
     return RespuestaHttp(200, jsonEncode(cuerpo));
@@ -524,6 +537,87 @@ void main() {
         scrollable: _listaDeCifras,
       );
       expect(find.textContaining('días naturales'), findsOneWidget);
+    });
+  });
+
+  group('la barra por la vista que se escoja (ADR 0002 §116)', () {
+    Map<String, Object?> renglon(String? ruta, String? objetivo, String venta,
+            {String? logrado, String? esperado, String semaforo = 'atras'}) =>
+        {
+          'ruta_id': ruta == null ? null : 'r1', 'ruta': ruta, 'objetivo': objetivo,
+          'venta': venta, 'logrado': logrado, 'esperado': esperado, 'semaforo': semaforo,
+          'falta': '0.00',
+        };
+
+    Map<String, Object?> avance(String vista) => switch (vista) {
+          'hoy' => {
+              'vista': 'hoy', 'desde': '2026-09-24', 'hasta': '2026-09-24',
+              'empresa': renglon(null, '3500.00', '2100.00', logrado: '60.0', esperado: '100.0'),
+              'rutas': [
+                renglon('R1101 · Ruta 1101', '3500.00', '2100.00',
+                    logrado: '60.0', esperado: '100.0'),
+                renglon('R1102 · Ruta 1102', null, '0.00', semaforo: 'sin_objetivo'),
+              ],
+              'mayoreo': '0.00',
+            },
+          'semana' => {
+              'vista': 'semana', 'desde': '2026-09-21', 'hasta': '2026-09-27',
+              'empresa': renglon(null, '21000.00', '9000.00', logrado: '42.9', esperado: '66.7'),
+              'rutas': [
+                renglon('R1101 · Ruta 1101', '21000.00', '9000.00',
+                    logrado: '42.9', esperado: '66.7'),
+              ],
+              'mayoreo': '0.00',
+            },
+          _ => {
+              'vista': 'mes', 'desde': '2026-09-01', 'hasta': '2026-09-30',
+              'empresa': renglon(null, '91000.00', '70000.00', logrado: '76.9', esperado: '76.9',
+                  semaforo: 'adelante'),
+              'rutas': [
+                renglon('R1101 · Ruta 1101', '91000.00', '70000.00',
+                    logrado: '76.9', esperado: '76.9', semaforo: 'adelante'),
+              ],
+              'mayoreo': '2500.00',
+            },
+        };
+
+    testWidgets('abre en el mes y cambia a hoy y a la semana', (tester) async {
+      final transporte =
+          TransporteDeGerencia(tablero: tableroDelServidor(), avance: avance);
+      await montarTablero(tester, transporte);
+      // En el teléfono de la empresa (Hyundai HYLine Pro, 360 de ancho).
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('avance_empresa')), 200, scrollable: _listaDeCifras);
+      expect(find.text('Toda la empresa (la suma)'), findsOneWidget);
+      expect(find.textContaining(r'76.9% de $91,000'), findsWidgets);
+      expect(find.textContaining(r'Aparte, $2,500.00 de mayoreo'), findsOneWidget);
+      expect(transporte.parametrosPedidos.last, {'vista': 'mes', 'fecha': '2026-09-24'});
+
+      await tester.ensureVisible(find.byKey(const Key('vista_hoy')));
+      await tester.tap(find.byKey(const Key('vista_hoy')));
+      await tester.pumpAndSettle();
+      expect(transporte.parametrosPedidos.last, {'vista': 'hoy', 'fecha': '2026-09-24'});
+      expect(find.textContaining('El jueves 24 de septiembre'), findsOneWidget);
+      expect(find.textContaining(r'60.0% de $3,500'), findsWidgets);
+      // El vendedor sin objetivo hoy aparece, y dice dónde se pone.
+      expect(find.textContaining('Sin objetivo en este periodo'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const Key('vista_semana')));
+      await tester.tap(find.byKey(const Key('vista_semana')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Del lunes 21 de septiembre al domingo 27'), findsOneWidget);
+      expect(find.textContaining(r'42.9% de $21,000 · esperado 66.7%'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('con un servidor anterior queda la barra del mes', (tester) async {
+      await montarTablero(tester, TransporteDeGerencia(tablero: tableroDelServidor()));
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('ruta_R04')), 200, scrollable: _listaDeCifras);
+      expect(find.byKey(const Key('avance_por_vista')), findsNothing);
+      expect(find.textContaining('42.5% de'), findsOneWidget);
     });
   });
 

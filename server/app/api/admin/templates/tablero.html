@@ -67,8 +67,8 @@
     <tbody>
       {% for o in objetivo_de_hoy %}
       {% set d = o.hoy %}
-      <tr id="hoy_{{ o.ruta_id or 'empresa' }}">
-        <td>{{ o.ruta or 'Toda la empresa' }}</td>
+      <tr id="hoy_{{ o.ruta_id }}">
+        <td>{{ o.ruta }}</td>
         {% if d.objetivo is not none %}
         <td class="numero">{{ d.objetivo|dinero }}</td>
         <td class="numero">{{ d.venta|dinero }}</td>
@@ -86,9 +86,27 @@
       </tr>
       {% endfor %}
     </tbody>
+    {% set d = empresa_hoy %}
+    {% if d and d.objetivo is not none %}
+    <tfoot style="font-weight:600">
+      <tr id="hoy_empresa">
+        <td>Toda la empresa<div class="sutil">la suma de todos</div></td>
+        <td class="numero">{{ d.objetivo|dinero }}</td>
+        <td class="numero">{{ d.venta|dinero }}</td>
+        <td>
+          {{ d.logrado }}% ·
+          {% if d.cumplido %}<strong style="color:var(--bien)">cumplido</strong>{% else %}faltan {{ d.falta|dinero }}{% endif %}
+          <div style="height:8px;background:var(--linea);border-radius:4px;margin-top:5px;overflow:hidden">
+            <div style="height:8px;width:{{ '%.1f'|format([d.logrado|float, 100]|min) }}%;
+                        background:{% if d.cumplido %}var(--bien){% else %}var(--acento){% endif %}"></div>
+          </div>
+        </td>
+      </tr>
+    </tfoot>
+    {% endif %}
   </table>
 </div>
-<p class="sutil">Solo cuenta lo que ya sincronizó. <a href="/panel/objetivos#diario">Ver la semana o cambiar el objetivo diario</a>.</p>
+<p class="sutil">Solo cuenta lo que ya sincronizó. <a href="/panel/objetivos#diario">Ver la semana o cambiar el objetivo diario</a> · <a href="/panel/objetivos#suma">lo que suma el mes</a>.</p>
 {% endif %}
 
 {#

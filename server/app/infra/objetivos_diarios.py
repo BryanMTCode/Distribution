@@ -1,18 +1,23 @@
-"""El objetivo diario fijo: «por día 3,500, hasta que yo lo modifique» (ADR 0002 §110).
+"""El objetivo diario de cada vendedor, y todo lo que se suma de él
+(ADR 0002 §110, §115).
 
-Un objetivo de periodo (§104) se pone para unas fechas y se acaba; ponerlo
-«cada día» de una semana (§109) obligaba a volver a capturarlo cada semana.
-Este se pone UNA vez —de una ruta o de toda la empresa—, con los días de la
-semana en que aplica, y vale desde ese día en adelante.
+«Por día 3,500, hasta que yo lo modifique.» Y después: «quiero que todo se
+sume». Es el ÚNICO objetivo que se captura: a cada vendedor (su ruta), una
+cifra por día, con los días de la semana en que aplica, desde una fecha y sin
+fin. Lo demás no se captura, se calcula:
+
+  · la semana, el mes o cualquier periodo = la suma de sus días;
+  · toda la empresa = la suma de todos los vendedores.
 
 Cambiarlo es poner otro desde el día que se diga: los días anteriores se quedan
 medidos contra el que tenían, así que la historia no se reescribe. Cada cambio
 es un renglón de `objetivos_diarios` (0057); el objetivo de un día es el del
 último renglón que ya había empezado, y un renglón sin monto es «sin objetivo
-diario desde ese día».
+diario desde ese día». Los renglones sin ruta (la empresa, de antes de §115) ya
+no cuentan: la empresa es la suma.
 
-Solo en el panel: el tablero lo pone contra lo vendido hoy, y Objetivos muestra
-la última semana, día por día, cumplido o no.
+Lo usan Objetivos y el Tablero del dashboard, y el Tablero y Objetivos de la
+app (solo para leer).
 """
 
 from __future__ import annotations
@@ -25,7 +30,8 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.infra.objetivos import OBJETIVO_MAXIMO, ObjetivoInvalido
+from app.domain.tablero import porcentaje
+from app.infra.objetivos import OBJETIVO_MAXIMO, ObjetivoInvalido, rutas_para_objetivos
 
 DIAS_CORTOS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
 _EN_PLURAL = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábados", "domingos")
@@ -149,8 +155,9 @@ def _tramo_del_dia(tramos: list[Tramo], dia: date) -> Tramo | None:
 
 
 async def _existe_la_ruta(sesion, ruta_id: uuid.UUID | None) -> None:
+    # La empresa no tiene objetivo propio: es la suma de los vendedores (§115).
     if ruta_id is None:
-        return
+        raise ObjetivoInvalido("Escoge el vendedor, o «Todos los vendedores».")
     fila = (
         await sesion.execute(text("SELECT 1 FROM rutas WHERE id = :r"), {"r": ruta_id})
     ).first()
@@ -232,6 +239,7 @@ async def quitar_objetivo_diario(sesion, *, ruta_id: uuid.UUID | None, quien) ->
     """Desde hoy ya no hay objetivo diario. Los días pasados se quedan medidos
     como estaban, y los cambios que estaban programados ya no aplican. No hace
     commit."""
+    await _existe_la_ruta(sesion, ruta_id)
     hoy = date.today()
     await sesion.execute(
         text(
@@ -262,9 +270,9 @@ async def cancelar_cambio(sesion, tramo_id: uuid.UUID) -> bool:
 async def _vendido_por_dia(
     sesion, desde: date, hasta: date
 ) -> dict[tuple[uuid.UUID | None, date], tuple[Decimal, int]]:
-    """Lo vendido y las visitas de cada ruta cada día, y de toda la empresa
-    (llave con ruta nula), con las mismas reglas que los objetivos de periodo
-    (`objetivos._vendido`): la empresa cuenta también el mayoreo."""
+    """Lo vendido (confirmado) y las visitas de cada ruta cada día. La llave con
+    ruta nula es todo lo del día, mayoreo incluido; las sumas de §115 no la usan:
+    la empresa es la suma de los vendedores, y el mayoreo se dice aparte."""
     parametros = {"desde": desde, "hasta": hasta}
     ventas = (
         await sesion.execute(
@@ -327,33 +335,32 @@ async def _vendido_por_dia(
     }
 
 
-async def objetivos_diarios(sesion, *, dias_atras: int = DIAS_ATRAS) -> list[ObjetivoDiario]:
-    """Cada dueño con objetivo diario —la empresa primero, luego las rutas—, con
-    el que vale hoy, los cambios programados y los últimos días medidos."""
-    hoy = date.today()
-    inicio = hoy - timedelta(days=dias_atras)
+async def _vendedores(sesion) -> list[tuple[uuid.UUID, str]]:
+    """Las rutas activas —una por vendedor—, en orden de código."""
+    return [
+        (r["id"], f"{r['codigo']} · {r['nombre']}") for r in await rutas_para_objetivos(sesion)
+    ]
+
+
+async def _tramos_por_ruta(sesion) -> dict[uuid.UUID, list[Tramo]]:
+    """Los cambios de cada ruta, del más viejo al más nuevo."""
     filas = (
         await sesion.execute(
             text(
                 """
-                SELECT o.id, o.ruta_id, r.codigo || ' · ' || r.nombre AS ruta,
-                       o.desde, o.objetivo_venta, o.objetivo_visitas, o.dias_semana,
-                       o.nota, u.nombre AS fijado_por
+                SELECT o.id, o.ruta_id, o.desde, o.objetivo_venta, o.objetivo_visitas,
+                       o.dias_semana, o.nota, u.nombre AS fijado_por
                   FROM objetivos_diarios o
-                  LEFT JOIN rutas r ON r.id = o.ruta_id
                   LEFT JOIN usuarios u ON u.id = o.fijado_por
-                 ORDER BY r.codigo NULLS FIRST, o.ruta_id, o.desde
+                 WHERE o.ruta_id IS NOT NULL
+                 ORDER BY o.ruta_id, o.desde
                 """
             )
         )
     ).mappings().all()
-    if not filas:
-        return []
-
-    por_dueno: dict[uuid.UUID | None, tuple[str | None, list[Tramo]]] = {}
+    tramos: dict[uuid.UUID, list[Tramo]] = defaultdict(list)
     for f in filas:
-        _, tramos = por_dueno.setdefault(f["ruta_id"], (f["ruta"], []))
-        tramos.append(
+        tramos[f["ruta_id"]].append(
             Tramo(
                 id=f["id"],
                 desde=f["desde"],
@@ -366,35 +373,168 @@ async def objetivos_diarios(sesion, *, dias_atras: int = DIAS_ATRAS) -> list[Obj
                 fijado_por=f["fijado_por"],
             )
         )
+    return tramos
 
+
+def _medir(tramos: list[Tramo], dia: date, venta: Decimal, visitas: int) -> DiaMedido:
+    tramo = _tramo_del_dia(tramos, dia)
+    aplica = tramo is not None and tramo.aplica(dia)
+    return DiaMedido(
+        dia=dia,
+        objetivo=tramo.objetivo_venta if aplica else None,
+        objetivo_visitas=tramo.objetivo_visitas if aplica else None,
+        venta=venta,
+        visitas=visitas,
+        descanso=tramo is not None and not tramo.quitado and not aplica,
+    )
+
+
+async def objetivos_diarios(sesion, *, dias_atras: int = DIAS_ATRAS) -> list[ObjetivoDiario]:
+    """Cada vendedor (ruta activa), tenga o no objetivo diario, con el que vale
+    hoy, los cambios programados y los últimos días medidos."""
+    hoy = date.today()
+    inicio = hoy - timedelta(days=dias_atras)
+    vendedores = await _vendedores(sesion)
+    tramos = await _tramos_por_ruta(sesion)
     vendido = await _vendido_por_dia(sesion, inicio, hoy)
     resultado = []
-    for ruta_id, (ruta, tramos) in por_dueno.items():
-        dias = []
-        for i in range(dias_atras + 1):
-            dia = inicio + timedelta(days=i)
-            tramo = _tramo_del_dia(tramos, dia)
-            venta, visitas = vendido.get((ruta_id, dia), (Decimal(0), 0))
-            aplica = tramo is not None and tramo.aplica(dia)
-            dias.append(
-                DiaMedido(
-                    dia=dia,
-                    objetivo=tramo.objetivo_venta if aplica else None,
-                    objetivo_visitas=tramo.objetivo_visitas if aplica else None,
-                    venta=venta,
-                    visitas=visitas,
-                    descanso=tramo is not None and not tramo.quitado and not aplica,
-                )
-            )
-        vigente = _tramo_del_dia(tramos, hoy)
+    for ruta_id, ruta in vendedores:
+        suyos = tramos.get(ruta_id, [])
+        dias = [
+            _medir(suyos, dia, *vendido.get((ruta_id, dia), (Decimal(0), 0)))
+            for dia in (inicio + timedelta(days=i) for i in range(dias_atras + 1))
+        ]
+        vigente = _tramo_del_dia(suyos, hoy)
         if vigente is not None and vigente.quitado:
             vigente = None
-        proximos = [t for t in tramos if t.desde > hoy]
-        # Quitado hace rato y sin nada que mostrar: ya no es de la lista.
-        if vigente is None and not proximos and all(d.objetivo is None for d in dias):
-            continue
         resultado.append(
-            ObjetivoDiario(ruta_id=ruta_id, ruta=ruta, vigente=vigente, proximos=proximos,
-                           dias=dias)
+            ObjetivoDiario(
+                ruta_id=ruta_id,
+                ruta=ruta,
+                vigente=vigente,
+                proximos=[t for t in suyos if t.desde > hoy],
+                dias=dias,
+            )
         )
     return resultado
+
+
+def de_toda_la_empresa(diarios: list[ObjetivoDiario]) -> list[DiaMedido]:
+    """Día por día, la suma de todos los vendedores: sus objetivos y lo que
+    vendieron. Sin objetivo ese día si ninguno lo tenía."""
+    if not diarios:
+        return []
+    suma = []
+    for i, dia in enumerate(d.dia for d in diarios[0].dias):
+        del_dia = [o.dias[i] for o in diarios]
+        objetivos = [d.objetivo for d in del_dia if d.objetivo is not None]
+        suma.append(
+            DiaMedido(
+                dia=dia,
+                objetivo=sum(objetivos, Decimal(0)) if objetivos else None,
+                objetivo_visitas=None,
+                venta=sum((d.venta for d in del_dia), Decimal(0)),
+                visitas=sum(d.visitas for d in del_dia),
+                descanso=False,
+            )
+        )
+    return suma
+
+
+# ---------------------------------------------------------------------------
+# Lo que suma: cualquier periodo, por vendedor y de toda la empresa (§115)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Meta:
+    """El objetivo de un periodo, sumado de sus días, contra lo vendido."""
+
+    ruta_id: uuid.UUID | None
+    # «R1101 · Ruta 1101»; nulo = toda la empresa (la suma).
+    ruta: str | None
+    objetivo: Decimal
+    # Lo que suman los días ya transcurridos (hoy incluido): contra eso se dice
+    # si va adelante o atrás. Un domingo de descanso no suma, y no atrasa.
+    a_la_fecha: Decimal
+    venta: Decimal
+    visitas: int
+    dias_con_objetivo: int
+
+    @property
+    def tiene_objetivo(self) -> bool:
+        return self.objetivo > 0
+
+    @property
+    def logrado(self) -> Decimal | None:
+        return porcentaje(self.venta, self.objetivo) if self.tiene_objetivo else None
+
+    @property
+    def esperado(self) -> Decimal:
+        return porcentaje(self.a_la_fecha, self.objetivo)
+
+    @property
+    def diferencia(self) -> Decimal | None:
+        return None if self.logrado is None else self.logrado - self.esperado
+
+    @property
+    def semaforo(self) -> str:
+        """'sin_objetivo' | 'adelante' | 'cerca' | 'atras', como el tablero."""
+        if (diferencia := self.diferencia) is None:
+            return "sin_objetivo"
+        if diferencia >= 0:
+            return "adelante"
+        if diferencia >= -10:
+            return "cerca"
+        return "atras"
+
+    @property
+    def falta(self) -> Decimal:
+        return max(Decimal(0), self.objetivo - self.venta)
+
+
+async def metas_del_rango(sesion, desde: date, hasta: date) -> tuple[list[Meta], Meta, Decimal]:
+    """Cada vendedor con la suma de sus objetivos diarios del periodo y lo que
+    vendió; la empresa, la suma de todos; y aparte el mayoreo del periodo, que
+    no es de ningún vendedor y por eso no entra en la suma."""
+    if hasta < desde:
+        desde, hasta = hasta, desde
+    hoy = date.today()
+    vendedores = await _vendedores(sesion)
+    tramos = await _tramos_por_ruta(sesion)
+    vendido = await _vendido_por_dia(sesion, desde, hasta)
+    metas = []
+    for ruta_id, ruta in vendedores:
+        suyos = tramos.get(ruta_id, [])
+        objetivo = a_la_fecha = venta = Decimal(0)
+        visitas = dias = 0
+        dia = desde
+        while dia <= hasta:
+            tramo = _tramo_del_dia(suyos, dia)
+            if tramo is not None and tramo.aplica(dia):
+                objetivo += tramo.objetivo_venta
+                dias += 1
+                if dia <= hoy:
+                    a_la_fecha += tramo.objetivo_venta
+            v, n = vendido.get((ruta_id, dia), (Decimal(0), 0))
+            venta += v
+            visitas += n
+            dia += timedelta(days=1)
+        metas.append(Meta(ruta_id, ruta, objetivo, a_la_fecha, venta, visitas, dias))
+    empresa = Meta(
+        ruta_id=None,
+        ruta=None,
+        objetivo=sum((m.objetivo for m in metas), Decimal(0)),
+        a_la_fecha=sum((m.a_la_fecha for m in metas), Decimal(0)),
+        venta=sum((m.venta for m in metas), Decimal(0)),
+        visitas=sum(m.visitas for m in metas),
+        dias_con_objetivo=max((m.dias_con_objetivo for m in metas), default=0),
+    )
+    mayoreo = (
+        await sesion.execute(
+            text(
+                "SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo "
+                " WHERE estado = 'confirmada' AND fecha BETWEEN :desde AND :hasta"
+            ),
+            {"desde": desde, "hasta": hasta},
+        )
+    ).scalar_one()
+    return metas, empresa, Decimal(mayoreo)

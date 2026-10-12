@@ -122,7 +122,7 @@ async def revisar(
             "error": error,
         },
         actor=actor,
-        seccion="Teléfonos",
+        seccion="Revisión",
     )
 
 

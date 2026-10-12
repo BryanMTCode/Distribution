@@ -306,13 +306,21 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Las tiendas del día sobre el lienzo, con su leyenda.",
             ),
             Punto(
-                "objetivos_app", "Objetivos",
-                "En el Tablero, botón de objetivos → «Nuevo objetivo»: de una ruta o de "
-                "la empresa, para hoy, mañana, la semana, el mes o unas fechas.",
-                "La lista muestra cada uno con lo vendido y lo esperado a la fecha. Ya no "
-                "hay «Cada día»: el formulario dice que el diario fijo se pone en el "
-                "panel (Objetivos → Objetivo diario).",
-                desde="+35",
+                "barra_por_vista", "La barra de avance por Hoy, Semana o Mes",
+                "En el Tablero, en «Avance contra el objetivo», cambia entre «Hoy», "
+                "«Semana» y «Mes».",
+                "Cada vendedor con lo vendido contra la suma de sus objetivos diarios de "
+                "ese periodo, y la marca de lo esperado a la fecha; arriba, toda la "
+                "empresa (la suma). Las mismas cifras que «Lo que suma» del dashboard.",
+                desde="+37",
+            ),
+            Punto(
+                "objetivos_app", "Objetivos (solo para ver)",
+                "En el Tablero, botón de objetivos.",
+                "Hoy, esta semana y este mes de toda la empresa y de cada vendedor, con lo "
+                "vendido y lo esperado. No hay «Nuevo objetivo» ni «Quitar»: se ponen en "
+                "el dashboard.",
+                desde="+37",
             ),
             Punto(
                 "empresa", "Empresa",
@@ -442,9 +450,10 @@ SECCIONES: tuple[Seccion, ...] = (
             Punto(
                 "panel_objetivo_de_hoy", "«Objetivo de hoy» en el Tablero",
                 "Con un objetivo diario puesto, mira «Objetivo de hoy» en el Tablero.",
-                "El objetivo, lo vendido hoy, el porcentaje y cuánto falta; la ruta que "
-                "hoy descansa dice «Hoy no aplica».",
-                desde="+35",
+                "Cada vendedor con su objetivo, lo vendido hoy, el porcentaje y cuánto "
+                "falta; el que hoy descansa dice «Hoy no aplica»; abajo, toda la empresa "
+                "como la suma de todos.",
+                desde="+37",
             ),
             Punto(
                 "panel_desempeno", "Desempeño del día",
@@ -459,29 +468,31 @@ SECCIONES: tuple[Seccion, ...] = (
                 "plan de visita y los cambios físicos.",
             ),
             Punto(
-                "panel_objetivo_diario", "El objetivo diario fijo",
-                "Desempeño → Objetivos → «Objetivo diario»: pon $3,500 de lunes a sábado a "
-                "una ruta. Luego «Cambiar» a 4,000 desde hoy, programa un cambio a "
-                "futuro y cancélalo, y al final «Quitar».",
-                "Vale hasta que lo cambias; la semana se ve día por día con ✓; los días "
-                "pasados se quedan con el objetivo que tenían; quitarlo es desde hoy.",
-                desde="+35",
+                "panel_objetivo_diario", "El objetivo diario de cada vendedor",
+                "Desempeño → Objetivos: a un vendedor, «Poner» $3,500 marcando los días "
+                "que trabaja (sin el domingo, digamos). Luego «Cambiar» a 4,000 desde "
+                "hoy, programa un cambio a futuro y cancélalo, y al final «Quitar».",
+                "Vale hasta que lo cambias; la semana se ve día por día con ✓ y los días "
+                "sin marcar dicen «descanso»; abajo, «Toda la empresa» suma a todos; los "
+                "días pasados se quedan con el objetivo que tenían.",
+                desde="+37",
             ),
             Punto(
-                "panel_objetivo_a_todos", "Una meta a todos los vendedores a la vez",
-                "Desempeño → Objetivos: en «Poner un objetivo diario» y en «Nuevo objetivo "
-                "por periodo» escoge «Todos los vendedores»; en el del mes, «A todos los "
-                "vendedores» → «Poner a todas las rutas».",
-                "Cada ruta activa queda con la misma meta, medida por su lado; no es lo "
-                "mismo que «Toda la empresa», que es una sola meta para la suma.",
+                "panel_objetivo_a_todos", "El mismo objetivo a todos los vendedores",
+                "En «Poner un objetivo diario» escoge «Todos los vendedores»; luego "
+                "cámbiale los días al que no trabaje alguno.",
+                "Cada vendedor queda con el mismo objetivo diario, medido por su lado, y "
+                "cada uno se puede ajustar después.",
                 desde="+36",
             ),
             Punto(
-                "panel_objetivo_mes", "El objetivo del mes y por periodo",
-                "Desempeño → Objetivos: fija el del mes de una ruta y uno por periodo (una "
-                "semana); prueba «Copiar los objetivos de» el mes anterior.",
-                "Cada uno con su avance contra lo esperado; copiar rellena los huecos sin "
-                "pisar lo que ya ajustaste.",
+                "panel_lo_que_suma", "Lo que suma: semana, mes y empresa",
+                "Desempeño → Objetivos → «Lo que suma»: cambia el periodo a «Esta "
+                "semana», «Este mes» y unas fechas.",
+                "El objetivo de cada vendedor es la suma de sus días (la semana de quien "
+                "trabaja seis días a $3,500 = $21,000; los días de descanso no suman); "
+                "«Toda la empresa» es la suma de todos; el mayoreo sale aparte.",
+                desde="+37",
             ),
         ),
         parte="dashboard",

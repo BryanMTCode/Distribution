@@ -44,7 +44,7 @@ from app.api.admin.sesion_web import (
 )
 from app.core.seguridad import verificar_password
 from app.infra.models import Usuario
-from app.infra.objetivos_diarios import objetivos_diarios
+from app.infra.objetivos_diarios import de_toda_la_empresa, objetivos_diarios
 
 # `include_in_schema=False`: el panel NO entra al OpenAPI.
 #
@@ -238,16 +238,10 @@ async def tablero(
             "empresa": (
                 await resumen_de_la_empresa(sesion) if actor.puede("tablero.ver") else None
             ),
-            # El objetivo diario fijo contra lo vendido hoy (§110). Es de hoy,
-            # como los pendientes: el selector de periodo no lo mueve.
-            "objetivo_de_hoy": (
-                [
-                    o for o in await objetivos_diarios(sesion, dias_atras=0)
-                    if o.hoy.objetivo is not None or o.hoy.descanso
-                ]
-                if actor.puede("tablero.ver")
-                else []
-            ),
+            # El objetivo diario de cada vendedor contra lo vendido hoy, y la
+            # empresa como su suma (§110, §115). Es de hoy, como los pendientes:
+            # el selector de periodo no lo mueve.
+            **await _objetivo_de_hoy(sesion, actor),
             "periodo": rango,
             "periodos": PERIODOS,
             **await cifras_del_periodo(sesion, rango),
@@ -255,6 +249,18 @@ async def tablero(
         actor=actor,
         seccion="Tablero",
     )
+
+
+async def _objetivo_de_hoy(sesion, actor) -> dict:
+    if not actor.puede("tablero.ver"):
+        return {"objetivo_de_hoy": [], "empresa_hoy": None}
+    diarios = await objetivos_diarios(sesion, dias_atras=0)
+    return {
+        "objetivo_de_hoy": [
+            o for o in diarios if o.hoy.objetivo is not None or o.hoy.descanso
+        ],
+        "empresa_hoy": de_toda_la_empresa(diarios)[-1] if diarios else None,
+    }
 
 
 # Toda venta se pagó al entregar (ADR 0002 §81): lo vendido ES lo cobrado, y lo

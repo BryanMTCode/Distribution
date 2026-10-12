@@ -5325,11 +5325,10 @@ en el dashboard nada más».
 debo checar en la app para ver que las funcionalidades están bien.» Al verla:
 «dashboard y app juntos».
 
-- **Dónde:** Administración → Teléfonos → pestaña **«Revisión»**, y un enlace en
-  el Tablero junto a «Metas y objetivos». Es pestaña y no entrada propia para
-  que el menú siga en doce (§98).
+- **Dónde:** Administración → **Revisión** (§117; al principio era una pestaña
+  de Teléfonos), y un enlace en el Tablero junto a «Metas y objetivos».
 - **Dos partes**, cada una con su avance:
-  - **En el teléfono** (47 puntos): instalar y entrar; la ruta y las tiendas; la
+  - **En el teléfono** (48 puntos): instalar y entrar; la ruta y las tiendas; la
     visita; sincronizar y sin señal; el camión y el cierre; la oficina en la
     app; el almacén; el teléfono de la empresa.
   - **En el dashboard** (34 puntos): Tablero y desempeño; cortes, cargas y
@@ -5389,4 +5388,72 @@ Su camión, también quiero que aparezcan agrupados los productos.»
   sin grupos, como antes.
 
 (versionCode 36)
+
+## 115. Objetivos: solo el diario de cada vendedor, y todo se suma
+
+**Corrección (octubre 2026).** «¿Qué es eso de objetivo diario y objetivo del
+mes? Quiero que todo se sume, en el dashboard.» Y: «que me deje seleccionar los
+días en que el objetivo diario se aplica, por si algún vendedor no trabaja algún
+día».
+
+- Había tres metas que se capturaban por separado y no se sumaban entre sí: el
+  objetivo diario (§110), el del mes por ruta (§28, la barra del Tablero de la
+  app) y los de periodo (§104), además de uno «de toda la empresa». Podían decir
+  tres cosas distintas de la misma ruta.
+- Ahora se captura **una sola cosa: el objetivo diario de cada vendedor** (su
+  ruta), con los **días de la semana en que aplica** —de lunes a sábado por
+  omisión; a cada vendedor los suyos—, desde una fecha y sin fin. Un día sin
+  marcar es descanso: no suma y no cuenta como fallado.
+- **Lo demás se suma**: la semana, el mes o las fechas que se escojan son la
+  suma de sus días; **toda la empresa es la suma de todos los vendedores**.
+  «Esperado» es lo que suman los días ya transcurridos (hoy incluido): un
+  domingo de descanso no atrasa a nadie.
+- **Dashboard, Desempeño → Objetivos:** «Objetivo diario de cada vendedor»
+  (todos los vendedores activos, con su semana día por día y abajo «Toda la
+  empresa» como la suma; «Poner», «Cambiar», «Quitar», o «Todos los vendedores»
+  a la vez) y **«Lo que suma»** con el selector de periodo —«Esta semana» y
+  «Este mes» completos, no a la fecha—: cada vendedor y la empresa con su
+  objetivo, lo vendido, lo logrado contra lo esperado y lo que falta. Se quitaron
+  el objetivo del mes, los de periodo y el de la empresa.
+- **El Tablero del dashboard** («Objetivo de hoy») trae abajo la suma de la
+  empresa.
+- **La app:** la barra del mes de su Tablero es la suma de los objetivos diarios
+  del mes, con lo esperado de los días transcurridos. Objetivos queda **solo para
+  ver** —hoy, esta semana y este mes de la empresa y de cada vendedor—; poner o
+  quitar uno desde la app (una app anterior) contesta dónde se pone. Esto es del
+  servidor: no necesitó APK.
+- **El mayoreo va aparte**: no es de ningún vendedor, así que no entra en la
+  suma; «Lo que suma» lo dice debajo. (Antes el objetivo de la empresa lo
+  contaba, §105.)
+- Las tablas `objetivos_ruta` y `objetivos` se conservan con lo que ya se había
+  capturado, pero ya no se leen; tampoco los objetivos diarios «de la empresa»
+  que se hayan puesto antes de esto.
+
+## 116. La barra de avance de la app, por Hoy, Semana o Mes
+
+**Decisión (octubre 2026).** «En la app, que me permita mostrar la barra por la
+vista que quiera: diarios, semana y mes.»
+
+- En el Tablero de la app, la sección se llama **«Avance contra el objetivo»** y
+  trae **Hoy · Semana · Mes** (el mes, por omisión). Es el día, la semana o el
+  mes del día que se está viendo en el Tablero.
+- Cada vendedor con lo vendido contra la suma de sus objetivos diarios de ese
+  periodo y la marca de lo esperado a la fecha; arriba, toda la empresa como la
+  suma (§115). El que no tiene objetivo aparece y lo dice. El mayoreo, aparte.
+- `GET /v1/objetivos/avance?vista=hoy|semana|mes&fecha=`: las mismas cifras que
+  «Lo que suma» del dashboard.
+- Con un servidor anterior se ve la barra del mes de siempre; sin señal, la del
+  mes que se bajó con el tablero, con el aviso.
+
+(versionCode 37)
+
+## 117. La Revisión, a la vista en Administración
+
+**Corrección (octubre 2026).** «Lo de la revisión déjalo en una general en el
+dashboard, no escondido; mételo en Administración.»
+
+- La Revisión (§112) deja de ser una pestaña de Teléfonos y es una **entrada
+  propia del menú**: Administración → **Revisión**. El enlace del Tablero se
+  queda.
+- El menú pasa de doce a trece entradas (§98): esta se pidió a la vista.
 

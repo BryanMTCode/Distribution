@@ -10,7 +10,8 @@ clientes él los maneja.»
 4. **Cancelar** devuelve la mercancía y pide motivo.
 5. **Solo con el permiso**: el admin sí, la gerencia no (a menos que se le dé).
 6. **El panel** hace lo mismo sin JavaScript, y un precio en blanco toma la lista.
-7. **El objetivo de toda la empresa** cuenta el mayoreo.
+7. **El mayoreo va aparte** de la suma de los objetivos: no es de ningún
+   vendedor (§115).
 """
 
 from __future__ import annotations
@@ -254,9 +255,15 @@ async def test_el_panel_vende_y_el_precio_en_blanco_toma_la_lista(
     assert await _existencia(sesion, semilla, producto) == Decimal("480.000")
 
 
-async def test_el_objetivo_de_la_empresa_cuenta_el_mayoreo(
+async def test_el_mayoreo_va_aparte_de_la_suma_de_objetivos(
     cliente, sesion, semilla, bodega_surtida
 ):
+    """Toda la empresa es la suma de los vendedores (§115). El mayoreo no es de
+    ningún vendedor: no entra en la suma, y se dice aparte."""
+    from tests.test_panel_objetivos import _diario, _entrar
+
+    hoy = date.today()
+    await _diario(sesion, semilla["ruta"], "1000", desde=hoy)
     cab = await _cab(cliente)
     nuevo = await _cliente(cliente, cab)
     await cliente.post(
@@ -266,19 +273,7 @@ async def test_el_objetivo_de_la_empresa_cuenta_el_mayoreo(
                              "bultos": "4", "precio": "250"}]},
         headers=cab,
     )
-    hoy = date.today().isoformat()
-    r = await cliente.post(
-        "/v1/objetivos",
-        json={"desde": hoy, "hasta": hoy, "objetivo_venta": "2000"},
-        headers=cab,
-    )
-    empresa = next(o for o in r.json()["objetivos"] if o["ruta"] is None)
-    assert (empresa["venta"], empresa["logrado"]) == ("1000.00", "50.0")
-    r = await cliente.post(
-        "/v1/objetivos",
-        json={"ruta_id": str(semilla["ruta"]), "desde": hoy, "hasta": hoy,
-              "objetivo_venta": "2000"},
-        headers=cab,
-    )
-    de_ruta = next(o for o in r.json()["objetivos"] if o["ruta"] is not None)
-    assert de_ruta["venta"] == "0.00"
+    await _entrar(cliente)
+    plano = solo_texto(await cliente.get("/panel/objetivos?periodo=hoy"))
+    assert "Toda la empresa la suma de todos $1,000.00 $0.00" in plano
+    assert "Aparte, $1,000.00 de mayoreo en el periodo" in plano

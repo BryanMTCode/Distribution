@@ -3,18 +3,18 @@
 {% block contenido %}
 <h1>Objetivos</h1>
 <p class="subtitulo">
-  Contra qué se mide la venta. Primero el <a href="#diario">objetivo diario</a>: se
-  pone una vez y vale todos los días hasta que lo cambies. Después el
-  <a href="#del_mes">objetivo del mes</a> de cada ruta —el que dibuja la barra del
-  tablero— y los <a href="#por_periodo">objetivos de un periodo</a> —un día, una
-  semana, un rango—.
+  Solo se pone una cosa: el <strong>objetivo diario de cada vendedor</strong> —por
+  ejemplo $3,500 de lunes a sábado—, y vale hasta que lo cambies. Lo demás
+  <a href="#suma">se suma solo</a>: la semana, el mes o las fechas que escojas son
+  la suma de sus días, y <strong>toda la empresa es la suma de todos los
+  vendedores</strong>.
 </p>
 
 {% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
 {% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
 
 {# ----------------------------------------------------------------------- #}
-{# El objetivo diario fijo (ADR 0002 §110)                                  #}
+{# El objetivo diario de cada vendedor (ADR 0002 §110, §115)               #}
 {# ----------------------------------------------------------------------- #}
 {# Los campos del objetivo diario: los mismos para ponerlo nuevo y para
    cambiarlo; al cambiarlo vienen llenos con el que vale hoy. #}
@@ -44,16 +44,46 @@
   </div>
 {% endmacro %}
 
-<h2 id="diario">Objetivo diario</h2>
+{% macro renglon_suma(m, id, nombre) %}
+<tr id="{{ id }}">
+  <td>{{ nombre }}{% if m.ruta_id is none %}<div class="sutil">la suma de todos</div>{% elif m.dias_con_objetivo %}<div class="sutil">{{ m.dias_con_objetivo }} día(s) con objetivo</div>{% endif %}</td>
+  <td class="numero">{% if m.tiene_objetivo %}{{ m.objetivo|dinero }}{% else %}<span class="sutil">sin objetivo</span>{% endif %}</td>
+  <td class="numero">{{ m.venta|dinero }}</td>
+  <td>
+    {% if m.tiene_objetivo %}
+      {{ m.logrado }}% <span class="sutil">· esperado {{ m.esperado }}%{% if m.semaforo == 'adelante' %} · adelante{% elif m.semaforo == 'cerca' %} · cerca{% else %} · atrás{% endif %}</span>
+      {# La barra: lo logrado, y la marca oscura es lo esperado a la fecha. #}
+      <div style="position:relative;height:8px;background:var(--linea);border-radius:4px;margin-top:5px">
+        <div style="position:absolute;left:0;top:0;bottom:0;border-radius:4px;
+                    width:{{ '%.1f'|format([m.logrado|float, 100]|min) }}%;
+                    background:{% if m.semaforo == 'adelante' %}var(--bien){% elif m.semaforo == 'cerca' %}var(--aviso){% else %}var(--alerta){% endif %}"></div>
+        <div style="position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta);
+                    left:{{ '%.1f'|format([m.esperado|float, 100]|min) }}%"></div>
+      </div>
+    {% else %}<span class="sutil">—</span>{% endif %}
+  </td>
+  <td class="numero">
+    {% if m.tiene_objetivo %}{% if m.falta %}{{ m.falta|dinero }}{% else %}<strong style="color:var(--bien)">cumplido</strong>{% endif %}{% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+<h2 id="diario">Objetivo diario de cada vendedor</h2>
 <p class="sutil" style="margin-top:-6px">
-  Se pone una vez —por ejemplo, <strong>$3,500 cada día, de lunes a sábado</strong>— y
-  vale hasta que lo cambies. Al cambiarlo, lo nuevo vale desde el día que digas y los
-  días pasados se quedan medidos contra el que tenían. Los días que no escojas (el
-  domingo, digamos) no cuentan como fallados. El de toda la empresa suma también el
-  mayoreo. Solo cuenta lo que ya sincronizó.
+  Se pone una vez y vale hasta que lo cambies. Al cambiarlo, lo nuevo vale desde el
+  día que digas y los días pasados se quedan medidos contra el que tenían. Los días
+  que no escojas (el domingo, digamos) son descanso: ni suman ni cuentan como
+  fallados. Solo cuenta lo que ya sincronizó.
 </p>
-{% if diarios %}
-<div class="tabla-marco">
+{% if not diarios %}
+<div class="vacio" id="sin_rutas">No hay rutas activas. Da de alta una ruta primero.</div>
+{% else %}
+{% if not diarios|selectattr('vigente')|list %}
+<div class="aviso-caja aviso" id="sin_diario">Nadie tiene objetivo diario todavía: ponlo abajo, a un vendedor o a todos.</div>
+{% endif %}
+{# Con muchos vendedores y siete días la tabla es ancha: se desliza de lado en
+   vez de cortar los botones de la derecha. #}
+<div class="tabla-marco" style="overflow-x:auto">
 <table id="tabla_diario">
   <thead>
     <tr>
@@ -62,15 +92,14 @@
       {% for d in diarios[0].dias %}
       <th class="numero">{% if d.es_hoy %}Hoy{% else %}{{ d.corto }}{% endif %}</th>
       {% endfor %}
-      {% if puede_editar %}<th></th>{% endif %}
     </tr>
   </thead>
   <tbody>
   {% for o in diarios %}
-    {% set clave = o.ruta_id or 'empresa' %}
+    {% set clave = o.ruta_id %}
     <tr id="diario_{{ clave }}">
       <td>
-        <strong>{{ o.ruta or 'Toda la empresa' }}</strong>
+        <strong>{{ o.ruta }}</strong>
         {% if o.medidos %}<div class="sutil">{{ o.cumplidos }} de {{ o.medidos }} día(s) cumplido(s)</div>{% endif %}
       </td>
       <td class="numero">
@@ -81,7 +110,7 @@
           {% if o.vigente.objetivo_visitas %}<div class="sutil">{{ o.vigente.objetivo_visitas }} visitas</div>{% endif %}
           {% if o.vigente.nota %}<div class="sutil">{{ o.vigente.nota }}</div>{% endif %}
         {% else %}
-          <span class="sutil">sin objetivo hoy</span>
+          <span class="sutil">sin objetivo</span>
         {% endif %}
         {% for t in o.proximos %}
           <div class="sutil" id="cambio_{{ t.id }}" style="margin-top:4px">
@@ -95,6 +124,26 @@
             {% endif %}
           </div>
         {% endfor %}
+        {% if puede_editar %}
+        <div style="margin-top:6px">
+        <details>
+          <summary class="boton-chico" id="cambiar_diario_{{ clave }}">{{ 'Cambiar' if o.vigente else 'Poner' }}</summary>
+          <form method="post" action="/panel/objetivos/diario" style="min-width:300px">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="ruta_id" value="{{ o.ruta_id }}">
+            {{ campos_diario(o.vigente, clave) }}
+            <button type="submit">Guardar el cambio</button>
+          </form>
+        </details>
+        {% if o.vigente %}
+        <form method="post" action="/panel/objetivos/diario/quitar" style="margin-top:4px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="ruta_id" value="{{ o.ruta_id }}">
+          <button type="submit" class="boton-chico peligro" id="quitar_diario_{{ clave }}">Quitar</button>
+        </form>
+        {% endif %}
+        </div>
+        {% endif %}
       </td>
       {% for d in o.dias %}
       <td class="numero"{% if d.objetivo is not none and (d.cumplido or not d.es_hoy) %}
@@ -109,46 +158,43 @@
         {% endif %}
       </td>
       {% endfor %}
-      {% if puede_editar %}
-      <td>
-        <details>
-          <summary class="boton-chico" id="cambiar_diario_{{ clave }}">Cambiar</summary>
-          <form method="post" action="/panel/objetivos/diario" style="min-width:300px">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <input type="hidden" name="ruta_id" value="{{ o.ruta_id or '' }}">
-            {{ campos_diario(o.vigente, clave) }}
-            <button type="submit">Guardar el cambio</button>
-          </form>
-        </details>
-        {% if o.vigente %}
-        <form method="post" action="/panel/objetivos/diario/quitar" style="margin-top:4px">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="ruta_id" value="{{ o.ruta_id or '' }}">
-          <button type="submit" class="boton-chico peligro" id="quitar_diario_{{ clave }}">Quitar</button>
-        </form>
-        {% endif %}
-      </td>
-      {% endif %}
     </tr>
   {% endfor %}
   </tbody>
+  {# Toda la empresa: la suma de los vendedores, día por día (§115). #}
+  <tfoot>
+    <tr id="diario_empresa" style="font-weight:600">
+      <td>Toda la empresa<div class="sutil">la suma de todos</div></td>
+      <td class="numero">
+        {% set de_hoy = empresa_dias[-1] %}
+        {% if de_hoy.objetivo is not none %}{{ de_hoy.objetivo|dinero }}<div class="sutil">hoy</div>{% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      {% for d in empresa_dias %}
+      <td class="numero"{% if d.objetivo is not none and (d.cumplido or not d.es_hoy) %}
+          style="color:{% if d.cumplido %}var(--bien){% else %}var(--alerta){% endif %}"{% endif %}>
+        {% if d.objetivo is not none %}
+          {{ d.venta|dinero }}
+          <div class="sutil">de {{ '${:,.0f}'.format(d.objetivo) }} · {{ d.logrado }}%{% if d.cumplido %} ✓{% endif %}</div>
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+  </tfoot>
 </table>
 </div>
-{% else %}
-<div class="vacio" id="sin_diario">Nadie tiene objetivo diario todavía.</div>
 {% endif %}
 
-{% if puede_editar %}
+
+{% if puede_editar and diarios %}
 <form method="post" action="/panel/objetivos/diario" id="forma_diario"
       style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
              border-radius:10px;padding:16px;margin-top:12px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <strong>Poner un objetivo diario</strong>
   <div class="barra" style="margin-top:10px;flex-wrap:wrap">
-    <select name="ruta_id" aria-label="De quién">
-      <option value="">Toda la empresa (una meta para la suma)</option>
-      <option value="todas">Todos los vendedores (la misma a cada ruta)</option>
-      {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
+    <select name="ruta_id" aria-label="A quién">
+      <option value="todas">Todos los vendedores (la misma a cada uno)</option>
+      {% for o in diarios %}<option value="{{ o.ruta_id }}">{{ o.ruta }}</option>{% endfor %}
     </select>
   </div>
   {{ campos_diario(none, 'nuevo') }}
@@ -157,282 +203,42 @@
 </form>
 {% endif %}
 
-<h2 id="del_mes">Objetivo del mes</h2>
-<form class="barra" method="get" action="/panel/objetivos">
-  <input type="month" name="mes" value="{{ periodo }}">
-  <button type="submit">Ver</button>
-  {% if puede_editar %}
-  {# Las metas de un día, una semana o un rango están abajo: que no haya que
-     adivinarlo (ADR 0002 §104). #}
-  <a class="boton-chico" href="#forma_por_periodo" id="ir_a_nueva_meta">+ Nueva meta por periodo</a>
-  {% endif %}
-</form>
-
-<div class="tarjetas">
-  <div class="tarjeta">
-    <div class="numero">${{ '{:,.2f}'.format(total_objetivo) }}</div>
-    <div class="etiqueta">objetivo de {{ nombre_periodo }}</div>
-    <div class="sutil" style="margin-top:6px">
-      Suma de las rutas activas con objetivo fijado.
-    </div>
-  </div>
-  <div class="tarjeta">
-    <div class="numero">${{ '{:,.2f}'.format(total_venta) }}</div>
-    <div class="etiqueta">vendido en el mes</div>
-    <div class="sutil" style="margin-top:6px">
-      {# La cifra sale de tablero_mes_ruta, el mismo modelo de lectura que
-         alimenta el tablero del gerente: las dos pantallas no pueden discrepar. #}
-      Día {{ dia_del_mes }} de {{ dias_del_mes }} · lo esperado a prorrata es
-      {{ esperado }}%.
-    </div>
-  </div>
-  <div class="tarjeta {% if sin_objetivo %}aviso{% endif %}">
-    <div class="numero">{{ sin_objetivo }}</div>
-    <div class="etiqueta">rutas sin objetivo</div>
-    <div class="sutil" style="margin-top:6px">
-      {% if sin_objetivo %}
-        En el tablero aparecen con su venta y sin barra de avance. No se inventa
-        una meta: una barra calculada contra un objetivo que nadie fijó sería
-        una cifra sin dueño.
-      {% else %}
-        Todas las rutas activas tienen meta este mes.
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-{% if puede_editar %}
-<form method="post" action="/panel/objetivos/copiar" style="margin:18px 0 0">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <input type="hidden" name="mes" value="{{ periodo }}">
-  <button type="submit" class="secundario">
-    Copiar los objetivos de {{ nombre_anterior }}
-  </button>
-  <span class="sutil" style="margin-left:8px">
-    Rellena los huecos. No pisa lo que ya ajustaste a mano este mes.
-  </span>
-</form>
-{% endif %}
-
-{% if puede_editar %}
-<form method="post" action="/panel/objetivos/fijar-todas" id="forma_mes_a_todas"
-      class="barra" style="margin:14px 0 0;align-items:center">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <input type="hidden" name="mes" value="{{ periodo }}">
-  <strong>A todos los vendedores:</strong>
-  <input type="text" name="objetivo_venta" inputmode="decimal" style="width:130px"
-         placeholder="$ del mes" aria-label="Objetivo del mes para todos" required>
-  <input type="text" name="objetivo_visitas" inputmode="numeric" style="width:90px"
-         placeholder="visitas" aria-label="Visitas del mes para todos">
-  <button type="submit">Poner a todas las rutas</button>
-  <span class="sutil">La misma meta de {{ nombre_periodo }} a cada ruta; pisa la que ya tuvieran.</span>
-</form>
-{% endif %}
-
-<h3>Por ruta</h3>
-<div class="tabla-marco">
-<table>
-  <thead>
-    <tr>
-      <th>Ruta</th>
-      <th class="numero">Objetivo</th>
-      <th class="numero">Vendido</th>
-      <th class="numero">Avance</th>
-      <th class="numero">{{ nombre_anterior|capitalize }}</th>
-      {% if puede_editar %}<th>Fijar</th>{% endif %}
-    </tr>
-  </thead>
-  <tbody>
-  {% for f in filas %}
-    {% set objetivo = f.objetivo_venta %}
-    {% set logrado = (f.venta_mes * 100 / objetivo) if objetivo and objetivo > 0 else none %}
-    <tr>
-      <td>
-        <strong>{{ f.codigo }}</strong><br>
-        <span class="sutil">{{ f.nombre }}</span>
-        {% if f.nota %}<br><span class="sutil">{{ f.nota }}</span>{% endif %}
-      </td>
-      <td class="numero">
-        {% if objetivo %}
-          ${{ '{:,.2f}'.format(objetivo) }}
-          {% if f.objetivo_visitas %}
-            <br><span class="sutil">{{ f.objetivo_visitas }} visitas</span>
-          {% endif %}
-          {% if f.fijado_por %}
-            <br><span class="sutil">{{ f.fijado_por }}</span>
-          {% endif %}
-        {% else %}
-          <span class="sutil">sin objetivo</span>
-        {% endif %}
-      </td>
-      <td class="numero">
-        ${{ '{:,.2f}'.format(f.venta_mes) }}
-        <br><span class="sutil">{{ f.visitas_mes }} visitas</span>
-      </td>
-      <td class="numero">
-        {% if logrado is not none %}
-          {{ '%.1f'|format(logrado) }}%
-          {# La barra no es decoración: 67% el día 10 es excelente y el día 28 es
-             un problema, y el número es el mismo. La marca gris es lo esperado. #}
-          <div style="position:relative;height:8px;background:var(--linea);
-                      border-radius:4px;margin-top:5px;overflow:hidden">
-            <div style="position:absolute;left:0;top:0;bottom:0;
-                        width:{{ '%.1f'|format([logrado, 100]|min) }}%;
-                        background:{% if logrado >= esperado|float %}var(--bien)
-                                   {% elif logrado >= esperado|float - 10 %}var(--aviso)
-                                   {% else %}var(--alerta){% endif %}"></div>
-          </div>
-          <span class="sutil">esperado {{ esperado }}%</span>
-        {% else %}
-          <span class="sutil">—</span>
-        {% endif %}
-      </td>
-      <td class="numero">
-        ${{ '{:,.2f}'.format(f.venta_anterior) }}
-        {% if f.objetivo_anterior %}
-          <br><span class="sutil">meta ${{ '{:,.2f}'.format(f.objetivo_anterior) }}</span>
-        {% endif %}
-      </td>
-      {% if puede_editar %}
-      <td>
-        <form method="post" action="/panel/objetivos/fijar"
-              style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="mes" value="{{ periodo }}">
-          <input type="hidden" name="ruta_id" value="{{ f.ruta_id }}">
-          <input type="text" name="objetivo_venta" inputmode="decimal"
-                 style="width:110px" placeholder="$ del mes"
-                 value="{{ '{:.2f}'.format(objetivo) if objetivo else '' }}"
-                 aria-label="Objetivo de venta de {{ f.codigo }}">
-          <input type="text" name="objetivo_visitas" inputmode="numeric"
-                 style="width:80px" placeholder="visitas"
-                 value="{{ f.objetivo_visitas or '' }}"
-                 aria-label="Objetivo de visitas de {{ f.codigo }}">
-          <button type="submit">Guardar</button>
-        </form>
-        {% if objetivo %}
-        {# Quitar = mandar el objetivo vacío: "sin objetivo" y "objetivo $0" son dos
-           cosas distintas, y la segunda daría 100% con la primera venta. #}
-        <form method="post" action="/panel/objetivos/fijar" style="margin-top:4px">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="mes" value="{{ periodo }}">
-          <input type="hidden" name="ruta_id" value="{{ f.ruta_id }}">
-          <input type="hidden" name="objetivo_venta" value="">
-          <button type="submit" class="boton-chico peligro" id="quitar_{{ f.codigo }}">Quitar objetivo</button>
-        </form>
-        {% else %}
-        <span class="sutil">Sin objetivo este mes.</span>
-        {% endif %}
-      </td>
-      {% endif %}
-    </tr>
-  {% else %}
-    <tr><td colspan="6">
-      <div class="vacio">No hay rutas activas. Da de alta una ruta primero.</div>
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-
 {# ----------------------------------------------------------------------- #}
-{# Objetivos de cualquier periodo (ADR 0002 §104)                          #}
+{# Lo que suma: cualquier periodo (ADR 0002 §115)                          #}
 {# ----------------------------------------------------------------------- #}
-<h2 id="por_periodo">Objetivos por periodo</h2>
+<h2 id="suma">Lo que suma</h2>
 <p class="sutil" style="margin-top:-6px">
-  Un día, una semana, del 3 al 17: el periodo que quieras, de una ruta o de toda
-  la empresa (la de toda la empresa suma también el mayoreo). Se ven aquí y en la
-  app. Un mes completo de una ruta es su objetivo del mes, el de arriba. Para la
-  misma cifra todos los días, usa el <a href="#diario">objetivo diario</a>.
+  El objetivo de cada vendedor en el periodo es la suma de sus objetivos diarios; el
+  de toda la empresa, la suma de todos. «Esperado» es lo que suman los días que ya
+  pasaron, hoy incluido: si lo vendido va abajo de eso, va atrás.
 </p>
+{% set ocultos = {} %}
+{% include "_periodo.html" %}
+{% if metas %}
 <div class="tabla-marco">
-<table id="tabla_por_periodo">
+<table id="tabla_suma">
   <thead>
     <tr>
-      <th>Periodo</th>
-      <th>De quién</th>
+      <th>Vendedor</th>
       <th class="numero">Objetivo</th>
       <th class="numero">Vendido</th>
-      <th>Avance</th>
-      {% if puede_editar %}<th></th>{% endif %}
+      <th style="width:32%">Avance</th>
+      <th class="numero">Falta</th>
     </tr>
   </thead>
   <tbody>
-  {% for o in por_periodo %}
-    <tr id="objetivo_{{ o.id }}">
-      <td>
-        {% if o.desde == o.hasta %}{{ o.desde|dia_en_palabras }}{% else %}
-        del {{ o.desde.strftime('%d/%m') }} al {{ o.hasta.strftime('%d/%m/%Y') }}{% endif %}
-        <div class="sutil">
-          {% if o.estado == 'por_empezar' %}por empezar{% elif o.estado == 'terminado' %}terminado{% else %}en curso{% endif %}
-          · {{ o.dias }} día(s){% if o.nota %} · {{ o.nota }}{% endif %}
-        </div>
-      </td>
-      <td>{{ o.ruta or 'Toda la empresa' }}</td>
-      <td class="numero">
-        ${{ '{:,.2f}'.format(o.objetivo_venta) }}
-        {% if o.objetivo_visitas %}<div class="sutil">{{ o.objetivo_visitas }} visitas</div>{% endif %}
-      </td>
-      <td class="numero">
-        ${{ '{:,.2f}'.format(o.venta) }}
-        <div class="sutil">{{ o.visitas }} visitas</div>
-      </td>
-      <td>
-        {% if o.avance.logrado is not none %}{{ o.avance.logrado }}%{% endif %}
-        <div class="sutil">esperado {{ o.avance.esperado }}%
-          {% if o.avance.semaforo == 'adelante' %}· adelante{% elif o.avance.semaforo == 'cerca' %}· cerca{% elif o.avance.semaforo == 'atras' %}· atrás{% endif %}
-        </div>
-      </td>
-      {% if puede_editar %}
-      <td>
-        <form method="post" action="/panel/objetivos/periodo/{{ o.id }}/borrar">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button type="submit" class="boton-chico peligro">Quitar</button>
-        </form>
-      </td>
-      {% endif %}
-    </tr>
-  {% else %}
-    <tr><td colspan="6"><div class="vacio">Ningún objetivo por periodo todavía.</div></td></tr>
-  {% endfor %}
+  {% for m in metas %}{{ renglon_suma(m, 'suma_' ~ m.ruta_id, m.ruta) }}{% endfor %}
   </tbody>
+  <tfoot style="font-weight:600">
+    {{ renglon_suma(empresa, 'suma_empresa', 'Toda la empresa') }}
+  </tfoot>
 </table>
 </div>
-
-{% if puede_editar %}
-<form method="post" action="/panel/objetivos/periodo" id="forma_por_periodo"
-      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
-             border-radius:10px;padding:16px;margin-top:12px">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <strong>Nuevo objetivo por periodo</strong>
-  <div class="barra" style="margin-top:10px;flex-wrap:wrap">
-    <select name="ruta_id" aria-label="De quién">
-      <option value="">Toda la empresa (una meta para la suma)</option>
-      <option value="todas">Todos los vendedores (la misma a cada ruta)</option>
-      {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
-    </select>
-    <label>Desde <input type="date" name="desde" value="{{ hoy }}" required></label>
-    <label>Hasta <input type="date" name="hasta" value="{{ hoy }}" required></label>
-  </div>
-  <div class="barra" style="flex-wrap:wrap">
-    <input type="text" name="objetivo_venta" placeholder="Vender $" inputmode="decimal" required>
-    <input type="text" name="objetivo_visitas" placeholder="Visitas (opcional)" inputmode="numeric">
-    <input type="text" name="nota" placeholder="Nota (opcional)" maxlength="300">
-    <button type="submit">Guardar objetivo</button>
-  </div>
-  <div class="sutil">Para un solo día, pon la misma fecha en «desde» y «hasta».</div>
-</form>
+{% if mayoreo %}
+<p class="sutil" id="mayoreo_aparte">
+  Aparte, {{ mayoreo|dinero }} de mayoreo en el periodo: no es de ningún vendedor, así
+  que no entra en la suma.
+</p>
 {% endif %}
-
-<h2>Qué hace el tablero con esto</h2>
-<p class="sutil">
-  El objetivo del mes se prorratea por <strong>días naturales</strong> transcurridos,
-  no por días hábiles: una ruta que trabaja de lunes a sábado se verá atrasada los
-  domingos, y es a propósito. El objetivo diario sí sabe qué días aplica, y el
-  tablero lo pone contra lo vendido hoy.
-</p>
-<p class="sutil">
-  Una ruta sin objetivo aparece en el tablero con su venta y sin barra. Es la que
-  hay que notar: si no apareciera, nadie se acordaría de ponerle meta.
-</p>
+{% endif %}
 {% endblock %}

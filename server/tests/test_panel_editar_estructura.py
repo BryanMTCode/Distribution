@@ -593,28 +593,26 @@ async def test_el_supervisor_ve_los_motivos_pero_no_los_edita(cliente, sesion, s
 # Objetivos
 # ===========================================================================
 async def test_un_objetivo_se_quita_con_su_boton(cliente, sesion, semilla):
+    """El objetivo diario de un vendedor se quita desde su renglón (§110, §115)."""
     await _entrar(cliente)
     pagina = await cliente.get("/panel/objetivos")
     await cliente.post(
-        "/panel/objetivos/fijar",
+        "/panel/objetivos/diario",
         data={
             "csrf": _csrf(cliente, pagina),
             "ruta_id": str(semilla["ruta"]),
-            "objetivo_venta": "150000",
+            "objetivo_venta": "3500",
+            "dias": ["1", "2", "3", "4", "5", "6"],
         },
     )
     pagina = await cliente.get("/panel/objetivos")
-    assert 'id="quitar_R04"' in pagina.text
+    assert f'id="quitar_diario_{semilla["ruta"]}"' in pagina.text
     await cliente.post(
-        "/panel/objetivos/fijar",
-        data={
-            "csrf": _csrf(cliente, pagina),
-            "ruta_id": str(semilla["ruta"]),
-            "objetivo_venta": "",
-        },
+        "/panel/objetivos/diario/quitar",
+        data={"csrf": _csrf(cliente, pagina), "ruta_id": str(semilla["ruta"])},
     )
-    quedan = await _uno(sesion, "SELECT count(*) AS n FROM objetivos_ruta")
-    assert quedan["n"] == 0
+    pagina = await cliente.get("/panel/objetivos")
+    assert f'id="quitar_diario_{semilla["ruta"]}"' not in pagina.text
 
 
 # ===========================================================================

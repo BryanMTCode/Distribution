@@ -31,6 +31,7 @@ min, con 2 equipos sin sincronizar" es dar por total lo que es un mínimo.
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -61,6 +62,8 @@ from app.domain.tablero import (
     inicio_de_mes,
     porcentaje,
 )
+from app.infra.objetivos import fin_de_mes
+from app.infra.objetivos_diarios import Meta, metas_del_rango
 from app.workers.tablero import asegurar_fresco
 
 router = APIRouter(prefix="/tablero", tags=["tablero"])
@@ -370,6 +373,11 @@ async def ver_tablero(
     hoy = date.today()
     dias_del_mes = calendar.monthrange(periodo.year, periodo.month)[1]
     dia_del_mes = hoy.day if periodo == inicio_de_mes(hoy) else dias_del_mes
+    # El objetivo del mes de cada ruta es la suma de sus objetivos diarios, y
+    # lo esperado, lo que suman los días ya transcurridos (ADR 0002 §115).
+    metas = {
+        m.ruta_id: m for m in (await metas_del_rango(sesion, periodo, fin_de_mes(periodo)))[0]
+    }
 
     vendedores = [
         _renglon_vendedor(
@@ -436,7 +444,10 @@ async def ver_tablero(
             periodo=periodo,
             dia_del_mes=dia_del_mes,
             dias_del_mes=dias_del_mes,
-            rutas=[_renglon_ruta(f, dia_del_mes, dias_del_mes) for f in rutas],
+            rutas=[
+                _renglon_ruta(f, metas.get(f["ruta_id"]), dia_del_mes, dias_del_mes)
+                for f in rutas
+            ],
             venta_sin_ruta=Decimal(sin_ruta["venta"]),
             documentos_sin_ruta=int(sin_ruta["documentos"]),
         ),
@@ -495,23 +506,30 @@ def _renglon_vendedor(fila, ref, equipo, *, dia: date, es_hoy: bool) -> RenglonV
     )
 
 
-def _renglon_ruta(fila, dia_del_mes: int, dias_del_mes: int) -> RenglonRuta:
-    avance = Avance(
-        venta=Decimal(fila["venta_mes"]),
-        objetivo=Decimal(fila["objetivo_venta"]) if fila["objetivo_venta"] is not None else None,
-        dia_del_mes=dia_del_mes,
-        dias_del_mes=dias_del_mes,
-    )
+def _renglon_ruta(fila, meta: Meta | None, dia_del_mes: int, dias_del_mes: int) -> RenglonRuta:
+    """La venta del mes —del modelo de lectura, como el resto del tablero—
+    contra la suma de sus objetivos diarios. Sin objetivo diario en el mes, sin
+    barra."""
+    venta = Decimal(fila["venta_mes"])
+    if meta is not None and meta.tiene_objetivo:
+        contra = dataclasses.replace(meta, venta=venta)
+        objetivo, logrado, esperado = contra.objetivo, contra.logrado, contra.esperado
+        diferencia, semaforo = contra.diferencia, contra.semaforo
+    else:
+        avance = Avance(venta=venta, objetivo=None, dia_del_mes=dia_del_mes,
+                        dias_del_mes=dias_del_mes)
+        objetivo, logrado, esperado = None, None, avance.esperado
+        diferencia, semaforo = None, avance.semaforo
     return RenglonRuta(
         ruta_id=fila["ruta_id"],
         codigo=fila["codigo"],
         nombre=fila["nombre"],
-        venta_mes=avance.venta,
-        objetivo=avance.objetivo,
-        logrado=avance.logrado,
-        esperado=avance.esperado,
-        diferencia=avance.diferencia,
-        semaforo=avance.semaforo,
+        venta_mes=venta,
+        objetivo=objetivo,
+        logrado=logrado,
+        esperado=esperado,
+        diferencia=diferencia,
+        semaforo=semaforo,
         visitas_mes=int(fila["visitas_mes"]),
         dias_con_venta=int(fila["dias_con_venta"]),
         clientes_distintos=int(fila["clientes_distintos"]),

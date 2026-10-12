@@ -99,6 +99,9 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         ("/panel/equipo", "Usuarios y rutas"),
         # Los teléfonos, su sincronización y lo que el servidor les rechazó.
         ("/panel/equipos", "Teléfonos"),
+        # Lo que hay que probar, en la app y en el dashboard, con cada versión
+        # (ADR 0002 §112): a la vista, no escondida en una pestaña.
+        ("/panel/revision-app", "Revisión"),
     ]),
 ]
 
@@ -142,9 +145,6 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/equipos", "Teléfonos"),
         ("/panel/sincronizaciones", "Sincronizaciones"),
         ("/panel/cuarentena", "Cuarentena"),
-        # Lo que hay que probar, en la app y en el dashboard, con cada versión
-        # (ADR 0002 §112).
-        ("/panel/revision-app", "Revisión"),
     ],
 }
 

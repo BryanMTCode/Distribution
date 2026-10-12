@@ -9,6 +9,7 @@
    que había; un cambio a futuro se ve y se cancela.
 3. **Quitarlo** es desde hoy; los días pasados se quedan.
 4. **Los días que no aplica** son descanso, no fallados.
+   (La empresa no tiene objetivo propio: es la suma, §115.)
 5. **Lo imposible se dice**, y un supervisor lo ve pero no lo fija.
 """
 
@@ -22,7 +23,7 @@ from sqlalchemy import text
 
 from app.infra.objetivos_diarios import objetivos_diarios
 from tests.conftest import csrf_del_panel, solo_texto
-from tests.test_objetivos_por_periodo import _venta
+from tests.test_objetivos_app import _venta
 from tests.test_panel_objetivos import _crear_usuario, _entrar
 
 pytestmark = pytest.mark.asyncio
@@ -116,25 +117,24 @@ async def test_por_dia_3500_hasta_que_lo_cambie(cliente, sesion, semilla):
 
 
 async def test_los_dias_que_no_aplica_son_descanso(cliente, sesion, semilla):
-    """El de toda la empresa, todos los días menos el de hoy: hoy descansa."""
+    """Todos los días menos el de hoy: hoy descansa, y no cuenta como fallado."""
     hoy = date.today()
     await _venta(sesion, semilla, total="1200.00", dia=hoy - timedelta(days=1))
     await _entrar(cliente)
     r = await cliente.get("/panel/objetivos")
     otros = [d for d in TODOS if d != str(hoy.isoweekday())]
-    r = await _fijar(cliente, r, ruta_id="", objetivo_venta="1000", dias=otros,
-                     desde=(hoy - timedelta(days=1)).isoformat())
+    r = await _fijar(cliente, r, ruta_id=str(semilla["ruta"]), objetivo_venta="1000",
+                     dias=otros, desde=(hoy - timedelta(days=1)).isoformat())
     assert "Objetivo diario guardado" in solo_texto(r)
 
     [o] = await objetivos_diarios(sesion)
-    assert o.ruta is None
     assert (o.dias[-2].venta, o.dias[-2].cumplido) == (Decimal("1200.00"), True)
     assert (o.hoy.objetivo, o.hoy.descanso) == (None, True)
-    assert "Toda la empresa" in solo_texto(r) and "descanso" in solo_texto(r)
+    assert "descanso" in solo_texto(r)
     assert "Hoy no aplica" in solo_texto(await cliente.get("/panel"))
 
-    # La empresa también se corrige el mismo día sin duplicarse.
-    await _fijar(cliente, r, ruta_id="", objetivo_venta="1100", dias=otros,
+    # Se corrige el mismo día sin duplicarse.
+    await _fijar(cliente, r, ruta_id=str(semilla["ruta"]), objetivo_venta="1100", dias=otros,
                  desde=(hoy - timedelta(days=1)).isoformat())
     cambios = (
         await sesion.execute(text("SELECT count(*) FROM objetivos_diarios"))

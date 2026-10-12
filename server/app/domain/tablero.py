@@ -361,12 +361,12 @@ SELECT t.vendedor_id, u.codigo, u.nombre,
  ORDER BY t.venta_total DESC, u.nombre
 """
 
-# El avance del mes contra el objetivo.
+# La venta del mes de cada ruta activa, para el avance contra el objetivo.
 #
-# `LEFT JOIN objetivos_ruta` y no `JOIN`: una ruta sin objetivo fijado tiene que
-# aparecer con su venta y sin barra de avance. Con un `JOIN`, la ruta a la que
-# nadie le puso meta desaparecería del tablero, que es exactamente al revés de
-# lo que conviene — la que no tiene meta es la que hay que notar.
+# Todas las rutas activas, tengan o no objetivo: la que no tiene meta aparece
+# con su venta y sin barra, porque es la que hay que notar. El objetivo ya no
+# sale de aquí: es la suma de los objetivos diarios del mes (ADR 0002 §115,
+# `infra/objetivos_diarios.metas_del_rango`).
 SQL_AVANCE_POR_RUTA = """
 SELECT r.id AS ruta_id, r.codigo, r.nombre,
        COALESCE(m.venta_mes, 0)::numeric(14,2)    AS venta_mes,
@@ -374,12 +374,9 @@ SELECT r.id AS ruta_id, r.codigo, r.nombre,
        COALESCE(m.visitas_con_venta_mes, 0)       AS visitas_con_venta_mes,
        COALESCE(m.dias_con_venta, 0)              AS dias_con_venta,
        COALESCE(m.clientes_distintos, 0)          AS clientes_distintos,
-       o.objetivo_venta,
-       o.objetivo_visitas,
        m.calculado_en
   FROM rutas r
   LEFT JOIN tablero_mes_ruta m ON m.ruta_id = r.id AND m.periodo = :periodo
-  LEFT JOIN objetivos_ruta  o ON o.ruta_id = r.id AND o.periodo = :periodo
  WHERE r.activo
  ORDER BY r.codigo
 """
