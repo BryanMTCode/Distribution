@@ -5332,7 +5332,7 @@ debo checar en la app para ver que las funcionalidades están bien.» Al verla:
   - **En el teléfono** (47 puntos): instalar y entrar; la ruta y las tiendas; la
     visita; sincronizar y sin señal; el camión y el cierre; la oficina en la
     app; el almacén; el teléfono de la empresa.
-  - **En el dashboard** (33 puntos): Tablero y desempeño; cortes, cargas y
+  - **En el dashboard** (34 puntos): Tablero y desempeño; cortes, cargas y
     ventas; clientes y productos; almacén; usuarios y teléfonos.
   Cada punto dice **cómo** probarlo, con los nombres de los botones que se ven,
   y **qué debe pasar**, incluido lo que tiene que verse del otro lado (lo del
@@ -5355,3 +5355,38 @@ debo checar en la app para ver que las funcionalidades están bien.» Al verla:
 - La usa toda la oficina que entra al panel (permiso `tablero.ver`).
 
 (Solo servidor y panel: la app sigue en versionCode 35.)
+
+## 113. Una meta a todos los vendedores al mismo tiempo
+
+**Decisión (octubre 2026).** «También quiero en los objetivos poder aplicarle una
+meta a todos los vendedores al mismo tiempo.»
+
+- En el dashboard, Desempeño → Objetivos, para las tres clases de objetivo:
+  - **Diario** y **por periodo**: «De quién» trae **«Todos los vendedores (la
+    misma a cada ruta)»**.
+  - **Del mes**: «A todos los vendedores: $ del mes, visitas → Poner a todas las
+    rutas».
+- Cada ruta **activa** queda con su propia meta, la misma cifra, y se mide por
+  su lado; una desactivada no recibe nada. No es lo mismo que **«Toda la
+  empresa»**, que es una sola meta para la suma de todas (y cuenta el mayoreo).
+- El del mes pisa el que ya tuviera cada ruta ese mes: es lo que se pidió; para
+  ajustar una, su renglón. Uno en blanco no borra a nadie: lo dice. El diario
+  sigue la regla de §110: lo nuevo vale desde la fecha que se diga.
+- Solo en el dashboard: la app no cambia en esto.
+
+## 114. «Su camión» del vendedor, agrupado por familia
+
+**Decisión (octubre 2026).** «En la app, cuando voy a Vendedores → el vendedor →
+Su camión, también quiero que aparezcan agrupados los productos.»
+
+- En el portal de la oficina de la app, la pestaña «Su camión» de cada vendedor
+  agrupa los productos por familia, como el camión del propio vendedor y las
+  existencias del almacén (§89, §92): cada familia con cuántos productos y
+  cuántas piezas trae, y se pliega con un toque. El renglón en negativo sigue
+  marcado.
+- `/v1/vendedores/{id}/camion` manda la `familia` de cada producto, en el orden
+  de la oficina y «Sin familia» al final. Con un servidor anterior la lista sale
+  sin grupos, como antes.
+
+(versionCode 36)
+

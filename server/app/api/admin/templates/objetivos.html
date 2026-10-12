@@ -146,7 +146,8 @@
   <strong>Poner un objetivo diario</strong>
   <div class="barra" style="margin-top:10px;flex-wrap:wrap">
     <select name="ruta_id" aria-label="De quién">
-      <option value="">Toda la empresa</option>
+      <option value="">Toda la empresa (una meta para la suma)</option>
+      <option value="todas">Todos los vendedores (la misma a cada ruta)</option>
       {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
     </select>
   </div>
@@ -210,6 +211,21 @@
   <span class="sutil" style="margin-left:8px">
     Rellena los huecos. No pisa lo que ya ajustaste a mano este mes.
   </span>
+</form>
+{% endif %}
+
+{% if puede_editar %}
+<form method="post" action="/panel/objetivos/fijar-todas" id="forma_mes_a_todas"
+      class="barra" style="margin:14px 0 0;align-items:center">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="mes" value="{{ periodo }}">
+  <strong>A todos los vendedores:</strong>
+  <input type="text" name="objetivo_venta" inputmode="decimal" style="width:130px"
+         placeholder="$ del mes" aria-label="Objetivo del mes para todos" required>
+  <input type="text" name="objetivo_visitas" inputmode="numeric" style="width:90px"
+         placeholder="visitas" aria-label="Visitas del mes para todos">
+  <button type="submit">Poner a todas las rutas</button>
+  <span class="sutil">La misma meta de {{ nombre_periodo }} a cada ruta; pisa la que ya tuvieran.</span>
 </form>
 {% endif %}
 
@@ -391,7 +407,8 @@
   <strong>Nuevo objetivo por periodo</strong>
   <div class="barra" style="margin-top:10px;flex-wrap:wrap">
     <select name="ruta_id" aria-label="De quién">
-      <option value="">Toda la empresa</option>
+      <option value="">Toda la empresa (una meta para la suma)</option>
+      <option value="todas">Todos los vendedores (la misma a cada ruta)</option>
       {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
     </select>
     <label>Desde <input type="date" name="desde" value="{{ hoy }}" required></label>

@@ -145,6 +145,24 @@ async def test_el_camion_trae_lo_cargado_menos_lo_vendido(cliente, sesion, semil
     assert renglon["cantidad"] == "60.000"
     assert cuerpo["piezas"] == "60.000"
     assert cuerpo["ultimo_contacto"] is not None
+    # Sin familia todavía: llega nula, y la app no pinta grupos.
+    assert renglon["familia"] is None
+
+    # Con familia, llega para que la app agrupe «Su camión» (ADR 0002 §114).
+    familia = uuid.uuid4()
+    await sesion.execute(
+        text("INSERT INTO categorias (id, codigo, nombre) VALUES (:c, 'ENL', 'Enlatados')"),
+        {"c": familia},
+    )
+    await sesion.execute(
+        text("UPDATE productos SET categoria_id = :c WHERE id = :p"),
+        {"c": familia, "p": dia["producto"]},
+    )
+    await sesion.commit()
+    cuerpo = (
+        await cliente.get(f"/v1/vendedores/{semilla['vendedor']}/camion", headers=cab)
+    ).json()
+    assert cuerpo["existencias"][0]["familia"] == "Enlatados"
 
 
 async def test_un_vendedor_que_no_existe_es_404(cliente, semilla):

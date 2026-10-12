@@ -68,6 +68,7 @@ from app.infra.objetivos import (
     borrar_objetivo,
     guardar_objetivo,
     objetivos_con_avance,
+    rutas_para_objetivos,
 )
 from app.infra.objetivos_diarios import (
     DIAS_CORTOS,
@@ -81,6 +82,18 @@ from app.infra.objetivos_diarios import (
 router = APIRouter(prefix="/panel/objetivos", tags=["panel"], include_in_schema=False)
 
 PERMISO = "objetivos.administrar"
+
+# «Todos los vendedores» en «De quién»: la MISMA meta a cada ruta activa, una
+# por ruta. No es «Toda la empresa», que es UNA meta para la suma de todas.
+TODAS = "todas"
+
+
+async def _rutas_activas(sesion) -> list[dict]:
+    rutas = await rutas_para_objetivos(sesion)
+    if not rutas:
+        raise ObjetivoInvalido("No hay rutas activas a quién ponerle la meta.")
+    return rutas
+
 
 # Lo máximo que se acepta como objetivo mensual de una ruta. No es una regla de
 # negocio: es un filtro de error de dedo. Un objetivo de $50,000,000 teclea un
@@ -292,6 +305,64 @@ async def fijar(
     )
 
 
+@router.post("/fijar-todas")
+async def fijar_a_todas(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    csrf: str = Form(""),
+    mes: str = Form(""),
+    objetivo_venta: str = Form(""),
+    objetivo_visitas: str = Form(""),
+) -> RedirectResponse:
+    """El mismo objetivo del mes a todos los vendedores (§113): cada ruta activa
+    con su propia meta, la misma cifra. Pisa la que tuviera ese mes: es lo que
+    se pidió; para ajustar una, su renglón."""
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    periodo = _periodo(mes)
+
+    def volver(clave: str, texto: str) -> RedirectResponse:
+        return RedirectResponse(
+            f"/panel/objetivos?mes={periodo:%Y-%m}&{clave}={quote(texto)}#del_mes",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
+        visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
+        if monto <= 0:
+            raise CapturaInvalida("Escribe cuánto tiene que vender cada vendedor en el mes.")
+        if monto > OBJETIVO_MAXIMO:
+            raise CapturaInvalida(f"Un objetivo de {monto:,.2f} parece un error de dedo.")
+        rutas = await _rutas_activas(sesion)
+    except (CapturaInvalida, ObjetivoInvalido) as e:
+        return volver("error", str(e))
+    for ruta in rutas:
+        await sesion.execute(
+            text(
+                """
+                INSERT INTO objetivos_ruta
+                    (ruta_id, periodo, objetivo_venta, objetivo_visitas, nota, fijado_por)
+                VALUES (:r, :p, :monto, :visitas, NULL, :quien)
+                ON CONFLICT (ruta_id, periodo) DO UPDATE SET
+                    objetivo_venta   = excluded.objetivo_venta,
+                    objetivo_visitas = excluded.objetivo_visitas,
+                    fijado_por       = excluded.fijado_por,
+                    actualizado_en   = now()
+                """
+            ),
+            {"r": ruta["id"], "p": periodo, "monto": monto, "visitas": visitas or None,
+             "quien": actor.usuario_id},
+        )
+    await sesion.commit()
+    return volver(
+        "aviso",
+        f"Objetivo de {_nombre_periodo(periodo)} guardado para las {len(rutas)} rutas: "
+        f"${monto:,.2f} a cada vendedor.",
+    )
+
+
 @router.post("/copiar")
 async def copiar(
     peticion: Request,
@@ -360,16 +431,17 @@ async def fijar_por_periodo(
     objetivo_visitas: str = Form(""),
     nota: str = Form(""),
 ) -> RedirectResponse:
-    """Un objetivo de un día, una semana o un rango; de una ruta o de toda la
-    empresa. Un mes completo de una ruta se guarda como su objetivo del mes.
-    El de «cada día» es el diario fijo de abajo (§110)."""
+    """Un objetivo de un día, una semana o un rango; de una ruta, de toda la
+    empresa o el mismo a todos los vendedores (§113). Un mes completo de una
+    ruta se guarda como su objetivo del mes. El de «cada día» es el diario fijo
+    de abajo (§110)."""
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
 
     def volver(**que: str) -> RedirectResponse:
         clave, texto = next(iter(que.items()))
         return RedirectResponse(
-            f"/panel/objetivos?{clave}={texto}#por_periodo",
+            f"/panel/objetivos?{clave}={quote(texto)}#por_periodo",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -381,20 +453,27 @@ async def fijar_por_periodo(
     try:
         monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
         visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-        await guardar_objetivo(
-            sesion,
-            ruta_id=uuid.UUID(ruta_id) if ruta_id else None,
-            desde=inicio,
-            hasta=fin,
-            objetivo_venta=monto,
-            objetivo_visitas=visitas or None,
-            nota=texto_o_nulo(nota, maximo=300),
-            quien=actor.usuario_id,
-        )
+        if ruta_id == TODAS:
+            duenos = [r["id"] for r in await _rutas_activas(sesion)]
+        else:
+            duenos = [uuid.UUID(ruta_id) if ruta_id else None]
+        for dueno in duenos:
+            await guardar_objetivo(
+                sesion,
+                ruta_id=dueno,
+                desde=inicio,
+                hasta=fin,
+                objetivo_venta=monto,
+                objetivo_visitas=visitas or None,
+                nota=texto_o_nulo(nota, maximo=300),
+                quien=actor.usuario_id,
+            )
     except (CapturaInvalida, ObjetivoInvalido, ValueError) as e:
         await sesion.rollback()
         return volver(error=str(e))
     await sesion.commit()
+    if ruta_id == TODAS:
+        return volver(aviso=f"{len(duenos)} objetivos guardados: ${monto:,.2f} a cada vendedor.")
     return volver(aviso="Objetivo guardado.")
 
 
@@ -436,35 +515,42 @@ def _dueno(ruta_id: str) -> uuid.UUID | None:
 @router.post("/diario")
 async def fijar_diario(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> RedirectResponse:
     """«Por día 3,500, hasta que yo lo modifique»: pone o cambia el objetivo
-    diario de una ruta o de toda la empresa, desde la fecha que se diga."""
+    diario de una ruta, de toda la empresa o el mismo a todos los vendedores
+    (§113), desde la fecha que se diga."""
     formulario = await peticion.form()
     exigir_csrf(peticion, str(formulario.get("csrf") or ""))
     actor.exigir(PERMISO)
+    a_todos = str(formulario.get("ruta_id") or "") == TODAS
     try:
-        ruta_id = _dueno(str(formulario.get("ruta_id") or ""))
+        if a_todos:
+            duenos = [r["id"] for r in await _rutas_activas(sesion)]
+        else:
+            duenos = [_dueno(str(formulario.get("ruta_id") or ""))]
         texto_desde = str(formulario.get("desde") or "")
         desde = date.fromisoformat(texto_desde) if texto_desde else date.today()
         monto = leer_dinero(str(formulario.get("objetivo_venta") or ""),
                             campo="El objetivo de cada día")
         visitas = leer_entero(str(formulario.get("objetivo_visitas") or ""),
                               campo="Las visitas de cada día", maximo=10000)
-        tramo = await fijar_objetivo_diario(
-            sesion,
-            ruta_id=ruta_id,
-            desde=desde,
-            objetivo_venta=monto,
-            objetivo_visitas=visitas or None,
-            dias_semana=formulario.getlist("dias"),
-            nota=texto_o_nulo(str(formulario.get("nota") or ""), maximo=300),
-            quien=actor.usuario_id,
-        )
+        for dueno in duenos:
+            tramo = await fijar_objetivo_diario(
+                sesion,
+                ruta_id=dueno,
+                desde=desde,
+                objetivo_venta=monto,
+                objetivo_visitas=visitas or None,
+                dias_semana=formulario.getlist("dias"),
+                nota=texto_o_nulo(str(formulario.get("nota") or ""), maximo=300),
+                quien=actor.usuario_id,
+            )
     except (CapturaInvalida, ObjetivoInvalido, ValueError) as e:
         await sesion.rollback()
         return _al_diario(error=str(e))
     await sesion.commit()
     cuando = "desde hoy" if desde == date.today() else f"desde el {desde:%d/%m/%Y}"
+    para_quien = f" para los {len(duenos)} vendedores" if a_todos else ""
     return _al_diario(
-        aviso=f"Objetivo diario guardado: ${monto:,.2f} cada día, "
+        aviso=f"Objetivo diario guardado{para_quien}: ${monto:,.2f} cada día, "
               f"{tramo.dias_en_palabras}, {cuando}. Vale hasta que lo cambies."
     )
 

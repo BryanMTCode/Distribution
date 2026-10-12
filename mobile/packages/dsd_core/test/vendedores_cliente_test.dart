@@ -103,13 +103,15 @@ void main() {
       'ultimo_contacto': null,
       'existencias': [
         {'producto_id': 'p1', 'sku': 'A', 'nombre': 'Atún', 'unidad_base': 'PZA',
-         'cantidad': '60.000'},
+         'cantidad': '60.000', 'familia': 'Enlatados'},
+        // Un servidor anterior no manda la familia: se lee igual.
         {'producto_id': 'p2', 'sku': 'B', 'nombre': 'Maruchan', 'unidad_base': 'PZA',
          'cantidad': '-5.000'},
       ],
     });
     final c = await ClienteVendedores(t).camion('v1');
     expect(c.existencias.map((e) => e.negativa), [false, true]);
+    expect(c.existencias.map((e) => e.familia), ['Enlatados', null]);
   });
 
   test('la venta trae sus partidas', () async {

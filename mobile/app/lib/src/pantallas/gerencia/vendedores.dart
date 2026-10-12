@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/sesion.dart';
 import '../../estado/vendedores.dart';
 import '../canceladas.dart';
+import '../familias.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 
@@ -253,7 +254,8 @@ class PantallaVendedor extends ConsumerStatefulWidget {
   ConsumerState<PantallaVendedor> createState() => _EstadoVendedor();
 }
 
-class _EstadoVendedor extends ConsumerState<PantallaVendedor> {
+class _EstadoVendedor extends ConsumerState<PantallaVendedor>
+    with FamiliasPlegables<PantallaVendedor> {
   late PeriodoElegido _periodo = widget.periodo;
   String _tipo = '';
   DetalleDeVendedor? _detalle;
@@ -500,28 +502,56 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor> {
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Text('El camión está vacío.'),
             ),
-          for (final e in c.existencias)
-            ListTile(
-              key: Key('camion_${e.sku}'),
-              contentPadding: EdgeInsets.zero,
-              title: Text(e.nombre),
-              subtitle: e.negativa
-                  ? const Text('En negativo: se vendió más de lo que se le cargó. '
-                      'Hay que revisarlo.')
-                  : null,
-              trailing: Text(
-                '${cantidadLegible(e.cantidad)} ${e.unidadBase}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: e.negativa ? Theme.of(context).colorScheme.error : null,
+          // Por familia, como el camión del vendedor y las existencias del
+          // almacén (ADR 0002 §114): cada una se pliega con un toque y dice
+          // cuántas piezas trae.
+          for (final entrada in entradasPorFamilia(
+            c.existencias,
+            _familiaDe,
+            plegadas: plegadas,
+          ))
+            switch (entrada) {
+              EncabezadoEntrada(:final grupo, :final abierta) => Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 2),
+                  child: EncabezadoDeFamilia(
+                    familia: grupo.familia,
+                    cuantos: grupo.elementos.length,
+                    abierta: abierta,
+                    resumen: '${_piezasDe(grupo.elementos)} pzas',
+                    alTocar: () => alternarFamilia(grupo.familia),
+                  ),
                 ),
-              ),
-            ),
+              ElementoEntrada(elemento: final e) => ListTile(
+                  key: Key('camion_${e.sku}'),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(e.nombre),
+                  subtitle: e.negativa
+                      ? const Text('En negativo: se vendió más de lo que se le cargó. '
+                          'Hay que revisarlo.')
+                      : null,
+                  trailing: Text(
+                    '${cantidadLegible(e.cantidad)} ${e.unidadBase}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: e.negativa ? Theme.of(context).colorScheme.error : null,
+                    ),
+                  ),
+                ),
+            },
         ],
       ],
     );
   }
 }
+
+String? _familiaDe(ExistenciaEnCamion e) => e.familia;
+
+/// Las piezas de una familia, sumadas en milésimos: sin pasar por `double`.
+String _piezasDe(List<ExistenciaEnCamion> existencias) => cantidadLegible(
+      existencias
+          .fold(Cantidad.cero, (suma, e) => suma + Cantidad.deTexto(e.cantidad))
+          .texto,
+    );
 
 IconData _icono(String tipo) => switch (tipo) {
       'venta' => Icons.receipt_long_outlined,

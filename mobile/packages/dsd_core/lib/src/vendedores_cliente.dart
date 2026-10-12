@@ -291,6 +291,7 @@ class ExistenciaEnCamion {
     required this.nombre,
     required this.unidadBase,
     required this.cantidad,
+    this.familia,
   });
 
   factory ExistenciaEnCamion.deJson(Map<String, Object?> j) => ExistenciaEnCamion(
@@ -298,12 +299,17 @@ class ExistenciaEnCamion {
         nombre: j['nombre']! as String,
         unidadBase: j['unidad_base']! as String,
         cantidad: j['cantidad']! as String,
+        familia: j['familia'] as String?,
       );
 
   final String sku;
   final String nombre;
   final String unidadBase;
   final String cantidad;
+
+  /// Para agrupar «Su camión» (ADR 0002 §114). Nula si no tiene, o si el
+  /// servidor es anterior y no la manda: entonces la lista sale sin grupos.
+  final String? familia;
 
   bool get negativa => cantidad.startsWith('-');
 }

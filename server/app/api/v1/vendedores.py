@@ -154,6 +154,9 @@ class Existencia(BaseModel):
     nombre: str
     unidad_base: str
     cantidad: Cantidad
+    # La familia del artículo (§89), para agrupar «Su camión» (§114); nula si no
+    # tiene. Vienen en el orden de la oficina, «Sin familia» al final.
+    familia: str | None = None
 
 
 class CamionDelVendedor(BaseModel):
@@ -326,11 +329,13 @@ async def camion(vendedor_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> 
             await sesion.execute(
                 text(
                     """
-                    SELECT e.producto_id, p.sku, p.nombre, p.unidad_base, e.cantidad
+                    SELECT e.producto_id, p.sku, p.nombre, p.unidad_base, e.cantidad,
+                           cat.nombre AS familia
                       FROM existencias e
                       JOIN productos p ON p.id = e.producto_id
+                      LEFT JOIN categorias cat ON cat.id = p.categoria_id
                      WHERE e.almacen_id = :a AND e.cantidad <> 0
-                     ORDER BY p.nombre
+                     ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.nombre
                     """
                 ),
                 {"a": ficha["almacen_id"]},

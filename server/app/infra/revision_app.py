@@ -320,10 +320,12 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Cada cifra abre su lista (clientes, vendedores, artículos…).",
             ),
             Punto(
-                "vendedores", "Vendedores",
-                "Pestaña Vendedores: abre uno.",
-                "Los desactivados van aparte. La ficha tiene «Movimientos» y «Su camión»; "
-                "tocar una venta abre su detalle.",
+                "vendedores", "Vendedores y su camión",
+                "Pestaña Vendedores: abre uno; revisa «Movimientos» y «Su camión».",
+                "Los desactivados van aparte. Tocar una venta abre su detalle. «Su camión» "
+                "trae los productos agrupados por familia, con las piezas de cada una, y "
+                "cada familia se pliega con un toque.",
+                desde="+36",
             ),
             Punto(
                 "clientes_oficina", "Clientes",
@@ -464,6 +466,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Vale hasta que lo cambias; la semana se ve día por día con ✓; los días "
                 "pasados se quedan con el objetivo que tenían; quitarlo es desde hoy.",
                 desde="+35",
+            ),
+            Punto(
+                "panel_objetivo_a_todos", "Una meta a todos los vendedores a la vez",
+                "Desempeño → Objetivos: en «Poner un objetivo diario» y en «Nuevo objetivo "
+                "por periodo» escoge «Todos los vendedores»; en el del mes, «A todos los "
+                "vendedores» → «Poner a todas las rutas».",
+                "Cada ruta activa queda con la misma meta, medida por su lado; no es lo "
+                "mismo que «Toda la empresa», que es una sola meta para la suma.",
+                desde="+36",
             ),
             Punto(
                 "panel_objetivo_mes", "El objetivo del mes y por periodo",

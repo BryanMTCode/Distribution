@@ -102,9 +102,11 @@ class _ServidorDeOficina implements Transporte {
           'ultimo_contacto': null,
           'existencias': [
             {'producto_id': 'p1', 'sku': 'ATUN-140', 'nombre': 'Atún en agua 140 g',
-             'unidad_base': 'PZA', 'cantidad': '60.000'},
+             'unidad_base': 'PZA', 'cantidad': '60.000', 'familia': 'Enlatados'},
+            {'producto_id': 'p3', 'sku': 'SARD', 'nombre': 'Sardina 425 g',
+             'unidad_base': 'PZA', 'cantidad': '24.000', 'familia': 'Enlatados'},
             {'producto_id': 'p2', 'sku': 'MARU', 'nombre': 'Maruchan',
-             'unidad_base': 'PZA', 'cantidad': '-5.000'},
+             'unidad_base': 'PZA', 'cantidad': '-5.000', 'familia': 'Sopas'},
           ],
         },
       '/v1/vendedores/ventas/venta-1' => {
@@ -393,12 +395,21 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      // Su camión, con el negativo marcado.
+      // Su camión, por familia y con el negativo marcado (ADR 0002 §114).
       await tester.tap(find.byKey(const Key('pestana_camion')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('camion_ATUN-140')), findsOneWidget);
       expect(find.text('60 PZA'), findsOneWidget);
       expect(textoQueContiene('En negativo'), findsOneWidget);
+      expect(find.text('Enlatados · 2'), findsOneWidget);
+      expect(find.text('84 pzas'), findsOneWidget);
+      expect(find.text('Sopas · 1'), findsOneWidget);
+      // Una familia se pliega con un toque, y las demás se quedan como están.
+      await tester.tap(find.byKey(const Key('familia_Enlatados')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('camion_ATUN-140')), findsNothing);
+      expect(find.byKey(const Key('camion_SARD')), findsNothing);
+      expect(find.byKey(const Key('camion_MARU')), findsOneWidget);
     });
   });
 
