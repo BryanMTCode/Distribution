@@ -12,6 +12,11 @@
 <form class="barra" method="get" action="/panel/objetivos">
   <input type="month" name="mes" value="{{ periodo }}">
   <button type="submit">Ver</button>
+  {% if puede_editar %}
+  {# Las metas de un día, una semana o un rango están abajo: que no haya que
+     adivinarlo (ADR 0002 §104). #}
+  <a class="boton-chico" href="#forma_por_periodo" id="ir_a_nueva_meta">+ Nueva meta por periodo</a>
+  {% endif %}
 </form>
 
 {% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
@@ -252,6 +257,11 @@
     <input name="nota" placeholder="Nota (opcional)" maxlength="300">
     <button type="submit">Guardar objetivo</button>
   </div>
+  <label style="display:block;margin-top:6px">
+    <input type="checkbox" name="por_dia" value="1" id="por_dia">
+    <strong>Cada día</strong>: el mismo objetivo para cada día del periodo, uno por día
+    (por ejemplo, esta semana todos los días $3,500).
+  </label>
   <div class="sutil">Para un solo día, pon la misma fecha en «desde» y «hasta».</div>
 </form>
 {% endif %}

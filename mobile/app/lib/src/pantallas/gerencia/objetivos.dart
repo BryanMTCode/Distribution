@@ -9,6 +9,8 @@
 ///   · «Nuevo objetivo»: de una ruta o de toda la empresa; hoy, mañana, esta
 ///     semana, este mes, un día o unas fechas. Un mes completo de una ruta es
 ///     su objetivo del mes, el de la barra del tablero.
+///   · «Cada día»: con varios días escogidos, el mismo objetivo para cada uno,
+///     uno por día —«esta semana, todos los días 3,500»— (§109).
 ///
 /// En línea: el avance lo calcula el servidor con las ventas del rango.
 library;
@@ -82,6 +84,7 @@ class _EstadoObjetivos extends ConsumerState<PantallaObjetivos> {
         objetivoVenta: pedido.venta,
         objetivoVisitas: pedido.visitas,
         nota: pedido.nota,
+        porDia: pedido.porDia,
       ),
     );
   }
@@ -255,7 +258,8 @@ class _Tarjeta extends StatelessWidget {
 }
 
 class _Pedido {
-  const _Pedido(this.rutaId, this.desde, this.hasta, this.venta, this.visitas, this.nota);
+  const _Pedido(this.rutaId, this.desde, this.hasta, this.venta, this.visitas, this.nota,
+      {this.porDia = false});
 
   final String? rutaId;
   final String desde;
@@ -263,7 +267,11 @@ class _Pedido {
   final String venta;
   final int? visitas;
   final String? nota;
+  final bool porDia;
 }
+
+/// Uno por día se pone para un mes a lo más: lo mismo que acepta el servidor.
+const diasMaximosPorDia = 31;
 
 /// El formulario del objetivo nuevo, en una hoja que sube desde abajo.
 class _NuevoObjetivo extends StatefulWidget {
@@ -281,6 +289,7 @@ class _EstadoNuevoObjetivo extends State<_NuevoObjetivo> {
   late DateTime _desde;
   late DateTime _hasta;
   String _rapido = 'hoy';
+  bool _porDia = false;
   final _venta = TextEditingController();
   final _visitas = TextEditingController();
   final _nota = TextEditingController();
@@ -290,6 +299,17 @@ class _EstadoNuevoObjetivo extends State<_NuevoObjetivo> {
     final h = widget.hoy.toLocal();
     return DateTime(h.year, h.month, h.day);
   }
+
+  /// Los días del periodo escogido, contando los dos extremos. Se cuenta en
+  /// UTC para que un cambio de horario no se coma ni agregue un día.
+  int get _dias =>
+      DateTime.utc(_hasta.year, _hasta.month, _hasta.day)
+          .difference(DateTime.utc(_desde.year, _desde.month, _desde.day))
+          .inDays +
+      1;
+
+  /// «Cada día» tiene sentido con dos días o más, y hasta un mes.
+  bool get _puedeSerPorDia => _dias > 1 && _dias <= diasMaximosPorDia;
 
   @override
   void initState() {
@@ -370,6 +390,7 @@ class _EstadoNuevoObjetivo extends State<_NuevoObjetivo> {
         venta,
         visitas != null && visitas > 0 ? visitas : null,
         _nota.text.trim().isEmpty ? null : _nota.text.trim(),
+        porDia: _porDia && _puedeSerPorDia,
       ),
     );
   }
@@ -446,15 +467,30 @@ class _EstadoNuevoObjetivo extends State<_NuevoObjetivo> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            if (_puedeSerPorDia)
+              SwitchListTile(
+                key: const Key('objetivo_cada_dia'),
+                contentPadding: EdgeInsets.zero,
+                value: _porDia,
+                onChanged: (v) => setState(() => _porDia = v),
+                title: const Text('Cada día'),
+                subtitle: Text(
+                  _porDia
+                      ? '$_dias objetivos, uno por día, cada uno de lo que escribas abajo'
+                      : 'Un solo objetivo para los $_dias días juntos',
+                  key: const Key('explicacion_cada_dia'),
+                ),
+              ),
             TextField(
               key: const Key('campo_venta_objetivo'),
               controller: _venta,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,$]'))],
-              decoration: const InputDecoration(
-                labelText: 'Vender',
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: _porDia && _puedeSerPorDia ? 'Vender cada día' : 'Vender',
                 prefixText: r'$ ',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),

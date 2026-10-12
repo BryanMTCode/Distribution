@@ -130,6 +130,9 @@ class ClienteObjetivos {
 
   /// [rutaId] nulo = toda la empresa. Fechas `YYYY-MM-DD`; un día es
   /// `desde == hasta`. El dinero va como texto, como en todo el contrato.
+  ///
+  /// [porDia]: el mismo objetivo para cada día del rango, uno por día —«esta
+  /// semana, todos los días 3,500»— (ADR 0002 §109).
   Future<Objetivos> fijar({
     required String? rutaId,
     required String desde,
@@ -137,6 +140,7 @@ class ClienteObjetivos {
     required String objetivoVenta,
     int? objetivoVisitas,
     String? nota,
+    bool porDia = false,
   }) async {
     final r = await _transporte.post('/v1/objetivos', {
       'ruta_id': rutaId,
@@ -145,6 +149,7 @@ class ClienteObjetivos {
       'objetivo_venta': objetivoVenta,
       if (objetivoVisitas != null) 'objetivo_visitas': objetivoVisitas,
       if (nota != null && nota.trim().isNotEmpty) 'nota': nota.trim(),
+      if (porDia) 'por_dia': true,
     });
     revisarRespuestaDeOficina(r);
     return Objetivos.deJson((jsonDecode(r.cuerpo) as Map).cast());

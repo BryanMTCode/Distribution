@@ -61,6 +61,7 @@ from app.infra.objetivos import (
     ObjetivoInvalido,
     borrar_objetivo,
     guardar_objetivo,
+    guardar_objetivos_por_dia,
     objetivos_con_avance,
 )
 
@@ -341,9 +342,11 @@ async def fijar_por_periodo(
     objetivo_venta: str = Form(""),
     objetivo_visitas: str = Form(""),
     nota: str = Form(""),
+    por_dia: str = Form(""),
 ) -> RedirectResponse:
     """Un objetivo de un día, una semana o un rango; de una ruta o de toda la
-    empresa. Un mes completo de una ruta se guarda como su objetivo del mes."""
+    empresa. Un mes completo de una ruta se guarda como su objetivo del mes.
+    Con «cada día», uno por día del periodo (§109)."""
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
 
@@ -362,7 +365,7 @@ async def fijar_por_periodo(
     try:
         monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
         visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-        await guardar_objetivo(
+        guardados = await (guardar_objetivos_por_dia if por_dia else _uno)(
             sesion,
             ruta_id=uuid.UUID(ruta_id) if ruta_id else None,
             desde=inicio,
@@ -376,7 +379,13 @@ async def fijar_por_periodo(
         await sesion.rollback()
         return volver(error=str(e))
     await sesion.commit()
+    if len(guardados) > 1:
+        return volver(aviso=f"{len(guardados)} objetivos guardados, uno por día.")
     return volver(aviso="Objetivo guardado.")
+
+
+async def _uno(sesion, **datos) -> list[str]:
+    return [await guardar_objetivo(sesion, **datos)]
 
 
 @router.post("/periodo/{objetivo_id}/borrar")

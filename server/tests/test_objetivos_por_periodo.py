@@ -176,8 +176,10 @@ async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
     from tests.test_panel_objetivos import _entrar
 
     await _entrar(cliente)
+    # El Tablero lleva a las metas, y la página tiene el botón arriba.
+    assert 'href="/panel/objetivos#por_periodo"' in (await cliente.get("/panel")).text
     r = await cliente.get("/panel/objetivos")
-    assert 'id="forma_por_periodo"' in r.text
+    assert 'id="forma_por_periodo"' in r.text and 'id="ir_a_nueva_meta"' in r.text
     r = await cliente.post(
         "/panel/objetivos/periodo",
         data={"csrf": csrf_del_panel(cliente, r), "ruta_id": "", "desde": hoy.isoformat(),
@@ -194,3 +196,65 @@ async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
         follow_redirects=True,
     )
     assert "Objetivo quitado." in solo_texto(r)
+
+
+async def test_esta_semana_todos_los_dias_3500(cliente, sesion, semilla):
+    """«Quiero poder poner el objetivo por día por semana: esta semana todos los
+    días 3,500» (ADR 0002 §109): uno por día, cada uno medido solo."""
+    hoy = date.today()
+    await _venta(sesion, semilla, total="2000.00", dia=hoy)
+    lunes = hoy - timedelta(days=hoy.weekday())
+    domingo = lunes + timedelta(days=6)
+    cab = await _cab(cliente)
+    r = await cliente.post(
+        "/v1/objetivos",
+        json={"ruta_id": str(semilla["ruta"]), "desde": lunes.isoformat(),
+              "hasta": domingo.isoformat(), "objetivo_venta": "3500", "por_dia": True},
+        headers=cab,
+    )
+    assert r.status_code == 201, r.text
+    de_la_ruta = [o for o in r.json()["objetivos"] if o["ruta"] is not None]
+    assert [o["desde"] for o in de_la_ruta] == [
+        (lunes + timedelta(days=i)).isoformat() for i in range(7)
+    ]
+    assert all(o["dias"] == 1 and o["objetivo_venta"] == "3500.00" for o in de_la_ruta)
+    de_hoy = next(o for o in de_la_ruta if o["desde"] == hoy.isoformat())
+    assert (de_hoy["venta"], de_hoy["estado"]) == ("2000.00", "en_curso")
+
+    # Corregir la semana a 4,000 reemplaza cada día: siguen siendo siete.
+    r = await cliente.post(
+        "/v1/objetivos",
+        json={"ruta_id": str(semilla["ruta"]), "desde": lunes.isoformat(),
+              "hasta": domingo.isoformat(), "objetivo_venta": "4000", "por_dia": True},
+        headers=cab,
+    )
+    assert r.status_code == 201, r.text
+    de_la_ruta = [o for o in r.json()["objetivos"] if o["ruta"] is not None]
+    assert [o["objetivo_venta"] for o in de_la_ruta] == ["4000.00"] * 7
+
+    # Más de un mes, uno por día, no.
+    r = await cliente.post(
+        "/v1/objetivos",
+        json={"desde": hoy.isoformat(), "hasta": (hoy + timedelta(days=40)).isoformat(),
+              "objetivo_venta": "100", "por_dia": True},
+        headers=cab,
+    )
+    assert r.status_code == 422 and "31 días a lo más" in r.json()["detail"]
+
+
+async def test_el_panel_tambien_los_pone_cada_dia(cliente, sesion, semilla):
+    from tests.test_panel_objetivos import _entrar
+
+    hoy = date.today()
+    await _entrar(cliente)
+    r = await cliente.get("/panel/objetivos")
+    assert 'id="por_dia"' in r.text
+    r = await cliente.post(
+        "/panel/objetivos/periodo",
+        data={"csrf": csrf_del_panel(cliente, r), "ruta_id": "", "desde": hoy.isoformat(),
+              "hasta": (hoy + timedelta(days=2)).isoformat(), "objetivo_venta": "3500",
+              "por_dia": "1"},
+        follow_redirects=True,
+    )
+    assert "3 objetivos guardados, uno por día." in solo_texto(r)
+    assert (await sesion.execute(text("SELECT count(*) FROM objetivos"))).scalar_one() == 3

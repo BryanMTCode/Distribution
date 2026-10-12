@@ -6,6 +6,9 @@
 <h1>Tablero de operación</h1>
 <p class="subtitulo">
   Lo que necesita atención hoy. Cada número lleva a su pantalla.
+  {% if actor and actor.puede('tablero.ver') %}
+  <a href="/panel/objetivos#por_periodo" id="enlace_metas">Metas y objetivos</a>.
+  {% endif %}
 </p>
 
 {% if faltan_para_operar %}

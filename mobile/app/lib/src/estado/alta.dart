@@ -105,6 +105,14 @@ class ControladorUbicacion extends Notifier<EstadoUbicacion> {
     );
   }
 
+  /// Coordenadas escritas a mano: copiadas de un mapa o dictadas, cuando el
+  /// GPS no lee (bajo techo, dentro del mercado). Quedan como punto de partida:
+  /// las flechas las corrigen desde ahí.
+  void fijarAMano(Ubicacion ubicacion) {
+    _original = ubicacion;
+    state = EstadoUbicacion(lectura: state.lectura, ubicacion: ubicacion);
+  }
+
   /// Vuelve al punto que dio el satélite.
   void deshacerCorreccion() {
     if (_original == null) return;

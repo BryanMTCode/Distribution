@@ -519,6 +519,11 @@ final clientesProvider = Provider<List<ClienteEnRuta>>((ref) {
 /// pregunta con la que el vendedor la abre en la mañana.
 final verSoloHoyProvider = StateProvider<bool>((_) => true);
 
+/// En «Hoy», si «Las demás de tu ruta» van plegadas. Abiertas de entrada: el
+/// vendedor también pasa a dejarle algo a una tienda que hoy no le toca
+/// (ADR 0002 §108).
+final otrasTiendasPlegadasProvider = StateProvider<bool>((_) => false);
+
 /// Lo que hay sin sincronizar. Alimenta el indicador que el vendedor ve
 /// siempre: un número de pendientes que crece es la señal de que algo va mal.
 final resumenColaProvider = Provider<ResumenCola>(

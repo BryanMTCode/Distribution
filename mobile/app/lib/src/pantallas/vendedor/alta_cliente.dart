@@ -340,6 +340,19 @@ class _BloqueUbicacion extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           _Diagnostico(estado: estado),
+          // A mano, siempre a la vista: es justo cuando el GPS no lee que hace
+          // falta (ADR 0002 §84 y §107).
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('boton_coordenadas_a_mano'),
+              onPressed: () => _escribirCoordenadas(context, ref, estado.ubicacion),
+              icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+              label: Text(estado.ubicacion == null
+                  ? 'Escribir las coordenadas'
+                  : 'Cambiar las coordenadas a mano'),
+            ),
+          ),
           if (estado.ubicacion != null) ...[
             const SizedBox(height: 12),
             // El lienzo va ANTES de los botones: primero te ubicas, después
@@ -360,6 +373,122 @@ class _BloqueUbicacion extends ConsumerWidget {
   }
 }
 
+/// Pide la latitud y la longitud y las deja como la ubicación del alta.
+Future<void> _escribirCoordenadas(
+  BuildContext context,
+  WidgetRef ref,
+  Ubicacion? actual,
+) async {
+  final ubicacion = await showDialog<Ubicacion>(
+    context: context,
+    builder: (_) => _DialogoCoordenadas(actual: actual),
+  );
+  if (ubicacion != null) ref.read(ubicacionProvider.notifier).fijarAMano(ubicacion);
+}
+
+/// Latitud y longitud escritas a mano. Se puede pegar «23.2494, -106.4111» en
+/// un solo campo, tal como lo copia el mapa; la regla de qué es válido es la del
+/// servidor (`leerCoordenadas`).
+class _DialogoCoordenadas extends StatefulWidget {
+  const _DialogoCoordenadas({this.actual});
+
+  final Ubicacion? actual;
+
+  @override
+  State<_DialogoCoordenadas> createState() => _EstadoDialogoCoordenadas();
+}
+
+class _EstadoDialogoCoordenadas extends State<_DialogoCoordenadas> {
+  late final _lat = TextEditingController(text: widget.actual?.latTexto ?? '');
+  late final _lng = TextEditingController(text: widget.actual?.lngTexto ?? '');
+  String? _error;
+
+  @override
+  void dispose() {
+    _lat.dispose();
+    _lng.dispose();
+    super.dispose();
+  }
+
+  void _alEscribir(String texto) {
+    final par = separarCoordenadas(texto);
+    if (par == null) return;
+    _lat.text = par.$1;
+    _lng.text = par.$2;
+  }
+
+  void _listo() {
+    try {
+      Navigator.of(context).pop(leerCoordenadas(_lat.text, _lng.text));
+    } on UbicacionInvalida catch (e) {
+      setState(() => _error = e.mensaje);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        key: const Key('dialogo_coordenadas'),
+        title: const Text('Coordenadas del negocio'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Cópialas de un mapa —puedes pegar «23.2494, -106.4111» en '
+                  'el primer campo— o escríbelas.'),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('campo_latitud_alta'),
+                controller: _lat,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                onChanged: _alEscribir,
+                decoration: const InputDecoration(
+                  labelText: 'Latitud',
+                  hintText: '23.2494',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('campo_longitud_alta'),
+                controller: _lng,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                onChanged: _alEscribir,
+                decoration: const InputDecoration(
+                  labelText: 'Longitud',
+                  hintText: '-106.4111',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _error!,
+                    key: const Key('error_coordenadas'),
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            key: const Key('boton_usar_coordenadas'),
+            onPressed: _listo,
+            child: const Text('Usar estas'),
+          ),
+        ],
+      );
+}
+
 /// Qué pasó con el GPS, en lenguaje que sirva para actuar.
 class _Diagnostico extends StatelessWidget {
   const _Diagnostico({required this.estado});
@@ -375,7 +504,9 @@ class _Diagnostico extends StatelessWidget {
       return const Text('Buscando señal del satélite…', key: Key('gps_buscando'));
     }
 
-    final aviso = switch (estado.lectura) {
+    // Con coordenadas —de un intento anterior o escritas a mano— se muestran
+    // ellas: el aviso de que el GPS no leyó ya no es lo que importa.
+    final aviso = ubicacion != null ? null : switch (estado.lectura) {
       GpsSinPermiso(definitivo: true) => (
           'Sin permiso de ubicación',
           'Actívalo en los ajustes del teléfono. Puedes guardar sin coordenadas.',

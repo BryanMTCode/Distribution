@@ -20,6 +20,7 @@ from app.infra.objetivos import (
     ObjetivoInvalido,
     borrar_objetivo,
     guardar_objetivo,
+    guardar_objetivos_por_dia,
     objetivos_con_avance,
     rutas_para_objetivos,
 )
@@ -77,6 +78,9 @@ class PeticionObjetivo(BaseModel):
     objetivo_venta: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     objetivo_visitas: int | None = Field(default=None, ge=0, le=100000)
     nota: str | None = Field(default=None, max_length=300)
+    # «Esta semana, todos los días 3,500»: el mismo objetivo para cada día del
+    # periodo, uno por día (ADR 0002 §109).
+    por_dia: bool = False
 
 
 @router.get("", response_model=Objetivos)
@@ -106,7 +110,7 @@ async def fijar(peticion: PeticionObjetivo, actor: ActorDep, sesion: SesionDep) 
     _exigir_ver(actor)
     actor.exigir(PERMISO_FIJAR)
     try:
-        await guardar_objetivo(
+        await (guardar_objetivos_por_dia if peticion.por_dia else guardar_objetivo)(
             sesion,
             ruta_id=peticion.ruta_id,
             desde=peticion.desde,

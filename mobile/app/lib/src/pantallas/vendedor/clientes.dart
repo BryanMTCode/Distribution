@@ -18,6 +18,7 @@ import 'camion.dart';
 import 'catalogo.dart';
 import 'mi_dia.dart';
 import 'merma.dart';
+import 'perfil_cliente.dart';
 
 class PantallaClientes extends ConsumerWidget {
   const PantallaClientes({super.key});
@@ -37,8 +38,18 @@ class PantallaClientes extends ConsumerWidget {
     );
     final deHoy = todos.where((c) => c.tocaHoy).toList();
     final filtrando = hayPlan && soloHoy && !buscando;
-    final clientes = filtrando ? deHoy : todos;
     final visitadosHoy = deHoy.where((c) => c.visitadoHoy).length;
+    // En «Hoy», primero las que tocan y abajo las demás de la ruta: el vendedor
+    // también pasa a dejarle algo a una tienda que hoy no le toca (ADR 0002
+    // §108). «Todos» es la ruta entera en su orden.
+    final otras = filtrando ? todos.where((c) => !c.tocaHoy).toList() : const <ClienteEnRuta>[];
+    final otrasPlegadas = ref.watch(otrasTiendasPlegadasProvider);
+    final renglones = <Object>[
+      if (filtrando && deHoy.isEmpty) const _SinNadieHoy(),
+      ...(filtrando ? deHoy : todos),
+      if (otras.isNotEmpty) _EncabezadoDeOtras(otras.length, plegadas: otrasPlegadas),
+      if (otras.isNotEmpty && !otrasPlegadas) ...otras,
+    ];
 
     final cola = ref.watch(resumenColaProvider);
     final sync = ref.watch(syncProvider);
@@ -229,35 +240,42 @@ class PantallaClientes extends ConsumerWidget {
               ),
             ),
           Expanded(
-            child: clientes.isEmpty
-                ? Center(
-                    key: const Key('lista_vacia'),
-                    child: Text(
-                      filtrando
-                          ? 'Hoy no te toca nadie según el plan. Mira «Todos».'
-                          : 'No hay clientes que coincidan',
-                    ),
+            child: renglones.isEmpty
+                ? const Center(
+                    key: Key('lista_vacia'),
+                    child: Text('No hay clientes que coincidan'),
                   )
                 : ListView.separated(
                     key: const Key('lista_clientes'),
-                    itemCount: clientes.length,
+                    itemCount: renglones.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) => _Renglon(
-                      cliente: clientes[i],
-                      // Tocar un cliente ABRE SU VISITA: fija de quién es el
-                      // carrito y entra al catálogo con SUS precios. El catálogo
-                      // no existe "en general" — el precio depende de su lista.
-                      alTocar: () {
-                        ref.read(clienteEnVisitaProvider.notifier).state =
-                            clientes[i].id;
-                        ref.read(busquedaCatalogoProvider.notifier).state = '';
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const PantallaCatalogo(),
-                          ),
-                        );
-                      },
-                    ),
+                    itemBuilder: (_, i) => switch (renglones[i]) {
+                      final _SinNadieHoy aviso => aviso,
+                      _EncabezadoDeOtras(:final cuantas, :final plegadas) => _EncabezadoDeOtras(
+                          cuantas,
+                          plegadas: plegadas,
+                          alTocar: () => ref
+                              .read(otrasTiendasPlegadasProvider.notifier)
+                              .state = !plegadas,
+                        ),
+                      final ClienteEnRuta cliente => _Renglon(
+                          cliente: cliente,
+                          // Tocar un cliente ABRE SU VISITA: fija de quién es el
+                          // carrito y entra al catálogo con SUS precios. El
+                          // catálogo no existe "en general" — el precio depende
+                          // de su lista.
+                          alTocar: () {
+                            ref.read(clienteEnVisitaProvider.notifier).state = cliente.id;
+                            ref.read(busquedaCatalogoProvider.notifier).state = '';
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const PantallaCatalogo(),
+                              ),
+                            );
+                          },
+                        ),
+                      _ => const SizedBox.shrink(),
+                    },
                   ),
           ),
         ],
@@ -371,6 +389,52 @@ class _BarraPendientes extends ConsumerWidget implements PreferredSizeWidget {
   }
 }
 
+/// «Hoy» sin nadie del plan: se dice, y abajo siguen las demás de la ruta.
+class _SinNadieHoy extends StatelessWidget {
+  const _SinNadieHoy();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        key: Key('lista_vacia'),
+        padding: EdgeInsets.all(16),
+        child: Text('Hoy no te toca nadie según el plan. Abajo están las demás de tu ruta.'),
+      );
+}
+
+/// El encabezado de las tiendas que hoy no tocan: se toca para plegarlas.
+class _EncabezadoDeOtras extends StatelessWidget {
+  const _EncabezadoDeOtras(this.cuantas, {required this.plegadas, this.alTocar});
+
+  final int cuantas;
+  final bool plegadas;
+  final VoidCallback? alTocar;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        key: const Key('otras_de_la_ruta'),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: InkWell(
+          onTap: alTocar,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              children: [
+                Icon(plegadas ? Icons.chevron_right : Icons.expand_more),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Las demás de tu ruta · $cuantas',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text('hoy no te tocan', style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
 class _Renglon extends StatelessWidget {
   const _Renglon({
     required this.cliente,
@@ -414,6 +478,22 @@ class _Renglon extends StatelessWidget {
         ],
       ),
       subtitle: _subtitulo(context, subtitulo),
+      // La ubicación a un toque, sin entrar a la visita: con el GPS o escrita a
+      // mano (ADR 0002 §84 y §107). En rojo la tienda que todavía no tiene: sin
+      // ella la venta no tiene geocerca.
+      trailing: IconButton(
+        key: Key('ubicar_${cliente.id}'),
+        tooltip: cliente.conUbicacion ? 'Ubicación' : 'Ponerle ubicación',
+        icon: Icon(
+          cliente.conUbicacion ? Icons.location_on_outlined : Icons.add_location_alt_outlined,
+          color: cliente.conUbicacion ? null : Theme.of(context).colorScheme.error,
+        ),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PantallaPerfilDelCliente(cliente: cliente),
+          ),
+        ),
+      ),
       onTap: alTocar,
     );
   }

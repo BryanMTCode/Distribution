@@ -5213,3 +5213,54 @@ ancho), 4–6 GB de RAM.
   teléfono.
 
 (versionCode 33)
+
+## 107. Las coordenadas a mano, donde hacen falta
+
+**Corrección (octubre 2026).** «En la app no aparece lo de poder agregar las
+coordenadas manualmente.» El editor de §84 existía, pero solo se llegaba a él
+desde el menú ⋮ de la visita («Perfil y ubicación»), y en el **alta de tienda**
+no había dónde escribirlas: el aviso decía «ponlas a mano» justo cuando el GPS no
+leía, sin dar cómo.
+
+- **En el alta**, debajo del estado del GPS, siempre a la vista: «Escribir las
+  coordenadas» (o «Cambiarlas a mano» si ya hay). Latitud y longitud, o
+  «23.2494, -106.4111» pegado en un campo; la regla de qué es válido es la del
+  servidor (al revés, 0, 0 o la longitud positiva en México se dicen). Quedan
+  como «puesta a mano» y las flechas las corrigen desde ahí.
+- **En la lista de clientes del vendedor**, cada tienda trae su botón de
+  ubicación —en rojo la que todavía no tiene—, que abre el perfil con el GPS y
+  los campos, sin entrar a la visita.
+
+## 108. «Hoy» también muestra las demás tiendas de la ruta
+
+**Decisión (octubre 2026).** «¿En la app solo salen las tiendas de ese día?
+Quiero que también aparezcan las otras, por si el vendedor llega a llevarles algo
+que necesitan.»
+
+- Antes: «Hoy» mostraba solo las del plan del día; las demás estaban en «Todos» o
+  con el buscador.
+- Ahora «Hoy» muestra primero las que tocan —con el avance «Visitados N de M»— y
+  abajo **«Las demás de tu ruta»**, abiertas de entrada; se pliegan con un toque.
+  Si hoy no toca nadie, lo dice y las demás siguen ahí. «Todos» sigue siendo la
+  ruta entera en su orden, y el buscador busca en todas.
+- En el panel, el Tablero lleva a las metas («Metas y objetivos»), y Desempeño →
+  Objetivos tiene arriba «+ Nueva meta por periodo».
+
+## 109. El mismo objetivo cada día: «esta semana, todos los días 3,500»
+
+**Decisión (octubre 2026).** «Quiero poder poner el objetivo por día por semana;
+por ejemplo, esta semana todos los días 3,500.»
+
+- Un objetivo de periodo (§104) es **uno** para el rango entero: «esta semana,
+  24,500». Lo que se pide es otra cosa: un objetivo **de cada día**, para ver día
+  por día si se llegó.
+- Al escoger dos días o más aparece **«Cada día»** (en la app, un interruptor en
+  «Nuevo objetivo»; en el panel, una casilla en «Objetivos por periodo»). Con él
+  se guarda un objetivo de un día por cada día del rango, todos con la misma
+  venta, visitas y nota: siete de $3,500 para la semana. Cada uno se ve, se
+  cambia y se quita por su lado.
+- Son objetivos de un día como cualquier otro: si ya había uno de ese día para
+  esa ruta (o para la empresa), se reemplaza; no se duplica.
+- Hasta **31 días** de una vez: más que eso casi siempre es un error de fechas.
+
+(versionCode 34)

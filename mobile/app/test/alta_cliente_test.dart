@@ -114,6 +114,42 @@ void main() {
     }
   });
 
+  testWidgets('sin GPS, las coordenadas se escriben a mano (ADR 0002 §107)', (tester) async {
+    final base = await abrirAlta(tester, gps: const GpsSinLectura('bajo techo'));
+    await tester.enterText(find.byKey(const Key('campo_nombre')), 'Puesto del mercado');
+    // Va abajo, junto a la ubicación: hay que bajar hasta él, en la lista del
+    // alta (la de clientes sigue en el árbol, debajo).
+    final formulario = find.ancestor(
+      of: find.byKey(const Key('campo_nombre')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.drag(formulario.first, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    await tocar(tester, const Key('boton_coordenadas_a_mano'));
+    expect(find.byKey(const Key('dialogo_coordenadas')), findsOneWidget);
+
+    // Al revés se dice; pegado como lo copia el mapa se reparte en los dos.
+    await tester.enterText(find.byKey(const Key('campo_latitud_alta')), '-106.4111');
+    await tester.enterText(find.byKey(const Key('campo_longitud_alta')), '23.2494');
+    await tester.tap(find.byKey(const Key('boton_usar_coordenadas')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('error_coordenadas')), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const Key('campo_latitud_alta')), '23.2494, -106.4111');
+    await tester.tap(find.byKey(const Key('boton_usar_coordenadas')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('dialogo_coordenadas')), findsNothing);
+    expect(textoQueContiene('23.2494000, -106.4111000'), findsOneWidget);
+    expect(textoQueContiene('Puesta a mano'), findsOneWidget);
+    await tocar(tester, const Key('boton_guardar'));
+
+    final c = base.unaFila('SELECT lat, lng, ubicacion_origen FROM clientes');
+    expect((c['lat'], c['lng'], c['ubicacion_origen']), (23.2494, -106.4111, 'manual'));
+    final sobre = base.unaFila("SELECT payload FROM outbox WHERE tipo = 'cliente.crear'");
+    expect(sobre['payload'] as String, contains('"ubicacion_origen":"manual"'));
+  });
+
   testWidgets('se avisa que se enviará al haber señal', (tester) async {
     await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
     await escribirEn(tester, const Key('campo_nombre'), 'Doña Mary');
