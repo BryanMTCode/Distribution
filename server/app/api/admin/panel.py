@@ -44,6 +44,7 @@ from app.api.admin.sesion_web import (
 )
 from app.core.seguridad import verificar_password
 from app.infra.models import Usuario
+from app.infra.objetivos_diarios import objetivos_diarios
 
 # `include_in_schema=False`: el panel NO entra al OpenAPI.
 #
@@ -236,6 +237,16 @@ async def tablero(
             # La empresa, al final del tablero (§98): ya no tiene entrada propia.
             "empresa": (
                 await resumen_de_la_empresa(sesion) if actor.puede("tablero.ver") else None
+            ),
+            # El objetivo diario fijo contra lo vendido hoy (§110). Es de hoy,
+            # como los pendientes: el selector de periodo no lo mueve.
+            "objetivo_de_hoy": (
+                [
+                    o for o in await objetivos_diarios(sesion, dias_atras=0)
+                    if o.hoy.objetivo is not None or o.hoy.descanso
+                ]
+                if actor.puede("tablero.ver")
+                else []
             ),
             "periodo": rango,
             "periodos": PERIODOS,

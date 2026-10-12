@@ -1,0 +1,400 @@
+"""El objetivo diario fijo: «por día 3,500, hasta que yo lo modifique» (ADR 0002 §110).
+
+Un objetivo de periodo (§104) se pone para unas fechas y se acaba; ponerlo
+«cada día» de una semana (§109) obligaba a volver a capturarlo cada semana.
+Este se pone UNA vez —de una ruta o de toda la empresa—, con los días de la
+semana en que aplica, y vale desde ese día en adelante.
+
+Cambiarlo es poner otro desde el día que se diga: los días anteriores se quedan
+medidos contra el que tenían, así que la historia no se reescribe. Cada cambio
+es un renglón de `objetivos_diarios` (0057); el objetivo de un día es el del
+último renglón que ya había empezado, y un renglón sin monto es «sin objetivo
+diario desde ese día».
+
+Solo en el panel: el tablero lo pone contra lo vendido hoy, y Objetivos muestra
+la última semana, día por día, cumplido o no.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, timedelta
+from decimal import Decimal
+
+from sqlalchemy import text
+
+from app.infra.objetivos import OBJETIVO_MAXIMO, ObjetivoInvalido
+
+DIAS_CORTOS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+_EN_PLURAL = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábados", "domingos")
+TODA_LA_SEMANA = (1, 2, 3, 4, 5, 6, 7)
+LUNES_A_SABADO = (1, 2, 3, 4, 5, 6)
+
+# Cuántos días atrás se ven junto a hoy: una semana se lee de un vistazo.
+DIAS_ATRAS = 6
+
+# Un cambio puede valer desde unos días atrás —«desde el lunes»—, pero no
+# reescribir meses: lo de antes ya se midió y ya se habló con el vendedor.
+DIAS_ATRAS_MAXIMOS = 31
+
+
+def dias_en_palabras(dias) -> str:
+    """(1, 2, 3, 4, 5, 6) → «de lunes a sábado»; (1, 3, 5) → «lun, mié, vie»."""
+    dias = tuple(sorted(set(dias)))
+    if dias == TODA_LA_SEMANA:
+        return "todos los días"
+    if dias == LUNES_A_SABADO:
+        return "de lunes a sábado"
+    if dias == (1, 2, 3, 4, 5):
+        return "de lunes a viernes"
+    if len(dias) == 1:
+        return f"los {_EN_PLURAL[dias[0] - 1]}"
+    return ", ".join(DIAS_CORTOS[d - 1] for d in dias)
+
+
+@dataclass(frozen=True)
+class Tramo:
+    """Un cambio: desde `desde`, tanto cada día, estos días de la semana."""
+
+    id: uuid.UUID
+    desde: date
+    objetivo_venta: Decimal | None
+    objetivo_visitas: int | None
+    dias_semana: tuple[int, ...]
+    nota: str | None
+    fijado_por: str | None
+
+    @property
+    def quitado(self) -> bool:
+        return self.objetivo_venta is None
+
+    def aplica(self, dia: date) -> bool:
+        return self.objetivo_venta is not None and dia.isoweekday() in self.dias_semana
+
+    @property
+    def dias_en_palabras(self) -> str:
+        return dias_en_palabras(self.dias_semana)
+
+
+@dataclass(frozen=True)
+class DiaMedido:
+    """Un día contra su objetivo. `objetivo` nulo: ese día no tocaba."""
+
+    dia: date
+    objetivo: Decimal | None
+    objetivo_visitas: int | None
+    venta: Decimal
+    visitas: int
+    # Había objetivo, pero ese día de la semana no aplica (el domingo, digamos).
+    descanso: bool
+
+    @property
+    def corto(self) -> str:
+        return f"{DIAS_CORTOS[self.dia.weekday()]} {self.dia.day}"
+
+    @property
+    def es_hoy(self) -> bool:
+        return self.dia == date.today()
+
+    @property
+    def logrado(self) -> Decimal | None:
+        if not self.objetivo:
+            return None
+        return (self.venta * 100 / self.objetivo).quantize(Decimal("0.1"))
+
+    @property
+    def cumplido(self) -> bool:
+        return self.objetivo is not None and self.venta >= self.objetivo
+
+    @property
+    def falta(self) -> Decimal:
+        return max(Decimal(0), (self.objetivo or Decimal(0)) - self.venta)
+
+
+@dataclass(frozen=True)
+class ObjetivoDiario:
+    ruta_id: uuid.UUID | None
+    # «R1101 · Ruta 1101»; nulo = toda la empresa.
+    ruta: str | None
+    # El que vale hoy (nulo si hoy no hay), y los cambios ya programados.
+    vigente: Tramo | None
+    proximos: list[Tramo]
+    # Del más viejo a hoy.
+    dias: list[DiaMedido]
+
+    @property
+    def hoy(self) -> DiaMedido:
+        return self.dias[-1]
+
+    @property
+    def medidos(self) -> int:
+        """Los días ya terminados que tenían objetivo."""
+        return sum(1 for d in self.dias[:-1] if d.objetivo is not None)
+
+    @property
+    def cumplidos(self) -> int:
+        return sum(1 for d in self.dias[:-1] if d.cumplido)
+
+
+def _tramo_del_dia(tramos: list[Tramo], dia: date) -> Tramo | None:
+    """El último cambio que ya había empezado ese día (vienen por `desde`)."""
+    elegido = None
+    for t in tramos:
+        if t.desde > dia:
+            break
+        elegido = t
+    return elegido
+
+
+async def _existe_la_ruta(sesion, ruta_id: uuid.UUID | None) -> None:
+    if ruta_id is None:
+        return
+    fila = (
+        await sesion.execute(text("SELECT 1 FROM rutas WHERE id = :r"), {"r": ruta_id})
+    ).first()
+    if fila is None:
+        raise ObjetivoInvalido("Esa ruta ya no existe.")
+
+
+_GUARDAR = text(
+    """
+    INSERT INTO objetivos_diarios
+        (ruta_id, desde, objetivo_venta, objetivo_visitas, dias_semana, nota, fijado_por)
+    VALUES (:r, :desde, :monto, :visitas, CAST(:dias AS smallint[]), :nota, :quien)
+    ON CONFLICT (ruta_id, desde) DO UPDATE SET
+        objetivo_venta   = excluded.objetivo_venta,
+        objetivo_visitas = excluded.objetivo_visitas,
+        dias_semana      = excluded.dias_semana,
+        nota             = excluded.nota,
+        fijado_por       = excluded.fijado_por,
+        actualizado_en   = now()
+    RETURNING id
+    """
+)
+
+
+async def fijar_objetivo_diario(
+    sesion,
+    *,
+    ruta_id: uuid.UUID | None,
+    desde: date,
+    objetivo_venta: Decimal,
+    objetivo_visitas: int | None,
+    dias_semana,
+    nota: str | None,
+    quien: uuid.UUID | None,
+) -> Tramo:
+    """Pone (o cambia) el objetivo diario desde `desde`. No hace commit.
+
+    Si ya tenía uno, este lo reemplaza desde esa fecha; los días anteriores se
+    quedan con el que tenían. Guardar dos veces el mismo día lo corrige.
+    """
+    hoy = date.today()
+    if desde < hoy - timedelta(days=DIAS_ATRAS_MAXIMOS):
+        raise ObjetivoInvalido(
+            f"Un cambio vale a lo más desde {DIAS_ATRAS_MAXIMOS} días atrás: lo de "
+            "antes ya se midió."
+        )
+    if desde > hoy + timedelta(days=366):
+        raise ObjetivoInvalido("Un cambio se programa a lo más con un año de anticipación.")
+    if objetivo_venta <= 0:
+        raise ObjetivoInvalido("Escribe cuánto se tiene que vender cada día.")
+    if objetivo_venta > OBJETIVO_MAXIMO:
+        raise ObjetivoInvalido(
+            f"Un objetivo de ${objetivo_venta:,.2f} al día parece un error de dedo."
+        )
+    try:
+        dias = tuple(sorted({int(d) for d in dias_semana}))
+    except (TypeError, ValueError) as e:
+        raise ObjetivoInvalido("Escoge los días de la semana en que aplica.") from e
+    if not dias or dias[0] < 1 or dias[-1] > 7:
+        raise ObjetivoInvalido("Escoge al menos un día de la semana en que aplica.")
+    if objetivo_visitas is not None and objetivo_visitas <= 0:
+        objetivo_visitas = None
+    await _existe_la_ruta(sesion, ruta_id)
+
+    nuevo = (
+        await sesion.execute(
+            _GUARDAR,
+            {"r": ruta_id, "desde": desde, "monto": objetivo_venta,
+             "visitas": objetivo_visitas, "dias": list(dias), "nota": nota, "quien": quien},
+        )
+    ).scalar_one()
+    return Tramo(
+        id=nuevo, desde=desde, objetivo_venta=objetivo_venta,
+        objetivo_visitas=objetivo_visitas, dias_semana=dias, nota=nota, fijado_por=None,
+    )
+
+
+async def quitar_objetivo_diario(sesion, *, ruta_id: uuid.UUID | None, quien) -> None:
+    """Desde hoy ya no hay objetivo diario. Los días pasados se quedan medidos
+    como estaban, y los cambios que estaban programados ya no aplican. No hace
+    commit."""
+    hoy = date.today()
+    await sesion.execute(
+        text(
+            "DELETE FROM objetivos_diarios "
+            " WHERE ruta_id IS NOT DISTINCT FROM :r AND desde > :hoy"
+        ),
+        {"r": ruta_id, "hoy": hoy},
+    )
+    await sesion.execute(
+        _GUARDAR,
+        {"r": ruta_id, "desde": hoy, "monto": None, "visitas": None,
+         "dias": list(LUNES_A_SABADO), "nota": None, "quien": quien},
+    )
+
+
+async def cancelar_cambio(sesion, tramo_id: uuid.UUID) -> bool:
+    """Borra un cambio que todavía no empieza. Uno que ya empezó es historia:
+    se corrige poniendo otro. No hace commit."""
+    fila = (
+        await sesion.execute(
+            text("DELETE FROM objetivos_diarios WHERE id = :id AND desde > :hoy RETURNING id"),
+            {"id": tramo_id, "hoy": date.today()},
+        )
+    ).first()
+    return fila is not None
+
+
+async def _vendido_por_dia(
+    sesion, desde: date, hasta: date
+) -> dict[tuple[uuid.UUID | None, date], tuple[Decimal, int]]:
+    """Lo vendido y las visitas de cada ruta cada día, y de toda la empresa
+    (llave con ruta nula), con las mismas reglas que los objetivos de periodo
+    (`objetivos._vendido`): la empresa cuenta también el mayoreo."""
+    parametros = {"desde": desde, "hasta": hasta}
+    ventas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT GROUPING(ruta_id) = 1 AS de_todos, ruta_id,
+                       fecha_operativa AS dia, sum(total) AS venta
+                  FROM ventas
+                 WHERE estado = 'confirmada'
+                   AND fecha_operativa BETWEEN :desde AND :hasta
+                 GROUP BY GROUPING SETS ((ruta_id, fecha_operativa), (fecha_operativa))
+                """
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    mayoreo = (
+        await sesion.execute(
+            text(
+                """
+                SELECT fecha AS dia, sum(total) AS venta FROM ventas_mayoreo
+                 WHERE estado = 'confirmada' AND fecha BETWEEN :desde AND :hasta
+                 GROUP BY fecha
+                """
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    visitas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT GROUPING(ruta_id) = 1 AS de_todos, ruta_id, dia,
+                       count(DISTINCT cliente_id) AS visitas
+                  FROM (SELECT cliente_id, fecha_operativa AS dia, ruta_id FROM ventas
+                         WHERE fecha_operativa BETWEEN :desde AND :hasta
+                        UNION
+                        SELECT cliente_id, fecha_operativa, ruta_id FROM no_drops
+                         WHERE fecha_operativa BETWEEN :desde AND :hasta) x
+                 GROUP BY GROUPING SETS ((ruta_id, dia), (dia))
+                """
+            ),
+            parametros,
+        )
+    ).mappings().all()
+
+    venta: dict[tuple[uuid.UUID | None, date], Decimal] = defaultdict(Decimal)
+    for f in ventas:
+        if f["de_todos"] or f["ruta_id"] is not None:
+            venta[(None if f["de_todos"] else f["ruta_id"], f["dia"])] += Decimal(f["venta"])
+    for f in mayoreo:
+        venta[(None, f["dia"])] += Decimal(f["venta"])
+    cuantas: dict[tuple[uuid.UUID | None, date], int] = {}
+    for f in visitas:
+        if f["de_todos"] or f["ruta_id"] is not None:
+            cuantas[(None if f["de_todos"] else f["ruta_id"], f["dia"])] = int(f["visitas"])
+    return {
+        llave: (venta.get(llave, Decimal(0)), cuantas.get(llave, 0))
+        for llave in set(venta) | set(cuantas)
+    }
+
+
+async def objetivos_diarios(sesion, *, dias_atras: int = DIAS_ATRAS) -> list[ObjetivoDiario]:
+    """Cada dueño con objetivo diario —la empresa primero, luego las rutas—, con
+    el que vale hoy, los cambios programados y los últimos días medidos."""
+    hoy = date.today()
+    inicio = hoy - timedelta(days=dias_atras)
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT o.id, o.ruta_id, r.codigo || ' · ' || r.nombre AS ruta,
+                       o.desde, o.objetivo_venta, o.objetivo_visitas, o.dias_semana,
+                       o.nota, u.nombre AS fijado_por
+                  FROM objetivos_diarios o
+                  LEFT JOIN rutas r ON r.id = o.ruta_id
+                  LEFT JOIN usuarios u ON u.id = o.fijado_por
+                 ORDER BY r.codigo NULLS FIRST, o.ruta_id, o.desde
+                """
+            )
+        )
+    ).mappings().all()
+    if not filas:
+        return []
+
+    por_dueno: dict[uuid.UUID | None, tuple[str | None, list[Tramo]]] = {}
+    for f in filas:
+        _, tramos = por_dueno.setdefault(f["ruta_id"], (f["ruta"], []))
+        tramos.append(
+            Tramo(
+                id=f["id"],
+                desde=f["desde"],
+                objetivo_venta=(
+                    Decimal(f["objetivo_venta"]) if f["objetivo_venta"] is not None else None
+                ),
+                objetivo_visitas=f["objetivo_visitas"],
+                dias_semana=tuple(f["dias_semana"]),
+                nota=f["nota"],
+                fijado_por=f["fijado_por"],
+            )
+        )
+
+    vendido = await _vendido_por_dia(sesion, inicio, hoy)
+    resultado = []
+    for ruta_id, (ruta, tramos) in por_dueno.items():
+        dias = []
+        for i in range(dias_atras + 1):
+            dia = inicio + timedelta(days=i)
+            tramo = _tramo_del_dia(tramos, dia)
+            venta, visitas = vendido.get((ruta_id, dia), (Decimal(0), 0))
+            aplica = tramo is not None and tramo.aplica(dia)
+            dias.append(
+                DiaMedido(
+                    dia=dia,
+                    objetivo=tramo.objetivo_venta if aplica else None,
+                    objetivo_visitas=tramo.objetivo_visitas if aplica else None,
+                    venta=venta,
+                    visitas=visitas,
+                    descanso=tramo is not None and not tramo.quitado and not aplica,
+                )
+            )
+        vigente = _tramo_del_dia(tramos, hoy)
+        if vigente is not None and vigente.quitado:
+            vigente = None
+        proximos = [t for t in tramos if t.desde > hoy]
+        # Quitado hace rato y sin nada que mostrar: ya no es de la lista.
+        if vigente is None and not proximos and all(d.objetivo is None for d in dias):
+            continue
+        resultado.append(
+            ObjetivoDiario(ruta_id=ruta_id, ruta=ruta, vigente=vigente, proximos=proximos,
+                           dias=dias)
+        )
+    return resultado

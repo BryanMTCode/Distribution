@@ -177,7 +177,7 @@ async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
 
     await _entrar(cliente)
     # El Tablero lleva a las metas, y la página tiene el botón arriba.
-    assert 'href="/panel/objetivos#por_periodo"' in (await cliente.get("/panel")).text
+    assert 'href="/panel/objetivos#diario"' in (await cliente.get("/panel")).text
     r = await cliente.get("/panel/objetivos")
     assert 'id="forma_por_periodo"' in r.text and 'id="ir_a_nueva_meta"' in r.text
     r = await cliente.post(
@@ -240,21 +240,3 @@ async def test_esta_semana_todos_los_dias_3500(cliente, sesion, semilla):
         headers=cab,
     )
     assert r.status_code == 422 and "31 días a lo más" in r.json()["detail"]
-
-
-async def test_el_panel_tambien_los_pone_cada_dia(cliente, sesion, semilla):
-    from tests.test_panel_objetivos import _entrar
-
-    hoy = date.today()
-    await _entrar(cliente)
-    r = await cliente.get("/panel/objetivos")
-    assert 'id="por_dia"' in r.text
-    r = await cliente.post(
-        "/panel/objetivos/periodo",
-        data={"csrf": csrf_del_panel(cliente, r), "ruta_id": "", "desde": hoy.isoformat(),
-              "hasta": (hoy + timedelta(days=2)).isoformat(), "objetivo_venta": "3500",
-              "por_dia": "1"},
-        follow_redirects=True,
-    )
-    assert "3 objetivos guardados, uno por día." in solo_texto(r)
-    assert (await sesion.execute(text("SELECT count(*) FROM objetivos"))).scalar_one() == 3

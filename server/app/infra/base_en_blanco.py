@@ -86,6 +86,7 @@ TABLAS_QUE_SE_VACIAN = (
     "folios_rangos", "sesiones",
     # Piloto, tablero, analítica y cola
     "piloto_incidencias", "piloto_jornadas", "pilotos", "objetivos_ruta", "objetivos",
+    "objetivos_diarios",
     "tablero_dia", "tablero_mes_ruta", "tablero_refrescos", "analitica_refrescos",
     "jobs", "auditoria",
 )

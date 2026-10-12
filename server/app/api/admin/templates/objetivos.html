@@ -3,12 +3,160 @@
 {% block contenido %}
 <h1>Objetivos</h1>
 <p class="subtitulo">
-  Contra qué se mide la venta. Arriba, el <strong>objetivo del mes</strong> de cada
-  ruta: el que dibuja la barra del tablero. Abajo, <a href="#por_periodo">objetivos
-  de cualquier periodo</a> —un día, una semana, un rango—, de una ruta o de toda la
-  empresa; esos también se fijan desde la app.
+  Contra qué se mide la venta. Primero el <a href="#diario">objetivo diario</a>: se
+  pone una vez y vale todos los días hasta que lo cambies. Después el
+  <a href="#del_mes">objetivo del mes</a> de cada ruta —el que dibuja la barra del
+  tablero— y los <a href="#por_periodo">objetivos de un periodo</a> —un día, una
+  semana, un rango—.
 </p>
 
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
+
+{# ----------------------------------------------------------------------- #}
+{# El objetivo diario fijo (ADR 0002 §110)                                  #}
+{# ----------------------------------------------------------------------- #}
+{# Los campos del objetivo diario: los mismos para ponerlo nuevo y para
+   cambiarlo; al cambiarlo vienen llenos con el que vale hoy. #}
+{% macro campos_diario(t, sufijo) %}
+  <div class="barra" style="flex-wrap:wrap;margin-top:8px">
+    <input type="text" name="objetivo_venta" placeholder="Vender cada día $" inputmode="decimal" required
+           style="width:150px" aria-label="Vender cada día"
+           value="{{ '{:.2f}'.format(t.objetivo_venta) if t else '' }}">
+    <input type="text" name="objetivo_visitas" placeholder="Visitas cada día (opcional)" inputmode="numeric"
+           style="width:190px" aria-label="Visitas cada día"
+           value="{{ t.objetivo_visitas or '' if t else '' }}">
+    <label>A partir del <input type="date" name="desde" value="{{ hoy }}" required></label>
+  </div>
+  <div class="barra" style="flex-wrap:wrap" role="group" aria-label="Días en que aplica">
+    <span class="sutil">Aplica:</span>
+    {% for d in range(1, 8) %}
+    <label style="white-space:nowrap">
+      <input type="checkbox" name="dias" value="{{ d }}" id="dia_{{ d }}_{{ sufijo }}"
+             {% if (t and d in t.dias_semana) or (not t and d in lunes_a_sabado) %}checked{% endif %}>
+      {{ dias_cortos[d - 1] }}
+    </label>
+    {% endfor %}
+  </div>
+  <div class="barra" style="flex-wrap:wrap">
+    <input type="text" name="nota" placeholder="Nota (opcional)" maxlength="300" style="min-width:220px"
+           value="{{ t.nota or '' if t else '' }}">
+  </div>
+{% endmacro %}
+
+<h2 id="diario">Objetivo diario</h2>
+<p class="sutil" style="margin-top:-6px">
+  Se pone una vez —por ejemplo, <strong>$3,500 cada día, de lunes a sábado</strong>— y
+  vale hasta que lo cambies. Al cambiarlo, lo nuevo vale desde el día que digas y los
+  días pasados se quedan medidos contra el que tenían. Los días que no escojas (el
+  domingo, digamos) no cuentan como fallados. El de toda la empresa suma también el
+  mayoreo. Solo cuenta lo que ya sincronizó.
+</p>
+{% if diarios %}
+<div class="tabla-marco">
+<table id="tabla_diario">
+  <thead>
+    <tr>
+      <th>De quién</th>
+      <th class="numero">Cada día</th>
+      {% for d in diarios[0].dias %}
+      <th class="numero">{% if d.es_hoy %}Hoy{% else %}{{ d.corto }}{% endif %}</th>
+      {% endfor %}
+      {% if puede_editar %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for o in diarios %}
+    {% set clave = o.ruta_id or 'empresa' %}
+    <tr id="diario_{{ clave }}">
+      <td>
+        <strong>{{ o.ruta or 'Toda la empresa' }}</strong>
+        {% if o.medidos %}<div class="sutil">{{ o.cumplidos }} de {{ o.medidos }} día(s) cumplido(s)</div>{% endif %}
+      </td>
+      <td class="numero">
+        {% if o.vigente %}
+          {{ o.vigente.objetivo_venta|dinero }}
+          <div class="sutil">{{ o.vigente.dias_en_palabras }}</div>
+          <div class="sutil">desde el {{ o.vigente.desde.strftime('%d/%m/%Y') }}</div>
+          {% if o.vigente.objetivo_visitas %}<div class="sutil">{{ o.vigente.objetivo_visitas }} visitas</div>{% endif %}
+          {% if o.vigente.nota %}<div class="sutil">{{ o.vigente.nota }}</div>{% endif %}
+        {% else %}
+          <span class="sutil">sin objetivo hoy</span>
+        {% endif %}
+        {% for t in o.proximos %}
+          <div class="sutil" id="cambio_{{ t.id }}" style="margin-top:4px">
+            Desde el {{ t.desde.strftime('%d/%m/%Y') }}:
+            {% if t.quitado %}sin objetivo{% else %}{{ t.objetivo_venta|dinero }}, {{ t.dias_en_palabras }}{% endif %}
+            {% if puede_editar %}
+            <form method="post" action="/panel/objetivos/diario/{{ t.id }}/cancelar" style="display:inline">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button type="submit" class="boton-chico">Cancelar</button>
+            </form>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </td>
+      {% for d in o.dias %}
+      <td class="numero"{% if d.objetivo is not none and (d.cumplido or not d.es_hoy) %}
+          style="color:{% if d.cumplido %}var(--bien){% else %}var(--alerta){% endif %}"{% endif %}>
+        {% if d.objetivo is not none %}
+          {{ d.venta|dinero }}
+          <div class="sutil">{{ d.logrado }}%{% if d.cumplido %} ✓{% endif %}</div>
+        {% elif d.descanso %}
+          <span class="sutil">descanso</span>
+        {% else %}
+          <span class="sutil">—</span>
+        {% endif %}
+      </td>
+      {% endfor %}
+      {% if puede_editar %}
+      <td>
+        <details>
+          <summary class="boton-chico" id="cambiar_diario_{{ clave }}">Cambiar</summary>
+          <form method="post" action="/panel/objetivos/diario" style="min-width:300px">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="ruta_id" value="{{ o.ruta_id or '' }}">
+            {{ campos_diario(o.vigente, clave) }}
+            <button type="submit">Guardar el cambio</button>
+          </form>
+        </details>
+        {% if o.vigente %}
+        <form method="post" action="/panel/objetivos/diario/quitar" style="margin-top:4px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="ruta_id" value="{{ o.ruta_id or '' }}">
+          <button type="submit" class="boton-chico peligro" id="quitar_diario_{{ clave }}">Quitar</button>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="vacio" id="sin_diario">Nadie tiene objetivo diario todavía.</div>
+{% endif %}
+
+{% if puede_editar %}
+<form method="post" action="/panel/objetivos/diario" id="forma_diario"
+      style="max-width:720px;background:var(--papel);border:1px solid var(--linea);
+             border-radius:10px;padding:16px;margin-top:12px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <strong>Poner un objetivo diario</strong>
+  <div class="barra" style="margin-top:10px;flex-wrap:wrap">
+    <select name="ruta_id" aria-label="De quién">
+      <option value="">Toda la empresa</option>
+      {% for f in filas %}<option value="{{ f.ruta_id }}">{{ f.codigo }} · {{ f.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+  {{ campos_diario(none, 'nuevo') }}
+  <button type="submit">Guardar objetivo diario</button>
+  <div class="sutil">Si ya tenía uno, este lo reemplaza desde esa fecha.</div>
+</form>
+{% endif %}
+
+<h2 id="del_mes">Objetivo del mes</h2>
 <form class="barra" method="get" action="/panel/objetivos">
   <input type="month" name="mes" value="{{ periodo }}">
   <button type="submit">Ver</button>
@@ -18,9 +166,6 @@
   <a class="boton-chico" href="#forma_por_periodo" id="ir_a_nueva_meta">+ Nueva meta por periodo</a>
   {% endif %}
 </form>
-
-{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
-{% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
 
 <div class="tarjetas">
   <div class="tarjeta">
@@ -68,7 +213,7 @@
 </form>
 {% endif %}
 
-<h2>Por ruta</h2>
+<h3>Por ruta</h3>
 <div class="tabla-marco">
 <table>
   <thead>
@@ -181,7 +326,8 @@
 <p class="sutil" style="margin-top:-6px">
   Un día, una semana, del 3 al 17: el periodo que quieras, de una ruta o de toda
   la empresa (la de toda la empresa suma también el mayoreo). Se ven aquí y en la
-  app. Un mes completo de una ruta es su objetivo del mes, el de arriba.
+  app. Un mes completo de una ruta es su objetivo del mes, el de arriba. Para la
+  misma cifra todos los días, usa el <a href="#diario">objetivo diario</a>.
 </p>
 <div class="tabla-marco">
 <table id="tabla_por_periodo">
@@ -252,26 +398,21 @@
     <label>Hasta <input type="date" name="hasta" value="{{ hoy }}" required></label>
   </div>
   <div class="barra" style="flex-wrap:wrap">
-    <input name="objetivo_venta" placeholder="Vender $" inputmode="decimal" required>
-    <input name="objetivo_visitas" placeholder="Visitas (opcional)" inputmode="numeric">
-    <input name="nota" placeholder="Nota (opcional)" maxlength="300">
+    <input type="text" name="objetivo_venta" placeholder="Vender $" inputmode="decimal" required>
+    <input type="text" name="objetivo_visitas" placeholder="Visitas (opcional)" inputmode="numeric">
+    <input type="text" name="nota" placeholder="Nota (opcional)" maxlength="300">
     <button type="submit">Guardar objetivo</button>
   </div>
-  <label style="display:block;margin-top:6px">
-    <input type="checkbox" name="por_dia" value="1" id="por_dia">
-    <strong>Cada día</strong>: el mismo objetivo para cada día del periodo, uno por día
-    (por ejemplo, esta semana todos los días $3,500).
-  </label>
   <div class="sutil">Para un solo día, pon la misma fecha en «desde» y «hasta».</div>
 </form>
 {% endif %}
 
 <h2>Qué hace el tablero con esto</h2>
 <p class="sutil">
-  El prorrateo es por <strong>días naturales</strong> transcurridos, no por días
-  hábiles. Una ruta que trabaja de lunes a sábado se verá atrasada los domingos,
-  y es a propósito: la alternativa es un calendario de días hábiles por ruta, un
-  dato que se desactualiza y entonces miente todo el mes en vez de un día.
+  El objetivo del mes se prorratea por <strong>días naturales</strong> transcurridos,
+  no por días hábiles: una ruta que trabaja de lunes a sábado se verá atrasada los
+  domingos, y es a propósito. El objetivo diario sí sabe qué días aplica, y el
+  tablero lo pone contra lo vendido hoy.
 </p>
 <p class="sutil">
   Una ruta sin objetivo aparece en el tablero con su venta y sin barra. Es la que

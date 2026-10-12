@@ -5264,3 +5264,40 @@ por ejemplo, esta semana todos los días 3,500.»
 - Hasta **31 días** de una vez: más que eso casi siempre es un error de fechas.
 
 (versionCode 34)
+
+## 110. El objetivo diario fijo: «por día 3,500, hasta que yo lo modifique»
+
+**Corrección (octubre 2026).** «Es muy impráctico agregar los objetivos así;
+agrega que pueda poner por día 3,500 hasta que yo lo modifique.» Y: «todo esto
+en el dashboard nada más».
+
+- «Cada día» de §109 obligaba a volver a capturar la semana cada semana. Ahora
+  hay un **objetivo diario** que se pone **una vez** —de una ruta o de toda la
+  empresa— y vale todos los días, **sin fecha de fin**, hasta que se cambie o
+  se quite.
+- **Solo en el panel.** Desempeño → Objetivos, sección «Objetivo diario», la
+  primera de la página; el Tablero lleva ahí con «Metas y objetivos». La app no
+  cambia: sus objetivos siguen como en §104 y §109.
+- **Los días de la semana en que aplica**, de lunes a sábado por omisión. Un día
+  que no aplica es «descanso», no fallado: el domingo no pinta rojo una ruta que
+  no sale, que era el temor original de un objetivo diario (ver
+  `api/admin/objetivos.py`).
+- **Cambiarlo no reescribe la historia.** Cada cambio vale desde el día que se
+  diga (hoy por omisión, un día futuro para programarlo, o hasta 31 días atrás);
+  los días anteriores se quedan medidos contra el que tenían. Guardar dos veces
+  el mismo día lo corrige. Un cambio programado se ve en su renglón y se cancela
+  antes de que empiece.
+- **Quitarlo** es desde hoy: los días pasados se siguen viendo, y los cambios
+  programados se descartan.
+- **Qué se ve.** En Objetivos, cada dueño con el objetivo que vale hoy y la
+  última semana día por día —lo vendido, el porcentaje, ✓ si se cumplió— y
+  «N de M días cumplidos». En el **Tablero**, «Objetivo de hoy»: el objetivo,
+  lo vendido hoy, el porcentaje y cuánto falta. Las mismas reglas de venta que
+  los demás objetivos: ventas confirmadas de la ruta; el de toda la empresa
+  suma también el mayoreo. Solo cuenta lo que ya sincronizó.
+- En el panel, la casilla «Cada día» de §109 se quitó: la reemplaza esto. La
+  app la conserva (`por_dia` en `/v1/objetivos`).
+- Migración 0057 (`objetivos_diarios`; alembic `0050_objetivos_diarios`).
+
+(Solo servidor y panel: la app sigue en versionCode 34.)
+

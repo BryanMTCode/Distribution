@@ -186,12 +186,17 @@
     /* Botones dentro de una tabla: Editar, Eliminar, Ajustar. Chicos y en
        renglón, para que la columna de acciones no se coma la tabla. */
     td.acciones { white-space: nowrap; text-align: right; }
-    a.boton-chico, button.boton-chico {
+    a.boton-chico, button.boton-chico, summary.boton-chico {
       display: inline-block; font-size: 12px; padding: 3px 9px; margin-left: 4px;
       border: 1px solid var(--linea); border-radius: 6px; background: var(--papel);
       color: var(--acento); text-decoration: none; cursor: pointer; font-weight: 600;
     }
-    a.boton-chico:hover, button.boton-chico:hover { background: var(--acento-suave); }
+    /* «Cambiar» que abre su formulario ahí mismo (un <details>, sin JavaScript). */
+    summary.boton-chico { list-style: none; }
+    summary.boton-chico::-webkit-details-marker { display: none; }
+    a.boton-chico:hover, button.boton-chico:hover, summary.boton-chico:hover {
+      background: var(--acento-suave);
+    }
     a.boton-chico.peligro, button.boton-chico.peligro { color: var(--alerta); }
     a.boton-chico.peligro:hover, button.boton-chico.peligro:hover {
       background: var(--alerta-suave);

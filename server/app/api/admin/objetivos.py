@@ -25,6 +25,11 @@ dejaría de mirar el color.
 El objetivo es del MES, y el tablero prorratea por días naturales
 transcurridos, diciendo que lo hace (ver `domain/tablero.Avance`).
 
+Desde §110 hay además un OBJETIVO DIARIO fijo («3,500 cada día, hasta que lo
+cambie»), y no cae en lo de arriba: se escogen los días de la semana en que
+aplica —de lunes a sábado por omisión—, así que el domingo no pinta rojo. Ver
+`app/infra/objetivos_diarios.py`.
+
 ────────────────────────────────────────────────────────────────────────────
 POR QUÉ SE COPIA EL MES ANTERIOR CON UN BOTÓN
 ────────────────────────────────────────────────────────────────────────────
@@ -41,6 +46,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -61,8 +67,15 @@ from app.infra.objetivos import (
     ObjetivoInvalido,
     borrar_objetivo,
     guardar_objetivo,
-    guardar_objetivos_por_dia,
     objetivos_con_avance,
+)
+from app.infra.objetivos_diarios import (
+    DIAS_CORTOS,
+    LUNES_A_SABADO,
+    cancelar_cambio,
+    fijar_objetivo_diario,
+    objetivos_diarios,
+    quitar_objetivo_diario,
 )
 
 router = APIRouter(prefix="/panel/objetivos", tags=["panel"], include_in_schema=False)
@@ -186,6 +199,10 @@ async def listar(
             "por_periodo": [
                 o for o in await objetivos_con_avance(sesion) if o.clase == "periodo"
             ],
+            # El diario fijo (§110): el que vale hoy y la última semana.
+            "diarios": await objetivos_diarios(sesion),
+            "dias_cortos": DIAS_CORTOS,
+            "lunes_a_sabado": LUNES_A_SABADO,
             "hoy": hoy.isoformat(),
             "aviso": aviso,
             "error": error,
@@ -342,11 +359,10 @@ async def fijar_por_periodo(
     objetivo_venta: str = Form(""),
     objetivo_visitas: str = Form(""),
     nota: str = Form(""),
-    por_dia: str = Form(""),
 ) -> RedirectResponse:
     """Un objetivo de un día, una semana o un rango; de una ruta o de toda la
     empresa. Un mes completo de una ruta se guarda como su objetivo del mes.
-    Con «cada día», uno por día del periodo (§109)."""
+    El de «cada día» es el diario fijo de abajo (§110)."""
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
 
@@ -365,7 +381,7 @@ async def fijar_por_periodo(
     try:
         monto = leer_dinero(objetivo_venta, campo="El objetivo de venta")
         visitas = leer_entero(objetivo_visitas, campo="El objetivo de visitas", maximo=100000)
-        guardados = await (guardar_objetivos_por_dia if por_dia else _uno)(
+        await guardar_objetivo(
             sesion,
             ruta_id=uuid.UUID(ruta_id) if ruta_id else None,
             desde=inicio,
@@ -379,13 +395,7 @@ async def fijar_por_periodo(
         await sesion.rollback()
         return volver(error=str(e))
     await sesion.commit()
-    if len(guardados) > 1:
-        return volver(aviso=f"{len(guardados)} objetivos guardados, uno por día.")
     return volver(aviso="Objetivo guardado.")
-
-
-async def _uno(sesion, **datos) -> list[str]:
-    return [await guardar_objetivo(sesion, **datos)]
 
 
 @router.post("/periodo/{objetivo_id}/borrar")
@@ -404,3 +414,95 @@ async def borrar_por_periodo(
     return RedirectResponse(
         f"/panel/objetivos?{texto}#por_periodo", status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+# ---------------------------------------------------------------------------
+# El objetivo diario fijo (ADR 0002 §110)
+# ---------------------------------------------------------------------------
+
+
+def _al_diario(**que: str) -> RedirectResponse:
+    clave, texto = next(iter(que.items()))
+    return RedirectResponse(
+        f"/panel/objetivos?{clave}={quote(texto)}#diario", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+def _dueno(ruta_id: str) -> uuid.UUID | None:
+    """'' es toda la empresa; lo demás, una ruta."""
+    return uuid.UUID(ruta_id) if ruta_id else None
+
+
+@router.post("/diario")
+async def fijar_diario(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> RedirectResponse:
+    """«Por día 3,500, hasta que yo lo modifique»: pone o cambia el objetivo
+    diario de una ruta o de toda la empresa, desde la fecha que se diga."""
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf") or ""))
+    actor.exigir(PERMISO)
+    try:
+        ruta_id = _dueno(str(formulario.get("ruta_id") or ""))
+        texto_desde = str(formulario.get("desde") or "")
+        desde = date.fromisoformat(texto_desde) if texto_desde else date.today()
+        monto = leer_dinero(str(formulario.get("objetivo_venta") or ""),
+                            campo="El objetivo de cada día")
+        visitas = leer_entero(str(formulario.get("objetivo_visitas") or ""),
+                              campo="Las visitas de cada día", maximo=10000)
+        tramo = await fijar_objetivo_diario(
+            sesion,
+            ruta_id=ruta_id,
+            desde=desde,
+            objetivo_venta=monto,
+            objetivo_visitas=visitas or None,
+            dias_semana=formulario.getlist("dias"),
+            nota=texto_o_nulo(str(formulario.get("nota") or ""), maximo=300),
+            quien=actor.usuario_id,
+        )
+    except (CapturaInvalida, ObjetivoInvalido, ValueError) as e:
+        await sesion.rollback()
+        return _al_diario(error=str(e))
+    await sesion.commit()
+    cuando = "desde hoy" if desde == date.today() else f"desde el {desde:%d/%m/%Y}"
+    return _al_diario(
+        aviso=f"Objetivo diario guardado: ${monto:,.2f} cada día, "
+              f"{tramo.dias_en_palabras}, {cuando}. Vale hasta que lo cambies."
+    )
+
+
+@router.post("/diario/quitar")
+async def quitar_diario(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    csrf: str = Form(""),
+    ruta_id: str = Form(""),
+) -> RedirectResponse:
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    try:
+        await quitar_objetivo_diario(sesion, ruta_id=_dueno(ruta_id), quien=actor.usuario_id)
+    except ValueError as e:
+        await sesion.rollback()
+        return _al_diario(error=str(e))
+    await sesion.commit()
+    return _al_diario(
+        aviso="Objetivo diario quitado desde hoy. Los días pasados se quedan como estaban."
+    )
+
+
+@router.post("/diario/{tramo_id}/cancelar")
+async def cancelar_cambio_diario(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    tramo_id: uuid.UUID,
+    csrf: str = Form(""),
+) -> RedirectResponse:
+    """Cancela un cambio programado que todavía no empieza."""
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    cancelado = await cancelar_cambio(sesion, tramo_id)
+    await sesion.commit()
+    if not cancelado:
+        return _al_diario(error="Ese cambio ya empezó o ya no existe.")
+    return _al_diario(aviso="Cambio programado cancelado.")

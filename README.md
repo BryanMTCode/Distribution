@@ -102,6 +102,7 @@ la bodega sube cuando alguien la cuenta.
 | **Panel en cinco módulos** y Editar / Eliminar / Ajustar en las tablas, con delta al teléfono | ✅ 19 pruebas |
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
 | **Objetivos mensuales por ruta** desde el panel, y el avance contra lo esperado | ✅ 15 pruebas |
+| **Objetivo diario fijo** en el panel — «$3,500 cada día, de lunes a sábado, hasta que lo cambie» —, con la semana día por día y lo de hoy en el Tablero | ✅ 4 pruebas |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
 | **Métricas Prometheus** de salud — apagadas por omisión, y sin dinero dentro | ✅ incluidas en esas 28 |

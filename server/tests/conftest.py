@@ -130,6 +130,7 @@ TABLAS_VOLATILES = [
     "tablero_dia",
     "objetivos_ruta",
     "objetivos",
+    "objetivos_diarios",
     "venta_mayoreo_partidas",
     "ventas_mayoreo",
     "sesiones",

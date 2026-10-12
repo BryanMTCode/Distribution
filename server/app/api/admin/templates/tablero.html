@@ -7,7 +7,7 @@
 <p class="subtitulo">
   Lo que necesita atención hoy. Cada número lleva a su pantalla.
   {% if actor and actor.puede('tablero.ver') %}
-  <a href="/panel/objetivos#por_periodo" id="enlace_metas">Metas y objetivos</a>.
+  <a href="/panel/objetivos#diario" id="enlace_metas">Metas y objetivos</a>.
   {% endif %}
 </p>
 
@@ -47,6 +47,47 @@
 </div>
 {% else %}
 <div class="aviso-caja bien" id="sin_pendientes">Nada pendiente. Todo lo que llegó está registrado y cuadrado.</div>
+{% endif %}
+
+{# El objetivo diario fijo contra lo vendido hoy (ADR 0002 §110). Es de hoy,
+   como los pendientes: el selector de periodo de abajo no lo mueve. #}
+{% if objetivo_de_hoy %}
+<h2 id="objetivo_hoy">Objetivo de hoy</h2>
+<div class="tabla-marco">
+  <table id="tabla_objetivo_hoy">
+    <thead>
+      <tr>
+        <th>De quién</th>
+        <th class="numero">Objetivo</th>
+        <th class="numero">Vendido</th>
+        <th style="width:35%">Avance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in objetivo_de_hoy %}
+      {% set d = o.hoy %}
+      <tr id="hoy_{{ o.ruta_id or 'empresa' }}">
+        <td>{{ o.ruta or 'Toda la empresa' }}</td>
+        {% if d.objetivo is not none %}
+        <td class="numero">{{ d.objetivo|dinero }}</td>
+        <td class="numero">{{ d.venta|dinero }}</td>
+        <td>
+          {{ d.logrado }}% ·
+          {% if d.cumplido %}<strong style="color:var(--bien)">cumplido</strong>{% else %}faltan {{ d.falta|dinero }}{% endif %}
+          <div style="height:8px;background:var(--linea);border-radius:4px;margin-top:5px;overflow:hidden">
+            <div style="height:8px;width:{{ '%.1f'|format([d.logrado|float, 100]|min) }}%;
+                        background:{% if d.cumplido %}var(--bien){% else %}var(--acento){% endif %}"></div>
+          </div>
+        </td>
+        {% else %}
+        <td colspan="3" class="sutil">Hoy no aplica: su objetivo es {{ o.vigente.dias_en_palabras if o.vigente else 'de otros días' }}.</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">Solo cuenta lo que ya sincronizó. <a href="/panel/objetivos#diario">Ver la semana o cambiar el objetivo diario</a>.</p>
 {% endif %}
 
 {#
