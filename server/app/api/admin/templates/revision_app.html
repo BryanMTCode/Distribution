@@ -1,12 +1,15 @@
 {% extends "base.html" %}
-{% block titulo %}Revisión de la app{% endblock %}
+{% block titulo %}Revisión{% endblock %}
 {% block contenido %}
-<h1>Revisión de la app</h1>
+{# La versión y la parte que se están viendo, para que cada enlace las conserve. #}
+{% set base_q = 'version=' ~ (version|urlencode) ~ ('&parte=' ~ parte if parte != 'telefono' else '') %}
+<h1>Revisión: app y dashboard</h1>
 <p class="subtitulo">
-  Todo lo que hay que probar en el teléfono cuando instalas una versión nueva. Cada
-  punto dice <strong>cómo</strong> probarlo y <strong>qué debe pasar</strong>; márcalo
-  como <strong>bien</strong> o <strong>falla</strong> (con lo que falló). Las marcas
-  son de la versión que revisas: la siguiente empieza en blanco.
+  Todo lo que hay que probar cuando llega una versión nueva, <strong>en el
+  teléfono</strong> y <strong>en el dashboard</strong>. Cada punto dice
+  <strong>cómo</strong> probarlo y <strong>qué debe pasar</strong>; márcalo como
+  <strong>bien</strong> o <strong>falla</strong> (con lo que falló). Las marcas son de
+  la versión de la app que revisas: la siguiente empieza en blanco.
 </p>
 
 {% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
@@ -20,6 +23,7 @@
   <datalist id="versiones_conocidas">
     {% for v in conocidas %}<option value="{{ v }}">{% endfor %}
   </datalist>
+  {% if parte != 'telefono' %}<input type="hidden" name="parte" value="{{ parte }}">{% endif %}
   <button type="submit">Ver</button>
 </form>
 
@@ -35,10 +39,23 @@
   {% if con_otra %}<br>Con otra versión (les falta instalar): {% for quien, v in con_otra %}{{ quien }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
 </p>
 
+<nav style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px" id="partes_revision"
+     aria-label="Qué parte revisar">
+  {% for clave, titulo, hechos, cuantos in partes %}
+  <a href="?version={{ version|urlencode }}{% if clave != 'telefono' %}&parte={{ clave }}{% endif %}"
+     id="parte_{{ clave }}"
+     style="padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;
+            border:1px solid {% if clave == parte %}var(--acento){% else %}var(--linea){% endif %};
+            background:{% if clave == parte %}var(--acento-suave){% else %}var(--papel){% endif %};
+            color:{% if clave == parte %}var(--acento){% else %}inherit{% endif %}"
+     {% if clave == parte %}aria-current="true"{% endif %}>{{ titulo }} · {{ hechos }} de {{ cuantos }}</a>
+  {% endfor %}
+</nav>
+
 <div class="tarjetas" id="resumen_revision">
   <div class="tarjeta">
     <div class="numero">{{ bien + fallas }} de {{ total }}</div>
-    <div class="etiqueta">puntos revisados de la {{ version }}</div>
+    <div class="etiqueta">puntos revisados {{ 'en el teléfono' if parte == 'telefono' else 'en el dashboard' }} · {{ version }}</div>
     <div style="height:8px;background:var(--linea);border-radius:4px;margin-top:8px;overflow:hidden">
       <div style="height:8px;width:{{ '%.1f'|format((bien + fallas) * 100 / total) }}%;background:var(--bien)"></div>
     </div>
@@ -50,7 +67,7 @@
   <div class="tarjeta {% if fallas %}alerta{% endif %}">
     <div class="numero">{{ fallas }}</div>
     <div class="etiqueta">con falla</div>
-    {% if fallas %}<div class="sutil" style="margin-top:6px">Lo que hay que arreglar: <a href="?version={{ version|urlencode }}&filtro=falla">verlas</a>.</div>{% endif %}
+    {% if fallas %}<div class="sutil" style="margin-top:6px">Lo que hay que arreglar: <a href="?{{ base_q }}&filtro=falla">verlas</a>.</div>{% endif %}
   </div>
   <div class="tarjeta">
     <div class="numero">{{ pendientes }}</div>
@@ -61,7 +78,7 @@
 <nav class="barra" style="display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 18px" id="filtros_revision">
   {% for clave, etiqueta, cuantos in [('todos', 'Todos', total), ('pendientes', 'Pendientes', pendientes), ('falla', 'Con falla', fallas), ('nuevos', 'Nuevos en esta versión', nuevos)] %}
     {% if clave == filtro %}<strong>{{ etiqueta }} · {{ cuantos }}</strong>
-    {% else %}<a href="?version={{ version|urlencode }}{% if clave != 'todos' %}&filtro={{ clave }}{% endif %}">{{ etiqueta }} · {{ cuantos }}</a>{% endif %}
+    {% else %}<a href="?{{ base_q }}{% if clave != 'todos' %}&filtro={{ clave }}{% endif %}">{{ etiqueta }} · {{ cuantos }}</a>{% endif %}
   {% endfor %}
 </nav>
 
@@ -102,6 +119,7 @@
       <input type="hidden" name="version" value="{{ version }}">
       <input type="hidden" name="punto" value="{{ p.clave }}">
       <input type="hidden" name="filtro" value="{{ filtro }}">
+      <input type="hidden" name="parte" value="{{ parte }}">
       <input type="text" name="nota" maxlength="500" style="flex:1;min-width:200px"
              placeholder="Nota (obligatoria si falla: qué pasó)"
              value="{{ marca.nota or '' if marca else '' }}" aria-label="Nota de {{ p.titulo }}">
@@ -114,6 +132,7 @@
       <input type="hidden" name="version" value="{{ version }}">
       <input type="hidden" name="punto" value="{{ p.clave }}">
       <input type="hidden" name="filtro" value="{{ filtro }}">
+      <input type="hidden" name="parte" value="{{ parte }}">
       <button type="submit" class="boton-chico" id="desmarcar_{{ p.clave }}">Desmarcar</button>
     </form>
     {% endif %}
@@ -128,5 +147,21 @@
   {% else %}No hay puntos nuevos en esta versión.{% endif %}
 </div>
 {% endfor %}
+
+{% if puede_marcar and (bien + fallas) %}
+<form method="post" action="/panel/revision-app/volver-a-empezar" id="forma_volver_a_empezar"
+      style="margin-top:24px;padding:14px;border:1px dashed var(--linea);border-radius:10px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="version" value="{{ version }}">
+  <input type="hidden" name="parte" value="{{ parte }}">
+  <strong>Volver a empezar esta parte</strong>
+  <div class="sutil" style="margin:4px 0 8px">
+    Borra las {{ bien + fallas }} marca(s) {{ 'del teléfono' if parte == 'telefono' else 'del dashboard' }}
+    en la {{ version }} y todo queda pendiente. Sirve cuando solo se actualizó el
+    servidor: la app sigue en la misma versión, pero hay que volver a revisar.
+  </div>
+  <button type="submit" class="secundario">Volver a empezar {{ 'el teléfono' if parte == 'telefono' else 'el dashboard' }}</button>
+</form>
+{% endif %}
 {% endif %}
 {% endblock %}

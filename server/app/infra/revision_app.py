@@ -1,7 +1,12 @@
-"""La revisión de la app, punto por punto (ADR 0002 §112).
+"""La revisión de la app y del dashboard, punto por punto (ADR 0002 §112).
 
 «Agrega al dashboard un checklist de todo lo que debo checar en la app para ver
-que las funcionalidades están bien.»
+que las funcionalidades están bien.» Y después: dashboard y app juntos.
+
+Dos partes: lo que se prueba EN EL TELÉFONO y lo que se prueba EN EL DASHBOARD.
+Las marcas de las dos van con la versión de la app que se revisa: es la que
+cambia en cada entrega. Cuando solo se actualizó el servidor, cada parte se
+puede volver a empezar.
 
 La lista vive aquí, en código, y no en la base: cada punto describe una
 pantalla que existe en esta versión, y cambia junto con ella. Lo que se guarda
@@ -48,9 +53,14 @@ class Punto:
 class Seccion:
     clave: str
     titulo: str
-    # Con qué teléfono y qué usuario se prueba.
+    # Con qué teléfono —o en dónde— y con qué usuario se prueba.
     quien: str
     puntos: tuple[Punto, ...] = field(default_factory=tuple)
+    # 'telefono' o 'dashboard'.
+    parte: str = "telefono"
+
+
+PARTES = {"telefono": "En el teléfono", "dashboard": "En el dashboard"}
 
 
 SECCIONES: tuple[Seccion, ...] = (
@@ -397,6 +407,253 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
         ),
     ),
+    # ------------------------------------------------------------------
+    # En el dashboard
+    # ------------------------------------------------------------------
+    Seccion(
+        "panel_hoy", "Tablero y desempeño", "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_entrar", "Entrar al dashboard",
+                "Abre el dashboard y entra con tu código y contraseña.",
+                "Abre el Tablero; el menú de la izquierda muestra solo lo que tu puesto "
+                "puede abrir.",
+            ),
+            Punto(
+                "panel_pendientes", "Los pendientes del Tablero",
+                "En el Tablero, mira «Pendientes» y toca uno.",
+                "Cada pendiente dice cuántos son y lleva a la pantalla donde se resuelve; "
+                "si no hay nada, dice «Nada pendiente».",
+            ),
+            Punto(
+                "panel_cifras_periodo", "Las cifras por periodo",
+                "En «Cifras de hoy», cambia a la semana, el mes, «Todo» y unas fechas.",
+                "Ventas, efectivo, clientes con compra y visitas sin venta; «Por "
+                "vendedor» y «Por día» suman lo mismo que el total.",
+            ),
+            Punto(
+                "panel_igual_que_la_app", "El dashboard y la app dicen lo mismo",
+                "Compara el Tablero del dashboard con el Tablero de la app (Gerencia), "
+                "hoy y en el mes.",
+                "Las mismas cifras en los dos.",
+            ),
+            Punto(
+                "panel_objetivo_de_hoy", "«Objetivo de hoy» en el Tablero",
+                "Con un objetivo diario puesto, mira «Objetivo de hoy» en el Tablero.",
+                "El objetivo, lo vendido hoy, el porcentaje y cuánto falta; la ruta que "
+                "hoy descansa dice «Hoy no aplica».",
+                desde="+35",
+            ),
+            Punto(
+                "panel_desempeno", "Desempeño del día",
+                "Desempeño → Del día.",
+                "Cada vendedor contra sus mismos días de la semana, y dice de quién falta "
+                "información (el teléfono que no ha sincronizado).",
+            ),
+            Punto(
+                "panel_visitas", "Por qué no compraron",
+                "Desempeño → Visitas.",
+                "Los «No me compró» con su motivo y por vendedor, el cumplimiento del "
+                "plan de visita y los cambios físicos.",
+            ),
+            Punto(
+                "panel_objetivo_diario", "El objetivo diario fijo",
+                "Desempeño → Objetivos → «Objetivo diario»: pon $3,500 de lunes a sábado a "
+                "una ruta. Luego «Cambiar» a 4,000 desde hoy, programa un cambio a "
+                "futuro y cancélalo, y al final «Quitar».",
+                "Vale hasta que lo cambias; la semana se ve día por día con ✓; los días "
+                "pasados se quedan con el objetivo que tenían; quitarlo es desde hoy.",
+                desde="+35",
+            ),
+            Punto(
+                "panel_objetivo_mes", "El objetivo del mes y por periodo",
+                "Desempeño → Objetivos: fija el del mes de una ruta y uno por periodo (una "
+                "semana); prueba «Copiar los objetivos de» el mes anterior.",
+                "Cada uno con su avance contra lo esperado; copiar rellena los huecos sin "
+                "pisar lo que ya ajustaste.",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
+        "panel_operacion", "Cortes, cargas y ventas", "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_cerrar_corte", "Cerrar el corte que mandó un vendedor",
+                "Cortes y cargas → Por aceptar → «Cortes por cerrar»: cuenta el efectivo "
+                "que recibes → «Cerrar el corte».",
+                "Dice la diferencia contra lo esperado, y el corte pasa a «Resueltos en la "
+                "última semana».",
+            ),
+            Punto(
+                "panel_aceptar_carga", "Aceptar la carga que pidió un vendedor",
+                "Cortes y cargas → Por aceptar → «Cargas por aceptar»: ajusta lo que haga "
+                "falta → «Aceptar y confirmar la carga» (o «Rechazar la solicitud» con su "
+                "motivo).",
+                "No deja aceptar mientras el corte de ese vendedor esté por cerrar. La "
+                "aceptada baja de la bodega y le llega al teléfono al sincronizar.",
+            ),
+            Punto(
+                "panel_carga_a_mano", "Una carga a mano",
+                "Cortes y cargas → Cargas → «Abrir borrador» → «Agregar» productos → "
+                "«Confirmar la carga».",
+                "Baja la bodega y sube el camión. «Cancelar el borrador» no mueve nada. Si "
+                "el teléfono tiene operaciones sin subir, lo avisa antes de confirmar.",
+            ),
+            Punto(
+                "panel_corte_a_mano", "Corte a mano contando el camión",
+                "Cortes y cargas → Corte a mano: abre el de un camión, «Guardar conteo», "
+                "«Guardar arqueo» y ciérralo.",
+                "Compara lo contado contra lo esperado, en mercancía y en efectivo.",
+            ),
+            Punto(
+                "panel_ventas", "Ventas: todas, por revisar y canceladas",
+                "Operación de rutas → Ventas: «Todas», «Por revisar» y las canceladas.",
+                "Cada venta con su folio, vendedor, cliente y total; las canceladas van "
+                "aparte.",
+            ),
+            Punto(
+                "panel_cancelar_venta", "Cancelar o corregir una venta",
+                "Abre una venta de prueba: «Corregir la venta», o «Cancelar la venta» con "
+                "su motivo.",
+                "La cancelada pasa a canceladas, la mercancía vuelve al camión y el "
+                "teléfono se entera al sincronizar.",
+            ),
+            Punto(
+                "panel_mayoreo", "Venta de mayoreo",
+                "Ventas → Mayoreo → «Nueva venta de mayoreo»: da de alta un cliente de "
+                "mayoreo, escoge la bodega, los artículos y el precio → «Guardar la "
+                "venta». Después cancélala.",
+                "Folio MY- y su ticket; baja la bodega y la cancelación la devuelve. "
+                "Cuenta en el objetivo de toda la empresa.",
+                desde="+33",
+            ),
+            Punto(
+                "panel_vendedores", "Vendedores y lo que hizo cada uno",
+                "Operación de rutas → Vendedores: abre uno.",
+                "Todo lo que hizo en el periodo: ventas, cargas, cortes y mermas; los "
+                "desactivados van aparte.",
+            ),
+            Punto(
+                "panel_cuenta_vendedor", "La cuenta del vendedor",
+                "Vendedores → Cuentas.",
+                "Sus faltantes, abonos y condonaciones, con el saldo.",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
+        "panel_catalogos", "Clientes y productos", "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_clientes", "Clientes",
+                "Catálogos → Clientes: «Buscar» y abre uno; cambia un dato y «Guardar "
+                "datos».",
+                "Sus datos, días de visita, lista de precios y ubicación; el cambio llega "
+                "al teléfono al sincronizar.",
+            ),
+            Punto(
+                "panel_prospecto", "Confirmar una tienda dada de alta en la calle",
+                "Abre una tienda que dio de alta un vendedor (prospecto) → «Confirmar y "
+                "asignar código».",
+                "Recibe su código y deja de ser prospecto.",
+            ),
+            Punto(
+                "panel_plan_visita", "El plan de visita",
+                "Clientes → Plan de visita: escoge la ruta, marca los días → «Guardar el "
+                "plan».",
+                "El teléfono muestra esas tiendas en «Hoy» los días marcados.",
+                desde="+33",
+            ),
+            Punto(
+                "panel_productos", "Productos, precios y familias",
+                "Catálogos → Productos: «Nuevo producto», cambia un precio («Guardar "
+                "precios») y una familia («Agregar familia», «Renombrar»).",
+                "Al sincronizar, el teléfono tiene el producto y el precio nuevos, en su "
+                "familia.",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
+        "panel_almacen", "Almacén", "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_inventario", "Inventario y ajustes",
+                "Almacén → Inventario: escoge la bodega y luego un camión; «Ajustar» un "
+                "producto con su motivo.",
+                "Existencias por familia; el ajuste del camión le llega al teléfono.",
+            ),
+            Punto(
+                "panel_entrada", "Recibir mercancía",
+                "Almacén → Entradas y salidas → Entradas → «Abrir borrador» → «Agregar» → "
+                "confirmar.",
+                "Sube la bodega y queda en la lista con su folio.",
+            ),
+            Punto(
+                "panel_salida", "Salida de bodega",
+                "Entradas y salidas → Salidas → «Abrir borrador» y regístrala.",
+                "Baja la bodega, con su motivo.",
+            ),
+            Punto(
+                "panel_devolucion", "Recibir la devolución de un camión",
+                "Después de «Devolver a la bodega» en un teléfono, toca el pendiente del "
+                "Tablero «devolución(es) de camión por recibir en bodega» y recíbela.",
+                "La mercancía sale del tránsito y entra a la bodega.",
+            ),
+            Punto(
+                "panel_compras", "Compras, proveedores y valor del inventario",
+                "Almacén → Compras.",
+                "Cuentas por pagar, por proveedor y el valor del inventario; las compras "
+                "recibidas desde el teléfono aparecen aquí.",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
+        "panel_admin", "Usuarios y teléfonos", "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_usuarios", "Usuarios",
+                "Administración → Usuarios y rutas: filtra por rol; «Crear usuario», "
+                "«Cambiar contraseña» y «Desactivar» uno de prueba.",
+                "Los desactivados van aparte, y un vendedor desactivado ya no entra a la "
+                "app.",
+            ),
+            Punto(
+                "panel_rutas", "Rutas, camiones y almacenes",
+                "En Usuarios y rutas, «Editar» el nombre de una ruta o un almacén.",
+                "El nombre nuevo se ve en el dashboard y, al sincronizar, en el teléfono.",
+            ),
+            Punto(
+                "panel_vincular", "Vincular un teléfono",
+                "Teléfonos → «Vincular un teléfono»: el vendedor y la clave corta → "
+                "«Vincular».",
+                "Con esa clave se vincula el teléfono (ver el punto del teléfono «Vincular "
+                "un teléfono con la clave corta»).",
+            ),
+            Punto(
+                "panel_sincronizaciones", "Sincronizaciones",
+                "Teléfonos → Sincronizaciones.",
+                "Cada teléfono con su última subida y bajada, lo que tiene por bajar y su "
+                "versión de la app; la bitácora con cada subida.",
+            ),
+            Punto(
+                "panel_cuarentena", "Cuarentena",
+                "Teléfonos → Cuarentena.",
+                "Lo que el servidor no pudo aceptar, con su motivo; «Reprocesar» lo "
+                "intenta otra vez. Lo normal es que esté vacía.",
+            ),
+            Punto(
+                "panel_suspender", "Suspender y reactivar un teléfono",
+                "Solo con un teléfono de prueba: Teléfonos → «Suspender» y luego "
+                "«Reactivar».",
+                "Suspendido deja de recibir datos nuevos pero puede subir lo que trae; "
+                "reactivado sigue donde iba.",
+            ),
+        ),
+        parte="dashboard",
+    ),
 )
 
 PUNTOS: dict[str, Punto] = {p.clave: p for s in SECCIONES for p in s.puntos}
@@ -478,6 +735,18 @@ async def desmarcar(sesion, *, version: str, punto: str) -> None:
         text("DELETE FROM revision_app WHERE version = :v AND punto = :p"),
         {"v": version, "p": punto},
     )
+
+
+async def volver_a_empezar(sesion, *, version: str, parte: str) -> int:
+    """Borra las marcas de una parte en esa versión: para cuando solo se
+    actualizó el servidor y hay que volver a revisar el dashboard. No hace
+    commit."""
+    claves = [p.clave for s in SECCIONES if s.parte == parte for p in s.puntos]
+    resultado = await sesion.execute(
+        text("DELETE FROM revision_app WHERE version = :v AND punto = ANY(:claves)"),
+        {"v": version, "claves": claves},
+    )
+    return resultado.rowcount
 
 
 async def versiones(sesion) -> dict[str, list[str]]:

@@ -1,12 +1,13 @@
-"""La revisión de la app en el panel (ADR 0002 §112).
+"""La revisión de la app y del dashboard en el panel (ADR 0002 §112).
 
 «Agrega al dashboard un checklist de todo lo que debo checar en la app para ver
-que las funcionalidades están bien.»
+que las funcionalidades están bien.» Y después: dashboard y app juntos.
 
-Una página por versión de la app: los puntos de `app/infra/revision_app.py`,
-cada uno con cómo probarlo y qué debe pasar, y las marcas de esa versión —bien
-o falla con su nota—. Sin JavaScript, como todo el panel: cada marca es un
-formulario que vuelve al mismo punto.
+Una página por versión de la app, en dos partes —en el teléfono y en el
+dashboard—: los puntos de `app/infra/revision_app.py`, cada uno con cómo
+probarlo y qué debe pasar, y las marcas de esa versión —bien o falla con su
+nota—. Sin JavaScript, como todo el panel: cada marca es un formulario que
+vuelve al mismo punto.
 """
 
 from __future__ import annotations
@@ -28,8 +29,12 @@ PERMISO = "tablero.ver"
 FILTROS = ("todos", "pendientes", "falla", "nuevos")
 
 
-def _volver(version: str, filtro: str, punto: str = "", **que: str) -> RedirectResponse:
+def _volver(
+    version: str, filtro: str, punto: str = "", parte: str = "telefono", **que: str
+) -> RedirectResponse:
     partes = [f"version={quote(version)}"]
+    if parte in revision.PARTES and parte != "telefono":
+        partes.append(f"parte={parte}")
     if filtro and filtro != "todos":
         partes.append(f"filtro={quote(filtro)}")
     partes += [f"{k}={quote(v)}" for k, v in que.items() if v]
@@ -50,6 +55,7 @@ async def revisar(
     actor: ActorWeb,
     sesion: SesionDep,
     version: str = "",
+    parte: str = "telefono",
     filtro: str = "todos",
     aviso: str = "",
     error: str = "",
@@ -57,6 +63,7 @@ async def revisar(
     actor.exigir(PERMISO)
     conocidas = await revision.versiones(sesion)
     version = version.strip() or next(iter(conocidas), "")
+    parte = parte if parte in revision.PARTES else "telefono"
     filtro = filtro if filtro in FILTROS else "todos"
 
     marcas = await revision.marcas_de(sesion, version) if version else {}
@@ -78,8 +85,13 @@ async def revisar(
             "nuevos": bool(build) and p.desde == build,
         }[filtro]
 
-    todos = list(revision.PUNTOS.values())
-    vigentes = {clave: m for clave, m in marcas.items() if clave in revision.PUNTOS}
+    secciones = [s for s in revision.SECCIONES if s.parte == parte]
+    todos = [p for s in secciones for p in s.puntos]
+    vigentes = {p.clave: marcas[p.clave] for p in todos if p.clave in marcas}
+
+    def avance(cual: str) -> tuple[int, int]:
+        puntos = [p for s in revision.SECCIONES if s.parte == cual for p in s.puntos]
+        return sum(1 for p in puntos if p.clave in marcas), len(puntos)
     return render(
         peticion,
         "revision_app.html",
@@ -94,10 +106,12 @@ async def revisar(
             "marcas": marcas,
             "marcas_anteriores": marcas_anteriores,
             "build": build,
-            "filtro": filtro,
-            "secciones": [
-                (s, [p for p in s.puntos if se_ve(p)]) for s in revision.SECCIONES
+            "parte": parte,
+            "partes": [
+                (clave, titulo, *avance(clave)) for clave, titulo in revision.PARTES.items()
             ],
+            "filtro": filtro,
+            "secciones": [(s, [p for p in s.puntos if se_ve(p)]) for s in secciones],
             "total": len(todos),
             "bien": sum(1 for m in vigentes.values() if m.estado == "bien"),
             "fallas": sum(1 for m in vigentes.values() if m.estado == "falla"),
@@ -123,6 +137,7 @@ async def marcar(
     estado: str = Form(""),
     nota: str = Form(""),
     filtro: str = Form("todos"),
+    parte: str = Form("telefono"),
 ) -> RedirectResponse:
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
@@ -137,9 +152,9 @@ async def marcar(
         )
     except MarcaInvalida as e:
         await sesion.rollback()
-        return _volver(version, filtro, punto, error=str(e))
+        return _volver(version, filtro, punto, parte, error=str(e))
     await sesion.commit()
-    return _volver(version, filtro, punto)
+    return _volver(version, filtro, punto, parte)
 
 
 @router.post("/desmarcar")
@@ -151,9 +166,33 @@ async def desmarcar(
     version: str = Form(""),
     punto: str = Form(""),
     filtro: str = Form("todos"),
+    parte: str = Form("telefono"),
 ) -> RedirectResponse:
     exigir_csrf(peticion, csrf)
     actor.exigir(PERMISO)
     await revision.desmarcar(sesion, version=version, punto=punto)
     await sesion.commit()
-    return _volver(version, filtro, punto)
+    return _volver(version, filtro, punto, parte)
+
+
+@router.post("/volver-a-empezar")
+async def volver_a_empezar(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    csrf: str = Form(""),
+    version: str = Form(""),
+    parte: str = Form("telefono"),
+) -> RedirectResponse:
+    """Borra las marcas de una parte en esa versión: cuando solo se actualizó el
+    servidor, el dashboard se vuelve a revisar sin APK nuevo."""
+    exigir_csrf(peticion, csrf)
+    actor.exigir(PERMISO)
+    if parte not in revision.PARTES:
+        return _volver(version, "todos", error="Esa parte de la revisión no existe.")
+    borradas = await revision.volver_a_empezar(sesion, version=version, parte=parte)
+    await sesion.commit()
+    return _volver(
+        version, "todos", "", parte,
+        aviso=f"{revision.PARTES[parte]}: {borradas} marca(s) borrada(s); todo queda pendiente.",
+    )

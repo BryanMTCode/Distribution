@@ -142,8 +142,9 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/equipos", "Teléfonos"),
         ("/panel/sincronizaciones", "Sincronizaciones"),
         ("/panel/cuarentena", "Cuarentena"),
-        # Lo que hay que probar en la app con cada versión (ADR 0002 §112).
-        ("/panel/revision-app", "Revisión de la app"),
+        # Lo que hay que probar, en la app y en el dashboard, con cada versión
+        # (ADR 0002 §112).
+        ("/panel/revision-app", "Revisión"),
     ],
 }
 
