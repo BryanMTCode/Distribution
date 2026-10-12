@@ -642,3 +642,35 @@ async def test_el_panel_cierra_el_corte_y_despues_acepta_la_carga(cliente, sesio
         )
     ).scalar_one()
     assert cantidad == Decimal("144.000")
+
+
+async def test_no_se_acepta_si_deja_la_bodega_en_negativo(cliente, sesion, semilla, dia):
+    """Hay que bajar la cantidad primero (ADR 0002 §118): aceptar lo que la
+    bodega no tiene es prometerle al vendedor mercancía que no va a subir."""
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id, cajas=40)  # 960 piezas
+    cab = await _cab(cliente, "GER01")
+    await _cerrar(cliente, corte_id, cab)
+
+    r = await _aceptar(cliente, sid, cab)
+    assert r.status_code in (409, 422), r.text
+    detalle = r.json()["detail"]
+    assert "No alcanza en Bodega" in detalle and "(aceptas 960, hay 760)" in detalle
+    assert "Baja la cantidad" in detalle
+    # Nada se escribió: ni carga, ni solicitud aceptada, ni bodega movida.
+    estado = (
+        await sesion.execute(text("SELECT estado FROM solicitudes_carga WHERE id = :s"),
+                             {"s": sid})
+    ).scalar_one()
+    assert estado == "pendiente"
+    assert (
+        await sesion.execute(
+            text("SELECT count(*) FROM cargas WHERE fecha_operativa = :d"),
+            {"d": dia["dia"] + timedelta(days=1)},
+        )
+    ).scalar_one() == 0
+
+    # Bajándola a lo que hay, sí.
+    r = await _aceptar(cliente, sid, cab, {str(dia["producto"]): "30"})  # 720 piezas
+    assert r.status_code == 200, r.text
+    assert "en negativo" not in r.json()["mensaje"]

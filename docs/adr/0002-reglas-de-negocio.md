@@ -5457,3 +5457,24 @@ dashboard, no escondido; mételo en Administración.»
   queda.
 - El menú pasa de doce a trece entradas (§98): esta se pidió a la vista.
 
+## 118. La carga pedida no se acepta si deja la bodega en negativo
+
+**Decisión (octubre 2026).** «¿Se verifica que lo que solicita el vendedor tenga
+existencia en el almacén?» —no: el teléfono pide de todo el catálogo, sin saber
+la bodega—. «Que la oficina no pueda aceptar una carga que deje la bodega en
+negativo; tendría que bajar la cantidad primero.»
+
+- Al **aceptar la carga que pidió el vendedor** (dashboard, Cortes y cargas → Por
+  aceptar; o la app de la oficina), si algún renglón aceptado es más de lo que
+  hay en la bodega principal, **no se acepta**: «No alcanza en Bodega: Atún
+  (aceptas 960, hay 760)… Baja la cantidad o quita el renglón (0) y vuelve a
+  aceptar; si la mercancía sí está, primero captura su entrada».
+- Se revisa antes de escribir nada, con las existencias bloqueadas hasta que se
+  confirme: un rechazo no deja carga, ni solicitud aceptada, ni bodega movida.
+- **La carga a mano** («Nueva carga») sigue dejando pasar el negativo con su
+  aviso: ahí el almacenista ya está subiendo la mercancía física, y si la bodega
+  marca menos, el que está mal es el sistema (`api/admin/cargas.py`).
+- El vendedor sigue pidiendo sin ver la bodega; la oficina ve «En bodega» junto a
+  cada renglón al aceptar.
+- Solo servidor: la app no cambia.
+

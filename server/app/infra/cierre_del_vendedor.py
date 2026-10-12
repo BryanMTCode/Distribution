@@ -744,6 +744,52 @@ async def _marcar_corte(
     )
 
 
+def _piezas(cantidad: Decimal) -> str:
+    entera = cantidad.to_integral_value()
+    return f"{entera:,}" if cantidad == entera else f"{cantidad:,.3f}".rstrip("0")
+
+
+async def _alcanza_en_la_bodega(
+    sesion, bodega: dict, pedidos, aceptadas: dict[uuid.UUID, Decimal]
+) -> None:
+    """La carga que pidió el vendedor no se acepta si deja la bodega en negativo
+    (ADR 0002 §118): hay que bajar la cantidad —o quitar el renglón— primero.
+
+    Se revisa ANTES de escribir nada, con las existencias bloqueadas hasta que
+    se confirme: dos aceptaciones a la vez no pueden prometer la misma caja.
+
+    No es la regla de la carga a mano, que sí deja pasar el negativo (ver
+    `api/admin/cargas.py`): ahí el almacenista ya está subiendo la mercancía
+    física al camión. Aquí todavía no se mueve nada: es un pedido, y aceptar
+    algo que la bodega no tiene es prometerle al vendedor mercancía que no va a
+    subir."""
+    ids = [p for p, c in aceptadas.items() if c > 0]
+    hay = {
+        f["producto_id"]: Decimal(f["cantidad"])
+        for f in (
+            await sesion.execute(
+                text(
+                    "SELECT producto_id, cantidad FROM existencias "
+                    " WHERE almacen_id = :b AND producto_id = ANY(:ps) FOR UPDATE"
+                ),
+                {"b": bodega["id"], "ps": ids},
+            )
+        ).mappings().all()
+    }
+    faltan = []
+    for p in pedidos:
+        quiere = aceptadas.get(p["producto_id"], Decimal(0))
+        tiene = max(hay.get(p["producto_id"], Decimal(0)), Decimal(0))
+        if quiere > tiene:
+            faltan.append(f"{p['nombre']} (aceptas {_piezas(quiere)}, hay {_piezas(tiene)})")
+    if faltan:
+        raise CierreRechazado(
+            f"No alcanza en {bodega['nombre']}: " + "; ".join(faltan) + ". Baja la "
+            "cantidad o quita el renglón (0) y vuelve a aceptar; si la mercancía sí "
+            "está, primero captura su entrada."
+        )
+
+
 async def _crear_la_carga(
     sesion, solicitud: dict, quien: uuid.UUID, bultos: dict[str, str]
 ) -> str:
@@ -810,6 +856,7 @@ async def _crear_la_carga(
             "La carga quedó sin un solo renglón. Si no se le va a cargar nada, "
             "rechaza la solicitud con el motivo."
         )
+    await _alcanza_en_la_bodega(sesion, bodega, pedidos, aceptadas)
 
     existente = (
         await sesion.execute(

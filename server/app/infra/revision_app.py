@@ -381,7 +381,10 @@ SECCIONES: tuple[Seccion, ...] = (
                 "ajusta lo que haga falta → «Aceptar y confirmar la carga» (o «Rechazar "
                 "la solicitud» con su motivo).",
                 "La aceptada baja de la bodega y sube al camión; el vendedor la ve al "
-                "sincronizar. La rechazada le llega a su «Mi día» con el motivo.",
+                "sincronizar. La rechazada le llega a su «Mi día» con el motivo. Si lo "
+                "aceptado no alcanza en la bodega, no deja aceptar y dice cuánto hay: "
+                "se baja la cantidad primero.",
+                desde="+37",
             ),
             Punto(
                 "nueva_carga", "Una carga a mano",
@@ -512,8 +515,10 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Cortes y cargas → Por aceptar → «Cargas por aceptar»: ajusta lo que haga "
                 "falta → «Aceptar y confirmar la carga» (o «Rechazar la solicitud» con su "
                 "motivo).",
-                "No deja aceptar mientras el corte de ese vendedor esté por cerrar. La "
+                "No deja aceptar mientras el corte de ese vendedor esté por cerrar, ni "
+                "si lo aceptado no alcanza en la bodega (dice cuánto hay de cada uno). La "
                 "aceptada baja de la bodega y le llega al teléfono al sincronizar.",
+                desde="+37",
             ),
             Punto(
                 "panel_carga_a_mano", "Una carga a mano",
