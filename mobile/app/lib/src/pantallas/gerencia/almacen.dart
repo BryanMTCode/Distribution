@@ -25,12 +25,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
+import '../../estado/oficina_extra.dart';
 import '../../estado/vendedores.dart';
 import '../familias.dart';
 import 'cargas.dart';
 import 'comunes.dart';
 import 'cortes.dart';
 import 'entradas.dart';
+import 'mayoreo.dart';
 import 'traspasos.dart';
 
 /// Si la pestaña Almacén aparece en la barra.
@@ -38,7 +40,8 @@ final muestraAlmacenProvider = Provider<bool>(
   (ref) =>
       ref.watch(puedeVerAlmacenProvider) ||
       ref.watch(puedeCargarProvider) ||
-      ref.watch(puedeCortarProvider),
+      ref.watch(puedeCortarProvider) ||
+      ref.watch(puedeVenderMayoreoProvider),
 );
 
 class PantallaAlmacen extends ConsumerWidget {
@@ -62,6 +65,10 @@ class PantallaAlmacen extends ConsumerWidget {
         (const Key('pestana_cargas'), 'Cargas', (b) => PantallaCargas(conBarra: b)),
       if (ref.watch(puedeCortarProvider))
         (const Key('pestana_cortes'), 'Corte del día', (b) => PantallaCortes(conBarra: b)),
+      // Las ventas de la oficina a sus clientes de mayoreo: salen de la bodega
+      // (ADR 0002 §105).
+      if (ref.watch(puedeVenderMayoreoProvider))
+        (const Key('pestana_mayoreo'), 'Mayoreo', (b) => PantallaMayoreo(conBarra: b)),
     ];
     if (partes.isEmpty) return const SizedBox.shrink();
     if (partes.length == 1) return partes.single.$3(true);

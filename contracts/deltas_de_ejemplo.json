@@ -116,6 +116,7 @@
         "numero": "145",
         "colonia": "Centro",
         "estatus": "activo",
+        "mayoreo": false,
         "ruta_id": "uuid-de-la-semilla-6",
         "telefono": "5512345678",
         "bloqueado": false,

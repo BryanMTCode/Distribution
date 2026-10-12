@@ -140,6 +140,16 @@ void main() {
       expect(textoQueContiene('viernes 25 de septiembre'), findsOneWidget);
     });
 
+    testWidgets('reprogramar cabe en el Hyundai HYLine Pro (360 de ancho)', (tester) async {
+      await irAlNoDrop(tester, gps: gpsBueno);
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('bloque_reprogramar')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('reprogramar_otro_dia')), findsOneWidget);
+    });
+
     testWidgets('sin reprogramar, la visita no lleva fecha', (tester) async {
       final base = await irAlNoDrop(tester, gps: gpsBueno);
       final db = BaseLocalDePrueba(base);

@@ -24,10 +24,6 @@ from tests.test_panel_cargas import _entrar
 
 pytestmark = pytest.mark.asyncio
 
-HOY = date.today()
-SABADO = HOY - timedelta(days=3)
-VIERNES = HOY - timedelta(days=4)
-
 
 async def _carga(sesion, semilla, *, folio: str, dia: date, estado: str, piezas: int):
     carga = uuid.uuid4()
@@ -60,29 +56,33 @@ async def _carga(sesion, semilla, *, folio: str, dia: date, estado: str, piezas:
 
 @pytest.fixture
 async def tres_dias(sesion, semilla):
+    hoy = date.today()
+    sabado, viernes = hoy - timedelta(days=3), hoy - timedelta(days=4)
     # El sábado, dos (una cancelada); el viernes, una ya liquidada; hoy, una
     # abierta.
-    await _carga(sesion, semilla, folio="CA-000101", dia=SABADO, estado="liquidada", piezas=120)
-    await _carga(sesion, semilla, folio="CA-000102", dia=SABADO, estado="cancelada", piezas=5)
-    await _carga(sesion, semilla, folio="CA-000100", dia=VIERNES, estado="liquidada", piezas=80)
-    await _carga(sesion, semilla, folio="CA-000103", dia=HOY, estado="borrador", piezas=10)
+    await _carga(sesion, semilla, folio="CA-000101", dia=sabado, estado="liquidada", piezas=120)
+    await _carga(sesion, semilla, folio="CA-000102", dia=sabado, estado="cancelada", piezas=5)
+    await _carga(sesion, semilla, folio="CA-000100", dia=viernes, estado="liquidada", piezas=80)
+    await _carga(sesion, semilla, folio="CA-000103", dia=hoy, estado="borrador", piezas=10)
 
 
 async def test_el_panel_las_da_por_dia(cliente, semilla, tres_dias):  # noqa: ARG001
+    hoy = date.today()
+    sabado, viernes = hoy - timedelta(days=3), hoy - timedelta(days=4)
     await _entrar(cliente)
     # Abiertas: solo la de hoy, como siempre.
     plano = solo_texto(await cliente.get("/panel/cargas"))
     assert "CA-000103" in plano and "CA-000101" not in plano
 
     r = await cliente.get(
-        f"/panel/cargas?filtro=fecha&periodo=rango&desde={VIERNES}&hasta={SABADO}"
+        f"/panel/cargas?filtro=fecha&periodo=rango&desde={viernes}&hasta={sabado}"
     )
     html, plano = r.text, solo_texto(r)
-    assert f'id="dia_{SABADO.isoformat()}"' in html
-    assert f'id="dia_{VIERNES.isoformat()}"' in html
+    assert f'id="dia_{sabado.isoformat()}"' in html
+    assert f'id="dia_{viernes.isoformat()}"' in html
     # El sábado va primero, con lo que se cargó; la cancelada, aparte.
-    assert html.index(f'id="dia_{SABADO.isoformat()}"') < html.index("CA-000101")
-    assert html.index("CA-000101") < html.index(f'id="dia_{VIERNES.isoformat()}"')
+    assert html.index(f'id="dia_{sabado.isoformat()}"') < html.index("CA-000101")
+    assert html.index("CA-000101") < html.index(f'id="dia_{viernes.isoformat()}"')
     assert "· 1 carga(s) · 120 piezas" in plano
     assert "2 carga(s) en 2 día(s), 200 piezas." in plano
     assert "CA-000103" not in plano
@@ -90,7 +90,7 @@ async def test_el_panel_las_da_por_dia(cliente, semilla, tres_dias):  # noqa: AR
 
     # Un solo día.
     plano = solo_texto(
-        await cliente.get(f"/panel/cargas?filtro=fecha&periodo=rango&desde={VIERNES}")
+        await cliente.get(f"/panel/cargas?filtro=fecha&periodo=rango&desde={viernes}")
     )
     assert "CA-000100" in plano and "CA-000101" not in plano
 
@@ -101,7 +101,7 @@ async def test_el_panel_las_da_por_dia(cliente, semilla, tres_dias):  # noqa: AR
     assert "CA-000100" in plano and "CA-000103" in plano
 
     # Un día sin cargas lo dice.
-    vacio = HOY - timedelta(days=30)
+    vacio = hoy - timedelta(days=30)
     plano = solo_texto(
         await cliente.get(f"/panel/cargas?filtro=fecha&periodo=rango&desde={vacio}")
     )
@@ -109,6 +109,7 @@ async def test_el_panel_las_da_por_dia(cliente, semilla, tres_dias):  # noqa: AR
 
 
 async def test_la_app_las_pide_por_periodo(cliente, semilla, tres_dias):  # noqa: ARG001
+    sabado = date.today() - timedelta(days=3)
     cab = await _cab(cliente)
     abiertas = (await cliente.get("/v1/cargas", headers=cab)).json()
     assert [c["folio"] for c in abiertas] == ["CA-000103"]
@@ -116,8 +117,8 @@ async def test_la_app_las_pide_por_periodo(cliente, semilla, tres_dias):  # noqa
     del_sabado = (
         await cliente.get(
             "/v1/cargas",
-            params={"periodo": "rango", "desde": SABADO.isoformat(),
-                    "hasta": SABADO.isoformat()},
+            params={"periodo": "rango", "desde": sabado.isoformat(),
+                    "hasta": sabado.isoformat()},
             headers=cab,
         )
     ).json()

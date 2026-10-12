@@ -49,6 +49,17 @@ Future<void> abrirAlta(
   await tocar(tester, const Key('boton_nuevo_cliente'));
 }
 
+/// Baja hasta la leyenda del lienzo: con los días de visita (ADR 0002 §103) y
+/// el aviso de vecinos, queda debajo de lo que la lista construye de entrada.
+Future<void> bajarALaLeyenda(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byKey(const Key('leyenda_lienzo')),
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('el radio que se dibuja', () {
     test('sin vecinos usa el mínimo, no un círculo de cero', () {
@@ -118,6 +129,7 @@ void main() {
         },
       );
 
+      await bajarALaLeyenda(tester);
       expect(find.byKey(const Key('leyenda_lienzo')), findsOneWidget);
       expect(textoQueContiene('2 a menos de 60 m'), findsOneWidget);
       expect(textoQueContiene('1 más lejos'), findsOneWidget);
@@ -146,6 +158,7 @@ void main() {
         },
       );
       // Arranca dentro del radio de duplicado.
+      await bajarALaLeyenda(tester);
       expect(textoQueContiene('1 a menos de 60 m'), findsOneWidget);
 
       // Alejarse 50 m al sur la saca del radio: 55 + 50 = 105 m.

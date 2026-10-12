@@ -31,6 +31,9 @@ String explicarErrorDeOficina(Object error) => switch (error) {
         'El servidor todavía no tiene esta función. Hay que actualizarlo '
             '(git pull y docker compose) y volver a intentar.',
       CargaRechazada(:final detalle) => detalle,
+      RechazoDeLaOficina(:final detalle) => detalle,
+      SinPermisoDeLaOficina() =>
+        'Tu usuario no tiene permiso para esto. Se da desde el panel.',
       SinPermisoDeCargar() =>
         'Tu usuario no tiene permiso de cargar camiones. Se da desde el panel.',
       SinPermisoDeVendedores() =>

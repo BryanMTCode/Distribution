@@ -25,8 +25,6 @@ from tests.test_tablero_api import _cab
 
 pytestmark = pytest.mark.asyncio
 
-HOY = date.today()
-
 
 async def _venta(sesion, semilla, *, total: str, dia: date) -> None:
     cliente = uuid.uuid4()
@@ -63,19 +61,20 @@ async def _venta(sesion, semilla, *, total: str, dia: date) -> None:
 
 
 async def test_un_objetivo_de_hoy_con_su_avance(cliente, sesion, semilla):
-    await _venta(sesion, semilla, total="1500.00", dia=HOY)
-    await _venta(sesion, semilla, total="900.00", dia=HOY - timedelta(days=1))  # no cuenta
+    hoy = date.today()
+    await _venta(sesion, semilla, total="1500.00", dia=hoy)
+    await _venta(sesion, semilla, total="900.00", dia=hoy - timedelta(days=1))  # no cuenta
     cab = await _cab(cliente)
     r = await cliente.post(
         "/v1/objetivos",
-        json={"ruta_id": str(semilla["ruta"]), "desde": HOY.isoformat(),
-              "hasta": HOY.isoformat(), "objetivo_venta": "3000", "nota": "Feria"},
+        json={"ruta_id": str(semilla["ruta"]), "desde": hoy.isoformat(),
+              "hasta": hoy.isoformat(), "objetivo_venta": "3000", "nota": "Feria"},
         headers=cab,
     )
     assert r.status_code == 201, r.text
     objetivo = next(o for o in r.json()["objetivos"] if o["clase"] == "periodo")
     assert (objetivo["desde"], objetivo["hasta"], objetivo["dias"]) == (
-        HOY.isoformat(), HOY.isoformat(), 1
+        hoy.isoformat(), hoy.isoformat(), 1
     )
     assert objetivo["ruta"] == "R04 · Ruta 4"
     assert (objetivo["venta"], objetivo["objetivo_venta"]) == ("1500.00", "3000.00")
@@ -85,9 +84,10 @@ async def test_un_objetivo_de_hoy_con_su_avance(cliente, sesion, semilla):
 
 
 async def test_de_toda_la_empresa_y_por_empezar(cliente, sesion, semilla):
-    await _venta(sesion, semilla, total="800.00", dia=HOY)
+    hoy = date.today()
+    await _venta(sesion, semilla, total="800.00", dia=hoy)
     cab = await _cab(cliente)
-    semana = HOY - timedelta(days=HOY.weekday())
+    semana = hoy - timedelta(days=hoy.weekday())
     r = await cliente.post(
         "/v1/objetivos",
         json={"desde": semana.isoformat(), "hasta": (semana + timedelta(days=6)).isoformat(),
@@ -98,8 +98,8 @@ async def test_de_toda_la_empresa_y_por_empezar(cliente, sesion, semilla):
     assert empresa["venta"] == "800.00" and empresa["dias"] == 7
     r = await cliente.post(
         "/v1/objetivos",
-        json={"desde": (HOY + timedelta(days=40)).isoformat(),
-              "hasta": (HOY + timedelta(days=40)).isoformat(), "objetivo_venta": "500"},
+        json={"desde": (hoy + timedelta(days=40)).isoformat(),
+              "hasta": (hoy + timedelta(days=40)).isoformat(), "objetivo_venta": "500"},
         headers=cab,
     )
     futuro = next(o for o in r.json()["objetivos"] if o["estado"] == "por_empezar")
@@ -107,8 +107,9 @@ async def test_de_toda_la_empresa_y_por_empezar(cliente, sesion, semilla):
 
 
 async def test_un_mes_completo_de_una_ruta_es_su_objetivo_del_mes(cliente, sesion, semilla):
+    hoy = date.today()
     cab = await _cab(cliente)
-    inicio = HOY.replace(day=1)
+    inicio = hoy.replace(day=1)
     fin = (inicio + timedelta(days=32)).replace(day=1) - timedelta(days=1)
     r = await cliente.post(
         "/v1/objetivos",
@@ -130,6 +131,7 @@ async def test_un_mes_completo_de_una_ruta_es_su_objetivo_del_mes(cliente, sesio
 
 
 async def test_lo_imposible_se_dice(cliente, semilla):
+    hoy = date.today()
     cab = await _cab(cliente)
     r = await cliente.post(
         "/v1/objetivos",
@@ -140,12 +142,12 @@ async def test_lo_imposible_se_dice(cliente, semilla):
     # Al revés se endereza.
     r = await cliente.post(
         "/v1/objetivos",
-        json={"desde": HOY.isoformat(), "hasta": (HOY - timedelta(days=2)).isoformat(),
+        json={"desde": hoy.isoformat(), "hasta": (hoy - timedelta(days=2)).isoformat(),
               "objetivo_venta": "100"},
         headers=cab,
     )
     o = next(x for x in r.json()["objetivos"] if x["clase"] == "periodo")
-    assert (o["desde"], o["hasta"]) == ((HOY - timedelta(days=2)).isoformat(), HOY.isoformat())
+    assert (o["desde"], o["hasta"]) == ((hoy - timedelta(days=2)).isoformat(), hoy.isoformat())
 
 
 async def _cab_vendedor(cliente, sesion, semilla) -> dict:
@@ -170,6 +172,7 @@ async def test_un_vendedor_no_ve_los_objetivos(cliente, sesion, semilla):
 
 
 async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
+    hoy = date.today()
     from tests.test_panel_objetivos import _entrar
 
     await _entrar(cliente)
@@ -177,8 +180,8 @@ async def test_el_panel_los_muestra_y_los_da_de_alta(cliente, sesion, semilla):
     assert 'id="forma_por_periodo"' in r.text
     r = await cliente.post(
         "/panel/objetivos/periodo",
-        data={"csrf": csrf_del_panel(cliente, r), "ruta_id": "", "desde": HOY.isoformat(),
-              "hasta": HOY.isoformat(), "objetivo_venta": "2,500", "objetivo_visitas": "12"},
+        data={"csrf": csrf_del_panel(cliente, r), "ruta_id": "", "desde": hoy.isoformat(),
+              "hasta": hoy.isoformat(), "objetivo_venta": "2,500", "objetivo_visitas": "12"},
         follow_redirects=True,
     )
     plano = solo_texto(r)

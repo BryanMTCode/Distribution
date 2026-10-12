@@ -5113,3 +5113,103 @@ solo vendedores, solo administradores, etc.»
   siguen viendo a todos: esconderle un vendedor a quien está dando de alta una
   ruta sería un error difícil de ver.
 - Los desactivados siguen en su propia lista (§93).
+
+## 101. Los artículos por familia en todas las pantallas del vendedor
+
+**Decisión (octubre 2026).** «En la app los artículos tienen que aparecer
+agrupados también en la vista del vendedor.» Desde §92 agrupaban el catálogo de
+la visita y «Mi camión»; faltaban las demás.
+
+- **Solicitar carga** y **el corte del día** van por familia, en el orden de la
+  oficina, y cada familia se pliega como en el catálogo. Lo escrito en una
+  familia plegada no se pierde.
+- **La merma y la devolución a bodega** escogen el artículo por familia, con
+  las familias **plegadas de entrada**: la lista va en medio de un formulario y
+  entera empujaría el botón de guardar fuera de la pantalla. Lo que se busca
+  sale abierto.
+
+## 102. Las cargas por fecha
+
+**Decisión (octubre 2026).** «Que las cargas también se puedan ver por fecha en
+ambos lugares, para ver qué cargas se hicieron.»
+
+- En el panel y en la app, **«Abiertas» o «Por fecha»**. Por fecha usa el
+  selector de periodo del tablero —hoy, ayer, la semana, un día, fechas a mano— y
+  agrupa por día, con cuántas cargas y cuántas piezas; las canceladas, aparte.
+- La fecha es el **día operativo** de la carga: el día que el camión salió con
+  ella (se hace la víspera, §82). La hora en que se confirmó sigue en cada carga.
+- En el panel, los filtros de antes («De hoy», «Todas») siguen sirviendo: son
+  los periodos «Hoy» y «Todo». `GET /v1/cargas` sin periodo sigue dando las
+  abiertas.
+
+## 103. Los días de visita desde el alta, y la visita reprogramada
+
+**Decisión (octubre 2026).** «Cuando los vendedores dan de alta una tienda,
+ellos pueden elegir qué días la visitarán; y cuando la visiten esos días y el
+cliente no les va a comprar y les dice "ven mañana" o tal día, que les aparezca
+la opción de reprogramar esa visita para el día que el cliente les solicita,
+pero la configuración inicial de días sigue fija.»
+
+- **El alta** trae los días (L a D). Entran al plan del cliente
+  (`clientes_frecuencia`, migración 0041) desde ese día, y la tienda sale en
+  «Hoy» esos días —en el mismo teléfono, sin esperar a sincronizar—. La oficina los sigue cambiando en
+  el plan de visita.
+- **«No me compró»** pregunta «¿Te pidió que volvieras otro día?»: Mañana,
+  Pasado mañana u Otro día (hasta un mes). La fecha viaja en el mismo sobre del
+  no-drop (`reprogramada_para`). Ese día la tienda sale en «Hoy» con «Te pidió
+  que volvieras hoy»; antes, la lista dice «Volver el jueves 15».
+- **Los días fijos no cambian**: reprogramar mueve una visita, no el plan.
+- En el servidor (migración 0054), `clientes.visita_reprogramada` guarda la
+  última reprogramación y viaja en el delta del cliente: la tienda sale aunque el
+  teléfono se haya limpiado o la lleve otro vendedor. Una fecha imposible (hoy,
+  atrás, a más de un mes) no se guarda y la visita se marca para revisión: el
+  cliente no compró, eso pasó.
+- **Efectividad** cuenta la visita reprogramada como una que tocaba ese día. La
+  ficha del cliente en el panel la muestra.
+
+## 104. Objetivos de cualquier periodo, también desde la app
+
+**Decisión (octubre 2026).** «Quiero poder agregar los objetivos en la app; los
+objetivos pueden ser por el periodo que yo decida, incluso por día.»
+
+- Un objetivo es de **una ruta o de toda la empresa**, y de **un día, una
+  semana o un rango** (a lo más un año), con dinero y, si se quiere, visitas.
+  El avance se calcula al pedirlo con las ventas del rango y se lee como la barra
+  del tablero: lo logrado contra lo esperado a la fecha. El de toda la empresa
+  suma también el mayoreo (§105); el de una ruta, no.
+- **El objetivo del mes por ruta** (§28) sigue siendo el de la barra del tablero.
+  Si se escoge un mes completo para una ruta, se guarda ahí; los demás, en
+  `objetivos` (migración 0055). La app y el panel los muestran juntos.
+- En la app: el botón de la bandera en el Tablero (admin y gerencia). En el
+  panel: la sección «Objetivos por periodo» de Desempeño → Objetivos.
+
+## 105. Ventas de mayoreo de la oficina
+
+**Decisión (octubre 2026).** «El administrador puede hacer ventas a mayoreo al
+precio que él decida, y los clientes él los maneja.»
+
+- **Los clientes de mayoreo** son de la oficina (`clientes.mayoreo`), sin ruta:
+  no le salen a ningún vendedor. Se dan de alta ahí mismo.
+- **La venta** sale de una **bodega**, al precio que se escribe en cada renglón
+  —el de la lista se muestra y se guarda al lado—, de contado (efectivo o
+  transferencia), con folio **MY-**. No se vende lo que la bodega no tiene. No
+  entra en `ventas`: ésa es la del teléfono, con su camión y su corte.
+- **Cancelar** pide motivo y devuelve la mercancía a la bodega; la venta queda
+  aparte, con lo cancelado.
+- **Quién**: el permiso `mayoreo.vender` (migración 0056), que tiene el admin; a
+  otro usuario se le puede dar desde el panel.
+- En la app: Almacén → Mayoreo. En el panel: Ventas → Mayoreo (sin JavaScript:
+  renglones en blanco, y un precio vacío toma el de la lista).
+
+## 106. El teléfono de los vendedores: Hyundai HYLine Pro
+
+**Dato de operación (octubre 2026).** Los vendedores usan el **Hyundai HYLine
+Pro**: Android 13, UNISOC T606, pantalla de 6.51" a 1600×720 (unos 360 dp de
+ancho), 4–6 GB de RAM.
+
+- Las pantallas del vendedor se prueban a **360 de ancho**: el alta con sus
+  siete días, «No me compró» con la reprogramación, «Solicitar carga» por
+  familia y la venta de mayoreo. Si algo desborda, la prueba truena antes que el
+  teléfono.
+
+(versionCode 33)

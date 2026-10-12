@@ -205,6 +205,16 @@ void main() {
       expect(find.byKey(const Key('plegar_familias')), findsOneWidget);
     });
 
+    testWidgets('solicitar carga cabe en el Hyundai HYLine Pro (360 de ancho)',
+        (tester) async {
+      await abrirConFamilias(tester);
+      await verYTocar(tester, const Key('boton_solicitar_carga'));
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('pedido_SOPA-70G')), findsOneWidget);
+    });
+
     testWidgets('el corte dice lo que queda por familia', (tester) async {
       await abrirConFamilias(tester);
       await verYTocar(tester, const Key('boton_corte_del_dia'));

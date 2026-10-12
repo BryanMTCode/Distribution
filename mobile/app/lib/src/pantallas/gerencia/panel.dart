@@ -39,6 +39,7 @@ import '../../estado/tablero.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 import 'mapa.dart';
+import 'objetivos.dart';
 
 class PantallaGerencia extends ConsumerStatefulWidget {
   const PantallaGerencia({super.key, required this.nombre});
@@ -127,6 +128,15 @@ class _EstadoGerencia extends ConsumerState<PantallaGerencia> {
           ],
         ),
         actions: [
+          // Los objetivos de cualquier periodo, incluso de un día (ADR 0002 §104).
+          IconButton(
+            key: const Key('boton_objetivos'),
+            tooltip: 'Objetivos',
+            icon: const Icon(Icons.flag_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PantallaObjetivos()),
+            ),
+          ),
           IconButton(
             key: const Key('boton_refrescar_tablero'),
             tooltip: 'Volver a consultar',

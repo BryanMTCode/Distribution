@@ -102,6 +102,18 @@ void main() {
     expect(find.text('Doña Mary'), findsOneWidget);
   });
 
+  testWidgets('los siete días caben en el Hyundai HYLine Pro (360 de ancho)', (tester) async {
+    await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
+    tester.view.physicalSize = const Size(360, 760);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('dias_de_visita')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    for (final dia in [1, 2, 3, 4, 5, 6, 0]) {
+      expect(find.byKey(Key('dia_visita_$dia')), findsOneWidget);
+    }
+  });
+
   testWidgets('se avisa que se enviará al haber señal', (tester) async {
     await abrirAlta(tester, gps: GpsObtenido(enLaCalle()));
     await escribirEn(tester, const Key('campo_nombre'), 'Doña Mary');
