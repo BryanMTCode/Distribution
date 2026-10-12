@@ -5318,3 +5318,34 @@ en el dashboard nada más».
   están: se ven y se quitan como cualquier otro.
 
 (versionCode 35)
+
+## 112. La revisión de la app, en el panel
+
+**Decisión (octubre 2026).** «Agrega al dashboard un checklist de todo lo que
+debo checar en la app para ver que las funcionalidades están bien.»
+
+- **Dónde:** Administración → Teléfonos → pestaña **«Revisión de la app»**, y un
+  enlace en el Tablero junto a «Metas y objetivos». Es pestaña y no entrada
+  propia para que el menú siga en doce (§98).
+- **Qué:** 47 puntos en ocho grupos —instalar y entrar; la ruta y las tiendas; la
+  visita; sincronizar y sin señal; el camión y el cierre; la oficina; el
+  almacén; el teléfono de la empresa—. Cada punto dice **cómo** probarlo, con
+  los nombres de los botones que se ven en la app, y **qué debe pasar**,
+  incluido lo que tiene que aparecer en el panel.
+- **Por versión:** se revisa la versión que trae el teléfono («0.1.0+35»). Abre
+  en la más nueva que reportaron los teléfonos al sincronizar, y dice qué
+  vendedores ya la tienen y a quiénes les falta instalarla. Cada punto se marca
+  **bien** o **falla**; una falla pide nota (qué pasó), porque es lo que hay que
+  arreglar. Se puede desmarcar. La versión siguiente empieza en blanco, y junto
+  a cada punto se ve cómo quedó en la anterior.
+- Los puntos que llegaron o cambiaron en la versión que se revisa salen como
+  «nuevo en esta versión», y hay un filtro para verlos primero; otros filtros:
+  pendientes y con falla.
+- **La lista vive en el código** (`app/infra/revision_app.py`), no en la base:
+  describe las pantallas de esta versión y cambia en el mismo commit que ellas.
+  En la base (`revision_app`, migración 0058) solo van las marcas. La base en
+  blanco no las toca: no son operación.
+- La usa toda la oficina que entra al panel (permiso `tablero.ver`).
+
+(Solo servidor y panel: la app sigue en versionCode 35.)
+

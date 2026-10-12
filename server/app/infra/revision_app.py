@@ -1,0 +1,528 @@
+"""La revisión de la app, punto por punto (ADR 0002 §112).
+
+«Agrega al dashboard un checklist de todo lo que debo checar en la app para ver
+que las funcionalidades están bien.»
+
+La lista vive aquí, en código, y no en la base: cada punto describe una
+pantalla que existe en esta versión, y cambia junto con ella. Lo que se guarda
+en la base (`revision_app`, 0058) son las marcas: por versión de la app, qué
+salió bien y qué falló, con su nota, quién y cuándo. Una versión nueva empieza
+en blanco, y junto a cada punto se ve cómo quedó en la versión anterior.
+
+La clave de cada punto es estable: cambiarla deja huérfanas sus marcas. Un
+punto nuevo o que cambió lleva en `desde` el versionCode («+35») para que
+aparezca como «nuevo» y se revise primero.
+
+Cada punto dice CÓMO probarlo con los nombres de los botones que se ven en la
+pantalla, y QUÉ debe pasar —incluido lo que debe aparecer en el panel—. Si un
+botón cambia de nombre, este texto se cambia en el mismo commit.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from sqlalchemy import text
+
+ESTADOS = ("bien", "falla")
+
+
+class MarcaInvalida(Exception):
+    """La marca no se guardó, y el mensaje dice por qué."""
+
+
+@dataclass(frozen=True)
+class Punto:
+    clave: str
+    titulo: str
+    pasos: str
+    esperado: str
+    # El versionCode en que llegó o cambió («+35»); nulo si es de antes.
+    desde: str | None = None
+
+
+@dataclass(frozen=True)
+class Seccion:
+    clave: str
+    titulo: str
+    # Con qué teléfono y qué usuario se prueba.
+    quien: str
+    puntos: tuple[Punto, ...] = field(default_factory=tuple)
+
+
+SECCIONES: tuple[Seccion, ...] = (
+    Seccion(
+        "entrar", "Instalar y entrar", "Cualquier teléfono",
+        (
+            Punto(
+                "instalar_encima", "Se instala encima sin perder nada",
+                "Instala el APK nuevo ENCIMA del que ya está, sin desinstalar, y abre la app.",
+                "Abre sin pedir vincular otra vez. Las tiendas, el camión y lo que faltaba "
+                "por subir siguen ahí.",
+            ),
+            Punto(
+                "version_al_pie", "La versión correcta al pie",
+                "En la pantalla de entrada, mira la línea de abajo.",
+                "Dice la versión que acabas de instalar (la de esta revisión).",
+            ),
+            Punto(
+                "vincular_clave", "Vincular un teléfono con la clave corta",
+                "Solo si tienes un teléfono para probar: «Vincular este equipo» con el "
+                "código del vendedor, su contraseña y la clave del equipo (por ejemplo "
+                "RUTA4) dada de alta en el panel, en Teléfonos.",
+                "Entra y baja sus tiendas, los artículos y lo que trae su camión.",
+            ),
+            Punto(
+                "sesion_recordada", "La sesión se recuerda",
+                "Entra con la contraseña, cierra la app por completo (quítala de las "
+                "recientes) y vuelve a abrirla.",
+                "Entra sola, sin pedir la contraseña, durante doce horas.",
+            ),
+            Punto(
+                "entrar_gerencia", "Entrar como Gerencia",
+                "En la pantalla de entrada, «Entrar como Gerencia» con tu código y "
+                "contraseña, con señal.",
+                "Abre el portal de la oficina con la barra de abajo: Tablero, Empresa, "
+                "Vendedores, Clientes y Almacén (según tus permisos).",
+            ),
+        ),
+    ),
+    Seccion(
+        "ruta", "Vendedor: la ruta y las tiendas", "Teléfono de un vendedor",
+        (
+            Punto(
+                "hoy_y_las_demas", "«Hoy» y las demás tiendas de la ruta",
+                "Abre la lista en «Hoy».",
+                "Arriba, las tiendas que tocan hoy según el plan. Abajo, «Las demás de tu "
+                "ruta · N», que se pliegan y despliegan con un toque. «Todos» muestra la "
+                "ruta entera, sin ese encabezado.",
+                desde="+34",
+            ),
+            Punto(
+                "buscar_tienda", "Buscar una tienda",
+                "Escribe parte del nombre o del código en el buscador de arriba.",
+                "Encuentra la tienda aunque hoy no le toque.",
+            ),
+            Punto(
+                "ubicacion_desde_lista", "La ubicación desde la lista",
+                "Toca el botón de ubicación a la derecha de una tienda (en rojo, las que "
+                "no tienen).",
+                "Abre su perfil con el GPS y los campos de latitud y longitud, sin entrar "
+                "a la visita. Lo que guardes se ve en el panel, en la ficha del cliente.",
+                desde="+34",
+            ),
+            Punto(
+                "alta_con_dias", "Dar de alta una tienda con sus días de visita",
+                "«Nuevo»: nombre, datos y los días de la semana en que se visita. Guarda "
+                "y sincroniza.",
+                "Aparece en la lista, y en «Hoy» los días que escogiste. En el panel sale "
+                "en Clientes como prospecto, con sus días en el Plan de visita.",
+                desde="+33",
+            ),
+            Punto(
+                "alta_coordenadas_a_mano", "Coordenadas escritas a mano en el alta",
+                "En el alta, «Escribir las coordenadas»: pega «23.2494, -106.4111». Prueba "
+                "también al revés (-106.4111, 23.2494).",
+                "Las bien escritas quedan como «Puesta a mano»; las de al revés las dice "
+                "y no las acepta.",
+                desde="+34",
+            ),
+            Punto(
+                "perfil_gps", "Perfil y ubicación con GPS",
+                "Dentro de una tienda, menú ⋮ → «Perfil y ubicación»: lee el GPS o "
+                "corrige a mano, y guarda.",
+                "Queda guardado y, al sincronizar, el panel muestra la ubicación nueva.",
+            ),
+        ),
+    ),
+    Seccion(
+        "visita", "Vendedor: la visita", "Teléfono de un vendedor con carga",
+        (
+            Punto(
+                "catalogo_familias", "Los artículos por familia",
+                "Entra a una tienda.",
+                "Los artículos vienen agrupados por familia; cada familia se pliega y se "
+                "despliega; el buscador filtra.",
+                desde="+33",
+            ),
+            Punto(
+                "precio_y_existencia", "Precio de lista y lo que trae el camión",
+                "Mira un artículo y agrégalo varias veces.",
+                "Muestra el precio de lista (no se puede cambiar) y cuánto queda en el "
+                "camión, que baja mientras agregas; en cero dice agotado y no deja "
+                "agregar más.",
+            ),
+            Punto(
+                "venta_efectivo", "Vender en efectivo",
+                "Agrega dos o tres artículos, «Ver pedido», revisa el total y «Cobrar en "
+                "efectivo».",
+                "«Venta registrada» con su folio. El folio sigue al anterior del "
+                "teléfono, sin repetirse.",
+            ),
+            Punto(
+                "ticket", "La remisión y el ticket",
+                "En la venta registrada: «Imprimir remisión» si hay impresora, o «Ver el "
+                "ticket» y compártelo por WhatsApp.",
+                "El ticket trae el folio, la tienda, los artículos y el total.",
+            ),
+            Punto(
+                "venta_en_el_panel", "La venta llega al panel",
+                "Sincroniza y abre el Tablero del panel.",
+                "La venta se suma a las de hoy, con el mismo total, en el vendedor "
+                "correcto; en Ventas aparece con su folio.",
+            ),
+            Punto(
+                "no_me_compro", "«No me compró» con su motivo",
+                "En una tienda, menú ⋮ → «No me compró»: escoge el motivo y «Registrar "
+                "la visita».",
+                "Queda registrada; en el panel aparece en Desempeño → Visitas con ese "
+                "motivo.",
+            ),
+            Punto(
+                "reprogramar", "Reprogramar la visita («ven mañana»)",
+                "En «No me compró», en «¿Te pidió que volvieras otro día?», escoge "
+                "«Mañana» (o «Otro día…»).",
+                "Ese día la tienda aparece en «Hoy» aunque no sea de sus días; sus días "
+                "fijos no cambian.",
+                desde="+33",
+            ),
+            Punto(
+                "devolucion_cliente", "La tienda devuelve mercancía",
+                "En una tienda, menú ⋮ → «Me devolvió mercancía»: producto, motivo y "
+                "cuántas.",
+                "Queda registrada y se ve en el panel como devolución de cliente.",
+            ),
+            Punto(
+                "cambio_fisico", "Cambio físico (caducado o dañado, sin cobro)",
+                "En una tienda, menú ⋮ → «Cambio físico»: el producto malo y cuántos.",
+                "Sin cobro: del camión sale el bueno y el malo queda como merma.",
+            ),
+            Punto(
+                "merma_camion", "Merma del camión",
+                "En la lista, menú «Más» → «Registrar merma»: producto, motivo y "
+                "cuántas.",
+                "Baja la existencia del camión, y la merma aparece en el panel.",
+            ),
+        ),
+    ),
+    Seccion(
+        "sincronizar", "Vendedor: sincronizar y trabajar sin señal",
+        "Teléfono de un vendedor",
+        (
+            Punto(
+                "sincronizar", "Sincronizar",
+                "Toca el botón de sincronizar (las flechas de arriba).",
+                "La barra de pendientes desaparece. En el panel, Teléfonos → "
+                "Sincronizaciones muestra la subida con la versión de la app.",
+            ),
+            Punto(
+                "sin_senal", "Vender sin señal",
+                "Pon el modo avión, haz una venta y un «No me compró»; quita el modo avión "
+                "y sincroniza.",
+                "Sin señal todo funciona y queda como pendiente. Al volver la señal se "
+                "sube una sola vez: en el panel no hay ventas repetidas.",
+            ),
+            Punto(
+                "cambios_de_la_oficina", "Lo que cambia la oficina llega al teléfono",
+                "En el panel cambia el nombre de una tienda o un precio; en el teléfono, "
+                "sincroniza.",
+                "El teléfono muestra el cambio.",
+            ),
+        ),
+    ),
+    Seccion(
+        "cierre", "Vendedor: el camión y el cierre del día", "Teléfono de un vendedor",
+        (
+            Punto(
+                "mi_camion", "Mi camión",
+                "Botón del camión (arriba).",
+                "Lo que trae, por familia, con lo vendido ya descontado.",
+            ),
+            Punto(
+                "devolver_a_bodega", "Devolver a la bodega",
+                "En «Mi camión», el botón de bodega → algunos productos o «Todo el "
+                "camión» → «Registrar la devolución».",
+                "Sale del camión y queda en tránsito hasta que la bodega lo recibe en el "
+                "panel.",
+            ),
+            Punto(
+                "mi_dia", "Mi día y los días anteriores",
+                "Botón «Mi día» (arriba).",
+                "Las ventas del día con su total; se puede ir a días anteriores y volver "
+                "con «Ver hoy».",
+            ),
+            Punto(
+                "corte_vendedor", "Hacer el corte del día",
+                "En «Mi día», «Hacer el corte del día»: escribe el efectivo que entregas y "
+                "«Terminar el corte».",
+                "Muestra lo que queda en el camión sin contarlo y deja ver y compartir el "
+                "ticket del corte. La oficina lo ve en Cortes y cargas → Por aceptar.",
+            ),
+            Punto(
+                "solicitar_carga", "Solicitar la carga de mañana",
+                "En «Mi día», «Solicitar carga para mañana»: artículos por familia, "
+                "cantidades y una nota.",
+                "La oficina la ve por aceptar. Es una al día: después, «Mi día» dice en "
+                "qué va —pedida, ACEPTADA o rechazada con su motivo—.",
+            ),
+            Punto(
+                "carga_aceptada_llega", "La carga aceptada llega al camión",
+                "Después de que la oficina acepte la carga, sincroniza.",
+                "«Mi camión» muestra la carga sumada a lo que traía.",
+            ),
+        ),
+    ),
+    Seccion(
+        "oficina", "Oficina: Tablero, Empresa, Vendedores y Clientes",
+        "Entrando como Gerencia o admin",
+        (
+            Punto(
+                "tablero_dia", "Tablero del día",
+                "Tablero en «Día»; cambia de día con el calendario.",
+                "Las cifras del día (ventas, efectivo, visitas) y de qué día son; las "
+                "mismas que el Tablero del panel.",
+            ),
+            Punto(
+                "tablero_periodo", "Tablero por periodo",
+                "Cambia a periodo: semana, mes, «Todo» y «Fechas…».",
+                "Por vendedor y por día, con los mismos totales que el panel.",
+            ),
+            Punto(
+                "mapa_del_dia", "El mapa del día",
+                "En el Tablero, «Ver el mapa del día».",
+                "Las tiendas del día sobre el lienzo, con su leyenda.",
+            ),
+            Punto(
+                "objetivos_app", "Objetivos",
+                "En el Tablero, botón de objetivos → «Nuevo objetivo»: de una ruta o de "
+                "la empresa, para hoy, mañana, la semana, el mes o unas fechas.",
+                "La lista muestra cada uno con lo vendido y lo esperado a la fecha. Ya no "
+                "hay «Cada día»: el formulario dice que el diario fijo se pone en el "
+                "panel (Objetivos → Objetivo diario).",
+                desde="+35",
+            ),
+            Punto(
+                "empresa", "Empresa",
+                "Pestaña Empresa; toca cada cifra.",
+                "Cada cifra abre su lista (clientes, vendedores, artículos…).",
+            ),
+            Punto(
+                "vendedores", "Vendedores",
+                "Pestaña Vendedores: abre uno.",
+                "Los desactivados van aparte. La ficha tiene «Movimientos» y «Su camión»; "
+                "tocar una venta abre su detalle.",
+            ),
+            Punto(
+                "clientes_oficina", "Clientes",
+                "Pestaña Clientes: busca uno y ábrelo.",
+                "Su ficha y lo que compra.",
+            ),
+        ),
+    ),
+    Seccion(
+        "almacen", "Oficina: Almacén", "Entrando como Gerencia o admin",
+        (
+            Punto(
+                "existencias", "Existencias",
+                "Almacén → Existencias.",
+                "Por bodega, con las familias plegables y lo que vale el inventario por "
+                "artículo.",
+            ),
+            Punto(
+                "entrada", "Entrada de mercancía",
+                "Almacén → Entradas → «Nueva entrada» → «Abrir la entrada» → «Agregar» "
+                "productos → «Confirmar».",
+                "La existencia de la bodega sube; en el panel sale en Entradas y salidas.",
+            ),
+            Punto(
+                "compra_sin_senal", "Recibir una compra sin señal",
+                "Con modo avión: Almacén → Entradas → «Recibir compra» → «Agregar "
+                "producto» → «Guardar compra». Quita el modo avión y «Mandar ahora».",
+                "Se guarda sin señal y se manda una sola vez; la bodega sube.",
+            ),
+            Punto(
+                "traspaso", "Traspaso entre bodegas",
+                "Almacén → Traspasos: de dónde, a dónde y cuánto.",
+                "Sale de una bodega y entra a la otra; si no alcanza, dice cuánto hay y "
+                "no mueve nada.",
+            ),
+            Punto(
+                "cargas_por_fecha", "Cargas por fecha",
+                "Almacén → Cargas → «Por fecha».",
+                "Las cargas de cada día, con lo que se subió.",
+                desde="+33",
+            ),
+            Punto(
+                "aceptar_carga", "Aceptar o rechazar la carga que pidió un vendedor",
+                "Almacén → Cargas → «Cargas que pidieron los vendedores» → ábrela → "
+                "ajusta lo que haga falta → «Aceptar y confirmar la carga» (o «Rechazar "
+                "la solicitud» con su motivo).",
+                "La aceptada baja de la bodega y sube al camión; el vendedor la ve al "
+                "sincronizar. La rechazada le llega a su «Mi día» con el motivo.",
+            ),
+            Punto(
+                "nueva_carga", "Una carga a mano",
+                "Almacén → Cargas → «Nueva carga» → «Abrir la carga» → «Agregar» → "
+                "«Confirmar».",
+                "Sube al camión. Si ese vendedor ya tiene la carga del día, explica por "
+                "qué no deja.",
+            ),
+            Punto(
+                "cerrar_corte", "Cerrar el corte de un vendedor",
+                "Almacén → Corte del día → «Cortes de los vendedores» → ábrelo → cuenta "
+                "el efectivo que recibes → «Cerrar el corte».",
+                "Dice la diferencia contra lo esperado y deja el ticket del corte.",
+            ),
+            Punto(
+                "mayoreo", "Venta de mayoreo",
+                "Almacén → Mayoreo → nueva venta: un cliente de mayoreo, artículos al "
+                "precio que decidas. Después, cancela una de prueba.",
+                "Sale de la bodega con su folio MY- y su ticket; la cancelada devuelve la "
+                "mercancía. En el panel sale en Ventas → Mayoreo.",
+                desde="+33",
+            ),
+        ),
+    ),
+    Seccion(
+        "pantalla", "El teléfono de los vendedores", "Hyundai HYLine Pro",
+        (
+            Punto(
+                "pantalla_angosta", "Nada se corta en el teléfono de la empresa",
+                "En el Hyundai HYLine Pro recorre el alta de tienda, «No me compró», "
+                "«Solicitar carga» y la lista de clientes.",
+                "Ningún texto ni botón se corta, se encima o se sale de la pantalla.",
+            ),
+        ),
+    ),
+)
+
+PUNTOS: dict[str, Punto] = {p.clave: p for s in SECCIONES for p in s.puntos}
+assert len(PUNTOS) == sum(len(s.puntos) for s in SECCIONES), "claves repetidas"
+
+_VERSION = re.compile(r"^\d+\.\d+\.\d+\+\d+$")
+
+
+def orden_de_version(version: str) -> tuple:
+    """«0.1.0+35» → (0, 1, 0, 35): para ordenar, la +100 después de la +99."""
+    numeros = re.findall(r"\d+", version)
+    return tuple(int(n) for n in numeros) if numeros else (-1,)
+
+
+def version_valida(version: str) -> str:
+    limpia = (version or "").strip()
+    if not _VERSION.match(limpia):
+        raise MarcaInvalida(
+            "Escribe la versión como aparece al pie de la app, por ejemplo 0.1.0+35."
+        )
+    return limpia
+
+
+@dataclass(frozen=True)
+class Marca:
+    estado: str
+    nota: str | None
+    quien: str | None
+    cuando: datetime
+
+
+async def marcas_de(sesion, version: str) -> dict[str, Marca]:
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT r.punto, r.estado, r.nota, u.nombre AS quien, r.revisado_en
+                  FROM revision_app r
+                  LEFT JOIN usuarios u ON u.id = r.revisado_por
+                 WHERE r.version = :v
+                """
+            ),
+            {"v": version},
+        )
+    ).mappings().all()
+    return {f["punto"]: Marca(f["estado"], f["nota"], f["quien"], f["revisado_en"]) for f in filas}
+
+
+async def marcar(
+    sesion, *, version: str, punto: str, estado: str, nota: str | None, quien: uuid.UUID | None
+) -> None:
+    """Bien o falla, con su nota. Volver a marcar lo corrige. No hace commit."""
+    version = version_valida(version)
+    if punto not in PUNTOS:
+        raise MarcaInvalida("Ese punto ya no está en la lista.")
+    if estado not in ESTADOS:
+        raise MarcaInvalida("Marca «bien» o «falla».")
+    if estado == "falla" and not nota:
+        raise MarcaInvalida("Escribe qué falló: es lo que hay que arreglar.")
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO revision_app (version, punto, estado, nota, revisado_por)
+            VALUES (:v, :p, :e, :n, :q)
+            ON CONFLICT (version, punto) DO UPDATE SET
+                estado       = excluded.estado,
+                nota         = excluded.nota,
+                revisado_por = excluded.revisado_por,
+                revisado_en  = now()
+            """
+        ),
+        {"v": version, "p": punto, "e": estado, "n": nota, "q": quien},
+    )
+
+
+async def desmarcar(sesion, *, version: str, punto: str) -> None:
+    """Vuelve a pendiente. No hace commit."""
+    await sesion.execute(
+        text("DELETE FROM revision_app WHERE version = :v AND punto = :p"),
+        {"v": version, "p": punto},
+    )
+
+
+async def versiones(sesion) -> dict[str, list[str]]:
+    """Las versiones conocidas, de la más nueva a la más vieja, con los
+    teléfonos de vendedor que la traen ahora («Juan Pérez · VEND01»).
+
+    Salen de lo que reportan los teléfonos al sincronizar y de las que ya
+    tienen marcas. Gerencia no sincroniza, así que su teléfono no aparece."""
+    telefonos = (
+        await sesion.execute(
+            text(
+                """
+                SELECT COALESCE(
+                         (SELECT l.app_version FROM sync_lotes l
+                           WHERE l.dispositivo_id = d.id AND l.app_version IS NOT NULL
+                           ORDER BY l.recibido_en DESC LIMIT 1),
+                         d.app_version) AS version,
+                       u.nombre || ' · ' || u.codigo AS quien
+                  FROM dispositivos d
+                  JOIN usuarios u ON u.id = d.usuario_id
+                 WHERE d.estado = 'activo'
+                 ORDER BY u.codigo
+                """
+            )
+        )
+    ).mappings().all()
+    conocidas: dict[str, list[str]] = {}
+    for t in telefonos:
+        if t["version"]:
+            conocidas.setdefault(t["version"], []).append(t["quien"])
+    marcadas = (
+        await sesion.execute(text("SELECT DISTINCT version FROM revision_app"))
+    ).scalars().all()
+    for v in marcadas:
+        conocidas.setdefault(v, [])
+    return dict(sorted(conocidas.items(), key=lambda kv: orden_de_version(kv[0]), reverse=True))
+
+
+async def versiones_con_marcas(sesion) -> list[str]:
+    return list(
+        (await sesion.execute(text("SELECT DISTINCT version FROM revision_app"))).scalars()
+    )
+
+
+def anterior_a(version: str, conocidas) -> str | None:
+    """La versión inmediata anterior entre `conocidas`."""
+    previas = [v for v in conocidas if orden_de_version(v) < orden_de_version(version)]
+    return max(previas, key=orden_de_version) if previas else None

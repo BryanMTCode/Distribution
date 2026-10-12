@@ -131,6 +131,7 @@ TABLAS_VOLATILES = [
     "objetivos_ruta",
     "objetivos",
     "objetivos_diarios",
+    "revision_app",
     "venta_mayoreo_partidas",
     "ventas_mayoreo",
     "sesiones",

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block titulo %}Revisión de la app{% endblock %}
+{% block contenido %}
+<h1>Revisión de la app</h1>
+<p class="subtitulo">
+  Todo lo que hay que probar en el teléfono cuando instalas una versión nueva. Cada
+  punto dice <strong>cómo</strong> probarlo y <strong>qué debe pasar</strong>; márcalo
+  como <strong>bien</strong> o <strong>falla</strong> (con lo que falló). Las marcas
+  son de la versión que revisas: la siguiente empieza en blanco.
+</p>
+
+{% if aviso %}<div class="aviso-caja bien">{{ aviso }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="error_revision">{{ error }}</div>{% endif %}
+
+<form class="barra" method="get" action="/panel/revision-app">
+  <label>Versión que revisas
+    <input type="text" name="version" value="{{ version }}" list="versiones_conocidas"
+           placeholder="0.1.0+35" style="width:130px" id="campo_version">
+  </label>
+  <datalist id="versiones_conocidas">
+    {% for v in conocidas %}<option value="{{ v }}">{% endfor %}
+  </datalist>
+  <button type="submit">Ver</button>
+</form>
+
+{% if not version %}
+<div class="vacio" id="sin_version">
+  Ningún teléfono ha dicho todavía qué versión trae. Escribe arriba la versión que
+  vas a revisar, como aparece al pie de la pantalla de entrada de la app.
+</div>
+{% else %}
+
+<p class="sutil" id="telefonos_de_la_version">
+  {% if telefonos %}Con esta versión: {{ telefonos|join(', ') }}.{% else %}Ningún teléfono de vendedor ha sincronizado con esta versión todavía.{% endif %}
+  {% if con_otra %}<br>Con otra versión (les falta instalar): {% for quien, v in con_otra %}{{ quien }} ({{ v }}){% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
+</p>
+
+<div class="tarjetas" id="resumen_revision">
+  <div class="tarjeta">
+    <div class="numero">{{ bien + fallas }} de {{ total }}</div>
+    <div class="etiqueta">puntos revisados de la {{ version }}</div>
+    <div style="height:8px;background:var(--linea);border-radius:4px;margin-top:8px;overflow:hidden">
+      <div style="height:8px;width:{{ '%.1f'|format((bien + fallas) * 100 / total) }}%;background:var(--bien)"></div>
+    </div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero" style="color:var(--bien)">{{ bien }}</div>
+    <div class="etiqueta">bien</div>
+  </div>
+  <div class="tarjeta {% if fallas %}alerta{% endif %}">
+    <div class="numero">{{ fallas }}</div>
+    <div class="etiqueta">con falla</div>
+    {% if fallas %}<div class="sutil" style="margin-top:6px">Lo que hay que arreglar: <a href="?version={{ version|urlencode }}&filtro=falla">verlas</a>.</div>{% endif %}
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ pendientes }}</div>
+    <div class="etiqueta">pendientes</div>
+  </div>
+</div>
+
+<nav class="barra" style="display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 18px" id="filtros_revision">
+  {% for clave, etiqueta, cuantos in [('todos', 'Todos', total), ('pendientes', 'Pendientes', pendientes), ('falla', 'Con falla', fallas), ('nuevos', 'Nuevos en esta versión', nuevos)] %}
+    {% if clave == filtro %}<strong>{{ etiqueta }} · {{ cuantos }}</strong>
+    {% else %}<a href="?version={{ version|urlencode }}{% if clave != 'todos' %}&filtro={{ clave }}{% endif %}">{{ etiqueta }} · {{ cuantos }}</a>{% endif %}
+  {% endfor %}
+</nav>
+
+{% for seccion, puntos in secciones if puntos %}
+<h2 id="seccion_{{ seccion.clave }}">{{ seccion.titulo }}</h2>
+<p class="sutil" style="margin-top:-6px">Con: {{ seccion.quien }}.</p>
+{% for p in puntos %}
+{% set marca = marcas.get(p.clave) %}
+{% set antes = marcas_anteriores.get(p.clave) %}
+<div id="punto_{{ p.clave }}"
+     style="background:var(--papel);border:1px solid var(--linea);border-radius:10px;
+            padding:12px 14px;margin:0 0 10px;
+            border-left:5px solid {% if marca and marca.estado == 'bien' %}var(--bien){% elif marca %}var(--alerta){% else %}var(--linea){% endif %}">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+    <strong>{% if marca and marca.estado == 'bien' %}✓ {% elif marca %}✗ {% endif %}{{ p.titulo }}</strong>
+    {% if p.desde and p.desde == build %}
+      <span class="etiqueta-motivo" style="background:var(--acento-suave);color:var(--acento)">nuevo en esta versión</span>
+    {% elif p.desde %}
+      <span class="sutil">llegó en la {{ p.desde }}</span>
+    {% endif %}
+  </div>
+  <div style="margin-top:6px"><span class="sutil">Cómo:</span> {{ p.pasos }}</div>
+  <div style="margin-top:4px"><span class="sutil">Debe pasar:</span> {{ p.esperado }}</div>
+  {% if antes %}
+  <div class="sutil" style="margin-top:4px">En la {{ anterior }}: {{ 'bien' if antes.estado == 'bien' else 'FALLA' }}{% if antes.nota %} — {{ antes.nota }}{% endif %}.</div>
+  {% endif %}
+  {% if marca %}
+  <div style="margin-top:6px;color:{% if marca.estado == 'bien' %}var(--bien){% else %}var(--alerta){% endif %}" id="marca_{{ p.clave }}">
+    {{ 'Bien' if marca.estado == 'bien' else 'Falla' }}{% if marca.nota %}: {{ marca.nota }}{% endif %}
+    <span class="sutil">· {{ marca.quien or 'alguien' }} · {{ marca.cuando.strftime('%d/%m %H:%M') }}</span>
+  </div>
+  {% endif %}
+  {% if puede_marcar %}
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+    <form method="post" action="/panel/revision-app/marcar"
+          style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="version" value="{{ version }}">
+      <input type="hidden" name="punto" value="{{ p.clave }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      <input type="text" name="nota" maxlength="500" style="flex:1;min-width:200px"
+             placeholder="Nota (obligatoria si falla: qué pasó)"
+             value="{{ marca.nota or '' if marca else '' }}" aria-label="Nota de {{ p.titulo }}">
+      <button type="submit" name="estado" value="bien" id="bien_{{ p.clave }}">Bien</button>
+      <button type="submit" name="estado" value="falla" class="peligro" id="falla_{{ p.clave }}">Falla</button>
+    </form>
+    {% if marca %}
+    <form method="post" action="/panel/revision-app/desmarcar">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="version" value="{{ version }}">
+      <input type="hidden" name="punto" value="{{ p.clave }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      <button type="submit" class="boton-chico" id="desmarcar_{{ p.clave }}">Desmarcar</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="vacio" id="nada_en_el_filtro">
+  {% if filtro == 'pendientes' %}No queda nada pendiente: toda la lista está revisada.
+  {% elif filtro == 'falla' %}Nada falló en esta versión.
+  {% else %}No hay puntos nuevos en esta versión.{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

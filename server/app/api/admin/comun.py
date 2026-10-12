@@ -142,6 +142,8 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/equipos", "Teléfonos"),
         ("/panel/sincronizaciones", "Sincronizaciones"),
         ("/panel/cuarentena", "Cuarentena"),
+        # Lo que hay que probar en la app con cada versión (ADR 0002 §112).
+        ("/panel/revision-app", "Revisión de la app"),
     ],
 }
 
@@ -181,6 +183,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/equipos": "inventario.ver",
     "/panel/sincronizaciones": None,
     "/panel/cuarentena": None,
+    "/panel/revision-app": "tablero.ver",
     "/panel/piloto": "piloto.administrar",
 }
 
