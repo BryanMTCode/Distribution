@@ -1,5 +1,5 @@
-"""Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco
-y los camiones al sábado.
+"""Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco,
+los camiones al sábado y las tiendas de las rutas.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -355,6 +355,90 @@ async def camiones_al_sabado(*, solo_resumen: bool = False, confirmado: bool = F
     return 0
 
 
+async def tiendas_de_rutas(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
+    """Da de alta las 1,834 tiendas de las rutas 1101–1107 con los códigos 100 a
+    1933, su ruta y su día de visita (ADR 0002 §120).
+
+    Qué hace está en `app/infra/tiendas_de_rutas.py`. `--resumen` solo dice lo que
+    haría; `--confirmado` no pregunta.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import quien_registra
+    from app.infra.tiendas_de_rutas import (
+        PALABRA,
+        HojaInvalida,
+        aplicar,
+        leer_tiendas,
+        planear,
+        por_ruta,
+        resumen_de_dias,
+    )
+
+    try:
+        tiendas = leer_tiendas()
+    except HojaInvalida as e:
+        print(f"ERROR en el archivo: {e}")
+        return 1
+
+    async with CrearSesion() as sesion:
+        plan = await planear(sesion, tiendas)
+        print(f"TIENDAS DE LAS RUTAS 1101–1107: {len(tiendas):,} tiendas, códigos "
+              f"{tiendas[0].codigo} a {tiendas[-1].codigo}\n")
+        for numero, suyas in por_ruta(tiendas).items():
+            ruta = plan.rutas.get(numero)
+            if ruta is None:
+                destino = "ruta por decidir"
+            else:
+                destino = (f"{'ruta NUEVA ' if ruta.nueva else 'ruta '}{ruta.codigo} "
+                           f"«{ruta.nombre}»"
+                           + (f", de {ruta.titular}" if ruta.titular else ", SIN vendedor")
+                           + ("" if ruta.activa else " (DESACTIVADA)"))
+            print(f"  {numero} → {destino}: {len(suyas)} tiendas, códigos "
+                  f"{suyas[0].codigo} a {suyas[-1].codigo} ({resumen_de_dias(suyas)})")
+        sin_titular = [r.codigo for r in plan.rutas.values() if not r.titular]
+        if sin_titular:
+            print("\nOJO: sin vendedor, ningún teléfono recibe sus tiendas hasta que le "
+                  "asignes titular en Usuarios y rutas: " + ", ".join(sin_titular))
+        print(f"\nNuevas: {len(plan.nuevas):,}. Ya estaban: {plan.ya_estaban:,}.")
+        for aviso in plan.repetidas_en_el_excel:
+            print(f"OJO, repetida en el Excel (se cargan las dos): {aviso}")
+        for aviso in plan.parecidas[:20]:
+            print(f"OJO: {aviso}")
+        if len(plan.parecidas) > 20:
+            print(f"OJO: y {len(plan.parecidas) - 20} parecidas más.")
+        if not plan.hay_lista_de_precios:
+            print("OJO: no hay lista de precios activa: las tiendas entran sin lista.")
+        for problema in plan.conflictos[:20] + plan.rutas_dudosas:
+            print(f"NO SE PUEDE: {problema}")
+        print()
+        if not plan.se_puede:
+            print("No se cambió nada.")
+            return 1
+        if solo_resumen:
+            return 0
+        if not plan.nuevas and not any(r.nueva for r in plan.rutas.values()):
+            print("Ya estaban todas. No se cambió nada.")
+            return 0
+        if not confirmado and input(
+            f"Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        try:
+            resultado = await aplicar(sesion, tiendas, quien=await quien_registra(sesion))
+        except HojaInvalida as e:
+            await sesion.rollback()
+            print(f"ERROR: {e}. No se cambió nada.")
+            return 1
+
+    print(f"Listo. {resultado.tiendas:,} tienda(s) nueva(s)"
+          + (f", ruta(s) nueva(s): {', '.join(resultado.rutas_nuevas)}"
+             if resultado.rutas_nuevas else "")
+          + ".")
+    print("Cada teléfono recibe las tiendas de su ruta en su próxima sincronización.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
@@ -362,12 +446,13 @@ def main() -> int:
         "recalcular-tablero": recalcular_tablero,
         "base-en-blanco": base_en_blanco,
         "camiones-al-sabado": camiones_al_sabado,
+        "tiendas-de-rutas": tiendas_de_rutas,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2
     comando, opciones = sys.argv[1], set(sys.argv[2:])
-    if comando in ("base-en-blanco", "camiones-al-sabado") and opciones <= {
+    if comando in ("base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas") and opciones <= {
         "--resumen", "--confirmado"
     }:
         return asyncio.run(comandos[comando](

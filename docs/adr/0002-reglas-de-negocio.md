@@ -5531,3 +5531,46 @@ preguntar qué es «borrar», la dirección eligió **anular y deshacer**.
 - El costo promedio no se recalcula al anular una compra; se dice en la página.
 - Solo servidor (migración 0059: tabla `anulaciones`, el tipo «anulación» del
   ajuste del camión y el permiso).
+
+## 120. Las tiendas de las rutas 1101–1107, con códigos del 100 en adelante
+
+**Decisión (octubre 2026).** Con un Excel por ruta (R1101…R1107) y una hoja por
+día, de lunes a sábado: «quiero que las agregues a la base de datos, pero que los
+Ids los vayas generando en orden: para la ruta 1101 empiezan por 100 y van
+aumentando en uno, de la primera del lunes hasta la última del sábado; luego las
+del lunes de la 1102 hasta las del sábado, y así hasta la 1107». Con el número de
+tiendas de cada día para verificarlo. Sin coordenadas: «trabaja con los datos que
+trae el Excel; luego agregaremos los otros datos mediante los vendedores».
+
+- **Los conteos cuadran con el arreglo de la dirección**, ruta por ruta y día por
+  día: 1,834 tiendas. 1101: 260 (códigos 100–359) · 1102: 256 (360–615) · 1103:
+  240 (616–855) · 1104: 273 (856–1128) · 1105: 270 (1129–1398) · 1106: 268
+  (1399–1666) · 1107: 267 (1667–1933).
+- El Excel pasado a limpio vive en `server/db/semillas/tiendas_rutas_1101_1107.csv`:
+  código, ruta, día, lugar en la hoja, tienda, calle, número, colonia y
+  localidad. La limpieza: espacios de más, «701.0» → «701», número vacío o 0 →
+  «S/N», y las formas en que la hoja escribe Mazatlán (MAZATLAN, NAZATLAN,
+  MAZTLAN, MAZA…) → MAZATLÁN. Lo demás, como venía (cinco tiendas dicen
+  «SINALOA» o «GUASAVE» de localidad).
+- **El código es el `codigo` del cliente** («100», «101»…), el que se ve en el
+  panel y en la app. Las tiendas nuevas que se den de alta después siguen con su
+  serie de siempre (C00001…).
+- **El comando `tiendas-de-rutas`** (`app/infra/tiendas_de_rutas.py`) las da de
+  alta activas, con la lista de precios general, en su ruta, con su lugar en la
+  hoja como orden de visita y su día en el **plan de visita** (desde el día de la
+  carga). La ruta se encuentra por su número («1101», «R1101», «RUTA 1101») o,
+  si no hay, por su vendedor (VEND1101); la que no existe se crea como R1101
+  «Ruta 1101» con su vendedor de titular y en su alcance —si el vendedor existe;
+  si no, sin titular, y se avisa—.
+- **Revisa antes de tocar nada**: los códigos seguidos desde 100, el orden y los
+  conteos de cada día. Correrlo dos veces no duplica (la tienda cuyo código ya
+  existe con el mismo nombre se deja); si un código ya es de OTRA tienda, no carga
+  nada y dice cuál. Avisa las que ya existen con otro código y el mismo nombre y
+  dirección.
+- **Una tienda viene dos veces en el Excel**: ABARROTES SIXTO, Selene 1116, Villa
+  Galaxia, el martes de la 1104 (códigos 908 y 909). Se cargan las dos para
+  respetar la numeración y el conteo de 52; si es la misma, se elimina una en el
+  panel.
+- Cada teléfono recibe las tiendas de su ruta en su siguiente sincronización, y
+  «Hoy» le muestra las de ese día. Las coordenadas las captura el vendedor en la
+  tienda. Solo servidor: no hace falta APK nuevo.

@@ -932,3 +932,41 @@ con lo de su hoja, y cada ajuste con la cuenta en su nota. Cada teléfono recibe
 camión en su próxima sincronización. Correrlo otra vez no duplica nada: dice 0
 ajustes.
 
+## Anexo · Las tiendas de las rutas 1101–1107
+
+**DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen
+reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
+
+Da de alta las 1,834 tiendas de los Excel de rutas con los códigos 100 a 1933, en
+su ruta y con su día de visita (ADR 0002 §120). Sin coordenadas: las capturan los
+vendedores en la tienda.
+
+**1. Lo que va a hacer** (no cambia nada):
+
+```bash
+cd ~/Distribution
+docker compose run --rm --no-deps api python -m app.cli tiendas-de-rutas --resumen
+```
+
+**✅ Debes ver** «1,834 tiendas, códigos 100 a 1933» y, ruta por ruta, a qué ruta
+del sistema va cada una, su vendedor y sus tiendas por día —1101: lun 45 · mar 44
+· mié 47 · jue 46 · vie 37 · sáb 41, etc.—, con «ruta NUEVA» en las que se van a
+crear. El aviso de ABARROTES SIXTO (908 y 909), que viene dos veces en el Excel.
+**Si una ruta dice «SIN vendedor»**, sus tiendas se cargan igual pero ningún
+teléfono las recibe hasta que le asignes titular en *Usuarios y rutas*. **Si dice
+«NO SE PUEDE»**, no se cambió nada y dice por qué.
+
+**2. El respaldo y la carga:**
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh
+docker compose run --rm --no-deps api python -m app.cli tiendas-de-rutas
+```
+
+Pide escribir `TIENDAS`; con cualquier otra cosa no cambia nada.
+
+**✅ Debes ver** «Listo. 1,834 tienda(s) nueva(s)…». En el panel, *Clientes* con
+los códigos 100 a 1933 y *Plan de visita* con las de cada día. Correrlo otra vez
+dice «Ya estaban todas».
+
