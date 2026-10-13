@@ -358,3 +358,187 @@ async def camion(vendedor_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> 
         piezas=sum((Decimal(e["cantidad"]) for e in existencias), Decimal(0)),
         ultimo_contacto=ultimo,
     )
+
+
+# ---------------------------------------------------------------------------
+# Su ruta de cada día (ADR 0002 §121)
+# ---------------------------------------------------------------------------
+# «Quiero poder ver las rutas de cada vendedor de cada día en la app del
+# administrador.» Las tiendas que le tocan cada día según el plan de visita
+# (migración 0041), en el orden de su hoja, con las que todavía no tienen ubicación
+# a la vista —las capturan los vendedores (§120)—. Y si el día es hoy, cuáles ya
+# visitó: con venta, sin venta, o todavía no.
+
+# El orden de la semana como se trabaja, con el número de la base:
+# `extract(dow)`, donde 0 es domingo.
+DIAS_DE_RUTA: tuple[tuple[int, str], ...] = (
+    (1, "Lun"), (2, "Mar"), (3, "Mié"), (4, "Jue"), (5, "Vie"), (6, "Sáb"), (0, "Dom"),
+)
+
+
+class DiaDeRuta(BaseModel):
+    dia: int
+    etiqueta: str
+    tiendas: int
+
+
+class TiendaDeRuta(BaseModel):
+    id: uuid.UUID
+    codigo: str | None
+    nombre: str
+    direccion: str | None
+    ruta: str
+    orden: int | None
+    con_ubicacion: bool
+    # Las semanas del mes en que toca; vacía es todas.
+    semanas: list[int] = []
+    # Hoy le toca porque se le reprogramó la visita (migración 0054), no por su plan.
+    reprogramada: bool = False
+    # Solo si el día es hoy: 'venta', 'no_venta' o nula (todavía no la visita).
+    visita: str | None = None
+    importe: Dinero | None = None
+
+
+class RutaDelVendedor(BaseModel):
+    vendedor: str
+    rutas: list[str]
+    dia: int
+    fecha: date
+    es_hoy: bool
+    dias: list[DiaDeRuta]
+    tiendas: list[TiendaDeRuta]
+    sin_ubicacion: int
+
+
+SQL_SUS_TIENDAS = """
+WITH sus_rutas AS (
+    SELECT r.id, r.codigo FROM rutas r
+     WHERE r.activo
+       AND (r.vendedor_id = :v
+            OR EXISTS (SELECT 1 FROM usuarios_rutas ur
+                        WHERE ur.ruta_id = r.id AND ur.usuario_id = :v))
+)
+SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.calle, c.numero, c.colonia,
+       sr.codigo AS ruta, c.secuencia AS orden, c.visita_reprogramada,
+       (c.ubicacion IS NOT NULL OR (c.lat IS NOT NULL AND c.lng IS NOT NULL))
+         AS con_ubicacion,
+       COALESCE(array_agg(f.dia_semana) FILTER (WHERE f.id IS NOT NULL), '{}') AS dias,
+       COALESCE(array_agg(f.semana_del_mes) FILTER (WHERE f.dia_semana = :dia), '{}')
+         AS semanas,
+       bool_or(f.dia_semana = :dia AND f.semana_del_mes IS NULL) AS todas_las_semanas
+  FROM clientes c
+  JOIN sus_rutas sr ON sr.id = c.ruta_id
+  LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
+ WHERE c.estatus IN ('activo', 'prospecto') AND NOT c.mayoreo
+ GROUP BY c.id, sr.codigo
+"""
+
+
+@router.get("/{vendedor_id}/ruta", response_model=RutaDelVendedor)
+async def ruta(
+    vendedor_id: uuid.UUID,
+    actor: ActorDep,
+    sesion: SesionDep,
+    dia: int | None = None,
+    fecha: date | None = None,
+) -> RutaDelVendedor:
+    """Las tiendas que le tocan un día de la semana, en el orden de su ruta.
+
+    `dia` es 0–6 como `extract(dow)` (1 = lunes); sin él, el de `fecha`. `fecha`
+    es el día operativo de quien pregunta (hoy): si el día pedido es el de hoy,
+    cada tienda dice si ya se visitó.
+    """
+    actor.exigir(PERMISO_VER)
+    ficha = await ficha_del_vendedor(sesion, vendedor_id)
+    if ficha is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ese vendedor no existe")
+    hoy = fecha or date.today()
+    dia_de_hoy = hoy.isoweekday() % 7
+    if dia is None:
+        dia = dia_de_hoy
+    if not 0 <= dia <= 6:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "el día va de 0 a 6")
+    es_hoy = dia == dia_de_hoy
+
+    filas = (
+        await sesion.execute(text(SQL_SUS_TIENDAS), {"v": vendedor_id, "dia": dia})
+    ).mappings().all()
+
+    visitas: dict[uuid.UUID, tuple[str, Decimal | None]] = {}
+    if es_hoy:
+        for f in (
+            await sesion.execute(
+                text(
+                    "SELECT cliente_id, 'no_venta' AS visita, NULL::numeric AS importe "
+                    "  FROM no_drops WHERE vendedor_id = :v AND fecha_operativa = :hoy "
+                    "UNION ALL "
+                    "SELECT cliente_id, 'venta', sum(total) FROM ventas "
+                    " WHERE vendedor_id = :v AND fecha_operativa = :hoy "
+                    "   AND estado = 'confirmada' GROUP BY cliente_id"
+                ),
+                {"v": vendedor_id, "hoy": hoy},
+            )
+        ).mappings().all():
+            # La venta manda sobre la visita sin venta del mismo cliente.
+            if f["visita"] == "venta" or f["cliente_id"] not in visitas:
+                visitas[f["cliente_id"]] = (f["visita"], f["importe"])
+
+    cuenta = {d: 0 for d, _ in DIAS_DE_RUTA}
+    tiendas: list[TiendaDeRuta] = []
+    for f in filas:
+        for d in set(f["dias"]):
+            cuenta[d] += 1
+        reprogramada = es_hoy and f["visita_reprogramada"] == hoy
+        if dia not in f["dias"] and not reprogramada:
+            continue
+        visita, importe = visitas.get(f["id"], (None, None))
+        direccion = " ".join(x for x in (f["calle"], f["numero"]) if x)
+        if f["colonia"]:
+            direccion = f"{direccion}, {f['colonia']}" if direccion else f["colonia"]
+        tiendas.append(TiendaDeRuta(
+            id=f["id"],
+            codigo=f["codigo"],
+            nombre=f["nombre"],
+            direccion=direccion or None,
+            ruta=f["ruta"],
+            orden=f["orden"],
+            con_ubicacion=f["con_ubicacion"],
+            semanas=[] if f["todas_las_semanas"] or dia not in f["dias"]
+            else sorted(s for s in f["semanas"] if s is not None),
+            reprogramada=reprogramada and dia not in f["dias"],
+            visita=visita,
+            importe=importe,
+        ))
+    # Las reprogramadas para hoy no son de su recorrido: van al final.
+    tiendas.sort(
+        key=lambda t: (t.reprogramada, t.ruta, t.orden is None, t.orden or 0, t.nombre)
+    )
+
+    rutas = list(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT r.codigo FROM rutas r WHERE r.activo "
+                    "   AND (r.vendedor_id = :v OR EXISTS (SELECT 1 FROM usuarios_rutas ur "
+                    "        WHERE ur.ruta_id = r.id AND ur.usuario_id = :v)) "
+                    " ORDER BY r.codigo"
+                ),
+                {"v": vendedor_id},
+            )
+        ).scalars()
+    )
+    return RutaDelVendedor(
+        vendedor=ficha["nombre"],
+        rutas=rutas,
+        dia=dia,
+        fecha=hoy,
+        es_hoy=es_hoy,
+        # De lunes a sábado siempre; el domingo, solo si alguien lo trabaja.
+        dias=[
+            DiaDeRuta(dia=d, etiqueta=e, tiendas=cuenta[d])
+            for d, e in DIAS_DE_RUTA
+            if d != 0 or cuenta[0] or dia == 0
+        ],
+        tiendas=tiendas,
+        sin_ubicacion=sum(1 for t in tiendas if not t.con_ubicacion),
+    )

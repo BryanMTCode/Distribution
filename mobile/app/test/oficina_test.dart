@@ -97,6 +97,36 @@ class _ServidorDeOficina implements Transporte {
           'limite': 500,
           'telefonos': <Object?>[],
         },
+      '/v1/vendedores/v1/ruta' => {
+          'vendedor': 'Juan Pérez', 'rutas': ['R1101'], 'fecha': '2026-09-24',
+          // Sin `dia`, el de hoy: jueves 24.
+          'dia': int.parse(parametros?['dia'] ?? '4'),
+          'es_hoy': (parametros?['dia'] ?? '4') == '4',
+          'sin_ubicacion': 1,
+          'dias': [
+            for (final (d, e, n) in [
+              (1, 'Lun', 45), (2, 'Mar', 44), (3, 'Mié', 47), (4, 'Jue', 3), (5, 'Vie', 37),
+              (6, 'Sáb', 41),
+            ])
+              {'dia': d, 'etiqueta': e, 'tiendas': n},
+          ],
+          'tiendas': parametros?['dia'] == '1'
+              ? [
+                  {'id': 'c100', 'codigo': '100', 'nombre': 'PUESTO PLAYA SUR',
+                   'direccion': 'EMBARCADERO DE LA PUNTILLA S/N, PLAYA SUR', 'ruta': 'R1101',
+                   'orden': 1, 'con_ubicacion': false},
+                ]
+              : [
+                  {'id': 'c250', 'codigo': '250', 'nombre': 'SUPER ATENAS',
+                   'direccion': 'CARNAVAL 819, PLAYA SUR', 'ruta': 'R1101', 'orden': 1,
+                   'con_ubicacion': true, 'visita': 'venta', 'importe': '350.00'},
+                  {'id': 'c251', 'codigo': '251', 'nombre': 'OLAS NEGRAS',
+                   'direccion': 'CARNAVAL 911, PLAYA SUR', 'ruta': 'R1101', 'orden': 2,
+                   'con_ubicacion': true, 'visita': 'no_venta'},
+                  {'id': 'c252', 'codigo': '252', 'nombre': 'EL FARO', 'direccion': null,
+                   'ruta': 'R1101', 'orden': 3, 'con_ubicacion': false},
+                ],
+        },
       '/v1/vendedores/v1/camion' => {
           'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'piezas': '55.000',
           'ultimo_contacto': null,
@@ -410,6 +440,49 @@ void main() {
       expect(find.byKey(const Key('camion_ATUN-140')), findsNothing);
       expect(find.byKey(const Key('camion_SARD')), findsNothing);
       expect(find.byKey(const Key('camion_MARU')), findsOneWidget);
+    });
+
+    testWidgets('su ruta de cada día: las tiendas en orden y lo de hoy (ADR 0002 §121)',
+        (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('boton_vendedores')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('vendedor_VEND01')));
+      await tester.pumpAndSettle();
+      // En el ancho del teléfono de la empresa (Hyundai HYLine Pro, 360).
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.tap(find.byKey(const Key('pestana_ruta')));
+      await tester.pumpAndSettle();
+
+      // Se pide la de hoy, con el día operativo de la app.
+      final pedida = servidor.pedidas.lastWhere((p) => p.$1 == '/v1/vendedores/v1/ruta');
+      expect(pedida.$2, {'fecha': '2026-09-24'});
+      expect(find.text('Ruta R1101'), findsOneWidget);
+      expect(find.text('Lun 45'), findsOneWidget);
+      expect(find.text('Sáb 41'), findsOneWidget);
+      expect(
+        find.text('Hoy, jueves: 3 tiendas · visitadas 2 (1 con venta), faltan 1'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('tienda_ruta_250')), findsOneWidget);
+      expect(find.text('\$350.00'), findsOneWidget);
+      expect(find.text('sin venta'), findsOneWidget);
+      expect(find.text('pendiente'), findsOneWidget);
+      expect(textoQueContiene('252 · sin ubicación'), findsOneWidget);
+      expect(find.byKey(const Key('sin_ubicacion_ruta')), findsOneWidget);
+
+      // Otro día: las suyas, sin «pendiente».
+      await tester.tap(find.byKey(const Key('dia_ruta_1')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$2, {'dia': '1', 'fecha': '2026-09-24'});
+      expect(find.text('El lunes: 1 tienda'), findsOneWidget);
+      expect(find.byKey(const Key('tienda_ruta_100')), findsOneWidget);
+      expect(find.byKey(const Key('tienda_ruta_250')), findsNothing);
+      expect(find.text('pendiente'), findsNothing);
+      expect(
+        textoQueContiene('100 · EMBARCADERO DE LA PUNTILLA S/N, PLAYA SUR · sin ubicación'),
+        findsOneWidget,
+      );
     });
   });
 

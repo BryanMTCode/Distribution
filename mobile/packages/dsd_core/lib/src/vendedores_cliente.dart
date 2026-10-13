@@ -412,6 +412,110 @@ class VentaVista {
   final List<PartidaVista> partidas;
 }
 
+// ---------------------------------------------------------------------------
+// Su ruta de cada día (ADR 0002 §121)
+// ---------------------------------------------------------------------------
+
+/// Un día de la semana con cuántas tiendas le tocan. `dia` es 0–6 como
+/// `extract(dow)`: 1 es lunes y 0 domingo.
+class DiaDeRuta {
+  const DiaDeRuta({required this.dia, required this.etiqueta, required this.tiendas});
+
+  factory DiaDeRuta.deJson(Map<String, Object?> j) => DiaDeRuta(
+        dia: (j['dia']! as num).toInt(),
+        etiqueta: j['etiqueta']! as String,
+        tiendas: (j['tiendas']! as num).toInt(),
+      );
+
+  final int dia;
+  final String etiqueta;
+  final int tiendas;
+}
+
+/// Una tienda de la ruta de ese día.
+class TiendaDeRuta {
+  const TiendaDeRuta({
+    required this.id,
+    required this.codigo,
+    required this.nombre,
+    required this.direccion,
+    required this.ruta,
+    required this.orden,
+    required this.conUbicacion,
+    this.semanas = const [],
+    this.reprogramada = false,
+    this.visita,
+    this.importe,
+  });
+
+  factory TiendaDeRuta.deJson(Map<String, Object?> j) => TiendaDeRuta(
+        id: j['id']! as String,
+        codigo: j['codigo'] as String?,
+        nombre: j['nombre']! as String,
+        direccion: j['direccion'] as String?,
+        ruta: j['ruta']! as String,
+        orden: (j['orden'] as num?)?.toInt(),
+        conUbicacion: j['con_ubicacion']! as bool,
+        semanas: [for (final s in (j['semanas'] ?? const <Object?>[]) as List) (s! as num).toInt()],
+        reprogramada: (j['reprogramada'] as bool?) ?? false,
+        visita: j['visita'] as String?,
+        importe: j['importe'] == null ? null : Dinero.deTexto(j['importe']! as String),
+      );
+
+  final String id;
+  final String? codigo;
+  final String nombre;
+  final String? direccion;
+  final String ruta;
+  final int? orden;
+  final bool conUbicacion;
+
+  /// Las semanas del mes en que toca; vacía es todas.
+  final List<int> semanas;
+
+  /// Hoy le toca porque se le reprogramó la visita, no por su plan.
+  final bool reprogramada;
+
+  /// Solo si el día es hoy: 'venta', 'no_venta' o nula (todavía no).
+  final String? visita;
+  final Dinero? importe;
+}
+
+class RutaDelVendedor {
+  const RutaDelVendedor({
+    required this.vendedor,
+    required this.rutas,
+    required this.dia,
+    required this.fecha,
+    required this.esHoy,
+    required this.dias,
+    required this.tiendas,
+    required this.sinUbicacion,
+  });
+
+  factory RutaDelVendedor.deJson(Map<String, Object?> j) => RutaDelVendedor(
+        vendedor: j['vendedor']! as String,
+        rutas: [for (final r in (j['rutas'] ?? const <Object?>[]) as List) r! as String],
+        dia: (j['dia']! as num).toInt(),
+        fecha: j['fecha']! as String,
+        esHoy: j['es_hoy']! as bool,
+        dias: _lista(j['dias'], DiaDeRuta.deJson),
+        tiendas: _lista(j['tiendas'], TiendaDeRuta.deJson),
+        sinUbicacion: (j['sin_ubicacion']! as num).toInt(),
+      );
+
+  final String vendedor;
+  final List<String> rutas;
+  final int dia;
+
+  /// El día operativo de quien preguntó (`YYYY-MM-DD`).
+  final String fecha;
+  final bool esHoy;
+  final List<DiaDeRuta> dias;
+  final List<TiendaDeRuta> tiendas;
+  final int sinUbicacion;
+}
+
 class ClienteVendedores {
   const ClienteVendedores(this._transporte);
 
@@ -455,6 +559,15 @@ class ClienteVendedores {
 
   Future<VentaVista> venta(String id) async =>
       VentaVista.deJson(await _get('/v1/vendedores/ventas/$id'));
+
+  /// Las tiendas que le tocan [dia] (0–6, 1 = lunes) en el orden de su ruta. Sin
+  /// [dia], las de hoy. [fecha] es el día operativo de quien pregunta: si el día
+  /// pedido es el de hoy, cada tienda dice si ya se visitó.
+  Future<RutaDelVendedor> ruta(String id, {int? dia, String? fecha}) async =>
+      RutaDelVendedor.deJson(await _get('/v1/vendedores/$id/ruta', {
+        if (dia != null) 'dia': '$dia',
+        if (fecha != null) 'fecha': fecha,
+      }));
 
   Future<Map<String, Object?>> _get(String ruta, [Map<String, String>? parametros]) async {
     final r = parametros == null

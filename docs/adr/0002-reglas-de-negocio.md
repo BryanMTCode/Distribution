@@ -5574,3 +5574,29 @@ trae el Excel; luego agregaremos los otros datos mediante los vendedores».
 - Cada teléfono recibe las tiendas de su ruta en su siguiente sincronización, y
   «Hoy» le muestra las de ese día. Las coordenadas las captura el vendedor en la
   tienda. Solo servidor: no hace falta APK nuevo.
+
+## 121. La ruta de cada vendedor, día por día, en la app de la oficina
+
+**Decisión (octubre 2026).** «Quiero poder ver las rutas de cada vendedor de cada
+día en la app del administrador.»
+
+- En la app de la oficina, **Vendedores → un vendedor → «Su ruta»** (tercera
+  pestaña, junto a Movimientos y Su camión). Abre en el día de hoy.
+- Arriba, los días de **lunes a sábado con cuántas tiendas le tocan** cada uno
+  («Lun 45 · Mar 44 …»; el domingo solo si alguien lo trabaja). Tocar un día
+  muestra las suyas.
+- Las tiendas del día salen del **plan de visita** de sus rutas (las que tiene
+  de titular o en su alcance), en el **orden de su recorrido** (§120: el de la
+  hoja), con su código, su dirección y, si aplica, «solo la semana 1 y 3». Solo
+  las activas o por confirmar; ni las de mayoreo ni las dadas de baja.
+- Las que **no tienen ubicación** se marcan y se cuentan: las captura el
+  vendedor al llegar (§120).
+- **Si el día es hoy**, cada tienda dice si ya se visitó: con venta (y cuánto),
+  sin venta, o pendiente; arriba, «visitadas 2 (1 con venta), faltan 43». La que
+  se le reprogramó para hoy aparece al final, marcada.
+- Tocar una tienda abre su ficha de cliente.
+- Servidor: `GET /v1/vendedores/{id}/ruta?dia=0–6&fecha=` (1 = lunes, como
+  `extract(dow)`), con `ventas.ver_todas`. Con un servidor anterior la pestaña
+  dice que falta actualizarlo.
+
+(versionCode 38)

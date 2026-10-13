@@ -9,6 +9,8 @@
 ///   · Su ficha: TODO lo que hizo, en orden de hora —ventas, mermas,
 ///     visitas, cargas, cortes, su cuenta—, y su camión producto por producto.
 ///   · Cada venta se abre con lo que se le vendió a la tienda.
+///   · Su ruta de cada día (ADR 0002 §121): las tiendas que le tocan, en el orden
+///     de su recorrido, las que no tienen ubicación, y hoy, cuáles ya visitó.
 ///
 /// Las cifras salen de las mismas consultas que el dashboard: los dos dicen lo
 /// mismo. Lo que el vendedor hizo sin señal y no ha subido no está aquí, y la
@@ -23,6 +25,7 @@ import '../../estado/sesion.dart';
 import '../../estado/vendedores.dart';
 import '../canceladas.dart';
 import '../familias.dart';
+import 'clientes_oficina.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 
@@ -262,6 +265,10 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
   CamionDelVendedor? _camion;
   String? _error;
   String? _errorCamion;
+  // Su ruta: el día elegido (nulo = el de hoy, que decide el servidor).
+  int? _diaRuta;
+  RutaDelVendedor? _ruta;
+  String? _errorRuta;
 
   @override
   void initState() {
@@ -269,6 +276,7 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cargarMovimientos();
       _cargarCamion();
+      _cargarRuta();
     });
   }
 
@@ -313,9 +321,25 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
     }
   }
 
+  Future<void> _cargarRuta() async {
+    final cliente = ref.read(clienteVendedoresProvider);
+    if (cliente == null) return;
+    try {
+      final r = await cliente.ruta(widget.vendedorId, dia: _diaRuta, fecha: _hoy(ref));
+      if (!mounted) return;
+      setState(() {
+        _ruta = r;
+        _errorRuta = null;
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _errorRuta = explicarErrorDeOficina(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => DefaultTabController(
-        length: 2,
+        length: 3,
         child: Scaffold(
           key: const Key('pantalla_vendedor'),
           appBar: AppBar(
@@ -324,6 +348,7 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
               tabs: [
                 Tab(key: Key('pestana_movimientos'), text: 'Movimientos'),
                 Tab(key: Key('pestana_camion'), text: 'Su camión'),
+                Tab(key: Key('pestana_ruta'), text: 'Su ruta'),
               ],
             ),
           ),
@@ -331,6 +356,7 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
             children: [
               RefreshIndicator(onRefresh: _cargarMovimientos, child: _movimientos()),
               RefreshIndicator(onRefresh: _cargarCamion, child: _camionVista()),
+              RefreshIndicator(onRefresh: _cargarRuta, child: _rutaVista()),
             ],
           ),
         ),
@@ -542,6 +568,119 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
       ],
     );
   }
+
+  Widget _rutaVista() {
+    final r = _ruta;
+    final estilo = Theme.of(context).textTheme;
+    final colores = Theme.of(context).colorScheme;
+    return ListView(
+      key: const Key('lista_ruta'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (_errorRuta != null) _Error(texto: _errorRuta!, onReintentar: _cargarRuta),
+        if (r == null && _errorRuta == null)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (r != null) ...[
+          Text(
+            r.rutas.isEmpty ? 'Sin ruta asignada' : 'Ruta ${r.rutas.join(', ')}',
+            style: estilo.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          // Los días con cuántas tiendas le tocan: tocar uno muestra las suyas.
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final d in r.dias)
+                ChoiceChip(
+                  key: Key('dia_ruta_${d.dia}'),
+                  label: Text('${d.etiqueta} ${d.tiendas}'),
+                  selected: d.dia == r.dia,
+                  onSelected: (_) {
+                    setState(() => _diaRuta = d.dia);
+                    _cargarRuta();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(_resumenDeRuta(r), key: const Key('resumen_ruta'), style: estilo.titleSmall),
+          if (r.sinUbicacion > 0)
+            Text(
+              '${r.sinUbicacion} sin ubicación: el vendedor la captura al llegar a la tienda.',
+              key: const Key('sin_ubicacion_ruta'),
+              style: estilo.bodySmall,
+            ),
+          const SizedBox(height: 4),
+          if (r.tiendas.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text('No le toca ninguna tienda el ${_diaEnPalabras(r.dia)}.'),
+            ),
+          for (final t in r.tiendas)
+            ListTile(
+              key: Key('tienda_ruta_${t.codigo ?? t.id}'),
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                radius: 15,
+                child: Text(t.orden == null ? '·' : '${t.orden}', style: estilo.labelMedium),
+              ),
+              title: Text(t.nombre),
+              subtitle: Text(
+                [
+                  if (t.codigo != null) t.codigo!,
+                  if (t.direccion != null) t.direccion!,
+                  if (r.rutas.length > 1) t.ruta,
+                  if (t.semanas.isNotEmpty) 'solo la semana ${t.semanas.join(' y ')}',
+                  if (t.reprogramada) 'reprogramada para hoy',
+                  if (!t.conUbicacion) 'sin ubicación',
+                ].join(' · '),
+              ),
+              trailing: _visita(t, r.esHoy, colores),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PantallaFichaDeCliente(clienteId: t.id, nombre: t.nombre),
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// Lo que ya pasó hoy en la tienda; los demás días, nada.
+  Widget? _visita(TiendaDeRuta t, bool esHoy, ColorScheme colores) {
+    if (!esHoy) return const Icon(Icons.chevron_right);
+    return switch (t.visita) {
+      'venta' => Text(
+          t.importe == null ? 'vendió' : pesos(t.importe!),
+          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+        ),
+      'no_venta' => Text('sin venta', style: TextStyle(color: colores.error)),
+      _ => Text('pendiente', style: TextStyle(color: colores.outline)),
+    };
+  }
+}
+
+const _nombresDeDia = {
+  0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miércoles', 4: 'jueves', 5: 'viernes',
+  6: 'sábado',
+};
+
+String _diaEnPalabras(int dia) => _nombresDeDia[dia] ?? 'día $dia';
+
+/// «El lunes: 45 tiendas», y si es hoy, cuántas lleva visitadas.
+String _resumenDeRuta(RutaDelVendedor r) {
+  final cuantas = r.tiendas.length;
+  final base = '${r.esHoy ? 'Hoy, ${_diaEnPalabras(r.dia)}' : 'El ${_diaEnPalabras(r.dia)}'}: '
+      '$cuantas ${cuantas == 1 ? 'tienda' : 'tiendas'}';
+  if (!r.esHoy || cuantas == 0) return base;
+  final visitadas = r.tiendas.where((t) => t.visita != null).length;
+  final conVenta = r.tiendas.where((t) => t.visita == 'venta').length;
+  return '$base · visitadas $visitadas ($conVenta con venta), faltan ${cuantas - visitadas}';
 }
 
 String? _familiaDe(ExistenciaEnCamion e) => e.familia;

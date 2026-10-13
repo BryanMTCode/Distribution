@@ -336,6 +336,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+36",
             ),
             Punto(
+                "ruta_del_vendedor", "Su ruta de cada día",
+                "Pestaña Vendedores: abre uno → «Su ruta». Toca otro día (Lun…Sáb).",
+                "Abre en el día de hoy, con cuántas tiendas tiene cada día; las tiendas "
+                "en el orden de su recorrido, con código y dirección, y las que no tienen "
+                "ubicación marcadas. Hoy dice cuáles ya visitó (con venta o sin venta) y "
+                "cuántas le faltan. Tocar una tienda abre su ficha.",
+                desde="+38",
+            ),
+            Punto(
                 "clientes_oficina", "Clientes",
                 "Pestaña Clientes: busca uno y ábrelo.",
                 "Su ficha y lo que compra.",

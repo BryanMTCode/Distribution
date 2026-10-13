@@ -210,4 +210,47 @@ void main() {
     expect(r.vendidoMes.centavos, 9800050);
     expect(r.piezasEnBodegas, '4800.000');
   });
+
+  test('su ruta de un día: las tiendas en orden y lo de hoy (ADR 0002 §121)', () async {
+    final t = _Transporte(200, {
+      'vendedor': 'Juan Pérez', 'rutas': ['R1101'], 'dia': 1, 'fecha': '2026-10-12',
+      'es_hoy': true, 'sin_ubicacion': 1,
+      'dias': [
+        {'dia': 1, 'etiqueta': 'Lun', 'tiendas': 45},
+        {'dia': 2, 'etiqueta': 'Mar', 'tiendas': 44},
+      ],
+      'tiendas': [
+        {'id': 'c1', 'codigo': '100', 'nombre': 'PUESTO PLAYA SUR',
+         'direccion': 'EMBARCADERO DE LA PUNTILLA S/N, PLAYA SUR', 'ruta': 'R1101',
+         'orden': 1, 'con_ubicacion': false, 'semanas': <int>[], 'reprogramada': false,
+         'visita': 'venta', 'importe': '350.50'},
+        {'id': 'c2', 'codigo': '101', 'nombre': 'ESTANQUILLO EL FARO', 'direccion': null,
+         'ruta': 'R1101', 'orden': 2, 'con_ubicacion': true, 'semanas': [1, 3],
+         'reprogramada': false, 'visita': null, 'importe': null},
+      ],
+    });
+    final r = await ClienteVendedores(t).ruta('v1', dia: 1, fecha: '2026-10-12');
+    expect(t.pedidas.single.$1, '/v1/vendedores/v1/ruta');
+    expect(t.pedidas.single.$2, {'dia': '1', 'fecha': '2026-10-12'});
+    expect(r.rutas, ['R1101']);
+    expect(r.esHoy, isTrue);
+    expect(r.dias.map((d) => (d.etiqueta, d.tiendas)), [('Lun', 45), ('Mar', 44)]);
+    final [primera, segunda] = r.tiendas;
+    expect(primera.codigo, '100');
+    expect(primera.visita, 'venta');
+    expect(primera.importe!.centavos, 35050);
+    expect(primera.conUbicacion, isFalse);
+    expect(segunda.semanas, [1, 3]);
+    expect(segunda.importe, isNull);
+    expect(r.sinUbicacion, 1);
+  });
+
+  test('un servidor viejo no tiene la ruta: se dice que falta actualizarlo', () async {
+    final t = _Transporte(404, '{"detail":"Not Found"}');
+    expect(
+      () => ClienteVendedores(t).ruta('v1'),
+      throwsA(isA<ServidorSinEstaFuncion>()),
+    );
+    expect(t.pedidas.isEmpty, isFalse);
+  });
 }
