@@ -524,6 +524,10 @@ final verSoloHoyProvider = StateProvider<bool>((_) => true);
 /// (ADR 0002 §108).
 final otrasTiendasPlegadasProvider = StateProvider<bool>((_) => false);
 
+/// En «Todos», los días de «Mi ruta» que van plegados (ADR 0002 §123): la clave
+/// es el día (0–6, 1 = lunes) o «sin». Abiertos de entrada.
+final diasPlegadosProvider = StateProvider<Set<String>>((_) => const {});
+
 /// Lo que hay sin sincronizar. Alimenta el indicador que el vendedor ve
 /// siempre: un número de pendientes que crece es la señal de que algo va mal.
 final resumenColaProvider = Provider<ResumenCola>(

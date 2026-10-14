@@ -2,6 +2,11 @@
 ///
 /// Sale entera de SQLite: se ve igual con señal o sin ella. No hay estado
 /// "cargando del servidor" que deje al vendedor esperando frente al cliente.
+///
+/// Agrupada por día (ADR 0002 §123): en «Todos», cada día con su encabezado y
+/// sus tiendas en el orden del recorrido —el número de la hoja se repite cada
+/// día, así que sin agrupar se mezclaban—; en «Hoy», las demás de la ruta
+/// también por día.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -44,11 +49,36 @@ class PantallaClientes extends ConsumerWidget {
     // §108). «Todos» es la ruta entera en su orden.
     final otras = filtrando ? todos.where((c) => !c.tocaHoy).toList() : const <ClienteEnRuta>[];
     final otrasPlegadas = ref.watch(otrasTiendasPlegadasProvider);
+    // «Todos», con plan y sin buscar: por día (ADR 0002 §123).
+    final porDias = hayPlan && !soloHoy && !buscando;
+    final plegados = ref.watch(diasPlegadosProvider);
+    final hoy = ref.watch(relojProvider)().toLocal().weekday % 7;
     final renglones = <Object>[
       if (filtrando && deHoy.isEmpty) const _SinNadieHoy(),
-      ...(filtrando ? deHoy : todos),
+      if (!porDias) ...(filtrando ? deHoy : todos),
       if (otras.isNotEmpty) _EncabezadoDeOtras(otras.length, plegadas: otrasPlegadas),
-      if (otras.isNotEmpty && !otrasPlegadas) ...otras,
+      // Las demás, también por día; sin plegarse cada uno: ya se pliegan juntas.
+      if (otras.isNotEmpty && !otrasPlegadas)
+        for (final (dia, suyas) in _porDia(otras)) ...[
+          _EncabezadoDeDia(dia, suyas.length, clave: 'dia_otras', esHoy: false),
+          ...suyas,
+        ],
+      if (porDias)
+        for (final (dia, suyas) in _porDia(todos)) ...[
+          _EncabezadoDeDia(
+            dia,
+            suyas.length,
+            clave: 'dia_ruta',
+            esHoy: dia == hoy,
+            plegado: plegados.contains(_claveDeDia(dia)),
+            alTocar: () {
+              final ahora = {...ref.read(diasPlegadosProvider)};
+              if (!ahora.remove(_claveDeDia(dia))) ahora.add(_claveDeDia(dia));
+              ref.read(diasPlegadosProvider.notifier).state = ahora;
+            },
+          ),
+          if (!plegados.contains(_claveDeDia(dia))) ...suyas,
+        ],
     ];
 
     final cola = ref.watch(resumenColaProvider);
@@ -251,6 +281,7 @@ class PantallaClientes extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) => switch (renglones[i]) {
                       final _SinNadieHoy aviso => aviso,
+                      final _EncabezadoDeDia encabezado => encabezado,
                       _EncabezadoDeOtras(:final cuantas, :final plegadas) => _EncabezadoDeOtras(
                           cuantas,
                           plegadas: plegadas,
@@ -399,6 +430,92 @@ class _SinNadieHoy extends StatelessWidget {
         padding: EdgeInsets.all(16),
         child: Text('Hoy no te toca nadie según el plan. Abajo están las demás de tu ruta.'),
       );
+}
+
+/// Los días como se trabajan, con el número de la base (`extract(dow)`, 0
+/// domingo); al final, las que no tienen día.
+const _ordenDeDias = [1, 2, 3, 4, 5, 6, 0];
+const _nombreDeDia = {
+  1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado',
+  0: 'Domingo',
+};
+
+String _claveDeDia(int? dia) => dia == null ? 'sin' : '$dia';
+
+/// Las tiendas por día de su plan, en el orden en que llegan (el del
+/// recorrido). La que toca dos días sale en los dos.
+List<(int?, List<ClienteEnRuta>)> _porDia(List<ClienteEnRuta> clientes) {
+  final grupos = <int?, List<ClienteEnRuta>>{};
+  for (final c in clientes) {
+    final dias = <int?>{for (final d in c.plan) d.dia};
+    for (final d in dias.isEmpty ? const <int?>{null} : dias) {
+      grupos.putIfAbsent(d, () => []).add(c);
+    }
+  }
+  return [
+    for (final d in [..._ordenDeDias, null])
+      if (grupos[d] != null) (d, grupos[d]!),
+  ];
+}
+
+/// El encabezado de un día: «Lunes · 45». En «Todos» se toca para plegarlo.
+class _EncabezadoDeDia extends StatelessWidget {
+  const _EncabezadoDeDia(
+    this.dia,
+    this.cuantas, {
+    required this.clave,
+    required this.esHoy,
+    this.plegado = false,
+    this.alTocar,
+  });
+
+  final int? dia;
+  final int cuantas;
+  final String clave;
+  final bool esHoy;
+  final bool plegado;
+  final VoidCallback? alTocar;
+
+  @override
+  Widget build(BuildContext context) {
+    final estilo = Theme.of(context).textTheme;
+    return Material(
+      key: Key('${clave}_${_claveDeDia(dia)}'),
+      color: alTocar == null
+          ? Theme.of(context).colorScheme.surface
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: alTocar,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(alTocar == null ? 16 : 12, 8, 12, 8),
+          child: Row(
+            children: [
+              if (alTocar != null) ...[
+                Icon(plegado ? Icons.chevron_right : Icons.expand_more),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(
+                  '${dia == null ? 'Sin día de visita' : _nombreDeDia[dia]} · $cuantas',
+                  style: alTocar == null
+                      ? estilo.titleSmall
+                      : const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (esHoy)
+                Text(
+                  'hoy',
+                  style: estilo.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// El encabezado de las tiendas que hoy no tocan: se toca para plegarlas.

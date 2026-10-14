@@ -5630,3 +5630,23 @@ pertenecen, no todas en general, y que se pueda filtrar por eso.»
   `agrupar` contesta como antes, así que una app anterior sigue viendo su lista.
 
 (versionCode 39)
+
+## 123. «Mi ruta» del vendedor, agrupada por día
+
+**Decisión (octubre 2026).** «Que en la app del vendedor también salgan agrupadas
+por día.»
+
+- **«Todos»** ya no es una sola lista: cada día de su plan tiene su encabezado
+  —«Lunes · 45», el de hoy marcado «hoy»— con sus tiendas en el orden del
+  recorrido, y al final «Sin día de visita». Hacía falta: el número de la hoja se
+  repite cada día (§120), así que sin agrupar salían todas las primeras, luego
+  todas las segundas… La que toca dos días sale en los dos. Tocar el encabezado
+  pliega o abre ese día; todos abren abiertos.
+- **«Hoy»** sigue igual arriba —las que tocan hoy—, y «Las demás de tu ruta», que
+  se pliegan juntas, ahora vienen también por día.
+- Al buscar, la lista sigue siendo una sola: lo que se busca puede ser de
+  cualquier día.
+- Sale del plan que el teléfono ya tiene (`plan_visita` de cada cliente): no
+  necesita servidor nuevo ni señal.
+
+(versionCode 40)

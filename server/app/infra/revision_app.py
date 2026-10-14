@@ -107,9 +107,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "hoy_y_las_demas", "«Hoy» y las demás tiendas de la ruta",
                 "Abre la lista en «Hoy».",
                 "Arriba, las tiendas que tocan hoy según el plan. Abajo, «Las demás de tu "
-                "ruta · N», que se pliegan y despliegan con un toque. «Todos» muestra la "
-                "ruta entera, sin ese encabezado.",
+                "ruta · N», agrupadas por día, que se pliegan y despliegan con un toque.",
                 desde="+34",
+            ),
+            Punto(
+                "ruta_por_dia", "Mi ruta, agrupada por día",
+                "Toca «Todos»; luego toca el encabezado de un día.",
+                "Cada día con su encabezado («Lunes · 45»), el de hoy marcado «hoy», y sus "
+                "tiendas en el orden del recorrido; la que toca dos días sale en los dos. "
+                "Tocar el encabezado pliega o abre ese día.",
+                desde="+40",
             ),
             Punto(
                 "buscar_tienda", "Buscar una tienda",

@@ -137,12 +137,59 @@ void main() {
     expect(find.text('Toca el lunes'), findsNothing);
     expect(find.text('Toca el jueves'), findsOneWidget);
 
-    // «Todos» es la ruta entera, en su orden, sin encabezado.
+    // «Todos» es la ruta entera, por día (ADR 0002 §123), sin el encabezado de
+    // «las demás».
     await tester.tap(find.text('Todos'));
     await tester.pumpAndSettle();
     expect(find.text('Toca el lunes'), findsOneWidget);
     expect(find.text('Sin plan'), findsOneWidget);
     expect(find.byKey(const Key('otras_de_la_ruta')), findsNothing);
+  });
+
+  testWidgets('las tiendas van agrupadas por día (ADR 0002 §123)', (tester) async {
+    await entrar(tester, (base) {
+      // El número de la hoja se repite cada día: sin agrupar se mezclaban.
+      sembrarCliente(base, id: 'l1', nombre: 'Lunes primera', secuencia: 1);
+      sembrarCliente(base, id: 'l2', nombre: 'Lunes segunda', secuencia: 2);
+      sembrarCliente(base, id: 'm1', nombre: 'Martes primera', secuencia: 1);
+      sembrarCliente(base, id: 'j1', nombre: 'Jueves primera', secuencia: 1);
+      sembrarCliente(base, id: 'lj', nombre: 'Lunes y jueves', secuencia: 3);
+      sembrarCliente(base, id: 's0', nombre: 'Sin día', secuencia: 9);
+      conPlan(base, 'l1', '[{"dia":1,"semana":null}]');
+      conPlan(base, 'l2', '[{"dia":1,"semana":null}]');
+      conPlan(base, 'm1', '[{"dia":2,"semana":null}]');
+      conPlan(base, 'j1', '[{"dia":4,"semana":null}]');
+      conPlan(base, 'lj', '[{"dia":1,"semana":null},{"dia":4,"semana":null}]');
+    });
+
+    // «Hoy» (jueves): las suyas arriba, y las demás de la ruta por día.
+    expect(find.text('Hoy · 2'), findsOneWidget);
+    expect(find.byKey(const Key('dia_otras_1')), findsOneWidget);
+    expect(find.text('Lunes · 2'), findsOneWidget);
+    expect(find.byKey(const Key('dia_otras_2')), findsOneWidget);
+    expect(find.byKey(const Key('dia_otras_sin')), findsOneWidget);
+
+    await tester.tap(find.text('Todos'));
+    await tester.pumpAndSettle();
+    // Cada día con su cuenta, en orden; el de hoy marcado; la que toca dos días,
+    // en los dos.
+    double y(String texto) => tester.getTopLeft(find.text(texto).first).dy;
+    expect(find.text('Lunes · 3'), findsOneWidget);
+    expect(find.text('Jueves · 2'), findsOneWidget);
+    expect(find.text('hoy'), findsOneWidget);
+    expect(y('Lunes · 3') < y('Lunes primera'), isTrue);
+    expect(y('Lunes primera') < y('Lunes segunda'), isTrue);
+    expect(y('Lunes segunda') < y('Martes · 1'), isTrue);
+    expect(y('Martes · 1') < y('Martes primera'), isTrue);
+    expect(find.text('Lunes y jueves'), findsNWidgets(2));
+    expect(find.text('Sin día de visita · 1'), findsOneWidget);
+
+    // Un día se pliega con un toque, y los demás se quedan.
+    await tester.tap(find.byKey(const Key('dia_ruta_1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Lunes primera'), findsNothing);
+    expect(find.text('Lunes y jueves'), findsOneWidget);
+    expect(find.text('Martes primera'), findsOneWidget);
   });
 
   testWidgets('al buscar se busca en todos, toque o no hoy', (tester) async {
