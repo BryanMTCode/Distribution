@@ -188,20 +188,7 @@ class _ServidorDeOficina implements Transporte {
           'piezas_en_camiones': '960.000', 'existencias_negativas': 0,
           'vendido_mes': '98000.00', 'vendido_anio': '980000.00',
         },
-      '/v1/oficina/clientes' => {
-          'filtro': parametros?['filtro'] ?? 'todos',
-          'recortado': false,
-          'conteos': {'todos': 2, 'prospectos': 0, 'sin_ubicacion': 1},
-          'clientes': [
-            if (parametros?['filtro'] != 'sin_ubicacion')
-              {'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'Ruta 4',
-               'estatus': 'activo', 'telefono': null, 'con_ubicacion': true,
-               'ultima_compra': '2026-09-24'},
-            {'id': 'cl2', 'codigo': 'CLI-2', 'nombre': 'Sin Pin', 'ruta': 'Ruta 4',
-             'estatus': 'activo', 'telefono': null, 'con_ubicacion': false,
-             'ultima_compra': null},
-          ],
-        },
+      '/v1/oficina/clientes' => _listaDeClientes(parametros),
       '/v1/oficina/clientes/cl1' => _fichaCliente(),
       '/v1/cortes' => {
           'por_cortar': [
@@ -280,6 +267,46 @@ class _ServidorDeOficina implements Transporte {
     }
     return const RespuestaHttp(405, '{}');
   }
+}
+
+/// Como el servidor +39 (ADR 0002 §122): sin ruta, día ni búsqueda, solo las
+/// rutas con sus tiendas de cada día; con ellos, esas tiendas en su orden.
+Map<String, Object?> _listaDeClientes(Map<String, String>? p) {
+  final filtro = p?['filtro'] ?? 'todos';
+  final ruta = p?['ruta'] ?? '';
+  final dia = p?['dia'] ?? '';
+  final listado = ruta.isNotEmpty || dia.isNotEmpty || (p?['q'] ?? '').isNotEmpty;
+  final todos = [
+    {'id': 'cl1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'ruta': 'Ruta 4',
+     'estatus': 'activo', 'telefono': null, 'con_ubicacion': true,
+     'ultima_compra': '2026-09-24', 'ruta_id': 'r4', 'ruta_codigo': 'R04', 'dias': [1],
+     'orden': 1},
+    {'id': 'cl2', 'codigo': 'CLI-2', 'nombre': 'Sin Pin', 'ruta': 'Ruta 4',
+     'estatus': 'activo', 'telefono': null, 'con_ubicacion': false, 'ultima_compra': null,
+     'ruta_id': 'r4', 'ruta_codigo': 'R04', 'dias': [1, 4], 'orden': 2},
+    {'id': 'cl3', 'codigo': 'CLI-3', 'nombre': 'La Pasadita', 'ruta': 'Ruta 9',
+     'estatus': 'activo', 'telefono': null, 'con_ubicacion': true, 'ultima_compra': null,
+     'ruta_id': 'r9', 'ruta_codigo': 'R09', 'dias': [2], 'orden': 1},
+  ];
+  return {
+    'filtro': filtro, 'recortado': false, 'ruta': ruta, 'dia': dia, 'listado': listado,
+    'conteos': {'todos': 3, 'prospectos': 0, 'sin_ubicacion': 1},
+    'rutas': [
+      {'clave': 'r4', 'codigo': 'R04', 'nombre': 'Ruta 4', 'vendedor': 'Juan Pérez',
+       'total': 2,
+       'por_dia': [{'dia': 1, 'tiendas': 2}, {'dia': 4, 'tiendas': 1}]},
+      {'clave': 'r9', 'codigo': 'R09', 'nombre': 'Ruta 9', 'vendedor': null, 'total': 1,
+       'por_dia': [{'dia': 2, 'tiendas': 1}]},
+    ],
+    'clientes': [
+      if (listado)
+        for (final c in todos)
+          if ((ruta.isEmpty || c['ruta_id'] == ruta) &&
+              (dia.isEmpty || (c['dias']! as List).contains(int.parse(dia))) &&
+              (filtro != 'sin_ubicacion' || c['con_ubicacion'] == false))
+            c,
+    ],
+  };
 }
 
 class _Gerencia extends ControladorSesion {
@@ -594,14 +621,64 @@ void main() {
   });
 
   group('clientes', () {
+    testWidgets('abre con las rutas y sus días; una ruta trae sus tiendas por día (§122)',
+        (tester) async {
+      final servidor = await _montar(tester);
+      // En el ancho del teléfono de la empresa (Hyundai HYLine Pro, 360).
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.tap(find.byKey(const Key('nav_clientes')));
+      await tester.pumpAndSettle();
+
+      // No todas en general: las rutas, con sus tiendas de cada día.
+      expect(servidor.pedidas.last.$2, {'filtro': 'todos', 'agrupar': '1'});
+      expect(find.byKey(const Key('resumen_ruta_R04')), findsOneWidget);
+      expect(textoQueContiene('Juan Pérez · 2 tiendas'), findsOneWidget);
+      expect(textoQueContiene('Lun 2 · Jue 1'), findsOneWidget);
+      expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('resumen_ruta_R04')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$2, {'filtro': 'todos', 'ruta': 'r4', 'agrupar': '1'});
+      expect(find.byKey(const Key('grupo_ruta_R04')), findsOneWidget);
+      expect(find.text('Lunes · 2 tiendas'), findsOneWidget);
+      expect(find.text('Jueves · 1 tienda'), findsOneWidget);
+      // La que toca dos días sale en los dos.
+      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsNWidgets(2));
+      expect(find.byKey(const Key('cliente_oficina_CLI-3')), findsNothing);
+
+      // Los días con su cuenta, de la ruta elegida.
+      expect(find.text('Lun 2'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('dia_cliente_4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dia_cliente_4')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$2,
+          {'filtro': 'todos', 'ruta': 'r4', 'dia': '4', 'agrupar': '1'});
+      expect(find.text('Lunes · 2 tiendas'), findsNothing);
+      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsOneWidget);
+
+      // Todas las rutas, el martes.
+      await tester.ensureVisible(find.byKey(const Key('ruta_cliente_todas')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ruta_cliente_todas')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('dia_cliente_2')));
+      await tester.tap(find.byKey(const Key('dia_cliente_2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('grupo_ruta_R09')), findsOneWidget);
+      expect(find.byKey(const Key('cliente_oficina_CLI-3')), findsOneWidget);
+    });
+
     testWidgets('la lista no habla de deudas, y filtra los que no tienen ubicación',
         (tester) async {
       final servidor = await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_clientes')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resumen_ruta_R04')));
+      await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsOneWidget);
-      expect(textoQueContiene('nunca ha comprado'), findsOneWidget);
+      expect(textoQueContiene('nunca ha comprado'), findsWidgets);
       expect(textoQueContiene('Debe'), findsNothing);
       expect(find.byKey(const Key('filtro_cliente_vencidos')), findsNothing);
 
@@ -609,14 +686,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('filtro_cliente_sin_ubicacion')));
       await tester.pumpAndSettle();
-      expect(servidor.pedidas.last.$2, {'filtro': 'sin_ubicacion'});
+      expect(servidor.pedidas.last.$2, {'filtro': 'sin_ubicacion', 'ruta': 'r4', 'agrupar': '1'});
       expect(find.byKey(const Key('cliente_oficina_CLI-1')), findsNothing);
-      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsOneWidget);
+      expect(find.byKey(const Key('cliente_oficina_CLI-2')), findsWidgets);
     });
 
     testWidgets('su ficha: ubicación y compras con su forma de pago', (tester) async {
       await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_clientes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resumen_ruta_R04')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('cliente_oficina_CLI-1')));
       await tester.pumpAndSettle();

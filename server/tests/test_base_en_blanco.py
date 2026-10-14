@@ -91,6 +91,10 @@ async def test_se_va_la_operacion_y_se_quedan_los_usuarios(sesion, semilla):
     assert resultado.borrado["ventas"] == 1
     assert resultado.articulos == 32
     assert resultado.entrada == "EN-000001"
+    # La siguiente tienda nueva lleva el 1934: del 100 al 1933 son las de los Excel
+    # de rutas, que se cargan después (ADR 0002 §122).
+    siguiente = await sesion.execute(text("SELECT nextval('seq_codigo_cliente')"))
+    assert siguiente.scalar_one() == 1934
     assert resultado.piezas == Decimal("10561")
 
     for tabla in ("ventas", "cargas", "clientes", "cortes_vendedor", "liquidaciones",

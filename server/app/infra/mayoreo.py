@@ -27,6 +27,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import text
 
+from app.infra.codigo_de_cliente import siguiente_codigo
+
 PERMISO = "mayoreo.vender"
 FORMAS_DE_PAGO = ("efectivo", "transferencia")
 RENGLONES_MAXIMOS = 200
@@ -106,8 +108,12 @@ async def alta_de_cliente(
     ).first()
     if ya is not None:
         raise MayoreoInvalido(f"Ya hay un cliente de mayoreo «{limpio}».")
-    consecutivo = (await sesion.execute(text("SELECT nextval('seq_codigo_cliente')"))).scalar_one()
-    nuevo = {"id": uuid.uuid4(), "codigo": f"C{consecutivo:05d}", "nombre_comercial": limpio}
+    # El número que sigue, como cualquier tienda nueva (ADR 0002 §122).
+    nuevo = {
+        "id": uuid.uuid4(),
+        "codigo": await siguiente_codigo(sesion),
+        "nombre_comercial": limpio,
+    }
     await sesion.execute(
         text(
             """

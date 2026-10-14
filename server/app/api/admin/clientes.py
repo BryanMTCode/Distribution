@@ -48,6 +48,7 @@ from app.api.admin.comun import (
 )
 from app.api.admin.plan_visita import DIAS, plan_de, reemplazar_plan
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.codigo_de_cliente import siguiente_codigo
 from app.infra.ubicacion_cliente import UbicacionInvalida, fijar_ubicacion, leer_coordenadas
 
 router = APIRouter(prefix="/panel/clientes", tags=["panel"], include_in_schema=False)
@@ -64,68 +65,39 @@ ESTATUS = ["prospecto", "activo", "inactivo"]
 # ---------------------------------------------------------------------------
 
 
+# Los días como se trabajan, con el número de la base (`extract(dow)`, 0 domingo).
+NOMBRE_DEL_DIA = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves", 5: "Viernes",
+                  6: "Sábado", 0: "Domingo"}
+ORDEN_DE_DIAS = (1, 2, 3, 4, 5, 6, 0)
+# Más renglones ya no se leen en una pantalla: para eso están la ruta y el día.
+LIMITE_LISTA = 1000
+
+
 @router.get("", response_class=HTMLResponse)
 async def listar(
     peticion: Request,
     actor: ActorWeb,
     sesion: SesionDep,
     q: str = "",
-    filtro: str = "pendientes",
+    filtro: str = "",
+    ruta: str = "",
+    dia: str = "",
     guardado: str = "",
 ) -> HTMLResponse:
-    """Los clientes, con los prospectos de campo primero.
+    """Los clientes, agrupados por su ruta y su día de visita (ADR 0002 §122).
 
-    `filtro=pendientes` es la vista por omisión a propósito: son los que están
-    esperando una decisión de la oficina. Abrir en "todos" escondería el trabajo
-    pendiente entre trescientos clientes que ya están resueltos.
+    «En el dashboard, que las tiendas estén agrupadas por el día y la ruta a la
+    que pertenecen, no todas en general, y que se pueda filtrar por eso.»
+
+    · **Por confirmar** (los prospectos de campo y lo que pide revisión) es una
+      lista corta y va primero: abre ahí si hay alguno, porque es lo que espera
+      una decisión de la oficina.
+    · **Todos** abre con la tabla de rutas por día —cuántas tiendas le tocan a
+      cada ruta cada día—, y cada cifra lleva a esas tiendas. Con una ruta o un
+      día elegidos, las tiendas salen agrupadas por ruta y, en cada ruta, por
+      día, en el orden de su recorrido. **Inactivos** se agrupa igual, de una vez.
     """
     actor.exigir("clientes.ver")
-
-    if filtro not in ("pendientes", "todos", "inactivos"):
-        filtro = "pendientes"
-
-    condiciones: list[str] = []
-    parametros: dict[str, object] = {}
-
-    if filtro == "pendientes":
-        condiciones.append("(c.estatus = 'prospecto' OR c.requiere_revision)")
-    elif filtro == "inactivos":
-        condiciones.append("c.estatus IN ('inactivo', 'baja')")
-    else:
-        # `baja` es lo que deja «Eliminar» cuando el cliente tiene historia: para
-        # quien usa el panel, eliminado. No se lista entre los activos.
-        condiciones.append("c.estatus NOT IN ('inactivo', 'baja')")
-
-    busqueda = q.strip()
-    if busqueda:
-        condiciones.append(
-            "(c.nombre_comercial ILIKE :q OR c.codigo ILIKE :q OR c.telefono ILIKE :q)"
-        )
-        parametros["q"] = f"%{busqueda}%"
-
-    filas = (
-        await sesion.execute(
-            text(
-                f"""
-                SELECT c.id, c.codigo, c.nombre_comercial, c.estatus,
-                       c.origen_alta, c.requiere_revision, c.revision_motivo,
-                       c.colonia, c.municipio, c.telefono, c.creado_en,
-                       (c.lat IS NOT NULL AND c.lng IS NOT NULL) AS con_ubicacion,
-                       r.nombre AS ruta, r.codigo AS ruta_codigo,
-                       l.nombre AS lista_precios
-                  FROM clientes c
-                  LEFT JOIN rutas r ON r.id = c.ruta_id
-                  LEFT JOIN listas_precios l ON l.id = c.lista_precios_id
-                 WHERE {" AND ".join(condiciones)}
-                 ORDER BY (c.estatus = 'prospecto') DESC,
-                          c.requiere_revision DESC,
-                          c.creado_en DESC
-                 LIMIT 300
-                """  # noqa: S608 — las condiciones son constantes del código
-            ),
-            parametros,
-        )
-    ).mappings().all()
 
     conteos = (
         await sesion.execute(
@@ -141,13 +113,116 @@ async def listar(
         )
     ).mappings().one()
 
+    if filtro not in ("pendientes", "todos", "inactivos"):
+        filtro = "pendientes" if conteos["pendientes"] and not (ruta or dia) else "todos"
+
+    condiciones: list[str] = []
+    parametros: dict[str, object] = {}
+    if filtro == "pendientes":
+        condiciones.append("(c.estatus = 'prospecto' OR c.requiere_revision)")
+    elif filtro == "inactivos":
+        condiciones.append("c.estatus IN ('inactivo', 'baja')")
+    else:
+        # `baja` es lo que deja «Eliminar» cuando el cliente tiene historia: para
+        # quien usa el panel, eliminado. No se lista entre los activos.
+        condiciones.append("c.estatus NOT IN ('inactivo', 'baja')")
+    del_estado = list(condiciones)
+
+    ruta_elegida = None
+    if ruta == "sin":
+        condiciones.append("c.ruta_id IS NULL")
+    elif ruta:
+        try:
+            ruta_elegida = uuid.UUID(ruta)
+        except ValueError:
+            ruta = ""
+        else:
+            condiciones.append("c.ruta_id = :ruta")
+            parametros["ruta"] = ruta_elegida
+
+    dia_elegido = None
+    if dia == "sin":
+        condiciones.append(
+            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f WHERE f.cliente_id = c.id)"
+        )
+    elif dia.isdigit() and int(dia) in NOMBRE_DEL_DIA:
+        dia_elegido = int(dia)
+        condiciones.append(
+            "EXISTS (SELECT 1 FROM clientes_frecuencia f "
+            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia)"
+        )
+        parametros["dia"] = dia_elegido
+    else:
+        dia = ""
+
+    busqueda = q.strip()
+    if busqueda:
+        condiciones.append(
+            "(c.nombre_comercial ILIKE :q OR c.codigo ILIKE :q OR c.telefono ILIKE :q)"
+        )
+        parametros["q"] = f"%{busqueda}%"
+
+    # La tabla de rutas por día: la vista general, sin listar 1,800 tiendas.
+    matriz = None
+    if filtro == "todos":
+        matriz = await rutas_por_dia(sesion, " AND ".join(del_estado))
+
+    # Sin ruta, día ni búsqueda, «Todos» se queda en la tabla: no todas en general.
+    # Las por confirmar y las inactivas son pocas: se listan de una vez.
+    listar_tiendas = filtro != "todos" or bool(ruta or dia or busqueda)
+    filas = []
+    recortada = False
+    if listar_tiendas:
+        filas = [
+            dict(f)
+            for f in (
+                await sesion.execute(
+                    text(
+                        f"""
+                        SELECT c.id, c.codigo, c.nombre_comercial, c.estatus,
+                               c.origen_alta, c.requiere_revision, c.revision_motivo,
+                               c.calle, c.numero, c.colonia, c.municipio, c.telefono,
+                               c.creado_en, c.secuencia, c.ruta_id,
+                               (c.lat IS NOT NULL AND c.lng IS NOT NULL) AS con_ubicacion,
+                               r.nombre AS ruta, r.codigo AS ruta_codigo,
+                               u.nombre AS vendedor, l.nombre AS lista_precios,
+                               COALESCE((SELECT array_agg(DISTINCT f.dia_semana)
+                                           FROM clientes_frecuencia f
+                                          WHERE f.cliente_id = c.id), '{{}}') AS dias
+                          FROM clientes c
+                          LEFT JOIN rutas r ON r.id = c.ruta_id
+                          LEFT JOIN usuarios u ON u.id = r.vendedor_id
+                          LEFT JOIN listas_precios l ON l.id = c.lista_precios_id
+                         WHERE {" AND ".join(condiciones)}
+                         ORDER BY (c.estatus = 'prospecto') DESC, r.codigo NULLS LAST,
+                                  c.secuencia NULLS LAST, c.nombre_comercial
+                         LIMIT {LIMITE_LISTA + 1}
+                        """  # noqa: S608 — las condiciones son constantes del código
+                    ),
+                    parametros,
+                )
+            ).mappings().all()
+        ]
+        recortada = len(filas) > LIMITE_LISTA
+        filas = filas[:LIMITE_LISTA]
+
     return render(
         peticion,
         "clientes.html",
         {
             "filas": filas,
+            "grupos": _agrupar(filas, dia_elegido, solo_sin_dia=dia == "sin")
+            if filtro != "pendientes" else [],
+            "recortada": recortada,
+            "limite": LIMITE_LISTA,
+            "matriz": matriz,
             "q": busqueda,
             "filtro": filtro,
+            "ruta": ruta,
+            "dia": dia,
+            "rutas": await _rutas(sesion),
+            "dias": [(d, NOMBRE_DEL_DIA[d]) for d in ORDEN_DE_DIAS],
+            "nombre_del_dia": NOMBRE_DEL_DIA,
             "conteos": conteos,
             "guardado": guardado,
             "puede_editar": actor.puede(PERMISO),
@@ -155,6 +230,111 @@ async def listar(
         actor=actor,
         seccion="Clientes",
     )
+
+
+async def rutas_por_dia(sesion, del_estado: str) -> dict:
+    """Cuántas tiendas le tocan a cada ruta cada día, y las que no tienen día."""
+    celdas = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT c.ruta_id, f.dia_semana, count(DISTINCT c.id) AS tiendas
+                  FROM clientes c
+                  LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
+                 WHERE {del_estado}
+                 GROUP BY c.ruta_id, f.dia_semana
+                """  # noqa: S608 — la condición es una constante del código
+            )
+        )
+    ).mappings().all()
+    totales = dict(
+        (
+            await sesion.execute(
+                text(
+                    f"SELECT c.ruta_id, count(*) FROM clientes c WHERE {del_estado} "  # noqa: S608
+                    " GROUP BY c.ruta_id"
+                )
+            )
+        ).all()
+    )
+    rutas = {
+        r["id"]: r
+        for r in (
+            await sesion.execute(
+                text(
+                    "SELECT r.id, r.codigo, r.nombre, r.activo, u.nombre AS vendedor "
+                    "  FROM rutas r LEFT JOIN usuarios u ON u.id = r.vendedor_id"
+                )
+            )
+        ).mappings().all()
+    }
+    por_ruta: dict = {}
+    for c in celdas:
+        por_ruta.setdefault(c["ruta_id"], {})[c["dia_semana"]] = c["tiendas"]
+    renglones = []
+    for ruta_id in sorted(
+        por_ruta, key=lambda r: (r is None, rutas[r]["codigo"] if r in rutas else "")
+    ):
+        r = rutas.get(ruta_id)
+        renglones.append({
+            "clave": str(ruta_id) if ruta_id else "sin",
+            "codigo": r["codigo"] if r else None,
+            "nombre": r["nombre"] if r else "Sin ruta",
+            "vendedor": r["vendedor"] if r else None,
+            "activa": r["activo"] if r else True,
+            "por_dia": por_ruta[ruta_id],
+            "total": totales.get(ruta_id, 0),
+        })
+    con_domingo = any(r["por_dia"].get(0) for r in renglones)
+    return {
+        "renglones": renglones,
+        "dias": [d for d in ORDEN_DE_DIAS if d != 0 or con_domingo],
+        "total": sum(totales.values()),
+        "por_dia": {
+            d: sum(r["por_dia"].get(d, 0) for r in renglones) for d in ORDEN_DE_DIAS
+        },
+        "sin_dia": sum(r["por_dia"].get(None, 0) for r in renglones),
+    }
+
+
+def _agrupar(filas: list[dict], dia: int | None, *, solo_sin_dia: bool) -> list[dict]:
+    """Ruta → día → tiendas en el orden del recorrido. Una tienda que toca dos
+    días sale en los dos, y dice cuál es el otro."""
+    grupos: dict = {}
+    for f in filas:
+        dias = sorted(f["dias"], key=ORDEN_DE_DIAS.index) or [None]
+        for d in dias:
+            if (dia is not None and d != dia) or (solo_sin_dia and d is not None):
+                continue
+            ruta = grupos.setdefault(f["ruta_id"], {
+                "clave": str(f["ruta_id"]) if f["ruta_id"] else "sin",
+                "codigo": f["ruta_codigo"],
+                "nombre": f["ruta"] or "Sin ruta",
+                "vendedor": f["vendedor"],
+                "dias": {},
+                "tiendas": set(),
+            })
+            ruta["tiendas"].add(f["id"])
+            ruta["dias"].setdefault(d, []).append(
+                {**f, "otros_dias": [NOMBRE_DEL_DIA[o][:3] for o in dias if o not in (d, None)]}
+            )
+    resultado = []
+    for ruta in sorted(grupos.values(), key=lambda g: (g["codigo"] is None, g["codigo"] or "")):
+        resultado.append({
+            **ruta,
+            "tiendas": len(ruta["tiendas"]),
+            "dias": [
+                {
+                    "dia": d,
+                    "titulo": NOMBRE_DEL_DIA[d] if d is not None else "Sin día de visita",
+                    "filas": ruta["dias"][d],
+                    "sin_ubicacion": sum(1 for f in ruta["dias"][d] if not f["con_ubicacion"]),
+                }
+                for d in [*ORDEN_DE_DIAS, None]
+                if d in ruta["dias"]
+            ],
+        })
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -248,9 +428,10 @@ async def confirmar(
 
     Tres cosas, en una transacción:
 
-    1. **El código.** Sale de `seq_codigo_cliente` (migración 0014), no de
-       `max()+1`: dos personas confirmando al mismo tiempo obtendrían el mismo
-       número y una vería un error de UNIQUE que no significa nada para ella.
+    1. **El código.** El número que sigue —1934, 1935… (ADR 0002 §122)—, de
+       `seq_codigo_cliente` (migración 0014) y no de `max()+1`: dos personas
+       confirmando al mismo tiempo obtendrían el mismo número y una vería un
+       error de UNIQUE que no significa nada para ella.
     2. **La lista de precios.** Sin lista, cada venta a este cliente entra marcada
        `sin_lista_de_precios`. Es el motivo de revisión más fácil de evitar y el
        que más ruido hace si se deja pasar.
@@ -284,10 +465,8 @@ async def confirmar(
     # que la ruta ya conoce por ese número.
     codigo = cliente["codigo"]
     if not codigo:
-        consecutivo = (
-            await sesion.execute(text("SELECT nextval('seq_codigo_cliente')"))
-        ).scalar_one()
-        codigo = f"C{consecutivo:05d}"
+        # El número que sigue: 1934, 1935… (ADR 0002 §122).
+        codigo = await siguiente_codigo(sesion)
 
     await sesion.execute(
         text(

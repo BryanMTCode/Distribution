@@ -659,8 +659,10 @@ async def test_el_panel_no_sale_en_blanco_con_rls(cliente_rls, sesion, dos_rutas
 
     pantalla = await cliente_rls.get("/panel/clientes?filtro=todos")
     assert pantalla.status_code == 200
-    texto = solo_texto(pantalla)
-    # Los dos clientes, de las dos rutas: el admin ve la operación completa.
+    # La tabla de rutas por día (ADR 0002 §122) cuenta las dos rutas.
+    assert 'id="ruta_R04"' in pantalla.text and 'id="ruta_R99"' in pantalla.text
+    # Y buscándolos, los dos clientes: el admin ve la operación completa.
+    texto = solo_texto(await cliente_rls.get("/panel/clientes?filtro=todos&q=Cliente"))
     assert "Cliente de la ruta_a" in texto, texto[-400:]
     assert "Cliente de la ruta_b" in texto
 

@@ -30,6 +30,10 @@ class ClienteDeOficina {
     required this.telefono,
     required this.conUbicacion,
     required this.ultimaCompra,
+    this.rutaId,
+    this.rutaCodigo,
+    this.dias = const [],
+    this.orden,
   });
 
   factory ClienteDeOficina.deJson(Map<String, Object?> j) => ClienteDeOficina(
@@ -41,6 +45,10 @@ class ClienteDeOficina {
         telefono: j['telefono'] as String?,
         conUbicacion: j['con_ubicacion']! as bool,
         ultimaCompra: j['ultima_compra'] as String?,
+        rutaId: j['ruta_id'] as String?,
+        rutaCodigo: j['ruta_codigo'] as String?,
+        dias: [for (final d in (j['dias'] ?? const <Object?>[]) as List) (d! as num).toInt()],
+        orden: (j['orden'] as num?)?.toInt(),
       );
 
   final String id;
@@ -55,6 +63,63 @@ class ClienteDeOficina {
 
   /// `YYYY-MM-DD`, o nulo si nunca ha comprado.
   final String? ultimaCompra;
+
+  // Para agruparlos por ruta y día (ADR 0002 §122). Un servidor anterior no los
+  // manda.
+  final String? rutaId;
+  final String? rutaCodigo;
+
+  /// Los días de visita, 0–6 como `extract(dow)` (1 = lunes); vacía, sin día.
+  final List<int> dias;
+
+  /// Su lugar en el recorrido de la ruta.
+  final int? orden;
+}
+
+/// Un día de la ruta con cuántas tiendas le tocan; `dia` nulo, las que no
+/// tienen día de visita.
+class DiaConTiendas {
+  const DiaConTiendas({required this.dia, required this.tiendas});
+
+  factory DiaConTiendas.deJson(Map<String, Object?> j) => DiaConTiendas(
+        dia: (j['dia'] as num?)?.toInt(),
+        tiendas: (j['tiendas']! as num).toInt(),
+      );
+
+  final int? dia;
+  final int tiendas;
+}
+
+/// Una ruta con sus tiendas de cada día: el resumen con el que abre la lista.
+class RutaConTiendas {
+  const RutaConTiendas({
+    required this.clave,
+    required this.codigo,
+    required this.nombre,
+    required this.vendedor,
+    required this.total,
+    required this.porDia,
+  });
+
+  factory RutaConTiendas.deJson(Map<String, Object?> j) => RutaConTiendas(
+        clave: j['clave']! as String,
+        codigo: j['codigo'] as String?,
+        nombre: j['nombre']! as String,
+        vendedor: j['vendedor'] as String?,
+        total: (j['total']! as num).toInt(),
+        porDia: [
+          for (final d in (j['por_dia'] ?? const <Object?>[]) as List)
+            DiaConTiendas.deJson((d as Map).cast()),
+        ],
+      );
+
+  /// El id de la ruta, o «sin» para las tiendas sin ruta: lo que va en `ruta`.
+  final String clave;
+  final String? codigo;
+  final String nombre;
+  final String? vendedor;
+  final int total;
+  final List<DiaConTiendas> porDia;
 }
 
 class ListaDeClientesDeOficina {
@@ -63,6 +128,10 @@ class ListaDeClientesDeOficina {
     required this.clientes,
     required this.recortado,
     required this.conteos,
+    this.ruta = '',
+    this.dia = '',
+    this.rutas = const [],
+    this.listado = true,
   });
 
   factory ListaDeClientesDeOficina.deJson(Map<String, Object?> j) =>
@@ -77,6 +146,13 @@ class ListaDeClientesDeOficina {
           for (final e in (j['conteos']! as Map).entries)
             e.key as String: (e.value as num).toInt(),
         },
+        ruta: (j['ruta'] as String?) ?? '',
+        dia: (j['dia'] as String?) ?? '',
+        rutas: [
+          for (final r in (j['rutas'] ?? const <Object?>[]) as List)
+            RutaConTiendas.deJson((r as Map).cast()),
+        ],
+        listado: (j['listado'] as bool?) ?? true,
       );
 
   final String filtro;
@@ -85,6 +161,16 @@ class ListaDeClientesDeOficina {
 
   /// Cuántos hay en cada filtro: todos, prospectos, sin_ubicacion.
   final Map<String, int> conteos;
+
+  /// La ruta y el día elegidos (`''` ninguno; «sin» las que no tienen).
+  final String ruta;
+  final String dia;
+
+  /// Las rutas con sus tiendas de cada día. Vacía con un servidor anterior.
+  final List<RutaConTiendas> rutas;
+
+  /// Si se listaron tiendas o solo el resumen de rutas (sin ruta ni día).
+  final bool listado;
 }
 
 class VentaDelCliente {
@@ -167,10 +253,23 @@ class ClienteClientesDeOficina {
 
   final Transporte _transporte;
 
-  Future<ListaDeClientesDeOficina> lista({String filtro = 'todos', String q = ''}) async {
+  /// Con [agrupar] la lista es como la del dashboard (ADR 0002 §122): sin
+  /// [ruta], [dia] ni búsqueda trae solo el resumen de rutas; con ellos, esas
+  /// tiendas en el orden de su recorrido. [ruta] es la clave de la ruta («sin»
+  /// las que no tienen); [dia], 0–6 (1 = lunes) o «sin».
+  Future<ListaDeClientesDeOficina> lista({
+    String filtro = 'todos',
+    String q = '',
+    String ruta = '',
+    String dia = '',
+    bool agrupar = false,
+  }) async {
     final r = await _transporte.obtener('/v1/oficina/clientes', parametros: {
       'filtro': filtro,
       if (q.trim().isNotEmpty) 'q': q.trim(),
+      if (ruta.isNotEmpty) 'ruta': ruta,
+      if (dia.isNotEmpty) 'dia': dia,
+      if (agrupar) 'agrupar': '1',
     });
     _revisar(r);
     return ListaDeClientesDeOficina.deJson((jsonDecode(r.cuerpo) as Map).cast());

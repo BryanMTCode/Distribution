@@ -204,8 +204,9 @@ async def test_el_dado_de_baja_ya_no_aparece_entre_los_clientes(
 ):
     await _venta(sesion, semilla, cliente_de_ruta)
     await _entrar(cliente)
+    # Ya no todas en general: por su ruta (ADR 0002 §122).
     assert "Abarrotes La Esperanza" in solo_texto(
-        await cliente.get("/panel/clientes?filtro=todos")
+        await cliente.get(f"/panel/clientes?filtro=todos&ruta={semilla['ruta']}")
     )
     await _eliminar(cliente, cliente_de_ruta)
 
@@ -220,6 +221,6 @@ async def test_el_dado_de_baja_ya_no_aparece_entre_los_clientes(
 
 async def test_la_tabla_trae_editar_y_eliminar(cliente, semilla, cliente_de_ruta):
     await _entrar(cliente)
-    html = (await cliente.get("/panel/clientes?filtro=todos")).text
+    html = (await cliente.get(f"/panel/clientes?filtro=todos&ruta={semilla['ruta']}")).text
     assert f'href="/panel/clientes/{cliente_de_ruta}#datos">Editar' in html
     assert f'href="/panel/clientes/{cliente_de_ruta}#eliminar">Eliminar' in html

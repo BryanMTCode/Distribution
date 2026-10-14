@@ -349,6 +349,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Pestaña Clientes: busca uno y ábrelo.",
                 "Su ficha y lo que compra.",
             ),
+            Punto(
+                "clientes_por_ruta", "Clientes por ruta y día",
+                "Pestaña Clientes: toca una ruta; luego un día (Lun…Sáb) y «Todas las "
+                "rutas».",
+                "Abre con las rutas y cuántas tiendas tiene cada día, no con todas. Al "
+                "elegir una ruta salen sus tiendas agrupadas por día, en el orden del "
+                "recorrido; con un día, ese día de cada ruta.",
+                desde="+39",
+            ),
         ),
     ),
     Seccion(
@@ -589,10 +598,19 @@ SECCIONES: tuple[Seccion, ...] = (
                 "al teléfono al sincronizar.",
             ),
             Punto(
+                "panel_clientes_por_ruta", "Clientes por ruta y día",
+                "Catálogos → Clientes → «Todos»: toca una cifra de la tabla de rutas por "
+                "día; luego usa los filtros de ruta y día.",
+                "La tabla dice cuántas tiendas tiene cada ruta cada día. Una ruta trae sus "
+                "tiendas agrupadas por día, en el orden del recorrido, con «Plan de "
+                "visita de esta ruta»; un día trae ese día de cada ruta.",
+            ),
+            Punto(
                 "panel_prospecto", "Confirmar una tienda dada de alta en la calle",
                 "Abre una tienda que dio de alta un vendedor (prospecto) → «Confirmar y "
                 "asignar código».",
-                "Recibe su código y deja de ser prospecto.",
+                "Recibe el código que sigue: 1934, 1935… (las de los Excel de rutas son "
+                "100–1933), y deja de ser prospecto.",
             ),
             Punto(
                 "panel_plan_visita", "El plan de visita",

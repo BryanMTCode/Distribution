@@ -79,7 +79,7 @@ async def test_la_venta_sale_de_la_bodega_al_precio_que_se_decidio(
 ):
     cab = await _cab(cliente)
     nuevo = await _cliente(cliente, cab)
-    assert nuevo["codigo"].startswith("C")
+    assert nuevo["codigo"].isdigit() and int(nuevo["codigo"]) >= 1934
     ruta = (
         await sesion.execute(text("SELECT ruta_id, mayoreo FROM clientes WHERE id = :c"),
                              {"c": nuevo["id"]})

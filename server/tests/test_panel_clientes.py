@@ -129,7 +129,8 @@ async def test_confirmar_cierra_el_circuito_del_alta_en_calle(
         )
     ).mappings().one()
 
-    assert fila["codigo"].startswith("C")
+    # El número que sigue a las tiendas de los Excel de rutas (ADR 0002 §122).
+    assert fila["codigo"].isdigit() and int(fila["codigo"]) >= 1934
     assert fila["estatus"] == "activo"
     assert fila["lista_precios_id"] == semilla["lista_precios"]
     assert fila["requiere_revision"] is False

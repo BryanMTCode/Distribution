@@ -5553,8 +5553,8 @@ trae el Excel; luego agregaremos los otros datos mediante los vendedores».
   MAZTLAN, MAZA…) → MAZATLÁN. Lo demás, como venía (cinco tiendas dicen
   «SINALOA» o «GUASAVE» de localidad).
 - **El código es el `codigo` del cliente** («100», «101»…), el que se ve en el
-  panel y en la app. Las tiendas nuevas que se den de alta después siguen con su
-  serie de siempre (C00001…).
+  panel y en la app. Las tiendas nuevas que se den de alta después siguen en
+  1934, 1935… (§122).
 - **El comando `tiendas-de-rutas`** (`app/infra/tiendas_de_rutas.py`) las da de
   alta activas, con la lista de precios general, en su ruta, con su lugar en la
   hoja como orden de visita y su día en el **plan de visita** (desde el día de la
@@ -5600,3 +5600,33 @@ día en la app del administrador.»
   dice que falta actualizarlo.
 
 (versionCode 38)
+
+## 122. Las tiendas nuevas siguen en 1934, y los clientes por ruta y día
+
+**Decisión (octubre 2026).** «Que las tiendas nuevas sigan en 1934; además, en el
+dashboard y la app, que las tiendas estén agrupadas por el día y la ruta a la que
+pertenecen, no todas en general, y que se pueda filtrar por eso.»
+
+- **El código de la tienda nueva es el número que sigue**: 1934, 1935… —las de
+  los Excel de rutas son 100–1933 (§120)—, y no «C00001». Vale al confirmar un
+  prospecto y al dar de alta un cliente de mayoreo. Sale de `seq_codigo_cliente`
+  (migración 0060 la pone en 1934, o después del código numérico más alto);
+  si un número ya lo tiene alguien, se salta al siguiente. Las que ya tenían
+  código «C…» lo conservan. La base en blanco la regresa a 1934, no a 1.
+- **Dashboard, Catálogos → Clientes**: filtros de **ruta** y **día** (incluidos
+  «Sin ruta» y «Sin día de visita») junto a la búsqueda. «Todos» abre con la
+  **tabla de rutas por día** —cuántas tiendas tiene cada ruta cada día, con
+  totales—, cada cifra lleva a esas tiendas, y no lista las 1,800 juntas. Con una
+  ruta, sus tiendas **agrupadas por día**, cada día plegable, en el orden del
+  recorrido, con «Plan de visita de esta ruta»; con un día, ese día de cada ruta.
+  La que toca dos días sale en los dos y lo dice («también Jue»). «Por
+  confirmar» e «Inactivos», que son pocos, se listan de una vez. Si hay
+  prospectos, abre en «Por confirmar»; si no, en «Todos».
+- **App de la oficina, Clientes**: lo mismo. Abre con las rutas (su vendedor,
+  sus tiendas y cuántas por día); tocar una muestra sus tiendas agrupadas por
+  día. Arriba, chips de ruta («Todas las rutas», «R1101 (260)»…) y de día («Lun
+  45 · Mar 44…», de la ruta elegida o de todas).
+- Servidor: `/v1/oficina/clientes` acepta `ruta`, `dia` y `agrupar=1`; sin
+  `agrupar` contesta como antes, así que una app anterior sigue viendo su lista.
+
+(versionCode 39)

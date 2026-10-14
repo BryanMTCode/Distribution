@@ -10,55 +10,106 @@
 
 {% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
 
-<form class="barra" method="get" action="/panel/clientes">
+{# Lo que cada enlace conserva: la búsqueda, la ruta y el día elegidos. #}
+{% set elegidos = ('&q=' ~ (q|urlencode) if q else '') ~ ('&ruta=' ~ ruta if ruta else '') ~ ('&dia=' ~ dia if dia != '' else '') %}
+<form class="barra" method="get" action="/panel/clientes" id="filtros_clientes">
   <input type="search" name="q" value="{{ q }}" placeholder="Nombre, código o teléfono"
-         style="min-width:260px">
+         style="min-width:220px">
+  <select name="ruta" aria-label="Ruta" id="filtro_ruta">
+    <option value="">Todas las rutas</option>
+    {% for r in rutas %}
+      <option value="{{ r.id }}" {% if r.id|string == ruta %}selected{% endif %}>{{ r.codigo }} · {{ r.nombre }}{% if r.vendedor %} — {{ r.vendedor }}{% endif %}</option>
+    {% endfor %}
+    <option value="sin" {% if ruta == 'sin' %}selected{% endif %}>Sin ruta</option>
+  </select>
+  <select name="dia" aria-label="Día de visita" id="filtro_dia">
+    <option value="">Todos los días</option>
+    {% for d, nombre in dias %}
+      <option value="{{ d }}" {% if d|string == dia %}selected{% endif %}>{{ nombre }}</option>
+    {% endfor %}
+    <option value="sin" {% if dia == 'sin' %}selected{% endif %}>Sin día de visita</option>
+  </select>
   <input type="hidden" name="filtro" value="{{ filtro }}">
-  <button type="submit">Buscar</button>
+  <button type="submit">Ver</button>
+  {% if q or ruta or dia != '' %}<a href="/panel/clientes?filtro={{ filtro }}" class="sutil">Quitar filtros</a>{% endif %}
 </form>
 
-<form class="barra" method="get" action="/panel/clientes">
-  <input type="hidden" name="q" value="{{ q }}">
-  <button type="submit" name="filtro" value="pendientes"
-          class="{% if filtro != 'pendientes' %}secundario{% endif %}">
-    Por confirmar ({{ conteos.pendientes }})
-  </button>
-  <button type="submit" name="filtro" value="todos"
-          class="{% if filtro != 'todos' %}secundario{% endif %}">
-    Todos ({{ conteos.activos }})
-  </button>
-  <button type="submit" name="filtro" value="inactivos"
-          class="{% if filtro != 'inactivos' %}secundario{% endif %}">Inactivos</button>
-</form>
+<nav class="barra" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px">
+  {% for clave, etiqueta in [('pendientes', 'Por confirmar (' ~ conteos.pendientes ~ ')'), ('todos', 'Todos (' ~ conteos.activos ~ ')'), ('inactivos', 'Inactivos')] %}
+    <a href="/panel/clientes?filtro={{ clave }}{{ elegidos }}" id="estado_{{ clave }}"
+       style="padding:6px 12px;border-radius:7px;text-decoration:none;font-weight:600;
+              border:1px solid {% if clave == filtro %}var(--acento){% else %}var(--linea){% endif %};
+              background:{% if clave == filtro %}var(--acento-suave){% else %}var(--papel){% endif %};
+              color:{% if clave == filtro %}var(--acento){% else %}inherit{% endif %}"
+       {% if clave == filtro %}aria-current="true"{% endif %}>{{ etiqueta }}</a>
+  {% endfor %}
+</nav>
 
-{% if filas %}
-<div class="tabla-marco">
-  <table>
+{% if matriz %}
+<h2 style="margin-top:0">Tiendas por ruta y día</h2>
+<p class="sutil" style="margin-top:-6px">Cada cifra abre esas tiendas, en el orden de su recorrido.</p>
+<div class="tabla-marco" style="overflow-x:auto;margin-bottom:18px">
+  <table id="rutas_por_dia">
     <thead>
       <tr>
-        <th>Negocio</th>
         <th>Ruta</th>
-        <th>Lista y ubicación</th>
-        <th>Estado</th>
-        {% if puede_editar %}<th></th>{% endif %}
+        {% for d in matriz.dias %}<th class="numero"><a href="/panel/clientes?filtro={{ filtro }}&dia={{ d }}">{{ nombre_del_dia[d][:3] }}</a></th>{% endfor %}
+        <th class="numero"><a href="/panel/clientes?filtro={{ filtro }}&dia=sin">Sin día</a></th>
+        <th class="numero">Total</th>
       </tr>
     </thead>
     <tbody>
-      {% for f in filas %}
+      {% for r in matriz.renglones %}
+      <tr id="ruta_{{ r.codigo or 'sin' }}" {% if r.clave == ruta %}style="background:var(--acento-suave)"{% endif %}>
+        <td>
+          <a href="/panel/clientes?filtro={{ filtro }}&ruta={{ r.clave }}"><strong>{{ r.codigo or '' }}</strong> {{ r.nombre }}</a>
+          {% if r.vendedor %}<div class="sutil">{{ r.vendedor }}</div>{% endif %}
+          {% if not r.activa %}<div class="sutil">desactivada</div>{% endif %}
+        </td>
+        {% for d in matriz.dias %}
+        <td class="numero">{% if r.por_dia.get(d) %}<a href="/panel/clientes?filtro={{ filtro }}&ruta={{ r.clave }}&dia={{ d }}" id="celda_{{ r.codigo or 'sin' }}_{{ d }}">{{ r.por_dia.get(d) }}</a>{% else %}<span class="sutil">—</span>{% endif %}</td>
+        {% endfor %}
+        <td class="numero">{% if r.por_dia.get(none) %}<a href="/panel/clientes?filtro={{ filtro }}&ruta={{ r.clave }}&dia=sin" style="color:var(--aviso)">{{ r.por_dia.get(none) }}</a>{% else %}<span class="sutil">—</span>{% endif %}</td>
+        <td class="numero"><strong>{{ r.total }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
       <tr>
+        <td><strong>Todas</strong></td>
+        {% for d in matriz.dias %}<td class="numero"><strong>{{ matriz.por_dia[d] }}</strong></td>{% endfor %}
+        <td class="numero"><strong>{{ matriz.sin_dia }}</strong></td>
+        <td class="numero"><strong>{{ matriz.total }}</strong></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endif %}
+
+{% if recortada %}
+<div class="aviso-caja aviso">Se muestran las primeras {{ limite }}. Elige una ruta o un día para ver las demás.</div>
+{% endif %}
+
+{% macro renglon(f, con_orden=false) %}
+      <tr>
+        {% if con_orden %}<td class="numero sutil" style="width:44px">{{ f.secuencia or '' }}</td>{% endif %}
         <td>
           <a href="/panel/clientes/{{ f.id }}"><strong>{{ f.nombre_comercial }}</strong></a>
           <div class="sutil">
             {% if f.codigo %}<span class="mono">{{ f.codigo }}</span>{% else %}sin código{% endif %}
+            {% if f.calle %} · {{ f.calle }}{% if f.numero %} {{ f.numero }}{% endif %}{% endif %}
             {% if f.colonia %} · {{ f.colonia }}{% endif %}
             {% if f.telefono %} · {{ f.telefono }}{% endif %}
+            {% if f.otros_dias %} · también {{ f.otros_dias|join(', ') }}{% endif %}
           </div>
         </td>
+        {% if not con_orden %}
         <td class="sutil">
           {% if f.ruta %}{{ f.ruta_codigo }} {{ f.ruta }}{% else %}
             <span style="color:var(--aviso)">sin ruta</span>
           {% endif %}
         </td>
+        {% endif %}
         <td class="sutil">
           {% if f.lista_precios %}{{ f.lista_precios }}{% else %}
             <div style="color:var(--alerta)">sin lista de precios</div>
@@ -85,7 +136,47 @@
         </td>
         {% endif %}
       </tr>
-      {% endfor %}
+{% endmacro %}
+
+{% if grupos %}
+  {% for g in grupos %}
+  <h2 id="grupo_ruta_{{ g.codigo or 'sin' }}" style="margin-bottom:2px">{{ g.codigo or '' }} {{ g.nombre }}</h2>
+  <p class="sutil" style="margin-top:0">
+    {% if g.vendedor %}{{ g.vendedor }} · {% endif %}{{ g.tiendas }} tienda(s)
+    {% if g.clave != 'sin' %} · <a href="/panel/plan-visita?ruta={{ g.clave }}">Plan de visita de esta ruta</a>{% endif %}
+  </p>
+  {% for d in g.dias %}
+  <details class="familia" open id="grupo_{{ g.codigo or 'sin' }}_{{ d.dia if d.dia is not none else 'sin' }}">
+    <summary>{{ d.titulo }} <span class="resumen sutil">{{ d.filas|length }} tienda(s){% if d.sin_ubicacion %} · {{ d.sin_ubicacion }} sin ubicación{% endif %}</span></summary>
+    <div style="overflow-x:auto">
+    <table>
+      <tbody>{% for f in d.filas %}{{ renglon(f, con_orden=true) }}{% endfor %}</tbody>
+    </table>
+    </div>
+  </details>
+  {% endfor %}
+  {% endfor %}
+{% elif filtro != 'pendientes' and not filas and (q or ruta or dia != '' or filtro == 'inactivos') %}
+<div class="vacio">{% if filtro == 'inactivos' and not (q or ruta or dia != '') %}Ninguna tienda inactiva.{% else %}Ninguna tienda con esos filtros.{% endif %}</div>
+{% elif filtro == 'todos' and not filas %}
+<div class="vacio" id="elige_ruta_o_dia">Elige una ruta o un día —en los filtros o en la tabla— para ver sus tiendas.</div>
+{% endif %}
+
+{% if filtro == 'pendientes' %}
+{% if filas %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>Negocio</th>
+        <th>Ruta</th>
+        <th>Lista y ubicación</th>
+        <th>Estado</th>
+        {% if puede_editar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}{{ renglon(f) }}{% endfor %}
     </tbody>
   </table>
 </div>
@@ -93,11 +184,10 @@
 <div class="vacio">
   {% if q %}
     Nada que coincida con «{{ q }}».
-  {% elif filtro == 'pendientes' %}
-    Ningún prospecto esperando. Todo lo que levantó la ruta ya está confirmado.
   {% else %}
-    Todavía no hay clientes.
+    Ningún prospecto esperando. Todo lo que levantó la ruta ya está confirmado.
   {% endif %}
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}

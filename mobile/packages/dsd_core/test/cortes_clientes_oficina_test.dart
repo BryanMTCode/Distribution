@@ -94,6 +94,36 @@ void main() {
       expect(l.clientes.single.conUbicacion, isFalse);
     });
 
+    test('agrupada: las rutas con sus días y las tiendas con los suyos (ADR 0002 §122)',
+        () async {
+      final t = _Transporte(200, {
+        'filtro': 'todos', 'recortado': false, 'listado': true,
+        'ruta': 'r1', 'dia': '1',
+        'conteos': {'todos': 260, 'prospectos': 0, 'sin_ubicacion': 260},
+        'rutas': [
+          {'clave': 'r1', 'codigo': 'R1101', 'nombre': 'Ruta 1101', 'vendedor': 'Juan',
+           'total': 260,
+           'por_dia': [{'dia': 1, 'tiendas': 45}, {'dia': null, 'tiendas': 2}]},
+        ],
+        'clientes': [
+          {'id': 'c1', 'codigo': '100', 'nombre': 'PUESTO PLAYA SUR', 'ruta': 'Ruta 1101',
+           'estatus': 'activo', 'telefono': null, 'con_ubicacion': false,
+           'ultima_compra': null, 'ruta_id': 'r1', 'ruta_codigo': 'R1101',
+           'dias': [1, 4], 'orden': 1},
+        ],
+      });
+      final l = await ClienteClientesDeOficina(t)
+          .lista(ruta: 'r1', dia: '1', agrupar: true);
+      expect(t.pedidas.single.$2, {'filtro': 'todos', 'ruta': 'r1', 'dia': '1', 'agrupar': '1'});
+      expect(l.listado, isTrue);
+      final ruta = l.rutas.single;
+      expect(ruta.codigo, 'R1101');
+      expect(ruta.porDia.map((d) => (d.dia, d.tiendas)), [(1, 45), (null, 2)]);
+      final c = l.clientes.single;
+      expect((c.rutaCodigo, c.orden), ('R1101', 1));
+      expect(c.dias, [1, 4]);
+    });
+
     test('la ficha trae la ubicación y cómo pagó cada venta', () async {
       final t = _Transporte(200, {
         'id': 'c1', 'codigo': 'CLI-1', 'nombre': 'La Esquina', 'razon_social': null,

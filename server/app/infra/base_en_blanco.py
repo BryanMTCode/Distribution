@@ -57,6 +57,7 @@ from sqlalchemy.exc import DBAPIError
 
 from app.api.admin.entradas import abrir_entrada, agregar_renglon_a_entrada, confirmar_entrada
 from app.infra.cierre_del_vendedor import bodega_principal
+from app.infra.codigo_de_cliente import PRIMER_CODIGO_NUEVO
 
 ARTICULOS = (
     Path(__file__).resolve().parents[2] / "db" / "semillas" / "articulos_distribuciones_se.csv"
@@ -230,7 +231,10 @@ async def poner_en_blanco(
         {"id": uuid.uuid4()},
     )
     for secuencia in SECUENCIAS_DE_FOLIO:
-        await sesion.execute(text(f"ALTER SEQUENCE {secuencia} RESTART WITH 1"))
+        # Los códigos de cliente vuelven a 1934, no a 1: del 100 al 1933 son las
+        # tiendas de los Excel de rutas, que se cargan después (ADR 0002 §122).
+        inicio = PRIMER_CODIGO_NUEVO if secuencia == "seq_codigo_cliente" else 1
+        await sesion.execute(text(f"ALTER SEQUENCE {secuencia} RESTART WITH {inicio}"))
     # Los teléfonos se quedan vinculados, sin el rastro de su sincronización, y
     # con la marca de empezar de cero: en su próximo pull olvidan lo de antes.
     await sesion.execute(

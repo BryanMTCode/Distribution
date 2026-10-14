@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from starlette import status
 
+from app.api.admin.clientes import ORDEN_DE_DIAS, rutas_por_dia
 from app.api.deps import ActorDep, SesionDep
 from app.api.esquemas import Dinero
 from app.infra.ubicacion_cliente import UbicacionInvalida, fijar_ubicacion, leer_coordenadas
@@ -59,6 +60,29 @@ class ClienteEnLista(BaseModel):
     telefono: str | None
     con_ubicacion: bool
     ultima_compra: date | None
+    # Para agruparlos por ruta y día (ADR 0002 §122).
+    ruta_id: uuid.UUID | None = None
+    ruta_codigo: str | None = None
+    # Los días de visita, 0–6 como `extract(dow)` (1 = lunes); vacía, sin día.
+    dias: list[int] = []
+    # Su lugar en el recorrido de la ruta.
+    orden: int | None = None
+
+
+class DiaConTiendas(BaseModel):
+    # Nulo: las que no tienen día de visita.
+    dia: int | None
+    tiendas: int
+
+
+class RutaConTiendas(BaseModel):
+    # El id de la ruta, o «sin» para las tiendas sin ruta: es lo que va en `ruta=`.
+    clave: str
+    codigo: str | None
+    nombre: str
+    vendedor: str | None
+    total: int
+    por_dia: list[DiaConTiendas]
 
 
 class ListaDeClientes(BaseModel):
@@ -66,6 +90,12 @@ class ListaDeClientes(BaseModel):
     clientes: list[ClienteEnLista]
     recortado: bool
     conteos: dict[str, int]
+    # Con `agrupar`: la ruta y el día elegidos, las rutas con sus tiendas de cada
+    # día, y si se listaron tiendas o solo el resumen de rutas.
+    ruta: str = ""
+    dia: str = ""
+    rutas: list[RutaConTiendas] = []
+    listado: bool = True
 
 
 class VentaDelCliente(BaseModel):
@@ -120,13 +150,53 @@ class PeticionUbicacion(BaseModel):
 # ---------------------------------------------------------------------------
 @router.get("", response_model=ListaDeClientes)
 async def lista(
-    actor: ActorDep, sesion: SesionDep, q: str = "", filtro: str = "todos"
+    actor: ActorDep,
+    sesion: SesionDep,
+    q: str = "",
+    filtro: str = "todos",
+    ruta: str = "",
+    dia: str = "",
+    agrupar: bool = False,
 ) -> ListaDeClientes:
+    """Los clientes de la oficina.
+
+    Con `agrupar` (la app +39 en adelante, ADR 0002 §122) es como el dashboard:
+    no todos en general. Sin ruta, día ni búsqueda trae solo el resumen de rutas
+    —cuántas tiendas le tocan cada día—; con una ruta o un día, esas tiendas en
+    el orden de su recorrido, con sus días para agruparlas. Los prospectos, que
+    son pocos, se listan de una vez. Sin `agrupar` contesta como antes, para la
+    app anterior.
+    """
     actor.exigir(PERMISO_VER)
     if filtro not in FILTROS:
         filtro = "todos"
     condiciones = [FILTROS[filtro]]
-    parametros: dict[str, object] = {"limite": 301}
+    del_filtro = list(condiciones)
+    limite = 1000 if agrupar else 300
+    parametros: dict[str, object] = {"limite": limite + 1}
+
+    if ruta == "sin":
+        condiciones.append("c.ruta_id IS NULL")
+    elif ruta:
+        try:
+            parametros["ruta"] = uuid.UUID(ruta)
+        except ValueError:
+            ruta = ""
+        else:
+            condiciones.append("c.ruta_id = :ruta")
+    if dia == "sin":
+        condiciones.append(
+            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f WHERE f.cliente_id = c.id)"
+        )
+    elif dia.isdigit() and 0 <= int(dia) <= 6:
+        condiciones.append(
+            "EXISTS (SELECT 1 FROM clientes_frecuencia f "
+            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia)"
+        )
+        parametros["dia"] = int(dia)
+    else:
+        dia = ""
+
     busqueda = q.strip()
     if busqueda:
         condiciones.append(
@@ -134,26 +204,34 @@ async def lista(
         )
         parametros["q"] = f"%{busqueda}%"
 
-    filas = (
-        await sesion.execute(
-            text(
-                f"""
-                SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.estatus,
-                       c.telefono, r.nombre AS ruta,
-                       (c.lat IS NOT NULL AND c.lng IS NOT NULL) AS con_ubicacion,
-                       (SELECT max(v.fecha_operativa) FROM ventas v
-                         WHERE v.cliente_id = c.id AND v.estado = 'confirmada')
-                         AS ultima_compra
-                  FROM clientes c
-                  LEFT JOIN rutas r ON r.id = c.ruta_id
-                 WHERE {" AND ".join(condiciones)}
-                 ORDER BY c.nombre_comercial
-                 LIMIT :limite
-                """  # noqa: S608 — las condiciones son constantes del código
-            ),
-            parametros,
-        )
-    ).mappings().all()
+    listado = (not agrupar) or filtro == "prospectos" or bool(ruta or dia or busqueda)
+    filas = []
+    if listado:
+        filas = (
+            await sesion.execute(
+                text(
+                    f"""
+                    SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.estatus,
+                           c.telefono, r.nombre AS ruta, c.ruta_id,
+                           r.codigo AS ruta_codigo, c.secuencia AS orden,
+                           (c.lat IS NOT NULL AND c.lng IS NOT NULL) AS con_ubicacion,
+                           (SELECT max(v.fecha_operativa) FROM ventas v
+                             WHERE v.cliente_id = c.id AND v.estado = 'confirmada')
+                             AS ultima_compra,
+                           COALESCE((SELECT array_agg(DISTINCT f.dia_semana ORDER BY f.dia_semana)
+                                       FROM clientes_frecuencia f
+                                      WHERE f.cliente_id = c.id), '{{}}') AS dias
+                      FROM clientes c
+                      LEFT JOIN rutas r ON r.id = c.ruta_id
+                     WHERE {" AND ".join(condiciones)}
+                     ORDER BY {"r.codigo NULLS LAST, c.secuencia NULLS LAST, "
+                               if agrupar else ""}c.nombre_comercial
+                     LIMIT :limite
+                    """  # noqa: S608 — las condiciones son constantes del código
+                ),
+                parametros,
+            )
+        ).mappings().all()
 
     conteos = (
         await sesion.execute(
@@ -169,11 +247,34 @@ async def lista(
         )
     ).mappings().one()
 
+    rutas: list[RutaConTiendas] = []
+    if agrupar:
+        resumen = await rutas_por_dia(sesion, " AND ".join(del_filtro))
+        rutas = [
+            RutaConTiendas(
+                clave=r["clave"],
+                codigo=r["codigo"],
+                nombre=r["nombre"],
+                vendedor=r["vendedor"],
+                total=r["total"],
+                por_dia=[
+                    DiaConTiendas(dia=d, tiendas=r["por_dia"][d])
+                    for d in [*ORDEN_DE_DIAS, None]
+                    if r["por_dia"].get(d)
+                ],
+            )
+            for r in resumen["renglones"]
+        ]
+
     return ListaDeClientes(
         filtro=filtro,
-        clientes=[ClienteEnLista(**dict(f)) for f in filas[:300]],
-        recortado=len(filas) > 300,
+        clientes=[ClienteEnLista(**dict(f)) for f in filas[:limite]],
+        recortado=len(filas) > limite,
         conteos=dict(conteos),
+        ruta=ruta,
+        dia=dia,
+        rutas=rutas,
+        listado=listado,
     )
 
 

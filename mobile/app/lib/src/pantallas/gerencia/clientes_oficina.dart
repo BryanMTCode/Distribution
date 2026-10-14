@@ -8,6 +8,9 @@
 ///     vendedor no tiene geocerca y el mapa no los dibuja.
 ///   · ¿Qué compra y cómo paga? Sus ventas —cada una se abre con lo que se le
 ///     vendió— con su forma de pago.
+///   · ¿De qué ruta y qué día? (ADR 0002 §122) No todas en general: abre con las
+///     rutas y cuántas tiendas tiene cada día; al elegir una ruta o un día salen
+///     sus tiendas agrupadas por ruta y por día, en el orden del recorrido.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -39,8 +42,26 @@ class PantallaClientesDeOficina extends ConsumerStatefulWidget {
   ConsumerState<PantallaClientesDeOficina> createState() => _EstadoClientes();
 }
 
+/// Los días como se trabajan, con el número de la base (`extract(dow)`, 0 domingo).
+const _ordenDeDias = [1, 2, 3, 4, 5, 6, 0];
+const _diaCorto = {1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 0: 'Dom'};
+const _diaLargo = {
+  1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado',
+  0: 'Domingo',
+};
+
+String _nombreDeRuta(RutaConTiendas r) =>
+    r.codigo == null ? r.nombre : '${r.codigo} · ${r.nombre}';
+
+String _diasEnResumen(List<DiaConTiendas> dias) => [
+      for (final d in dias) '${d.dia == null ? 'Sin día' : _diaCorto[d.dia]} ${d.tiendas}',
+    ].join(' · ');
+
 class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
   String _filtro = 'todos';
+  // La ruta y el día elegidos (ADR 0002 §122): '' ninguno, «sin» las que no tienen.
+  String _ruta = '';
+  String _dia = '';
   final _busqueda = TextEditingController();
   ListaDeClientesDeOficina? _lista;
   String? _error;
@@ -64,7 +85,13 @@ class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
       return;
     }
     try {
-      final l = await cliente.lista(filtro: _filtro, q: _busqueda.text);
+      final l = await cliente.lista(
+        filtro: _filtro,
+        q: _busqueda.text,
+        ruta: _ruta,
+        dia: _dia,
+        agrupar: true,
+      );
       if (!mounted) return;
       setState(() {
         _lista = l;
@@ -80,6 +107,8 @@ class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
   Widget build(BuildContext context) {
     final l = _lista;
     final colores = Theme.of(context).colorScheme;
+    final grupos =
+        l != null && l.listado && l.rutas.isNotEmpty ? _grupos(l) : const <_Grupo>[];
     return Scaffold(
       key: const Key('pantalla_clientes_oficina'),
       appBar: AppBar(title: const Text('Clientes')),
@@ -126,6 +155,7 @@ class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
                 ],
               ),
             ),
+            if (l != null && l.rutas.isNotEmpty) ..._filtrosDeRutaYDia(l),
             const SizedBox(height: 8),
             if (_error != null) Text(_error!, style: TextStyle(color: colores.error)),
             if (l == null && _error == null)
@@ -133,48 +163,193 @@ class _EstadoClientes extends ConsumerState<PantallaClientesDeOficina> {
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
               ),
-            if (l != null && l.clientes.isEmpty)
+            // Sin ruta ni día: las rutas con sus tiendas de cada día, no todas en
+            // general. Tocar una la elige.
+            if (l != null && !l.listado)
+              for (final r in l.rutas)
+                Card(
+                  child: ListTile(
+                    key: Key('resumen_ruta_${r.codigo ?? 'sin'}'),
+                    title: Text(_nombreDeRuta(r)),
+                    subtitle: Text(
+                      '${r.vendedor == null ? '' : '${r.vendedor} · '}${r.total} '
+                      '${r.total == 1 ? 'tienda' : 'tiendas'}\n${_diasEnResumen(r.porDia)}',
+                    ),
+                    isThreeLine: true,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _elegir(ruta: r.clave),
+                  ),
+                ),
+            if (l != null && l.listado && l.clientes.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(24),
                 child: Text('No hay clientes con ese filtro.', textAlign: TextAlign.center),
               ),
-            for (final c in l?.clientes ?? const <ClienteDeOficina>[])
-              Card(
-                child: ListTile(
-                  key: Key('cliente_oficina_${c.codigo ?? c.id}'),
-                  leading: Icon(
-                    c.conUbicacion ? Icons.storefront_outlined : Icons.location_off_outlined,
-                    color: c.conUbicacion ? null : colores.error,
+            // Con una ruta o un día: agrupadas por ruta y por día.
+            for (final (i, grupo) in grupos.indexed) ...[
+              if (i == 0 || grupos[i - 1].rutaClave != grupo.rutaClave)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    grupo.rutaTitulo,
+                    key: Key('grupo_ruta_${grupo.rutaCodigo ?? 'sin'}'),
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  title: Text(c.nombre),
-                  subtitle: Text(
-                    [
-                      c.ruta ?? 'sin ruta',
-                      if (c.estatus == 'prospecto') 'prospecto',
-                      if (!c.conUbicacion) 'sin ubicación',
-                      c.ultimaCompra == null
-                          ? 'nunca ha comprado'
-                          : 'última compra: ${diaEnPalabras(c.ultimaCompra!)}',
-                    ].join(' · '),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PantallaFichaDeCliente(clienteId: c.id, nombre: c.nombre),
-                      ),
-                    );
-                    await _cargar();
-                  },
+                ),
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 2),
+                child: Text(
+                  '${grupo.dia == null ? 'Sin día de visita' : _diaLargo[grupo.dia]} · '
+                  '${grupo.clientes.length} ${grupo.clientes.length == 1 ? 'tienda' : 'tiendas'}',
+                  key: Key('grupo_dia_${grupo.rutaCodigo ?? 'sin'}_${grupo.dia ?? 'sin'}'),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
+              for (final c in grupo.clientes) _tarjeta(c, colores),
+            ],
+            // Un servidor anterior no agrupa: la lista de siempre.
+            if (l != null && l.rutas.isEmpty)
+              for (final c in l.clientes) _tarjeta(c, colores),
             if (l != null && l.recortado)
-              const Text('Se muestran los primeros 300. Busca por nombre para ver el resto.'),
+              const Text('Se muestran las primeras. Elige una ruta o un día para ver el resto.'),
           ],
         ),
       ),
     );
   }
+
+  void _elegir({String? ruta, String? dia}) {
+    setState(() {
+      if (ruta != null) _ruta = ruta;
+      if (dia != null) _dia = dia;
+    });
+    _cargar();
+  }
+
+  /// La ruta (todas o una) y el día, con cuántas tiendas tiene cada uno.
+  List<Widget> _filtrosDeRutaYDia(ListaDeClientesDeOficina l) {
+    final elegida = l.rutas.where((r) => r.clave == _ruta).firstOrNull;
+    // Los días de la ruta elegida, o de todas sumadas.
+    final porDia = <int?, int>{};
+    for (final r in elegida == null ? l.rutas : [elegida]) {
+      for (final d in r.porDia) {
+        porDia[d.dia] = (porDia[d.dia] ?? 0) + d.tiendas;
+      }
+    }
+    Widget chip(String clave, String etiqueta,
+            {required bool elegido, required VoidCallback alTocar}) =>
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            key: Key(clave),
+            label: Text(etiqueta),
+            selected: elegido,
+            onSelected: (_) => alTocar(),
+          ),
+        );
+    return [
+      const SizedBox(height: 6),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            chip('ruta_cliente_todas', 'Todas las rutas',
+                elegido: _ruta.isEmpty, alTocar: () => _elegir(ruta: '')),
+            for (final r in l.rutas)
+              chip('ruta_cliente_${r.codigo ?? 'sin'}', '${r.codigo ?? r.nombre} (${r.total})',
+                  elegido: _ruta == r.clave, alTocar: () => _elegir(ruta: r.clave)),
+          ],
+        ),
+      ),
+      const SizedBox(height: 4),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            chip('dia_cliente_todos', 'Todos los días',
+                elegido: _dia.isEmpty, alTocar: () => _elegir(dia: '')),
+            for (final d in _ordenDeDias)
+              if (d != 0 || (porDia[0] ?? 0) > 0)
+                chip('dia_cliente_$d', '${_diaCorto[d]} ${porDia[d] ?? 0}',
+                    elegido: _dia == '$d', alTocar: () => _elegir(dia: '$d')),
+            if ((porDia[null] ?? 0) > 0)
+              chip('dia_cliente_sin', 'Sin día ${porDia[null]}',
+                  elegido: _dia == 'sin', alTocar: () => _elegir(dia: 'sin')),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Ruta → día → tiendas, en el orden en que llegan (el del recorrido). Una
+  /// tienda que toca dos días sale en los dos.
+  List<_Grupo> _grupos(ListaDeClientesDeOficina l) {
+    final grupos = <String, _Grupo>{};
+    final titulos = {for (final r in l.rutas) r.clave: _nombreDeRuta(r)};
+    for (final c in l.clientes) {
+      final clave = c.rutaId ?? 'sin';
+      final dias = c.dias.isEmpty ? <int?>[null] : <int?>[...c.dias];
+      for (final d in dias) {
+        if (_dia == 'sin' && d != null) continue;
+        if (_dia.isNotEmpty && _dia != 'sin' && '$d' != _dia) continue;
+        grupos
+            .putIfAbsent(
+              '$clave|$d',
+              () => _Grupo(clave, c.rutaCodigo, titulos[clave] ?? c.ruta ?? 'Sin ruta', d),
+            )
+            .clientes
+            .add(c);
+      }
+    }
+    int ordenDeDia(int? d) => d == null ? 99 : _ordenDeDias.indexOf(d);
+    final rutas = [for (final r in l.rutas) r.clave];
+    return grupos.values.toList()
+      ..sort((a, b) {
+        final porRuta = rutas.indexOf(a.rutaClave).compareTo(rutas.indexOf(b.rutaClave));
+        return porRuta != 0 ? porRuta : ordenDeDia(a.dia).compareTo(ordenDeDia(b.dia));
+      });
+  }
+
+  Widget _tarjeta(ClienteDeOficina c, ColorScheme colores) => Card(
+        child: ListTile(
+          key: Key('cliente_oficina_${c.codigo ?? c.id}'),
+          leading: Icon(
+            c.conUbicacion ? Icons.storefront_outlined : Icons.location_off_outlined,
+            color: c.conUbicacion ? null : colores.error,
+          ),
+          title: Text(c.nombre),
+          subtitle: Text(
+            [
+              if (c.codigo != null) c.codigo!,
+              c.ruta ?? 'sin ruta',
+              if (c.estatus == 'prospecto') 'prospecto',
+              if (!c.conUbicacion) 'sin ubicación',
+              c.ultimaCompra == null
+                  ? 'nunca ha comprado'
+                  : 'última compra: ${diaEnPalabras(c.ultimaCompra!)}',
+            ].join(' · '),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PantallaFichaDeCliente(clienteId: c.id, nombre: c.nombre),
+              ),
+            );
+            await _cargar();
+          },
+        ),
+      );
+}
+
+class _Grupo {
+  _Grupo(this.rutaClave, this.rutaCodigo, this.rutaTitulo, this.dia);
+
+  final String rutaClave;
+  final String? rutaCodigo;
+  final String rutaTitulo;
+  final int? dia;
+  final List<ClienteDeOficina> clientes = [];
 }
 
 class PantallaFichaDeCliente extends ConsumerStatefulWidget {
