@@ -19,6 +19,10 @@
 ///
 /// Arriba van las cargas que pidieron los vendedores al terminar su día, para
 /// aceptarlas o rechazarlas (`SeccionCargasPedidas`, ADR 0002 §82).
+///
+/// Abajo, las cargas por día —las abiertas o las de un periodo—, cada una una
+/// sola vez (ADR 0002 §124): la que salió de una solicitud aceptada lo dice en
+/// su renglón y trae el ticket, en vez de repetirse en «Resueltas esta semana».
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -28,6 +32,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/cargas.dart';
 import '../../estado/sesion.dart';
 import '../canceladas.dart';
+import '../ticket_compartible.dart';
 import 'cierres.dart';
 import 'periodo.dart';
 
@@ -53,6 +58,19 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
 
   /// Al deslizar para recargar, la sección de las cargas pedidas se vuelve a leer.
   int _vuelta = 0;
+
+  /// Las solicitudes aceptadas esta semana, por el folio de la carga que salió
+  /// de cada una: su renglón dice que la pidió el vendedor y trae el ticket.
+  Map<String, CierreDeVendedor> _pedidas = const {};
+
+  void _leerPedidas(Cierres c) {
+    if (!mounted) return;
+    setState(() => _pedidas = {
+          for (final r in c.recientes)
+            if (r.solicitud!.aceptada && r.solicitud!.cargaFolio != null)
+              r.solicitud!.cargaFolio!: r,
+        });
+  }
 
   @override
   void initState() {
@@ -165,7 +183,13 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
           children: [
             // Las que pidieron los vendedores van primero: es lo que se atiende
             // cada tarde (ADR 0002 §82).
-            SeccionCargasPedidas(key: ValueKey(_vuelta), alCambiar: _cargar),
+            SeccionCargasPedidas(
+              key: ValueKey(_vuelta),
+              alCambiar: _cargar,
+              alLeer: _leerPedidas,
+              // Las que ya están abajo, en su día, no se repiten arriba.
+              yaListados: {for (final c in cargas ?? const <ResumenDeCarga>[]) c.folio},
+            ),
             const Divider(height: 32),
             SegmentedButton<bool>(
               key: const Key('vista_de_cargas'),
@@ -209,7 +233,7 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
               ),
               const SizedBox(height: 8),
             ] else
-              Text('Cargas abiertas', style: Theme.of(context).textTheme.titleMedium),
+              Text('Cargas abiertas, por día', style: Theme.of(context).textTheme.titleMedium),
             if (_error != null) _Aviso(texto: _error!, esError: true),
             if (cargas == null && _error == null)
               const Padding(
@@ -228,23 +252,20 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                   textAlign: TextAlign.center,
                 ),
               ),
-            if (_porFecha)
-              // Un encabezado por día: qué se cargó ese día y cuánto.
-              for (final (dia, del) in _porDia(cargas ?? const [])) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 4),
-                  child: Text(
-                    '${_mayuscula(diaEnPalabras(dia))} · ${del.length} carga(s) · '
-                    '${_piezas(del)} piezas',
-                    key: Key('dia_de_cargas_$dia'),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
+            // Un encabezado por día, en las abiertas y en las de un periodo: qué
+            // se cargó ese día y cuánto (ADR 0002 §124).
+            for (final (dia, del) in _porDia(cargas ?? const [])) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Text(
+                  '${_mayuscula(diaEnPalabras(dia))} · ${del.length} carga(s) · '
+                  '${_piezas(del)} piezas',
+                  key: Key('dia_de_cargas_$dia'),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                for (final c in del) _renglon(c),
-              ]
-            else
-              for (final c in cargas ?? const <ResumenDeCarga>[])
-                if (!estaCancelado(c.estado)) _renglon(c),
+              ),
+              for (final c in del) _renglon(c),
+            ],
             // Las canceladas, aparte y plegadas (ADR 0002 §95).
             SeccionDeCanceladas(
               renglones: [
@@ -258,22 +279,41 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
     );
   }
 
-  Widget _renglon(ResumenDeCarga c) => Card(
-        child: ListTile(
-          key: Key('carga_${c.folio}'),
-          leading: Icon(
-            c.estado == 'borrador' ? Icons.edit_note : Icons.local_shipping_outlined,
-          ),
-          title: Text('${c.vendedor} · ${c.camion}'),
-          subtitle: Text(
-            '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
-            '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas',
-          ),
-          isThreeLine: true,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _abrirDetalle(c.id),
+  Widget _renglon(ResumenDeCarga c) {
+    final pedida = _pedidas[c.folio];
+    final ticket = pedida?.ticketDeLaCarga;
+    return Card(
+      child: ListTile(
+        key: Key('carga_${c.folio}'),
+        leading: Icon(
+          c.estado == 'borrador' ? Icons.edit_note : Icons.local_shipping_outlined,
         ),
-      );
+        title: Text('${c.vendedor} · ${c.camion}'),
+        subtitle: Text(
+          '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
+          '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas'
+          '${pedida == null ? '' : ' · la pidió el vendedor'}',
+        ),
+        isThreeLine: true,
+        // La que salió de una solicitud trae su ticket para volver a compartirlo;
+        // tocar el renglón sigue abriendo la carga.
+        trailing: ticket == null
+            ? const Icon(Icons.chevron_right)
+            : IconButton(
+                key: Key('ticket_carga_${c.folio}'),
+                tooltip: 'Ticket de la carga',
+                icon: const Icon(Icons.receipt_long_outlined),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => PantallaTicketCompartible(
+                    titulo: 'Carga aceptada',
+                    texto: ticket,
+                  ),
+                )),
+              ),
+        onTap: () => _abrirDetalle(c.id),
+      ),
+    );
+  }
 }
 
 /// Las cargas vivas por día, del más reciente al más viejo, en el orden en que

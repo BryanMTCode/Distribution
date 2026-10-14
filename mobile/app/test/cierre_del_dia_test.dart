@@ -9,6 +9,9 @@
 /// · El gerente, por separado: en «Corte del día» cierra el corte del vendedor;
 ///   en «Cargas» acepta la carga pedida —corrigiendo un renglón— y comparte el
 ///   ticket, o la rechaza con motivo. Con el corte abierto, la carga espera.
+/// · Cada cosa una sola vez y por día (ADR 0002 §124): la carga aceptada va en
+///   el renglón de su carga, con su ticket, y el corte cerrado en el de su
+///   corte, con lo que entregó; no se repiten en «Resueltas» ni «Cerrados».
 library;
 
 import 'dart:convert';
@@ -332,8 +335,90 @@ void main() {
           '/v1/cierres/solicitudes/0198a2f4-aaaa-7000-8000-000000000001/rechazar');
       expect(servidor.posts.single.$2, {'motivo': 'Mañana descansas'});
     });
+
+    // «En la app de cargas me aparece en resueltas esta semana y abiertas la
+    // misma carga» / «quiero que las cargas y cortes se vean por día».
+    testWidgets('en «Cargas» la carga aceptada sale una vez, en su día, con su ticket',
+        (tester) async {
+      final servidor = _ServidorDeCierres(conListas: true);
+      final compartidor = _CompartidorDePrueba();
+      await _montarGerente(tester, servidor, compartidor);
+      await abrirPestana(tester, const Key('pestana_cargas'));
+
+      // Por día, del más nuevo al más viejo.
+      final dia25 = find.byKey(const Key('dia_de_cargas_2026-09-25'));
+      final dia24 = find.byKey(const Key('dia_de_cargas_2026-09-24'));
+      expect(dia25, findsOneWidget);
+      expect(dia24, findsOneWidget);
+      expect(tester.getTopLeft(dia25).dy, lessThan(tester.getTopLeft(dia24).dy));
+      // La aceptada no se repite en «Resueltas esta semana»: va en su carga.
+      expect(find.byKey(const Key('carga_pedida_reciente_$_aceptada')), findsNothing);
+      expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
+      expect(find.text('Carga CG-000013'), findsNothing);
+      expect(textoQueContiene('la pidió el vendedor'), findsOneWidget);
+      // La rechazada no tiene carga: esa sí queda arriba.
+      expect(find.byKey(const Key('carga_pedida_reciente_$_rechazada')), findsOneWidget);
+      expect(textoQueContiene('Rechazada: No hay atún'), findsOneWidget);
+      // La que se hizo a mano no trae ticket.
+      expect(find.byKey(const Key('ticket_carga_CG-000012')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('ticket_carga_CG-000013')));
+      await tester.tap(find.byKey(const Key('ticket_carga_CG-000013')));
+      await tester.pumpAndSettle();
+      final t = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
+      expect(t, contains('*CARGA ACEPTADA*'));
+      expect(t, contains('CG-000013'));
+      await tester.tap(find.byKey(const Key('boton_compartir_ticket')));
+      await tester.pumpAndSettle();
+      expect(compartidor.compartidos.single, t);
+    });
+
+    testWidgets('en «Corte del día» el corte cerrado sale una vez, en su día',
+        (tester) async {
+      final servidor = _ServidorDeCierres(conListas: true);
+      await _montarGerente(tester, servidor, _CompartidorDePrueba());
+      await abrirPestana(tester, const Key('pestana_cortes'));
+      await tester.tap(find.byKey(const Key('corte_vendedor_VEND01')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('boton_cerrar_corte_vendedor')));
+      await tester.tap(find.byKey(const Key('boton_cerrar_corte_vendedor')));
+      await tester.pumpAndSettle();
+
+      // Ya no en «Cerrados esta semana»: en su corte, con lo que entregó.
+      expect(find.byKey(const Key('corte_vendedor_reciente_k1')), findsNothing);
+      expect(find.text('Cerrados esta semana'), findsNothing);
+      await tester.scrollUntilVisible(find.byKey(const Key('corte_LQ-000004')), 200,
+          scrollable: find.byType(Scrollable).last);
+      expect(
+        textoQueContiene(r'Lo mandó el vendedor · Entregó $2,100.00 de $2,250.00'),
+        findsOneWidget,
+      );
+      // Por día, del más nuevo al más viejo.
+      final dia24 = find.byKey(const Key('dia_de_cortes_2026-09-24'));
+      final dia23 = find.byKey(const Key('dia_de_cortes_2026-09-23'));
+      await tester.scrollUntilVisible(dia23, 200, scrollable: find.byType(Scrollable).last);
+      expect(tester.getTopLeft(dia24).dy, lessThan(tester.getTopLeft(dia23).dy));
+      expect(textoQueContiene('2 corte(s)'), findsOneWidget);
+    });
+
+    testWidgets('cargas y cortes por día caben en el Hyundai HYLine Pro (360 de ancho)',
+        (tester) async {
+      final servidor = _ServidorDeCierres(conListas: true);
+      await _montarGerente(tester, servidor, _CompartidorDePrueba());
+      tester.view.physicalSize = const Size(360, 760);
+      await abrirPestana(tester, const Key('pestana_cargas'));
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('pestana_cortes')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('seccion_cortes_vendedores')), findsOneWidget);
+    });
   });
 }
+
+const _aceptada = '0198a2f4-aaaa-7000-8000-000000000002';
+const _rechazada = '0198a2f4-aaaa-7000-8000-000000000003';
 
 class _Gerencia extends ControladorSesion {
   @override
@@ -361,10 +446,14 @@ Future<void> _montarGerente(
 }
 
 class _ServidorDeCierres implements Transporte {
-  _ServidorDeCierres({this.corteAbierto = false});
+  _ServidorDeCierres({this.corteAbierto = false, this.conListas = false});
 
   /// Si el vendedor todavía debe su corte cuando se ve su carga.
   final bool corteAbierto;
+
+  /// Con las listas de abajo —cargas abiertas y cortes— y lo resuelto esta
+  /// semana: una carga aceptada y una rechazada (ADR 0002 §124).
+  final bool conListas;
   final List<(String, Map<String, Object?>)> posts = [];
   bool _corteCerrado = false;
 
@@ -395,16 +484,21 @@ class _ServidorDeCierres implements Transporte {
         },
       };
 
-  Map<String, Object?> _solicitud({String estado = 'pendiente', String? aceptadas}) => {
+  Map<String, Object?> _solicitud({
+    String estado = 'pendiente',
+    String? aceptadas,
+    String id = '0198a2f4-aaaa-7000-8000-000000000001',
+    String? motivo,
+  }) => {
         ..._vendedor,
         'corte': null,
         'corte_por_cerrar': corteAbierto && estado == 'pendiente'
             ? {'id': 'k1', 'fecha_operativa': '2026-09-24'}
             : null,
         'solicitud': {
-          'id': '0198a2f4-aaaa-7000-8000-000000000001', 'fecha_operativa': '2026-09-25',
+          'id': id, 'fecha_operativa': '2026-09-25',
           'estado': estado, 'observaciones': null, 'recibido_en': '2026-09-25T01:31:00Z',
-          'resuelta_en': null, 'resuelta_por': null, 'motivo': null,
+          'resuelta_en': null, 'resuelta_por': null, 'motivo': motivo,
           'carga_folio': estado == 'aceptada' ? 'CG-000013' : null, 'bodega': 'Bodega',
           'renglones': [
             {'producto_id': 'p1', 'sku': 'ATUN-140', 'nombre': 'Atún en agua 140 g',
@@ -424,7 +518,42 @@ class _ServidorDeCierres implements Transporte {
       }));
     }
     if (ruta == '/v1/cierres/solicitudes') {
-      return RespuestaHttp(200, jsonEncode({'pendientes': [_solicitud()], 'recientes': []}));
+      return RespuestaHttp(200, jsonEncode({
+        'pendientes': [_solicitud()],
+        'recientes': [
+          if (conListas) ...[
+            _solicitud(estado: 'aceptada', aceptadas: '240.000', id: _aceptada),
+            _solicitud(estado: 'rechazada', id: _rechazada, motivo: 'No hay atún'),
+          ],
+        ],
+      }));
+    }
+    if (conListas && ruta == '/v1/cargas') {
+      Map<String, Object?> carga(String folio, String dia, String estado) => {
+            'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': dia,
+            'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'renglones': 1,
+            'piezas': '240.000',
+          };
+      return RespuestaHttp(200, jsonEncode([
+        carga('CG-000013', '2026-09-25', 'confirmada'),
+        carga('CG-000012', '2026-09-24', 'en_ruta'),
+      ]));
+    }
+    if (conListas && ruta == '/v1/cortes') {
+      Map<String, Object?> corte(String id, String folio, String dia, String vendedor) => {
+            'id': id, 'folio': folio, 'estado': 'cerrada', 'fecha_operativa': dia,
+            'vendedor': vendedor, 'carga': 'CG-000012', 'efectivo_esperado': '2250.00',
+            'efectivo_entregado': '2100.00', 'diferencia_efectivo': '0.00',
+            'faltantes': 0, 'cerrada_en': null,
+          };
+      return RespuestaHttp(200, jsonEncode({
+        'por_cortar': <Object?>[],
+        'cortes': [
+          if (_corteCerrado) corte('l4', 'LQ-000004', '2026-09-24', 'Juan Pérez'),
+          corte('l3', 'LQ-000003', '2026-09-24', 'Ana López'),
+          corte('l2', 'LQ-000002', '2026-09-23', 'Juan Pérez'),
+        ],
+      }));
     }
     return const RespuestaHttp(503, '{"detail":"no importa aquí"}');
   }

@@ -5650,3 +5650,36 @@ por día.»
   necesita servidor nuevo ni señal.
 
 (versionCode 40)
+
+## 124. Cargas y cortes por día, cada uno una sola vez
+
+**Decisión (octubre 2026).** «En la app de cargas me aparece en "Resueltas esta
+semana" y en "Abiertas" la misma carga.» «Quiero que las cargas y cortes se vean
+por día.»
+
+- **Por qué se repetía**: al aceptar la carga que pidió un vendedor (§82) sale
+  una carga de verdad. La solicitud aceptada se listaba en «Resueltas esta
+  semana» («Carga CG-…») y su carga, otra vez, en «Abiertas». Con el corte pasaba
+  lo mismo: el corte del vendedor cerrado salía en «Cerrados esta semana» y su
+  corte (LQ-…) otra vez en «Cortes recientes».
+- **Cargas** (Almacén → Cargas): «Abiertas» y «Por fecha» van **agrupadas por
+  día**, del más nuevo al más viejo, con un encabezado por día con cuántas cargas
+  hubo y cuántas piezas. La carga que salió de una solicitud lo dice en su
+  renglón («la pidió el vendedor») y trae el **botón del ticket** para volver a
+  compartirlo. Tocar el renglón sigue abriendo la carga.
+- **Cortes** (Almacén → Corte del día): «Cortes recientes» pasa a **«Cortes por
+  día»**, con un encabezado por día y cuántos cortes hubo. El que se cerró desde
+  el corte del vendedor dice en su renglón «Lo mandó el vendedor · Entregó … de
+  …».
+- **Arriba queda solo lo que no está abajo**. En «Resueltas esta semana» quedan
+  las rechazadas, que no tienen carga, y la aceptada cuya carga no aparece en la
+  vista elegida (por ejemplo, la de mañana mientras se ve «Por fecha · hoy»). En
+  «Cerrados esta semana» queda el corte cuyo LQ- no está en la lista de abajo.
+  Así cada carga y cada corte se ven una vez.
+- Por cerrar y por aceptar no cambian: siguen arriba, como tarjetas.
+- Solo la app: el servidor ya mandaba todo lo necesario (el folio de la carga en
+  la solicitud, el de la liquidación en el corte). El dashboard no tenía la
+  repetición, porque «Cortes y cargas» no lista las cargas abiertas y Cargas ya
+  se agrupaba por día (§102).
+
+(versionCode 41)

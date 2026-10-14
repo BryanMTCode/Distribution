@@ -412,6 +412,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+37",
             ),
             Punto(
+                "cargas_por_dia", "Cargas por día, sin repetirse",
+                "Almacén → Cargas, después de aceptar una que pidió un vendedor. Mira "
+                "«Abiertas» y luego «Por fecha».",
+                "Las cargas van agrupadas por día («Viernes 25 de septiembre · 2 carga(s) "
+                "· 480 piezas»). La aceptada sale una sola vez, en su día, con «la pidió "
+                "el vendedor» y el botón del ticket; ya no se repite en «Resueltas esta "
+                "semana», donde solo quedan las rechazadas.",
+                desde="+41",
+            ),
+            Punto(
                 "nueva_carga", "Una carga a mano",
                 "Almacén → Cargas → «Nueva carga» → «Abrir la carga» → «Agregar» → "
                 "«Confirmar».",
@@ -423,6 +433,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Almacén → Corte del día → «Cortes de los vendedores» → ábrelo → cuenta "
                 "el efectivo que recibes → «Cerrar el corte».",
                 "Dice la diferencia contra lo esperado y deja el ticket del corte.",
+            ),
+            Punto(
+                "cortes_por_dia", "Cortes por día, sin repetirse",
+                "Almacén → Corte del día, después de cerrar el corte de un vendedor. Baja "
+                "hasta «Cortes por día».",
+                "Cada día con su encabezado y cuántos cortes hubo. El que cerraste sale "
+                "una sola vez, en su día, con «Lo mandó el vendedor · Entregó …»; ya no "
+                "se repite en «Cerrados esta semana».",
+                desde="+41",
             ),
             Punto(
                 "mayoreo", "Venta de mayoreo",

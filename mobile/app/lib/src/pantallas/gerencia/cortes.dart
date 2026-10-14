@@ -16,6 +16,10 @@
 ///     que terminó, hay que confirmarlo a mano.
 ///   · Al cerrar, el camión queda en lo contado, el faltante se carga a la cuenta
 ///     del vendedor y su teléfono recibe el ajuste.
+///
+/// Al final, los cortes por día, cada uno una sola vez (ADR 0002 §124): el que
+/// cerró el gerente desde el corte del vendedor dice en su renglón lo que éste
+/// entregó, en vez de repetirse en «Cerrados esta semana».
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -80,6 +84,18 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   /// Al deslizar para recargar, la sección de los vendedores se vuelve a leer.
   int _vuelta = 0;
 
+  /// Los cortes del vendedor cerrados esta semana, por el folio del corte que
+  /// salió de cada uno: su renglón dice lo que entregó.
+  Map<String, CorteRecibido> _delVendedor = const {};
+
+  void _leerDelVendedor(Cierres c) {
+    if (!mounted) return;
+    setState(() => _delVendedor = {
+          for (final r in c.recientes)
+            if (r.corte!.liquidacionFolio != null) r.corte!.liquidacionFolio!: r.corte!,
+        });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -136,7 +152,13 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
         key: const Key('lista_cortes'),
         padding: const EdgeInsets.all(16),
         children: [
-          SeccionCortesDeVendedores(key: ValueKey(_vuelta), alCambiar: _cargar),
+          SeccionCortesDeVendedores(
+            key: ValueKey(_vuelta),
+            alCambiar: _cargar,
+            alLeer: _leerDelVendedor,
+            // Los que ya están abajo, en su día, no se repiten arriba.
+            yaListados: {for (final c in l?.cortes ?? const <CorteEnLista>[]) c.folio},
+          ),
           const Divider(height: 32),
           if (_error != null) _Aviso(_error!, esError: true),
           if (l == null && _error == null)
@@ -173,28 +195,24 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
                 ),
               ),
             const SizedBox(height: 16),
-            Text('Cortes recientes', style: estilo.titleMedium),
+            Text('Cortes por día', style: estilo.titleMedium),
             if (l.cortes.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Todavía no hay cortes.'),
               ),
-            for (final c in l.cortes)
-              ListTile(
-                key: Key('corte_${c.folio}'),
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  c.estado == 'cerrada' ? Icons.lock_outline : Icons.edit_note,
+            // Un encabezado por día con cuántos cortes hubo (ADR 0002 §124).
+            for (final (dia, del) in _porDia(l.cortes)) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Text(
+                  '${_mayuscula(diaEnPalabras(dia))} · ${del.length} corte(s)',
+                  key: Key('dia_de_cortes_$dia'),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                title: Text('${c.vendedor} · ${diaEnPalabras(c.fecha)}'),
-                subtitle: Text(
-                  '${c.folio} · ${c.estado == 'cerrada' ? 'cerrado' : 'abierto'}'
-                  '${c.faltantes > 0 ? ' · ${c.faltantes} producto(s) con diferencia' : ''}'
-                  '${c.diferenciaEfectivo.centavos != 0 ? ' · efectivo ${pesos(c.diferenciaEfectivo)}' : ''}',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _abrirDetalle((cl) => cl.ver(c.id)),
               ),
+              for (final c in del) _renglon(c),
+            ],
           ],
         ],
       ),
@@ -206,7 +224,41 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
       body: cuerpo,
     );
   }
+
+  Widget _renglon(CorteEnLista c) {
+    final delVendedor = _delVendedor[c.folio];
+    return ListTile(
+      key: Key('corte_${c.folio}'),
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        c.estado == 'cerrada' ? Icons.lock_outline : Icons.edit_note,
+      ),
+      title: Text('${c.vendedor} · ${diaEnPalabras(c.fecha)}'),
+      subtitle: Text(
+        '${c.folio} · ${c.estado == 'cerrada' ? 'cerrado' : 'abierto'}'
+        '${c.faltantes > 0 ? ' · ${c.faltantes} producto(s) con diferencia' : ''}'
+        '${c.diferenciaEfectivo.centavos != 0 ? ' · efectivo ${pesos(c.diferenciaEfectivo)}' : ''}'
+        // El que mandó el vendedor desde su teléfono: lo que entregó.
+        '${delVendedor == null ? '' : '\nLo mandó el vendedor · ${efectivoEnPalabras(delVendedor)}'}',
+      ),
+      isThreeLine: delVendedor != null,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _abrirDetalle((cl) => cl.ver(c.id)),
+    );
+  }
 }
+
+/// Los cortes por día, del más reciente al más viejo, en el orden en que llegan.
+List<(String, List<CorteEnLista>)> _porDia(List<CorteEnLista> cortes) {
+  final dias = <String, List<CorteEnLista>>{};
+  for (final c in cortes) {
+    dias.putIfAbsent(c.fecha, () => []).add(c);
+  }
+  return [for (final e in dias.entries) (e.key, e.value)];
+}
+
+String _mayuscula(String texto) =>
+    texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 
 // ---------------------------------------------------------------------------
 // Un corte: contar, arqueo, cerrar
