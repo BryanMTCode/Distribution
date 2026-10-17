@@ -63,7 +63,7 @@
   <button type="submit" class="secundario">Ver</button>
 </form>
 
-<details class="familia" id="todos_los_almacenes" {% if almacenes|length <= 8 %}open{% endif %}>
+<details class="familia almacenes" id="todos_los_almacenes" {% if almacenes|length <= 8 %}open{% endif %}>
   <summary>Todos los almacenes <span class="sutil">· {{ almacenes|length }}</span>
     <span class="resumen">{{ almacenes|sum(attribute='piezas')|entero }} piezas · {{ almacenes|sum(attribute='valor')|dinero }}</span></summary>
   <table id="tabla_almacenes" style="table-layout:auto">
