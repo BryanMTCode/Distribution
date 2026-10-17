@@ -8,7 +8,8 @@ del periodo que se elija al bajarlo.
 1. **Se baja del dashboard** como un .xlsx con su nombre, con una hoja de
    Resumen y una por tema, y dice las mismas cifras que el dashboard.
 2. **Lo eliminado no cuenta** en ninguna hoja.
-3. **Quién**: la gerencia y el administrador; el supervisor no.
+3. **Quién**: la oficina —quien ve el Tablero: administrador, gerencia y
+   supervisor—; sin entrar al panel, nadie.
 """
 
 from __future__ import annotations
@@ -123,12 +124,16 @@ async def test_lo_eliminado_no_cuenta(cliente, sesion, semilla, dia):  # noqa: F
     assert [Decimal(str(f[3])) for f in atun] == [760, 240]
 
 
-async def test_lo_baja_la_gerencia_y_no_el_supervisor(cliente, sesion, semilla, dia):  # noqa: F811
+async def test_lo_baja_la_oficina_y_sin_entrar_nadie(cliente, sesion, semilla, dia):  # noqa: F811
+    # Sin entrar al panel, no hay archivo.
+    r = await cliente.get("/panel/reporte/excel?periodo=hoy", follow_redirects=False)
+    assert r.status_code != 200 and not r.content.startswith(b"PK")
+
     await _entrar(cliente, "GER01")
-    r, libro = await _bajar(cliente, "semana")
+    _, libro = await _bajar(cliente, "semana")
     assert libro.sheetnames == HOJAS
 
     await _usuario(sesion, semilla, "SUP01", "supervisor")
     await _entrar(cliente, "SUP01")
-    assert (await cliente.get("/panel/reporte/excel?periodo=hoy")).status_code == 403
-    assert (await cliente.get("/panel/reporte")).status_code == 403
+    _, libro = await _bajar(cliente, "hoy")
+    assert libro.sheetnames == HOJAS

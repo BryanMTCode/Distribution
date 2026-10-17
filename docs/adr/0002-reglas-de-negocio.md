@@ -5801,7 +5801,8 @@ bajarlo**.
 - **Administración → Reporte en Excel**: el selector de periodo de siempre (hoy,
   la semana, el mes, un rango) y el botón «Bajar el reporte en Excel». El
   Tablero lo enlaza debajo de su selector, con el mismo periodo. Lo baja quien
-  ve el Tablero (`tablero.ver`: gerencia y administrador). El supervisor no.
+  ve el Tablero (`tablero.ver`): el administrador, la gerencia y el supervisor.
+  Sin entrar al panel, nadie.
 - **El archivo** (`reporte_AAAA-MM-DD_a_AAAA-MM-DD.xlsx`) se lee sin saber nada
   del sistema:
   - encabezados en rojo y totales en negritas al final de cada tabla;
