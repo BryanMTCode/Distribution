@@ -135,7 +135,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1432 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **657 de Dart** y **318 de widget**, todas en verde.
+**1438 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **657 de Dart** y **318 de widget**, todas en verde.
 
 ## Stack
 
@@ -273,7 +273,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1432 pruebas de Python
+make pruebas                        # 1438 pruebas de Python
 make movil                          # 657 de Dart + 318 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
