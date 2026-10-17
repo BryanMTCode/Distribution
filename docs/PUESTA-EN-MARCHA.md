@@ -970,3 +970,42 @@ Pide escribir `TIENDAS`; con cualquier otra cosa no cambia nada.
 los códigos 100 a 1933 y *Plan de visita* con las de cada día. Correrlo otra vez
 dice «Ya estaban todas».
 
+
+## Anexo · Los ZUKO de la factura del 16 de octubre
+
+**DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen
+reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
+
+Da de alta los siete ZUKO 8 gr (12/8) de la factura —jamaica, naranja, piña, uva,
+horchata, fresa y limón, T-103 a T-109— en la familia de Maruchan, y los recibe
+en la bodega principal como una **compra**: 600 exhibidores a $47.00, $28,200.00
+(ADR 0002 §125). Van **sin precio de venta**: el vendedor no los ve hasta que se
+les ponga en *Productos*.
+
+**1. Lo que va a hacer** (no cambia nada):
+
+```bash
+cd ~/Distribution
+docker compose run --rm --no-deps api python -m app.cli compra-zuko --resumen
+```
+
+**✅ Debes ver** los siete artículos con «(NUEVO)», «Total: 600 exhibidores,
+$28,200.00.», «Familia: Sopa Maruchan» y «Entran a: Bodega principal, como compra».
+**Si dice «NO SE PUEDE»**, no se cambió nada y dice por qué (por ejemplo, un SKU
+T-10x que ya es de otro artículo).
+
+**2. El respaldo y la carga:**
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh
+docker compose run --rm --no-deps api python -m app.cli compra-zuko
+```
+
+Pide escribir `ZUKO`; con cualquier otra cosa no cambia nada. No hace falta
+detener la API.
+
+**✅ Debes ver** «Listo. 7 artículo(s) nuevo(s) y la compra EN-…: 600 exhibidores,
+$28,200.00, en la bodega». En el panel, *Productos* con los siete en la familia de
+Maruchan (sin precio), *Entradas* con la compra de El Competidor e *Inventario* con
+la bodega. Correrlo otra vez dice «Ya estaba».

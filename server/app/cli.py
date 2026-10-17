@@ -439,6 +439,76 @@ async def tiendas_de_rutas(*, solo_resumen: bool = False, confirmado: bool = Fal
     return 0
 
 
+async def compra_zuko(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
+    """Da de alta los siete ZUKO de la factura del 16/10 en la familia de Maruchan
+    y los recibe en la bodega como compra (ADR 0002 §125).
+
+    Qué hace está en `app/infra/compra_zuko.py`. `--resumen` solo dice lo que
+    haría; `--confirmado` no pregunta.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import quien_registra
+    from app.infra.compra_zuko import (
+        PALABRA,
+        PROVEEDOR,
+        REFERENCIA,
+        FacturaInvalida,
+        aplicar,
+        leer_factura,
+        planear,
+    )
+
+    try:
+        renglones = leer_factura()
+    except FacturaInvalida as e:
+        print(f"ERROR en el archivo: {e}")
+        return 1
+
+    piezas = sum(r.cantidad for r in renglones)
+    importe = sum(r.importe for r in renglones)
+    async with CrearSesion() as sesion:
+        plan = await planear(sesion, renglones)
+        print(f"COMPRA DE ZUKO: {REFERENCIA}, de {PROVEEDOR}\n")
+        for r in renglones:
+            marca = "NUEVO" if r in plan.nuevos else "ya estaba"
+            print(f"  {r.sku} {r.nombre}: {r.cantidad:,.0f} a ${r.costo:,.2f} = "
+                  f"${r.importe:,.2f} ({marca})")
+        print(f"\nTotal: {piezas:,.0f} exhibidores, ${importe:,.2f}.")
+        if plan.familia:
+            print(f"Familia: {plan.familia}. Sin precio de venta: el vendedor no los ve "
+                  "hasta que se les ponga en Productos.")
+        if plan.bodega:
+            print(f"Entran a: {plan.bodega}, como compra (folio EN-).")
+        for problema in plan.problemas:
+            print(f"NO SE PUEDE: {problema}")
+        print()
+        if not plan.se_puede:
+            print("No se cambió nada.")
+            return 1
+        if plan.compra_hecha and not plan.nuevos:
+            print(f"Ya estaba: la compra es {plan.compra_hecha}. No se cambió nada.")
+            return 0
+        if solo_resumen:
+            return 0
+        if not confirmado and input(
+            f"Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        try:
+            resultado = await aplicar(sesion, renglones, quien=await quien_registra(sesion))
+        except FacturaInvalida as e:
+            await sesion.rollback()
+            print(f"ERROR: {e}. No se cambió nada.")
+            return 1
+
+    print(f"Listo. {resultado.articulos_nuevos} artículo(s) nuevo(s) y la compra "
+          f"{resultado.folio}: {resultado.piezas:,.0f} exhibidores, ${resultado.importe:,.2f}, "
+          "en la bodega.")
+    print("Para venderlos en la ruta, ponles precio en el panel, en Productos.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
@@ -447,12 +517,15 @@ def main() -> int:
         "base-en-blanco": base_en_blanco,
         "camiones-al-sabado": camiones_al_sabado,
         "tiendas-de-rutas": tiendas_de_rutas,
+        "compra-zuko": compra_zuko,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2
     comando, opciones = sys.argv[1], set(sys.argv[2:])
-    if comando in ("base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas") and opciones <= {
+    if comando in (
+        "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "compra-zuko"
+    ) and opciones <= {
         "--resumen", "--confirmado"
     }:
         return asyncio.run(comandos[comando](

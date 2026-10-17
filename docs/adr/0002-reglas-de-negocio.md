@@ -5683,3 +5683,36 @@ por día.»
   se agrupaba por día (§102).
 
 (versionCode 41)
+
+## 125. Los ZUKO de la factura del 16 de octubre, en la familia de Maruchan y solo en la bodega
+
+**Decisión (octubre 2026).** Con la foto de la factura: «Se agregarán estos
+artículos a la familia de Maruchan. Se agregarán solo en el almacén».
+
+- **Siete artículos nuevos**, por exhibidor (la factura dice EXH), en la familia
+  de Maruchan, después de las tres sopas: T-103 Zuko jamaica, T-104 naranja
+  («NJA»), T-105 piña, T-106 uva, T-107 horchata, T-108 fresa («FSA») y T-109
+  limón, todos «8 gr exhibidor (12/8)». El exhibidor es la pieza.
+- **Solo en el almacén**: llegan a la **bodega principal** como una **compra**
+  (folio EN-), con el costo de la factura —$47.00 por exhibidor, con impuestos—:
+  120 de jamaica, naranja y piña, y 60 de cada uno de los otros cuatro, 600 que
+  suman $28,200.00. Entran al libro mayor, a la existencia y al costo promedio,
+  igual que una compra capturada en Entradas. A los camiones no les llega nada:
+  suben con una carga.
+- **Sin precio de venta**: la factura solo dice lo que costaron. Un artículo sin
+  precio en la lista general no le aparece al vendedor, y el panel lo cuenta
+  entre los «sin precio». Se pone en *Productos* cuando se decida venderlos en
+  la ruta.
+- El proveedor va como texto, «El Competidor» (el del correo al pie de la
+  factura), sin cuenta por pagar, como una compra a un proveedor que no está en
+  el catálogo. La fecha es la de la factura, 16/10/2026.
+- La factura pasada a limpio vive en `server/db/semillas/compra_zuko_2026-10-16.csv`,
+  y la carga el comando `compra-zuko` (`app/infra/compra_zuko.py`): primero
+  `--resumen`, después pide escribir `ZUKO`. La familia se busca por su nombre
+  («Sopa Maruchan», o la única que diga «Maruchan» si se renombró). Si un SKU ya
+  es de otro artículo, o la familia no está, no toca nada y dice por qué.
+  Correrlo dos veces no duplica nada: la compra tiene una llave fija.
+- No entran a `articulos_distribuciones_se.csv`: ese archivo exige el precio de
+  venta, porque es el catálogo con el que arranca una base en blanco.
+
+Solo servidor: no hace falta APK nuevo.

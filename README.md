@@ -111,6 +111,7 @@ la bodega sube cuando alguien la cuenta.
 | **Clientes por ruta y día** en el dashboard y la app —la tabla de rutas por día, filtros y tiendas agrupadas—, y **los códigos nuevos desde 1934** (§122) | ✅ 5 pruebas del servidor, 1 de Dart y 1 de widget |
 | **«Mi ruta» del vendedor agrupada por día**: cada día con su encabezado y sus tiendas en orden, y en «Hoy» las demás también por día (§123) | ✅ 1 de widget |
 | **Cargas y cortes por día** en la app de la oficina, cada uno una sola vez: la carga aceptada en su renglón con su ticket, el corte del vendedor en el suyo con lo que entregó (§124) | ✅ 3 de widget |
+| **Los ZUKO de la factura del 16/10**: siete artículos en la familia de Maruchan, recibidos en la bodega como compra —600 exhibidores, $28,200.00— y sin precio de venta hasta que se decida (§125) | ✅ 6 pruebas |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
