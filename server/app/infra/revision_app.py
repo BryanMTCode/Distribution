@@ -803,6 +803,36 @@ SECCIONES: tuple[Seccion, ...] = (
         parte="dashboard",
     ),
     Seccion(
+        "panel_facil", "El dashboard más fácil de leer",
+        "La computadora, entrando como admin",
+        (
+            Punto(
+                "panel_almacenes_tabla", "Los almacenes en una tabla",
+                "Almacén → Inventario. Cambia de almacén con el selector y con la tabla.",
+                "Arriba, tres cifras: la bodega, los camiones y el total. Después el "
+                "selector y «Todos los almacenes», un renglón por almacén con lo que "
+                "vale, y el que estás viendo marcado. Ya no hay un recuadro por almacén.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_plan_por_dia", "El plan de visita por día",
+                "Catálogos → Clientes → Plan de visita: toca «Lun · 45». Cambia un orden "
+                "y «Guardar el plan».",
+                "La lista queda solo con los clientes del lunes, en su orden. Al guardar "
+                "regresa al lunes, y los clientes de los demás días no cambian.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_usuarios_mas", "Las acciones de cada usuario",
+                "Administración → Usuarios y rutas: toca «Más ▾» en un vendedor.",
+                "Cada renglón mide una línea con «Editar» y «Más ▾»; ahí se abren la "
+                "contraseña nueva, «Desactivar» y «Eliminar».",
+                desde="+41",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
         "panel_reporte", "Reporte en Excel para el administrador",
         "La computadora, entrando como admin, con Excel a la mano",
         (

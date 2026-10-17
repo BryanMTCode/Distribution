@@ -6,12 +6,12 @@
 <h3>Clientes</h3>
 <div class="tarjetas" id="resumen_clientes">
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/clientes">
-    <div class="numero">{{ r.clientes_activos }}</div>
+    <div class="numero">{{ r.clientes_activos|entero }}</div>
     <div class="etiqueta">clientes activos</div>
-    <div class="sutil" style="margin-top:6px">{{ r.clientes_nuevos_mes }} nuevo(s) este mes</div>
+    <div class="sutil" style="margin-top:6px">{{ r.clientes_nuevos_mes|entero }} nuevo(s) este mes</div>
   </a>
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/clientes">
-    <div class="numero">{{ r.prospectos }}</div>
+    <div class="numero">{{ r.prospectos|entero }}</div>
     <div class="etiqueta">prospectos</div>
     <div class="sutil" style="margin-top:6px">{{ r.clientes_inactivos }} dado(s) de baja</div>
   </a>
@@ -20,17 +20,17 @@
 <h3>Gente y rutas</h3>
 <div class="tarjetas" id="resumen_gente">
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/vendedores">
-    <div class="numero">{{ r.vendedores }}</div>
+    <div class="numero">{{ r.vendedores|entero }}</div>
     <div class="etiqueta">vendedores activos</div>
     <div class="sutil" style="margin-top:6px">{{ r.vendedores_con_camion }} con camión asignado</div>
   </a>
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/equipo">
-    <div class="numero">{{ r.rutas }}</div>
+    <div class="numero">{{ r.rutas|entero }}</div>
     <div class="etiqueta">rutas</div>
     <div class="sutil" style="margin-top:6px">{{ r.usuarios_oficina }} usuario(s) de oficina</div>
   </a>
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/equipos">
-    <div class="numero">{{ r.telefonos }}</div>
+    <div class="numero">{{ r.telefonos|entero }}</div>
     <div class="etiqueta">teléfonos activos</div>
   </a>
 </div>
@@ -38,7 +38,7 @@
 <h3>Artículos e inventario</h3>
 <div class="tarjetas" id="resumen_articulos">
   <a class="tarjeta {% if r.productos_sin_precio %}aviso{% endif %}" style="text-decoration:none;color:inherit" href="/panel/productos">
-    <div class="numero">{{ r.productos }}</div>
+    <div class="numero">{{ r.productos|entero }}</div>
     <div class="etiqueta">artículos activos</div>
     <div class="sutil" style="margin-top:6px">{{ r.productos_sin_precio }} sin precio</div>
   </a>

@@ -25,24 +25,24 @@
 {% endif %}
 
 {% if ruta %}
-<div class="tarjetas" id="carga_por_dia">
+{# Los días como filtro y no como siete recuadros (ADR 0002 §128): cada uno con
+   cuántos le tocan, y al tocarlo la lista queda solo con los de ese día. #}
+<nav class="filtro" id="carga_por_dia" aria-label="Días de visita">
+  <a href="/panel/plan-visita?ruta={{ ruta.id }}" {% if not dia %}class="actual"{% endif %}>Todos · {{ total }}</a>
   {% for dow, corto, largo in dias %}
-  <div class="tarjeta">
-    <div class="numero">{{ por_dia[dow] }}</div>
-    <div class="etiqueta">{{ largo }}</div>
-  </div>
+  <a href="/panel/plan-visita?ruta={{ ruta.id }}&dia={{ dow }}" id="dia_{{ dow }}"
+     {% if dia == dow|string %}class="actual"{% endif %} title="{{ por_dia[dow] }} el {{ largo }}">{{ corto }} · {{ por_dia[dow] }}</a>
   {% endfor %}
   {% if sin_plan %}
-  <div class="tarjeta aviso">
-    <div class="numero">{{ sin_plan }}</div>
-    <div class="etiqueta">sin día de visita</div>
-  </div>
+  <a href="/panel/plan-visita?ruta={{ ruta.id }}&dia=sin" {% if dia == 'sin' %}class="actual"{% endif %}
+     style="color:var(--aviso)">Sin día · {{ sin_plan }}</a>
   {% endif %}
-</div>
+</nav>
 
 {% if clientes %}
 <form method="post" action="/panel/plan-visita/{{ ruta.id }}" id="forma_plan">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="dia" value="{{ dia }}">
   <div class="tabla-marco">
     <table>
       <thead>
@@ -56,6 +56,7 @@
         {% for c in clientes %}
         <tr>
           <td class="numero">
+            <input type="hidden" name="en_pantalla" value="{{ c.id }}">
             <input type="text" name="orden_{{ c.id }}" value="{{ c.secuencia or '' }}"
                    inputmode="numeric" style="width:56px;text-align:right"
                    aria-label="Orden de {{ c.nombre_comercial }}" {% if not puede_editar %}disabled{% endif %}>
@@ -90,7 +91,7 @@
   {% endif %}
 </form>
 {% else %}
-<div class="vacio">Esta ruta no tiene clientes.</div>
+<div class="vacio">{% if dia %}Ningún cliente de esta ruta ese día.{% else %}Esta ruta no tiene clientes.{% endif %}</div>
 {% endif %}
 {% else %}
 <div class="vacio">No hay rutas activas. Da de alta una en <a href="/panel/equipo">Equipo</a>.</div>

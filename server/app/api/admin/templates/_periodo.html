@@ -21,5 +21,6 @@
   <input type="date" name="desde" value="{{ periodo.inicio.isoformat() }}" aria-label="Desde">
   <input type="date" name="hasta" value="{{ periodo.fin.isoformat() }}" aria-label="Hasta">
   <button type="submit" class="secundario">Ver</button>
-  <span class="sutil">{{ periodo.descripcion|capitalize }}</span>
+  {# «Hoy» al lado de «Hoy» no dice nada; las fechas de una semana, sí. #}
+  {% if not periodo.es_hoy %}<span class="sutil">{{ periodo.descripcion|capitalize }}</span>{% endif %}
 </form>

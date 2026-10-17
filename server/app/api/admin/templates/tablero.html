@@ -121,7 +121,7 @@
 {% endif %}
 <div class="tarjetas" id="cifras_periodo">
   <div class="tarjeta">
-    <div class="numero">{{ indicadores.ventas_hoy }}</div>
+    <div class="numero">{{ indicadores.ventas_hoy|entero }}</div>
     <div class="etiqueta">ventas recibidas {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
       {{ indicadores.importe_hoy }} en total.
@@ -141,7 +141,7 @@
   </a>
 
   <div class="tarjeta">
-    <div class="numero">{{ cifras.clientes_atendidos }}</div>
+    <div class="numero">{{ cifras.clientes_atendidos|entero }}</div>
     <div class="etiqueta">clientes con compra {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
       {% if cifras.canceladas %}{{ cifras.canceladas }} venta(s) cancelada(s), aparte en
@@ -152,7 +152,7 @@
     </div>
   </div>
   <div class="tarjeta">
-    <div class="numero">{{ cifras.no_ventas }}</div>
+    <div class="numero">{{ cifras.no_ventas|entero }}</div>
     <div class="etiqueta">visitas sin venta</div>
     <div class="sutil" style="margin-top:6px">
       {{ cifras.mermas }} merma(s) y {{ cifras.devoluciones }} devolución(es) de cliente.
@@ -160,7 +160,7 @@
     </div>
   </div>
   <div class="tarjeta">
-    <div class="numero">{{ cifras.clientes_nuevos }}</div>
+    <div class="numero">{{ cifras.clientes_nuevos|entero }}</div>
     <div class="etiqueta">clientes nuevos</div>
     <div class="sutil" style="margin-top:6px">Dados de alta en el periodo, en la calle o en la oficina.</div>
   </div>

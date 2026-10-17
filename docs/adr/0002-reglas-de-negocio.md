@@ -5835,3 +5835,48 @@ bajarlo**.
 - Servidor: `app/infra/reporte_excel.py` y `app/api/admin/reporte.py`, con
   `openpyxl` como dependencia nueva (en `uv.lock`). La imagen la instala al
   reconstruirse. No hay migración.
+
+## 128. El dashboard más fácil de leer
+
+**Decisión (octubre 2026).** «Quiero que revises el dashboard y veas cómo hacerlo
+lo más fácil de usar, más desde el punto de vista estético; por ejemplo, en los
+almacenes se hace una caja de cada almacén, pero si son muchos se harán muchos
+recuadros.» Se revisaron las pantallas con los datos del servidor: la bodega, los
+camiones, los 39 artículos y las 1,834 tiendas.
+
+- **Inventario.** Ya no hay un recuadro por almacén. Arriba van tres cifras que no
+  crecen: lo que vale la bodega, lo que valen los camiones y el total. Después:
+  - un **selector** del almacén, con las bodegas y los camiones separados, y el
+    nombre de quien trae cada camión;
+  - **«Todos los almacenes»**: un renglón por almacén con quién lo trae, cuántos
+    artículos y piezas tiene, lo que vale y si tiene algo en negativo. El
+    almacén que se está viendo va marcado. Con más de ocho almacenes la tabla
+    abre plegada.
+  - Debajo, el almacén elegido con su resumen en una línea.
+  
+  Con 30 camiones ocupa lo mismo que con 7.
+- **Plan de visita.** Los siete recuadros de días pasan a ser botones que
+  filtran: «Todos · 260 · Lun 45 · Mar 44…», y «Sin día» si hay. Con un día
+  elegido la lista trae solo los clientes de ese día, en su orden, que es como
+  se arma una ruta. Guardar desde ahí solo toca a los clientes que están en
+  pantalla: el formulario dice cuáles son (`en_pantalla`), así un cliente de
+  otro día no pierde los suyos por no estar en la lista. Una página anterior,
+  sin esa marca, guarda todos como antes.
+- **Usuarios y rutas.** Cada renglón lleva «Editar» y **«Más ▾»**. Ahí se abren
+  la contraseña nueva, «Desactivar» y «Eliminar». Antes el formulario de
+  contraseña y cuatro botones hacían cada renglón cinco veces más alto.
+- **Las tablas en todas las pantallas.**
+  - El nombre que abre su ficha va en tinta con un subrayado tenue, y se pone
+    rojo al pasar el ratón. Antes era rojo, subrayado y en negritas, y una tabla
+    de 40 renglones era una mancha roja que competía con los avisos.
+  - El renglón se ilumina al pasar el ratón.
+  - En Operaciones, el detalle largo de un ajuste se corta a dos líneas: completo
+    al pasar el ratón y en su página.
+- **Detalles.**
+  - Las barras de filtros se alinean al centro.
+  - El selector de periodo ya no repite «Hoy» junto a «Hoy». Con otro periodo
+    sigue diciendo las fechas.
+  - En Desempeño, la fecha, «Ver» y el día anterior van en un solo renglón.
+  - Los números grandes del Tablero y de La empresa llevan comas («1,834»).
+- Solo plantillas y estilos del panel, y el filtro del plan de visita en el
+  servidor. No hay migración y no hace falta APK nuevo.

@@ -24,27 +24,73 @@
 </div>
 {% else %}
 
-<div class="tarjetas" style="margin-bottom:22px">
-  {% for a in almacenes %}
-    <a class="tarjeta {% if a.negativos %}alerta{% endif %}"
-       href="/panel/inventario?almacen={{ a.id }}&filtro={{ filtro }}"
-       style="text-decoration:none;color:inherit
-              {% if elegido and a.id == elegido.id %};outline:2px solid var(--acento){% endif %}">
-      <div class="numero">{{ a.renglones }}</div>
-      <div class="etiqueta">{{ a.nombre }}</div>
-      <div class="sutil" style="margin-top:6px">
-        {{ a.tipo }}{% if a.responsable %} · {{ a.responsable }}{% endif %}
-        <div>{{ a.piezas|entero }} unidades base</div>
-        <div id="valor_{{ a.codigo }}">{{ a.valor|dinero }} a precio de venta</div>
-        {% if a.negativos %}
-          <div style="color:var(--alerta)">{{ a.negativos }} en negativo</div>
-        {% endif %}
-      </div>
-    </a>
-  {% endfor %}
+{# Los almacenes en una tabla y no en un recuadro cada uno (ADR 0002 §128): con
+   veinte camiones, veinte recuadros empujaban la mercancía hasta abajo. Arriba,
+   tres cifras que no crecen; luego el almacén que se está viendo, con un
+   selector para cambiarlo, y la tabla de todos, que se pliega. #}
+{% set tipo_de = {'bodega': 'Bodega', 'camion': 'Camión', 'merma': 'Merma', 'transito': 'En tránsito'} %}
+{% set bodegas = almacenes|selectattr('tipo', 'equalto', 'bodega')|list %}
+{% set camiones = almacenes|selectattr('tipo', 'equalto', 'camion')|list %}
+<div class="tarjetas" id="resumen_inventario" style="margin-bottom:16px">
+  <div class="tarjeta">
+    <div class="numero">{{ bodegas|sum(attribute='valor')|dinero }}</div>
+    <div class="etiqueta">en {% if bodegas|length == 1 %}la bodega{% else %}{{ bodegas|length }} bodegas{% endif %} · {{ bodegas|sum(attribute='piezas')|entero }} piezas</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ camiones|sum(attribute='valor')|dinero }}</div>
+    <div class="etiqueta">en {{ camiones|length }} camión(es) · {{ camiones|sum(attribute='piezas')|entero }} piezas</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ almacenes|sum(attribute='valor')|dinero }}</div>
+    <div class="etiqueta">todo el inventario, a precio de venta</div>
+  </div>
 </div>
 
-<h2>{{ elegido.nombre }}</h2>
+<form class="barra" method="get" action="/panel/inventario" id="elegir_almacen">
+  <input type="hidden" name="filtro" value="{{ filtro }}">
+  <select name="almacen" aria-label="Almacén" style="min-width:280px">
+    {% for grupo, tipo in (('Bodegas', 'bodega'), ('Camiones', 'camion'), ('Otros', None)) %}
+      {% set suyos = almacenes|selectattr('tipo', 'equalto', tipo)|list if tipo else almacenes|rejectattr('tipo', 'in', ['bodega', 'camion'])|list %}
+      {% if suyos %}
+      <optgroup label="{{ grupo }}">
+        {% for a in suyos %}
+        <option value="{{ a.id }}" {% if elegido and a.id == elegido.id %}selected{% endif %}>{{ a.nombre }}{% if a.responsable and a.tipo == 'camion' %} · {{ a.responsable }}{% endif %}{% if a.negativos %} (⚠ {{ a.negativos }} en negativo){% endif %}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Ver</button>
+</form>
+
+<details class="familia" id="todos_los_almacenes" {% if almacenes|length <= 8 %}open{% endif %}>
+  <summary>Todos los almacenes <span class="sutil">· {{ almacenes|length }}</span>
+    <span class="resumen">{{ almacenes|sum(attribute='piezas')|entero }} piezas · {{ almacenes|sum(attribute='valor')|dinero }}</span></summary>
+  <table id="tabla_almacenes" style="table-layout:auto">
+    <thead>
+      <tr><th>Almacén</th><th>Quién lo trae</th><th class="numero">Artículos</th>
+          <th class="numero">Piezas</th><th class="numero">Vale</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for a in almacenes %}
+      <tr {% if elegido and a.id == elegido.id %}class="elegido" aria-current="true"{% endif %}>
+        <td style="white-space:nowrap"><a href="/panel/inventario?almacen={{ a.id }}&filtro={{ filtro }}">{{ a.nombre }}</a>
+            {% if a.tipo not in ('bodega', 'camion') %}<span class="sutil">· {{ tipo_de.get(a.tipo, a.tipo) }}</span>{% endif %}</td>
+        <td>{{ a.responsable or '—' }}</td>
+        <td class="numero">{{ a.renglones }}</td>
+        <td class="numero">{{ a.piezas|entero }}</td>
+        <td class="numero" id="valor_{{ a.codigo }}">{{ a.valor|dinero }}</td>
+        <td>{% if a.negativos %}<span class="etiqueta-motivo" style="background:var(--alerta-suave);color:var(--alerta)">{{ a.negativos }} en negativo</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+
+<h2>{{ elegido.nombre }}{% if elegido.responsable and elegido.tipo == 'camion' %} <span class="sutil">· {{ elegido.responsable }}</span>{% endif %}</h2>
+<p class="sutil" id="resumen_elegido" style="margin-top:-6px">
+  {{ elegido.renglones }} artículo(s) · {{ elegido.piezas|entero }} piezas · {{ elegido.valor|dinero }} a precio de venta
+</p>
 
 <form class="barra" method="get" action="/panel/inventario">
   <input type="hidden" name="almacen" value="{{ elegido.id }}">

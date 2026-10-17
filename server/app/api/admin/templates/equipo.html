@@ -133,22 +133,27 @@
         </td>
         <td class="numero sutil">{{ u.equipos or '—' }}</td>
         {% if puede_editar %}
+        {# Lo de todos los días a la vista; lo demás, en «Más» (ADR 0002 §128): con
+           el formulario de contraseña y tres botones en cada renglón, la tabla
+           medía cinco veces lo que tiene que medir. #}
         <td class="acciones">
           <a class="boton-chico" href="/panel/equipo/usuarios/{{ u.id }}#editar">Editar</a>
-          <a class="boton-chico peligro" href="/panel/equipo/usuarios/{{ u.id }}#eliminar">Eliminar</a>
-          <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password"
-                style="display:flex;gap:6px;margin-bottom:6px">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <input type="password" name="password" placeholder="contraseña nueva"
-                   style="width:150px">
-            <button type="submit" class="secundario"
-                    style="padding:3px 9px;font-size:12px">Cambiar</button>
-          </form>
-          <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <button type="submit" class="secundario"
-                    style="padding:3px 9px;font-size:12px">Desactivar</button>
-          </form>
+          <details class="menu-acciones" id="mas_{{ u.id }}">
+            <summary class="boton-chico" aria-label="Más acciones de {{ u.nombre }}">Más ▾</summary>
+            <div class="menu-acciones-caja">
+              <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="password" name="password" placeholder="contraseña nueva"
+                       aria-label="Contraseña nueva de {{ u.nombre }}" style="width:150px">
+                <button type="submit" class="secundario boton-chico">Cambiar</button>
+              </form>
+              <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/activo">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button type="submit" class="secundario boton-chico">Desactivar</button>
+                <a class="boton-chico peligro" href="/panel/equipo/usuarios/{{ u.id }}#eliminar">Eliminar</a>
+              </form>
+            </div>
+          </details>
         </td>
         {% endif %}
       </tr>

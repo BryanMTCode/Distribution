@@ -49,6 +49,10 @@ PERMISO = "clientes.administrar"
 
 # El orden de la semana como se trabaja —de lunes a domingo— con el número que usa
 # la base: `extract(dow)`, donde 0 es domingo.
+# El filtro de la lista por día (ADR 0002 §128): «1»…«6», «0» el domingo, y
+# «sin» los que no tienen día. Vacío, todos.
+DIA_ELEGIBLE = ("0", "1", "2", "3", "4", "5", "6", "sin")
+
 DIAS = (
     (1, "Lun", "lunes"),
     (2, "Mar", "martes"),
@@ -60,8 +64,12 @@ DIAS = (
 )
 
 
-def _volver(ruta_id, *, guardado: str = "", error: str = "") -> RedirectResponse:
+def _volver(
+    ruta_id, *, guardado: str = "", error: str = "", dia: str = ""
+) -> RedirectResponse:
     destino = f"/panel/plan-visita?ruta={ruta_id}"
+    if dia in DIA_ELEGIBLE:
+        destino += f"&dia={dia}"
     if error:
         destino += f"&error={quote(error)}"
     elif guardado:
@@ -126,10 +134,12 @@ async def ver(
     actor: ActorWeb,
     sesion: SesionDep,
     ruta: str = "",
+    dia: str = "",
     guardado: str = "",
     error: str = "",
 ) -> HTMLResponse:
     actor.exigir(PERMISO_VER)
+    dia = dia if dia in DIA_ELEGIBLE else ""
 
     rutas = (
         await sesion.execute(
@@ -186,6 +196,14 @@ async def ver(
                 }
             )
 
+    # Con un día elegido, solo los de ese día, en su orden. Todos siguen contando
+    # arriba; guardar solo toca los que están en pantalla (ver `guardar`).
+    total = len(clientes)
+    if dia == "sin":
+        clientes = [c for c in clientes if not c["detalle_semanas"]]
+    elif dia:
+        clientes = [c for c in clientes if int(dia) in {d for d, _ in c["detalle_semanas"]}]
+
     return render(
         peticion,
         "plan_visita.html",
@@ -193,6 +211,8 @@ async def ver(
             "rutas": rutas,
             "ruta": elegida,
             "clientes": clientes,
+            "total": total,
+            "dia": dia,
             "dias": DIAS,
             "por_dia": por_dia,
             "sin_plan": sin_plan,
@@ -223,6 +243,12 @@ async def guardar(peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id
     ).mappings().all()
     if not clientes:
         return _volver(ruta_id, error="Esta ruta no tiene clientes que planear.")
+    # Con la lista filtrada por un día, el formulario trae solo esos clientes: los
+    # demás no se tocan. Sin la marca (una página anterior), son todos.
+    en_pantalla = {str(v) for v in formulario.getlist("en_pantalla")}
+    if en_pantalla:
+        clientes = [c for c in clientes if str(c["id"]) in en_pantalla]
+    dia = str(formulario.get("dia", ""))
     plan = await plan_de(sesion, [c["id"] for c in clientes])
 
     # Primero se valida todo: un orden con letras en el renglón treinta no debe
@@ -236,6 +262,7 @@ async def guardar(peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id
             return _volver(
                 ruta_id,
                 error=f"El orden de «{c['nombre_comercial']}» no es un número: «{crudo}».",
+                dia=dia,
             )
 
     cambiados = 0
@@ -272,9 +299,10 @@ async def guardar(peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id
     )
     await sesion.commit()
     if not cambiados:
-        return _volver(ruta_id, guardado="No había nada que cambiar.")
+        return _volver(ruta_id, guardado="No había nada que cambiar.", dia=dia)
     return _volver(
         ruta_id,
         guardado=f"Plan guardado: {cambiados} cliente(s) con cambios. El teléfono de la "
         "ruta lo recibe en su siguiente sincronización.",
+        dia=dia,
     )

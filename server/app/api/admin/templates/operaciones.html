@@ -82,14 +82,15 @@
           {{ o.fecha.strftime('%d/%m/%Y') }}
           {% if o.momento %}<div class="sutil">{{ o.momento.strftime('%H:%M') }}</div>{% endif %}
         </td>
-        <td>
+        <td style="white-space:nowrap">
           <strong>{{ o.nombre }}</strong>
-          <div><a href="{{ o.pagina }}" class="mono" style="white-space:nowrap">{{ o.folio or 'sin folio' }}</a></div>
+          <div><a href="{{ o.pagina }}" class="mono">{{ o.folio or 'sin folio' }}</a></div>
         </td>
-        <td>{{ o.persona or '—' }}</td>
+        <td style="white-space:nowrap">{{ o.persona or '—' }}</td>
         <td>
           {% if o.donde %}{{ o.donde }}{% endif %}
-          {% if o.detalle %}<div class="sutil">{{ o.detalle }}</div>{% endif %}
+          {# En dos líneas: la nota de un ajuste puede ser un párrafo (§128). #}
+          {% if o.detalle %}<div class="sutil dos-lineas" title="{{ o.detalle }}">{{ o.detalle }}</div>{% endif %}
         </td>
         <td class="numero">{% if o.importe is not none %}${{ '{:,.2f}'.format(o.importe) }}{% endif %}</td>
         <td>

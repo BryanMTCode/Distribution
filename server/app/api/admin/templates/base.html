@@ -137,6 +137,23 @@
     th { font-size: 12px; text-transform: uppercase; color: var(--suave); }
     td.numero, th.numero { text-align: right; font-variant-numeric: tabular-nums; }
     tr:last-child td { border-bottom: 0; }
+    /* En una tabla, el nombre que abre su ficha no grita (ADR 0002 §128): va en
+       tinta con un subrayado tenue, y se pone rojo al pasar. Antes cada renglón
+       era un enlace rojo, subrayado y en negritas, y la tabla entera competía
+       con lo que de verdad pedía atención. */
+    td a:not(.boton-chico) {
+      color: var(--tinta); text-decoration: underline;
+      text-decoration-color: var(--linea); text-underline-offset: 3px;
+    }
+    td a:not(.boton-chico):hover { color: var(--acento); text-decoration-color: currentColor; }
+    tbody tr:hover td { background: #fcfafa; }
+    tr.elegido td { background: var(--acento-suave); }
+    tr.elegido td:first-child { box-shadow: inset 3px 0 0 var(--acento); }
+    /* El detalle largo de un renglón, en dos líneas; completo al pasar el ratón. */
+    .dos-lineas {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .tabla-marco {
       border: 1px solid var(--linea); border-radius: 10px; overflow: hidden;
     }
@@ -144,7 +161,9 @@
       background: var(--papel); border: 1px dashed var(--linea);
       border-radius: 10px; padding: 32px; text-align: center; color: var(--suave);
     }
-    form.barra { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+    form.barra {
+      display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; align-items: center;
+    }
     input[type=text], input[type=search], input[type=password],
     input[type=number], input[type=date], select, textarea {
       padding: 8px 10px; border: 1px solid var(--linea); border-radius: 7px;
@@ -198,6 +217,15 @@
       background: var(--acento-suave);
     }
     a.boton-chico.peligro, button.boton-chico.peligro { color: var(--alerta); }
+    /* «Más ▾»: las acciones que no son de todos los días, plegadas en el renglón
+       (ADR 0002 §128). Se abren ahí mismo, sin flotar, para que la tabla no las
+       recorte. */
+    details.menu-acciones { display: inline-block; vertical-align: top; }
+    details.menu-acciones[open] { display: block; margin-top: 6px; }
+    details.menu-acciones .menu-acciones-caja {
+      display: grid; gap: 6px; justify-items: end; margin-top: 6px;
+    }
+    details.menu-acciones form { display: flex; gap: 6px; align-items: center; margin: 0; }
     a.boton-chico.peligro:hover, button.boton-chico.peligro:hover {
       background: var(--alerta-suave);
     }
