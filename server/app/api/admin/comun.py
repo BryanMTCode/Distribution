@@ -105,6 +105,9 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         # Todas las operaciones juntas, para anular cualquiera deshaciendo lo que
         # movió (ADR 0002 §119).
         ("/panel/operaciones", "Operaciones"),
+        # El archivo que se le da al administrador, que no usa el dashboard
+        # (ADR 0002 §127).
+        ("/panel/reporte", "Reporte en Excel"),
     ]),
 ]
 
@@ -189,6 +192,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/cuarentena": None,
     "/panel/revision-app": "tablero.ver",
     "/panel/operaciones": "ventas.ver_todas",
+    "/panel/reporte": "tablero.ver",
     "/panel/piloto": "piloto.administrar",
 }
 

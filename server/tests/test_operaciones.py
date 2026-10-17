@@ -12,8 +12,9 @@ para borrar lo que yo necesite cuando quiera.» Y «borrar» es ANULAR Y DESHACE
    merma y el ajuste por un ajuste del camión de tipo «anulación».
 4. **Queda en la lista como anulada**, con quién, cuándo y por qué; una visita
    sin venta, que no tiene estado, se borra y queda solo su anulación.
-5. **Lo que no se deja**: dejar un almacén en negativo, anular dos veces, sin
-   motivo, el corte del día, y que alguien sin el permiso anule.
+5. **Lo que no se deja**: anular dos veces, sin motivo, y que alguien sin el
+   permiso anule. Dejar un almacén en negativo pide marcar la casilla, y el
+   corte ya se anula (§126, en `test_eliminar_sin_topes.py`).
 6. **Un día con corte cerrado pide confirmar**, y el corte no cambia.
 """
 
@@ -37,11 +38,13 @@ pytestmark = pytest.mark.asyncio
 MOTIVO = "se capturó dos veces, el cliente lo confirmó por teléfono"
 
 
-async def _anular(cliente, tipo, ref, *, motivo=MOTIVO, entiendo=False):
+async def _anular(cliente, tipo, ref, *, motivo=MOTIVO, entiendo=False, negativo=False):
     pagina = await cliente.get(f"/panel/operaciones/{tipo}/{ref}")
     datos = {"csrf": csrf_del_panel(cliente, pagina), "motivo": motivo}
     if entiendo:
         datos["entiendo"] = "1"
+    if negativo:
+        datos["negativo"] = "1"
     return await cliente.post(
         f"/panel/operaciones/{tipo}/{ref}/anular", data=datos, follow_redirects=True
     )
@@ -199,7 +202,7 @@ async def test_anular_una_venta_la_cancela_y_la_mercancia_vuelve_al_camion(
     await _entrar(cliente)
     pagina = await cliente.get(f"/panel/operaciones/venta/{venta}")
     plano = solo_texto(pagina)
-    assert "Si la anulas" in plano
+    assert "Si la eliminas" in plano
     assert "La venta pasa a cancelada y sus 480 piezas vuelven a" in plano
 
     r = await _anular(cliente, "venta", venta)
@@ -215,11 +218,14 @@ async def test_anular_una_venta_la_cancela_y_la_mercancia_vuelve_al_camion(
     assert delta["payload"]["estado"] == "cancelada"
     assert delta["payload"]["cancelacion_motivo"] == MOTIVO
 
-    # En la lista: anulada, con quién y por qué; sin botón de anular.
+    # En la lista de eliminadas, con quién y por qué; sin botón de eliminar. En
+    # la de siempre ya no sale (§126).
     r = await cliente.get("/panel/operaciones?periodo=todo&estado=anuladas")
     plano = solo_texto(r)
-    assert "VEND01-000001" in plano and "anulada" in plano and MOTIVO in plano
+    assert "VEND01-000001" in plano and "eliminada" in plano and MOTIVO in plano
     assert f'id="anular_{venta}"' not in r.text
+    r = await cliente.get("/panel/operaciones?periodo=todo")
+    assert f'id="op_{venta}"' not in r.text
 
     # Dos veces no: la segunda ya la encuentra anulada.
     r = await _anular(cliente, "venta", venta)
@@ -325,7 +331,7 @@ async def test_anular_una_merma_la_regresa_al_camion_y_el_telefono_se_entera(
     assert 'id="sin_operaciones"' in r.text
 
 
-async def test_anular_una_devolucion_no_deja_el_camion_en_negativo(
+async def test_anular_una_devolucion_que_dejaria_el_camion_en_negativo_pide_la_casilla(
     cliente, sesion, semilla, venta_del_dia  # noqa: F811
 ):
     devolucion = await _merma(
@@ -338,12 +344,18 @@ async def test_anular_una_devolucion_no_deja_el_camion_en_negativo(
     )
     await sesion.commit()
     await _entrar(cliente)
-    pagina = solo_texto(await cliente.get(f"/panel/operaciones/devolucion/{devolucion}"))
-    assert "No se puede anular." in pagina
-    assert "ya no tiene 10 de Atún en agua 140 g (hay 5)" in pagina
+    pagina = await cliente.get(f"/panel/operaciones/devolucion/{devolucion}")
+    assert "Quedaría en negativo." in solo_texto(pagina)
+    assert "ya no tiene 10 de Atún en agua 140 g (hay 5)" in solo_texto(pagina)
+    assert 'id="aunque_quede_en_negativo"' in pagina.text
     r = await _anular(cliente, "devolucion", devolucion)
-    assert "No se puede anular" in solo_texto(r)
+    assert "Quedaría en negativo" in solo_texto(r)
     assert await _existencia(sesion, semilla["camion"], venta_del_dia["producto"]) == 5
+
+    # Con la casilla, sí: el camión queda abajo de cero y se corrige con un conteo.
+    r = await _anular(cliente, "devolucion", devolucion, negativo=True)
+    assert "anulada" in solo_texto(r)
+    assert await _existencia(sesion, semilla["camion"], venta_del_dia["producto"]) == -5
 
 
 # ---------------------------------------------------------------------------
@@ -379,10 +391,10 @@ async def test_anular_una_visita_sin_venta_la_borra_y_queda_anotada(
         await sesion.execute(text("SELECT count(*) FROM no_drops WHERE id = :n"), {"n": no_venta})
     ).scalar_one() == 0
 
-    # Ya no existe, pero la lista la sigue mostrando: anulada, con su motivo.
-    r = await cliente.get("/panel/operaciones?periodo=todo&tipo=no_venta")
+    # Ya no existe, pero la lista de eliminadas la sigue mostrando, con su motivo.
+    r = await cliente.get("/panel/operaciones?periodo=todo&tipo=no_venta&estado=anuladas")
     plano = solo_texto(r)
-    assert "La Esquina" in plano and "anulada" in plano
+    assert "La Esquina" in plano and "eliminada" in plano
     assert "el vendedor sí le vendió, se equivocó" in plano
 
 
@@ -501,25 +513,6 @@ async def test_anular_un_ajuste_del_camion_escribe_el_contrario(
 # ---------------------------------------------------------------------------
 # Lo que no se anula, y quién puede
 # ---------------------------------------------------------------------------
-
-
-async def test_el_corte_no_se_anula(cliente, sesion, semilla, venta_del_dia):  # noqa: F811
-    corte = uuid.uuid4()
-    await sesion.execute(
-        text(
-            "INSERT INTO liquidaciones (id, folio, carga_id, vendedor_id, fecha_operativa, "
-            "  estado, cerrada_en) VALUES (:id, 'LQ-000010', :c, :v, :d, 'cerrada', now())"
-        ),
-        {"id": corte, "c": venta_del_dia["carga"], "v": semilla["vendedor"],
-         "d": venta_del_dia["dia"]},
-    )
-    await sesion.commit()
-    await _entrar(cliente)
-    pagina = solo_texto(await cliente.get(f"/panel/operaciones/corte/{corte}"))
-    assert "Un corte no se anula" in pagina
-    r = await _anular(cliente, "corte", corte)
-    assert "No se puede anular: Un corte no se anula" in solo_texto(r)
-    assert (await sesion.execute(text("SELECT count(*) FROM anulaciones"))).scalar_one() == 0
 
 
 async def test_un_supervisor_ve_la_lista_pero_no_anula(

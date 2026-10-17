@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block titulo %}Eliminar varias{% endblock %}
+{% block contenido %}
+<p class="sutil"><a href="/panel/operaciones">← Operaciones</a></p>
+
+{% if resultados is not none %}
+{% set hechas = resultados|selectattr('aviso')|list %}
+{% set fallidas = resultados|selectattr('error')|list %}
+<h1>Eliminadas: {{ hechas|length }} de {{ resultados|length }}</h1>
+{% if fallidas %}
+<div class="aviso-caja error" id="no_se_eliminaron">
+  <strong>{{ fallidas|length }} no se eliminaron</strong> y se quedaron como estaban:
+  <ul style="margin:6px 0 0">
+    {% for r in fallidas %}<li id="fallo_{{ r.op.ref }}"><a href="{{ r.op.pagina }}">{{ r.op.nombre }} {{ r.op.folio or '' }}</a>: {{ r.error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if hechas %}
+<ul id="eliminadas">
+  {% for r in hechas %}<li id="hecha_{{ r.op.ref }}">{{ r.aviso }}</li>{% endfor %}
+</ul>
+{% endif %}
+<p><a class="boton-chico" href="/panel/operaciones?estado=anuladas&periodo=todo">Ver las eliminadas</a></p>
+
+{% else %}
+<h1>Eliminar {{ revision|length }} operación(es)</h1>
+<p class="subtitulo">
+  Se eliminan en este orden: primero lo que cuelga de otra cosa —las ventas, las
+  mermas, los ajustes—, luego los cortes, las cargas y al final las entradas. Cada
+  una deshace todo lo que movió. La que no se pueda se queda como estaba y te dice
+  por qué; las demás siguen.
+</p>
+{% if error %}<div class="aviso-caja error" id="error_eliminar">{{ error }}</div>{% endif %}
+
+{% set con_negativo = revision|selectattr('1.negativos')|list %}
+{% set con_corte = revision|selectattr('1.corte_cerrado')|list %}
+<ol id="lo_que_se_elimina">
+  {% for o, plan in revision %}
+  <li id="revisar_{{ o.ref }}" style="margin-bottom:10px">
+    <strong>{{ o.nombre }} <span class="mono">{{ o.folio or '' }}</span></strong>
+    <span class="sutil">· {{ o.fecha.strftime('%d/%m/%Y') }}{% if o.persona %} · {{ o.persona }}{% endif %}{% if o.donde %} · {{ o.donde }}{% endif %}</span>
+    {% if plan.bloqueos %}
+      <div style="color:var(--alerta)">No se puede: {{ plan.bloqueos|join(' ') }}</div>
+    {% else %}
+      <ul class="sutil" style="margin:2px 0 0">{% for e in plan.efectos %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% if plan.negativos %}<div style="color:var(--alerta)">Quedaría en negativo: {{ plan.negativos|join(' ') }}</div>{% endif %}
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+
+<form method="post" action="/panel/operaciones/eliminar/confirmar" id="forma_confirmar_varias"
+      style="margin-top:16px;padding:14px;border:1px solid var(--alerta);border-radius:10px;background:var(--papel)">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for o, plan in revision %}<input type="hidden" name="op" value="{{ o.tipo }}:{{ o.ref }}">{% endfor %}
+  <div class="campo">
+    <label for="motivo_varias">Por qué se eliminan</label>
+    <textarea name="motivo" id="motivo_varias" rows="2" maxlength="600" required minlength="10"
+              style="width:100%" placeholder="Por ejemplo: eran pruebas del almacén"></textarea>
+    <div class="ayuda">Al menos 10 letras. Va en todas, y el vendedor lo ve en su teléfono.</div>
+  </div>
+  {% if con_negativo %}
+  <div class="aviso-caja error" id="varias_en_negativo">
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600">
+      <input type="checkbox" name="negativo" value="1" id="varias_aunque_negativo">
+      <span>Eliminarlas aunque algo quede en negativo. El aviso puede desaparecer solo:
+      al eliminar antes la venta, la mercancía regresa y la carga ya no queda abajo de cero.</span>
+    </label>
+  </div>
+  {% endif %}
+  {% if con_corte %}
+  <div class="aviso-caja aviso" id="varias_corte_cerrado">
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600">
+      <input type="checkbox" name="entiendo" value="1" id="varias_entiendo_el_corte">
+      <span>Algunas son de un día con el corte ya cerrado: ese corte NO cambia, a menos
+      que también lo elimines.</span>
+    </label>
+  </div>
+  {% endif %}
+  <button type="submit" class="peligro" id="boton_confirmar_varias">Eliminar las {{ revision|length }} y deshacer</button>
+</form>
+{% endif %}
+{% endblock %}

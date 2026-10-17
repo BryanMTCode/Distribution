@@ -129,6 +129,7 @@ WITH movimientos AS (
            COALESCE(l.diferencia_efectivo, 0) <> 0, '/panel/liquidaciones/' || l.id, l.id::text
       FROM liquidaciones l
      WHERE l.vendedor_id = :v AND l.fecha_operativa BETWEEN :desde AND :hasta
+       AND l.estado <> 'anulada'
 
     UNION ALL
     -- Los ajustes son del CAMIÓN, no de una persona: los hace la oficina, y aquí se

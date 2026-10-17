@@ -9,7 +9,9 @@ Dos pantallas, sin JavaScript como todo el panel:
   anulada—; cada renglón lleva a su operación;
 · la operación: lo que movió, lo que anular va a hacer y lo que lo impide, y el
   formulario con el motivo. Se anula desde ahí y no desde la lista a propósito:
-  quien anula ve antes lo que se va a deshacer.
+  quien anula ve antes lo que se va a deshacer;
+· eliminar varias (§126): se marcan en la lista, una pantalla dice lo que va a
+  pasar con cada una y en qué orden, y se eliminan con un solo motivo.
 
 Lo que de verdad se hace al anular vive en `app/infra/operaciones.py`.
 """
@@ -54,12 +56,14 @@ async def listar(
     tipo: str = "",
     persona: str = "",
     estado: str = "",
+    marcar: str = "",
     error: str = "",
 ) -> HTMLResponse:
     actor.exigir(PERMISO_VER)
     elegido = await periodo_pedido(sesion, periodo or "semana", desde, hasta or desde)
     tipo = tipo if tipo in operaciones.NOMBRE else ""
-    estado = estado if estado in dict(operaciones.ESTADOS) else ""
+    # Por omisión, lo que no se ha eliminado (§126).
+    estado = estado if estado in dict(operaciones.ESTADOS) else "vivas"
     quien = _uuid(persona)
     lista = await operaciones.listar(
         sesion,
@@ -87,8 +91,80 @@ async def listar(
             "persona": str(quien) if quien else "",
             "personas": await operaciones.personas(sesion),
             "puede_anular": actor.puede(PERMISO_ANULAR),
+            # «Marcar todas»: sin JavaScript, la misma lista con todas marcadas.
+            "marcar_todas": marcar == "todas",
             "error": error,
         },
+        actor=actor,
+        seccion="Operaciones",
+    )
+
+
+@router.post("/eliminar", response_class=HTMLResponse)
+async def revisar_varias(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    op: Annotated[list[str], Form()] = [],  # noqa: B006 — así declara FastAPI una lista
+    csrf: Annotated[str, Form()] = "",
+):
+    """Lo que va a pasar con cada una de las marcadas. No cambia nada."""
+    actor.exigir(PERMISO_ANULAR)
+    exigir_csrf(peticion, csrf)
+    ops = await operaciones.las_marcadas(sesion, op)
+    if not ops:
+        return _a_lista(error="Marca al menos una operación para eliminar.")
+    return render(
+        peticion,
+        "eliminar_varias.html",
+        {
+            "revision": [(o, await operaciones.revisar(sesion, o)) for o in ops],
+            "resultados": None,
+            "error": "",
+        },
+        actor=actor,
+        seccion="Operaciones",
+    )
+
+
+@router.post("/eliminar/confirmar", response_class=HTMLResponse)
+async def eliminar_varias(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    op: Annotated[list[str], Form()] = [],  # noqa: B006
+    motivo: Annotated[str, Form()] = "",
+    entiendo: Annotated[str, Form()] = "",
+    negativo: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    actor.exigir(PERMISO_ANULAR)
+    exigir_csrf(peticion, csrf)
+    ops = await operaciones.las_marcadas(sesion, op)
+    if not ops:
+        return _a_lista(error="Marca al menos una operación para eliminar.")
+    if len(" ".join((motivo or "").split())) < 10:
+        # Antes de tocar nada: el mismo motivo va en todas.
+        return render(
+            peticion,
+            "eliminar_varias.html",
+            {
+                "revision": [(o, await operaciones.revisar(sesion, o)) for o in ops],
+                "resultados": None,
+                "error": "Escribe por qué se eliminan, con al menos 10 letras.",
+            },
+            actor=actor,
+            seccion="Operaciones",
+        )
+    resultados = await operaciones.eliminar_varias(
+        sesion, ops, motivo=motivo, quien=actor.usuario_id,
+        entiendo_el_corte=bool(entiendo), forzar=bool(negativo),
+    )
+    await sesion.commit()
+    return render(
+        peticion,
+        "eliminar_varias.html",
+        {"revision": None, "resultados": resultados, "error": ""},
         actor=actor,
         seccion="Operaciones",
     )
@@ -133,6 +209,7 @@ async def anular(
     ref: uuid.UUID,
     motivo: Annotated[str, Form()] = "",
     entiendo: Annotated[str, Form()] = "",
+    negativo: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
     actor.exigir(PERMISO_ANULAR)
@@ -145,6 +222,7 @@ async def anular(
             motivo=motivo,
             quien=actor.usuario_id,
             entiendo_el_corte=bool(entiendo),
+            forzar=bool(negativo),
         )
     except OperacionNoExiste as e:
         await sesion.rollback()

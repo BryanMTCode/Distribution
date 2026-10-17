@@ -39,6 +39,8 @@
   {% endif %}
   {% if hecho.ajustes %}<p class="sutil">Ajustes del camión que recibió el teléfono: {{ hecho.ajustes|join(', ') }}.</p>{% endif %}
   {% if hecho.corte_cerrado %}<p class="sutil">El corte {{ hecho.corte_cerrado }} ya estaba cerrado y no cambió.</p>{% endif %}
+  {% if hecho.con_la_carga %}<p class="sutil" id="con_la_carga">Se eliminó junto con su carga {{ hecho.con_la_carga }}.</p>{% endif %}
+  {% if hecho.en_negativo %}<p class="sutil" id="quedo_en_negativo">Se eliminó aunque quedara en negativo: {{ hecho.en_negativo|join(' ') }}</p>{% endif %}
   {% if hecho.renglones %}
   <div class="tabla-marco" style="overflow-x:auto">
     <table>
@@ -65,11 +67,11 @@
 
   {% if plan.bloqueos %}
   <div class="aviso-caja error" id="no_se_puede" style="margin-top:16px">
-    <strong>No se puede anular.</strong>
+    <strong>No se puede eliminar.</strong>
     <ul style="margin:6px 0 0">{% for b in plan.bloqueos %}<li>{{ b }}</li>{% endfor %}</ul>
   </div>
   {% else %}
-  <h2>Si la anulas</h2>
+  <h2>Si la eliminas</h2>
   <ul id="lo_que_va_a_pasar">{% for e in plan.efectos %}<li>{{ e }}</li>{% endfor %}</ul>
 
   {% if puede_anular %}
@@ -77,11 +79,23 @@
         style="margin-top:16px;padding:14px;border:1px solid var(--alerta);border-radius:10px;background:var(--papel)">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="campo">
-      <label for="motivo_anular">Por qué se anula</label>
+      <label for="motivo_anular">Por qué se elimina</label>
       <textarea name="motivo" id="motivo_anular" rows="2" maxlength="600" required minlength="10"
                 style="width:100%" placeholder="Por ejemplo: se capturó dos veces; el cliente no la recibió"></textarea>
       <div class="ayuda">Al menos 10 letras. Lo lee quien revise después, y el vendedor en su teléfono.</div>
     </div>
+    {% if plan.negativos %}
+    <div class="aviso-caja error" id="quedaria_en_negativo">
+      <strong>Quedaría en negativo.</strong>
+      <ul style="margin:6px 0 8px">{% for n in plan.negativos %}<li>{{ n }}</li>{% endfor %}</ul>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600">
+        <input type="checkbox" name="negativo" value="1" id="aunque_quede_en_negativo">
+        <span>Eliminarla de todos modos. Lo normal es eliminar antes lo que se hizo con
+        esa mercancía (la venta, la carga); si no, el número queda abajo de cero y se
+        corrige después con un conteo.</span>
+      </label>
+    </div>
+    {% endif %}
     {% if plan.corte_cerrado %}
     <div class="aviso-caja aviso" id="corte_cerrado">
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600">
@@ -92,10 +106,10 @@
       </label>
     </div>
     {% endif %}
-    <button type="submit" class="peligro" id="boton_anular">Anular y deshacer</button>
+    <button type="submit" class="peligro" id="boton_anular">Eliminar y deshacer</button>
   </form>
   {% else %}
-  <p class="sutil">Anular es solo del administrador.</p>
+  <p class="sutil">Eliminar es solo del administrador.</p>
   {% endif %}
   {% endif %}
 {% endif %}

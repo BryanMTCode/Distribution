@@ -20,7 +20,13 @@
 </div>
 {% endif %}
 
-{% if not abierta %}
+{% if anulada %}
+<div class="aviso-caja error" id="corte_eliminado">
+  <strong>Este corte se eliminó.</strong> Se deshicieron sus ajustes al camión y lo
+  que le cargó al vendedor; la carga volvió a cortarse aparte.
+  <a href="/panel/operaciones/corte/{{ c.id }}">Ver quién y por qué →</a>
+</div>
+{% elif not abierta %}
 <div class="aviso-caja bien">
   <strong>Cerrada</strong>
   {% if c.cerrada_en %}

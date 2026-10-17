@@ -355,7 +355,9 @@ async def _lo_que_queda(sesion, corte: dict) -> list[dict]:
         if carga is not None and carga["estado"] == "liquidada":
             liquidacion_id = (
                 await sesion.execute(
-                    text("SELECT id FROM liquidaciones WHERE carga_id = :c"), {"c": carga["id"]}
+                    text("SELECT id FROM liquidaciones "
+                         " WHERE carga_id = :c AND estado <> 'anulada'"),
+                    {"c": carga["id"]},
                 )
             ).scalar_one_or_none()
         elif carga is not None:
@@ -667,7 +669,8 @@ async def _cerrar_el_corte(
         # La oficina ya lo cortó a mano desde «Corte del día»: ese cierre manda.
         liquidacion = (
             await sesion.execute(
-                text("SELECT id, folio FROM liquidaciones WHERE carga_id = :c"),
+                text("SELECT id, folio FROM liquidaciones "
+                     " WHERE carga_id = :c AND estado <> 'anulada'"),
                 {"c": carga["id"]},
             )
         ).mappings().first()

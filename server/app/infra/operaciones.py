@@ -31,18 +31,29 @@ La venta y la venta de mayoreo no se deshacen aquí: se cancelan con las mismas
 funciones de sus pantallas, para que las dos cancelen igual.
 
 ────────────────────────────────────────────────────────────────────────────
-LO QUE NO SE DEJA, Y LO QUE SE DEJA AVISANDO
+SIN TOPES: LO QUE SE DEJA, Y LO QUE SE DEJA AVISANDO (ADR 0002 §126)
 ────────────────────────────────────────────────────────────────────────────
-No se deja:
-  · dejar un almacén en negativo (la regla de §118): si la mercancía ya se
-    vendió o ya salió, no hay qué regresar;
-  · una carga que ya entró a un corte, una venta a crédito ya cobrada, una
-    compra ya pagada al proveedor: primero se deshace lo que cuelga de ellas;
-  · el corte del día: es el efectivo que el vendedor entregó y alguien firmó.
+«Quiero tener poder absoluto de eliminar lo que yo quiera y que se anulen los
+efectos… cargas, ventas, movimientos del almacén, cortes incluso», para probar
+con el almacén y luego borrar lo de prueba. Así que casi todo se deja:
+
+  · **el corte** se deshace: los ajustes que dejó en el camión regresan, lo que
+    se le cargó al vendedor se condona, y la carga vuelve a «por cortar» (el
+    corte que mandó el vendedor, a «por cerrar»);
+  · **la carga que ya entró a un corte** se elimina con su corte, en cascada;
+  · **la compra ya pagada** se elimina con sus pagos;
+  · **lo que dejaría un almacén en negativo** se deja si se marca la casilla:
+    si ya se vendió o ya salió, el número queda abajo de cero y se corrige con
+    un conteo. Sin la casilla no, porque casi siempre es un aviso de que falta
+    eliminar primero lo que se hizo con esa mercancía.
+
+Lo único que no se deja: anular dos veces, algo cuyo movimiento no está en el
+inventario, y una venta a crédito ya cobrada (solo existen del piloto).
 
 Se deja, pero hay que confirmarlo: una operación del camión de un día cuyo corte
 ya se cerró. El corte firmado NO cambia —lo contado y lo entregado quedan como
-se firmaron—, y eso es justo lo que la casilla dice antes de anular.
+se firmaron—, y eso es justo lo que la casilla dice antes de anular. Si se
+quiere que cambie, se elimina también el corte.
 """
 
 from __future__ import annotations
@@ -79,13 +90,24 @@ TIPOS: tuple[tuple[str, str], ...] = (
 )
 NOMBRE = dict(TIPOS)
 
-ESTADOS = (("", "Todas"), ("vivas", "Sin anular"), ("anuladas", "Anuladas"))
+# Por omisión la lista enseña lo que sigue vivo: lo eliminado se va a su
+# propio filtro (§126), y «Todas» es una opción más.
+ESTADOS = (("vivas", "Sin eliminar"), ("anuladas", "Eliminadas"), ("todas", "Todas"))
 
 # Los estados que ya no cuentan, venga de aquí o de su propia pantalla.
 CANCELADOS = ("cancelada", "cancelado", "rechazado", "rechazada")
 
-# Las que se pueden anular aquí. El corte no (ver arriba).
-ANULABLES = tuple(t for t, _ in TIPOS if t != "corte")
+# Las que se pueden anular aquí: todas, el corte también (§126).
+ANULABLES = tuple(t for t, _ in TIPOS)
+
+# El orden en que se eliminan varias a la vez: primero lo que cuelga de otra
+# cosa —la venta de su carga, el ajuste de su camión—, y al final de lo que
+# cuelga lo demás —la carga de la bodega, la entrada—. Así no se queda nada en
+# negativo a la mitad.
+ORDEN_AL_ELIMINAR = (
+    "venta", "mayoreo", "no_venta", "merma", "devolucion", "cambio", "ajuste",
+    "devolucion_bodega", "corte", "carga", "traspaso", "salida", "entrada",
+)
 
 # Más renglones ya no se leen; para eso están los filtros.
 LIMITE = 500
@@ -359,7 +381,8 @@ async def listar(
                 "tipo": tipo if tipo in NOMBRE else "",
                 "persona": persona,
                 "ref": None,
-                "estado": estado if estado in dict(ESTADOS) else "",
+                # «Todas» es sin filtro.
+                "estado": estado if estado in ("vivas", "anuladas") else "",
                 "limite": limite,
             },
         )
@@ -419,6 +442,8 @@ class Plan:
 
     efectos: list[str] = field(default_factory=list)
     bloqueos: list[str] = field(default_factory=list)
+    # Lo que quedaría abajo de cero. No bloquea: pide marcar la casilla (§126).
+    negativos: list[str] = field(default_factory=list)
     renglones: list[Renglon] = field(default_factory=list)
     # El folio del corte ya cerrado de ese día: no cambia, y hay que decir que
     # se entiende antes de anular.
@@ -450,13 +475,6 @@ async def revisar(sesion, op: Operacion, *, candado: bool = False) -> Plan:
         cuando = op.anulada_en.strftime("%d/%m/%Y %H:%M") if op.anulada_en else ""
         plan.bloqueos.append(
             f"Ya se anuló el {cuando} ({op.anulada_por or 'alguien'}): {op.anulacion_motivo}"
-        )
-        return plan
-    if op.tipo == "corte":
-        plan.bloqueos.append(
-            "Un corte no se anula: es el efectivo que el vendedor entregó y alguien "
-            "recibió y firmó. Si algo de ese día estuvo mal, anula esa operación —la "
-            "venta, la merma—: el corte se queda como se firmó."
         )
         return plan
     if op.cancelada:
@@ -615,37 +633,38 @@ async def _revisar_carga(sesion, op: Operacion, plan: Plan, candado: bool) -> No
     if carga["estado"] == "borrador":
         plan.efectos.append("Es un borrador: no ha movido nada. Se cancela y ya.")
         return
-    if carga["estado"] == "liquidada":
-        plan.bloqueos.append(
-            "Su corte ya se cerró: la mercancía de esta carga ya se contó y se firmó "
-            "con el camión. Lo que haya que regresar a la bodega es una devolución, "
-            "no una carga anulada."
-        )
-    corte = (
-        await sesion.execute(
-            text("SELECT folio FROM liquidaciones WHERE carga_id = :c LIMIT 1"), {"c": op.ref}
-        )
-    ).scalar_one_or_none()
-    if corte and carga["estado"] != "liquidada":
-        plan.bloqueos.append(
-            f"Ya tiene un corte abierto ({corte}): ciérralo o anula primero lo que "
-            "falte, porque el corte se hace sobre esta carga."
-        )
+    movimientos = await _movimientos(sesion, "carga", op.ref)
+    # Su corte se va con ella (§126): primero se deshace el corte y después la
+    # carga, y el inventario se revisa con los dos juntos.
+    for corte in await _cortes_vivos(sesion, op.ref):
+        plan.efectos.append(f"Se elimina también su corte {corte['folio']}:")
+        movimientos += await _efectos_del_corte(sesion, corte, plan, reabrir=False)
     del_vendedor = (
         await sesion.execute(
             text(
                 "SELECT count(*) FROM cortes_vendedor "
-                " WHERE carga_id = :c AND estado <> 'reemplazado'"
+                " WHERE carga_id = :c AND estado IN ('pendiente', 'cerrado')"
             ),
             {"c": op.ref},
         )
     ).scalar_one()
-    if del_vendedor and not corte:
-        plan.bloqueos.append(
-            "El vendedor ya hizo su corte con esta carga: ciérralo primero en Cortes "
-            "y cargas."
+    if del_vendedor:
+        plan.efectos.append(
+            "El corte que mandó el vendedor con esta carga se elimina: sale de "
+            "«Cortes por cerrar»."
         )
-    await _llenar_movimientos(sesion, plan, await _movimientos(sesion, "carga", op.ref), candado)
+    solicitud = (
+        await sesion.execute(
+            text("SELECT 1 FROM solicitudes_carga WHERE carga_id = :c AND estado = 'aceptada'"),
+            {"c": op.ref},
+        )
+    ).first()
+    if solicitud is not None:
+        plan.efectos.append(
+            "La carga que pidió el vendedor queda rechazada con tu motivo: lo ve en su "
+            "«Mi día» y puede pedir otra para ese día."
+        )
+    await _llenar_movimientos(sesion, plan, movimientos, candado)
     plan.efectos.append(
         f"La mercancía regresa de {carga['camion']} a {carga['bodega']}."
     )
@@ -707,16 +726,16 @@ async def _revisar_entrada(sesion, op: Operacion, plan: Plan, candado: bool) -> 
     ).mappings().first()
     plan.efectos.append(f"La mercancía sale de {op.donde}: la entrada no ocurrió.")
     if cuenta is not None:
-        if Decimal(cuenta["pagado"]) > 0:
-            plan.bloqueos.append(
-                f"Ya tiene {dinero(cuenta['pagado'])} pagados a {cuenta['proveedor']}. "
-                "Quita primero el pago en Compras: si no, quedaría un pago de una "
-                "compra que no existe."
-            )
         plan.efectos.append(
             f"Se borra la cuenta por pagar de {dinero(cuenta['importe_original'])} "
             f"a {cuenta['proveedor']}."
         )
+        if Decimal(cuenta["pagado"]) > 0:
+            # Con la cuenta se van sus pagos (ON DELETE CASCADE, migración 0027).
+            plan.efectos.append(
+                f"Y con ella los {dinero(cuenta['pagado'])} que ya se le habían pagado: "
+                "si de verdad se pagaron, se registran otra vez en la compra correcta."
+            )
     plan.efectos.append(
         "El costo promedio de los productos no se recalcula: queda como lo dejó "
         "esta entrada."
@@ -756,6 +775,112 @@ async def _revisar_ajuste(sesion, op: Operacion, plan: Plan, candado: bool) -> N
         )
 
 
+async def _revisar_corte(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
+    corte = await _corte(sesion, op.ref)
+    movimientos = await _efectos_del_corte(sesion, corte, plan, reabrir=True)
+    if movimientos:
+        await _llenar_movimientos(sesion, plan, movimientos, candado)
+
+
+async def _corte(sesion, liquidacion_id: uuid.UUID) -> dict:
+    """El corte con lo que hace falta para deshacerlo."""
+    return dict(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT l.id, l.folio, l.estado, l.carga_id, l.vendedor_id, "
+                    "       l.fecha_operativa, g.folio AS carga, g.estado AS carga_estado, "
+                    "       a.nombre AS camion, u.nombre AS vendedor "
+                    "  FROM liquidaciones l JOIN cargas g ON g.id = l.carga_id "
+                    "  JOIN almacenes a ON a.id = g.almacen_destino_id "
+                    "  JOIN usuarios u ON u.id = l.vendedor_id "
+                    " WHERE l.id = :l"
+                ),
+                {"l": liquidacion_id},
+            )
+        ).mappings().one()
+    )
+
+
+async def _cortes_vivos(sesion, carga_id: uuid.UUID) -> list[dict]:
+    """Los cortes de la carga que no se han anulado: uno, o ninguno."""
+    filas = (
+        await sesion.execute(
+            text("SELECT id FROM liquidaciones WHERE carga_id = :c AND estado <> 'anulada'"),
+            {"c": carga_id},
+        )
+    ).scalars().all()
+    return [await _corte(sesion, f) for f in filas]
+
+
+async def _cargado_por_el_corte(sesion, liquidacion_id: uuid.UUID) -> Decimal:
+    """Lo que el corte le cargó al vendedor y todavía no se le condona."""
+    return Decimal(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT COALESCE(sum(importe) FILTER (WHERE tipo = 'cargo'), 0) "
+                    "     - COALESCE(sum(importe) FILTER (WHERE tipo = 'condonacion'), 0) "
+                    "  FROM cuenta_vendedor WHERE liquidacion_id = :l"
+                ),
+                {"l": liquidacion_id},
+            )
+        ).scalar_one()
+    )
+
+
+async def _efectos_del_corte(sesion, corte: dict, plan: Plan, *, reabrir: bool) -> list[dict]:
+    """Lo que deshacer el corte va a hacer, en palabras. Devuelve sus movimientos
+    —los ajustes que dejó en el camión— para revisarlos con los demás.
+
+    `reabrir` es eliminar solo el corte: la carga vuelve a «por cortar» y el
+    corte que mandó el vendedor a «por cerrar». Sin él, el corte se va porque se
+    elimina su carga, y con ella todo lo demás."""
+    if corte["estado"] != "cerrada":
+        plan.efectos.append(
+            f"El corte {corte['folio']} está abierto: se descarta lo que se haya "
+            "contado y el arqueo."
+        )
+        movimientos: list[dict] = []
+    else:
+        movimientos = await _movimientos(sesion, "liquidacion", corte["id"])
+        if movimientos:
+            plan.efectos.append(
+                f"Los ajustes que dejó el corte en {corte['camion']} se deshacen: el "
+                "camión vuelve a lo que el sistema calculaba antes de cortarlo. El "
+                f"teléfono de {corte['vendedor']} los recibe en su siguiente "
+                "sincronización."
+            )
+        else:
+            plan.efectos.append(f"El corte no dejó ajustes: {corte['camion']} no cambia.")
+        cargado = await _cargado_por_el_corte(sesion, corte["id"])
+        if cargado > 0:
+            plan.efectos.append(
+                f"Se le condonan a {corte['vendedor']} los {dinero(cargado)} que este "
+                "corte le cargó (faltantes, mermas a su cargo, efectivo): su cuenta "
+                "queda como antes."
+            )
+        plan.efectos.append(
+            f"Deja de contar en los cortes y en el efectivo entregado del "
+            f"{corte['fecha_operativa']:%d/%m}."
+        )
+    if reabrir:
+        plan.efectos.append(f"La carga {corte['carga']} vuelve a «por cortar».")
+        del_vendedor = (
+            await sesion.execute(
+                text("SELECT 1 FROM cortes_vendedor "
+                     " WHERE liquidacion_id = :l AND estado = 'cerrado'"),
+                {"l": corte["id"]},
+            )
+        ).first()
+        if del_vendedor is not None:
+            plan.efectos.append(
+                f"El corte que mandó {corte['vendedor']} desde su teléfono vuelve a "
+                "«Cortes por cerrar», para cerrarlo otra vez contando el efectivo."
+            )
+    return movimientos
+
+
 _REVISORES = {
     "venta": _revisar_venta,
     "mayoreo": _revisar_mayoreo,
@@ -769,6 +894,7 @@ _REVISORES = {
     "entrada": _revisar_entrada,
     "salida": _revisar_salida,
     "ajuste": _revisar_ajuste,
+    "corte": _revisar_corte,
 }
 
 
@@ -861,7 +987,7 @@ async def _llenar_movimientos(sesion, plan: Plan, movimientos: list[dict], canda
             else await _existencia(sesion, almacen, producto)
         )
         if hay + cambio < 0:
-            plan.bloqueos.append(
+            plan.negativos.append(
                 f"{nombres[almacen]} ya no tiene {sin_decimales(-cambio)} de "
                 f"{productos[producto]} (hay {sin_decimales(hay)}): ya se vendió o ya "
                 "salió, y anular la dejaría en negativo."
@@ -1032,7 +1158,6 @@ _TABLA_CON_CANDADO = {
     "entrada": "entradas",
     "salida": "salidas",
     "ajuste": "ajustes_camion",
-    # No se anula, pero se revisa igual: así quien lo intente lee por qué.
     "corte": "liquidaciones",
 }
 
@@ -1045,9 +1170,12 @@ async def anular(
     motivo: str,
     quien: uuid.UUID,
     entiendo_el_corte: bool = False,
+    forzar: bool = False,
 ) -> str:
     """Anula la operación deshaciendo lo que movió. Devuelve el aviso para la
-    pantalla. No hace commit: quien llama decide la transacción."""
+    pantalla. No hace commit: quien llama decide la transacción.
+
+    `forzar` es la casilla de «aunque quede en negativo» (§126)."""
     limpio = " ".join((motivo or "").split())
     if len(limpio) < 10:
         raise AnulacionRechazada(
@@ -1069,6 +1197,12 @@ async def anular(
     plan = await revisar(sesion, op, candado=True)
     if plan.bloqueos:
         raise AnulacionRechazada("No se puede anular: " + " ".join(plan.bloqueos))
+    if plan.negativos and not forzar:
+        raise AnulacionRechazada(
+            "Quedaría en negativo: " + " ".join(plan.negativos) + " Elimina primero lo "
+            "que se hizo con esa mercancía, o marca la casilla para eliminarla de "
+            "todos modos y corregirlo después con un conteo."
+        )
     if plan.corte_cerrado and not entiendo_el_corte:
         raise AnulacionRechazada(
             f"El corte de ese día ({plan.corte_cerrado}) ya se cerró. Marca la casilla "
@@ -1089,37 +1223,12 @@ async def anular(
         ],
         "efectos": plan.efectos,
         "corte_cerrado": plan.corte_cerrado,
+        "en_negativo": plan.negativos if forzar else [],
     }
-    try:
-        async with sesion.begin_nested():
-            await sesion.execute(
-                text(
-                    """
-                    INSERT INTO anulaciones
-                      (id, tipo, documento_id, folio, descripcion, vendedor_id, importe,
-                       fecha_operativa, motivo, usuario_id, anulada_en, datos)
-                    VALUES (:id, :tipo, :doc, :folio, :descripcion, :vendedor, :importe,
-                            :fecha, :motivo, :quien, :ahora, CAST(:datos AS jsonb))
-                    """
-                ),
-                {
-                    "id": anulacion_id,
-                    "tipo": tipo,
-                    "doc": ref,
-                    "folio": op.folio,
-                    "descripcion": " · ".join(x for x in (op.donde, op.detalle) if x)
-                    or op.nombre,
-                    "vendedor": op.persona_id,
-                    "importe": op.importe,
-                    "fecha": op.fecha,
-                    "motivo": limpio[:600],
-                    "quien": quien,
-                    "ahora": ahora,
-                    "datos": _json(datos),
-                },
-            )
-    except IntegrityError as e:
-        raise AnulacionRechazada("Esa operación ya se había anulado.") from e
+    await _registrar_anulacion(
+        sesion, op, anulacion_id=anulacion_id, motivo=limpio, quien=quien, ahora=ahora,
+        datos=datos,
+    )
 
     folios = await _ANULADORES[tipo](
         sesion, op, motivo=limpio, nota=nota, quien=quien, ahora=ahora,
@@ -1149,6 +1258,42 @@ async def anular(
         + " ".join(plan.efectos[:1])
         + (f" Ajuste(s) al teléfono: {', '.join(folios)}." if folios else "")
     ).replace("  ", " ")
+
+
+async def _registrar_anulacion(
+    sesion, op: Operacion, *, anulacion_id: uuid.UUID, motivo: str, quien, ahora, datos: dict
+) -> None:
+    """El renglón de `anulaciones`: lo que dice la lista de lo eliminado."""
+    try:
+        async with sesion.begin_nested():
+            await sesion.execute(
+                text(
+                    """
+                    INSERT INTO anulaciones
+                      (id, tipo, documento_id, folio, descripcion, vendedor_id, importe,
+                       fecha_operativa, motivo, usuario_id, anulada_en, datos)
+                    VALUES (:id, :tipo, :doc, :folio, :descripcion, :vendedor, :importe,
+                            :fecha, :motivo, :quien, :ahora, CAST(:datos AS jsonb))
+                    """
+                ),
+                {
+                    "id": anulacion_id,
+                    "tipo": op.tipo,
+                    "doc": op.ref,
+                    "folio": op.folio,
+                    "descripcion": " · ".join(x for x in (op.donde, op.detalle) if x)
+                    or op.nombre,
+                    "vendedor": op.persona_id,
+                    "importe": op.importe,
+                    "fecha": op.fecha,
+                    "motivo": motivo[:600],
+                    "quien": quien,
+                    "ahora": ahora,
+                    "datos": _json(datos),
+                },
+            )
+    except IntegrityError as e:
+        raise AnulacionRechazada("Esa operación ya se había anulado.") from e
 
 
 def _json(valor) -> str:
@@ -1192,7 +1337,47 @@ async def _anular_merma(sesion, op, *, nota, quien, ahora, anulacion_id, **_) ->
     return folios
 
 
-async def _anular_carga(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -> list[str]:
+async def _anular_carga(
+    sesion, op, *, motivo, nota, quien, ahora, anulacion_id, **_
+) -> list[str]:
+    folios: list[str] = []
+    # Primero su corte (§126), con su propia anulación: así sale en la lista de
+    # lo eliminado, y su página dice que se fue con la carga.
+    for corte in await _cortes_vivos(sesion, op.ref):
+        corte_op = await una(sesion, "corte", corte["id"])
+        efectos = Plan()
+        await _efectos_del_corte(sesion, corte, efectos, reabrir=False)
+        de_la_carga = f"Se eliminó con la carga {op.folio}: {motivo}"
+        corte_anulacion = uuid.uuid4()
+        await _registrar_anulacion(
+            sesion, corte_op, anulacion_id=corte_anulacion, motivo=de_la_carga,
+            quien=quien, ahora=ahora,
+            datos={"estado_antes": corte["estado"], "efectos": efectos.efectos,
+                   "con_la_carga": op.folio},
+        )
+        folios += await _deshacer_corte(
+            sesion, corte, motivo=de_la_carga, quien=quien, ahora=ahora,
+            anulacion_id=corte_anulacion, reabrir=False,
+        )
+    await sesion.execute(
+        text(
+            "UPDATE cortes_vendedor SET estado = 'anulado', "
+            "       nota = concat_ws('; ', nota, CAST(:n AS text)) "
+            " WHERE carga_id = :c AND estado IN ('pendiente', 'cerrado')"
+        ),
+        {"c": op.ref, "n": f"se eliminó la carga {op.folio}: {motivo}"[:300]},
+    )
+    # La solicitud que la pidió queda rechazada: el vendedor lo ve con el motivo y
+    # puede pedir otra para ese día (solo hay una aceptada por día).
+    await sesion.execute(
+        text(
+            "UPDATE solicitudes_carga SET estado = 'rechazada', motivo = :m, "
+            "       resuelta_en = :ahora, resuelta_por = :q "
+            " WHERE carga_id = :c AND estado = 'aceptada'"
+        ),
+        {"c": op.ref, "m": f"Se anuló la carga {op.folio}: {motivo}"[:300],
+         "ahora": ahora, "q": quien},
+    )
     if op.estado != "borrador":
         # El teléfono se entera por el delta de la carga cancelada, que la deshace:
         # aquí no va ajuste, o se restaría dos veces.
@@ -1208,7 +1393,7 @@ async def _anular_carga(sesion, op, *, nota, quien, ahora, anulacion_id, **_) ->
     await sesion.execute(
         text("UPDATE cargas SET estado = 'cancelada' WHERE id = :c"), {"c": op.ref}
     )
-    return []
+    return folios
 
 
 async def _anular_traspaso(
@@ -1298,6 +1483,137 @@ async def _anular_ajuste(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -
     )
 
 
+async def _anular_corte(
+    sesion, op, *, motivo, quien, ahora, anulacion_id, **_
+) -> list[str]:
+    return await _deshacer_corte(
+        sesion, await _corte(sesion, op.ref), motivo=motivo, quien=quien, ahora=ahora,
+        anulacion_id=anulacion_id, reabrir=True,
+    )
+
+
+async def _deshacer_corte(
+    sesion,
+    corte: dict,
+    *,
+    motivo: str,
+    quien: uuid.UUID,
+    ahora: datetime,
+    anulacion_id: uuid.UUID,
+    reabrir: bool,
+) -> list[str]:
+    """Deshace el corte: sus ajustes al camión, lo que le cargó al vendedor, y el
+    corte mismo, que se queda como «anulada» (migración 0061). Devuelve los folios
+    de los ajustes que le avisan al teléfono."""
+    folios: list[str] = []
+    nota = f"Anulación del corte {corte['folio']}: {motivo}"
+    if corte["estado"] == "cerrada":
+        movimientos = await _movimientos(sesion, "liquidacion", corte["id"])
+        if movimientos:
+            # El teléfono ya los había sumado con la carga liquidada: el contrario
+            # le llega como ajuste del camión, una sola vez.
+            folios = await _deshacer_movimientos(
+                sesion, movimientos, anulacion_id=anulacion_id, nota=nota, quien=quien,
+                ahora=ahora, avisar_al_telefono=True,
+            )
+        # `cuenta_vendedor` no se borra ni se edita (migración 0039): lo cargado
+        # se compensa con una condonación que apunta a este corte.
+        cargado = await _cargado_por_el_corte(sesion, corte["id"])
+        if cargado > 0:
+            ya_hay = (
+                await sesion.execute(
+                    text("SELECT 1 FROM cuenta_vendedor WHERE liquidacion_id = :l "
+                         "   AND origen = 'condonacion'"),
+                    {"l": corte["id"]},
+                )
+            ).first()
+            await sesion.execute(
+                text(
+                    "INSERT INTO cuenta_vendedor (vendedor_id, tipo, origen, importe, fecha, "
+                    "  concepto, liquidacion_id, registrado_por) "
+                    "VALUES (:v, 'condonacion', 'condonacion', :importe, :fecha, :concepto, "
+                    "        :l, :q)"
+                ),
+                {
+                    "v": corte["vendedor_id"],
+                    "importe": cargado,
+                    "fecha": corte["fecha_operativa"],
+                    "concepto": f"Corte {corte['folio']} anulado: {motivo}"[:300],
+                    # Una condonación por corte (índice único): si ya había una a
+                    # mano, ésta va sin el corte, con el folio en el concepto.
+                    "l": None if ya_hay else corte["id"],
+                    "q": quien,
+                },
+            )
+    await sesion.execute(
+        text("UPDATE liquidaciones SET estado = 'anulada' WHERE id = :l"), {"l": corte["id"]}
+    )
+
+    if not reabrir:
+        await sesion.execute(
+            text(
+                "UPDATE cortes_vendedor SET estado = 'anulado', "
+                "       nota = concat_ws('; ', nota, CAST(:n AS text)) "
+                " WHERE liquidacion_id = :l"
+            ),
+            {"l": corte["id"], "n": f"corte anulado: {motivo}"[:300]},
+        )
+        return folios
+
+    # El corte del vendedor vuelve a «por cerrar»; si mientras tanto mandó otro
+    # del mismo día, ése manda y éste queda reemplazado.
+    await sesion.execute(
+        text(
+            """
+            UPDATE cortes_vendedor k
+               SET estado = CASE WHEN EXISTS (
+                                   SELECT 1 FROM cortes_vendedor o
+                                    WHERE o.vendedor_id = k.vendedor_id
+                                      AND o.fecha_operativa = k.fecha_operativa
+                                      AND o.estado = 'pendiente' AND o.id <> k.id)
+                                 THEN 'reemplazado' ELSE 'pendiente' END,
+                   liquidacion_id = NULL, resuelto_por = NULL, resuelto_en = NULL,
+                   efectivo_recibido = NULL,
+                   nota = concat_ws('; ', k.nota, CAST(:n AS text))
+             WHERE k.liquidacion_id = :l
+            """
+        ),
+        {"l": corte["id"], "n": f"corte anulado: {motivo}"[:300]},
+    )
+
+    # La carga vuelve a «por cortar». Si ya estaba liquidada, el teléfono la
+    # tiene marcada como cerrada con sus ajustes aplicados, y no los volvería a
+    # aplicar al cortarla otra vez: por eso pasa un instante por 'cancelada' (el
+    # teléfono resta la carga y olvida que la aplicó) y regresa a 'confirmada'
+    # (la vuelve a sumar). El camión del teléfono queda igual, y limpio.
+    if corte["carga_estado"] == "liquidada":
+        await sesion.execute(
+            text("UPDATE cargas SET estado = 'cancelada' WHERE id = :c"), {"c": corte["carga_id"]}
+        )
+    if corte["carga_estado"] in ("liquidada", "en_ruta"):
+        await sesion.execute(
+            text("UPDATE cargas SET estado = 'confirmada' WHERE id = :c"),
+            {"c": corte["carga_id"]},
+        )
+        # El teléfono toma como activa la carga que le llegó al último. Si el
+        # vendedor ya trae una más nueva, se vuelve a publicar después, para que
+        # sus ventas sigan amarradas a ésa.
+        await sesion.execute(
+            text(
+                """
+                UPDATE cargas SET estado = estado
+                 WHERE id = (SELECT id FROM cargas
+                              WHERE vendedor_id = :v AND estado IN ('confirmada', 'en_ruta')
+                              ORDER BY fecha_operativa DESC, confirmada_en DESC NULLS LAST
+                              LIMIT 1)
+                   AND id <> :c
+                """
+            ),
+            {"v": corte["vendedor_id"], "c": corte["carga_id"]},
+        )
+    return folios
+
+
 _ANULADORES = {
     "venta": _anular_venta,
     "mayoreo": _anular_mayoreo,
@@ -1311,4 +1627,78 @@ _ANULADORES = {
     "entrada": _anular_entrada,
     "salida": _anular_salida,
     "ajuste": _anular_ajuste,
+    "corte": _anular_corte,
 }
+
+
+# ---------------------------------------------------------------------------
+# Eliminar varias a la vez (§126)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Eliminada:
+    """Lo que pasó con cada una al eliminar varias."""
+
+    op: Operacion
+    aviso: str | None = None
+    error: str | None = None
+
+
+def en_orden(ops: list[Operacion]) -> list[Operacion]:
+    """En el orden en que se eliminan: lo que cuelga de otra cosa primero (ver
+    `ORDEN_AL_ELIMINAR`), y dentro de cada tipo lo más nuevo primero."""
+    return sorted(
+        ops,
+        key=lambda o: (
+            ORDEN_AL_ELIMINAR.index(o.tipo),
+            -(o.fecha.toordinal()),
+            -(o.momento.timestamp() if o.momento else 0),
+        ),
+    )
+
+
+async def las_marcadas(sesion, claves: list[str]) -> list[Operacion]:
+    """Las operaciones de las casillas («tipo:id»), sin repetir y en orden."""
+    vistas: set[tuple[str, uuid.UUID]] = set()
+    ops: list[Operacion] = []
+    for clave in claves[:LIMITE]:
+        tipo, _, crudo = clave.partition(":")
+        try:
+            ref = uuid.UUID(crudo)
+        except ValueError:
+            continue
+        if tipo not in NOMBRE or (tipo, ref) in vistas:
+            continue
+        vistas.add((tipo, ref))
+        op = await una(sesion, tipo, ref)
+        if op is not None:
+            ops.append(op)
+    return en_orden(ops)
+
+
+async def eliminar_varias(
+    sesion,
+    ops: list[Operacion],
+    *,
+    motivo: str,
+    quien: uuid.UUID,
+    entiendo_el_corte: bool = False,
+    forzar: bool = False,
+) -> list[Eliminada]:
+    """Las elimina una por una, en orden, cada una en su propio punto de
+    guardado: la que no se puede se queda como estaba y dice por qué, y las
+    demás siguen. No hace commit."""
+    resultado: list[Eliminada] = []
+    for op in en_orden(ops):
+        try:
+            async with sesion.begin_nested():
+                aviso = await anular(
+                    sesion, op.tipo, op.ref, motivo=motivo, quien=quien,
+                    entiendo_el_corte=entiendo_el_corte, forzar=forzar,
+                )
+            resultado.append(Eliminada(op, aviso=aviso))
+        except (AnulacionRechazada, OperacionNoExiste) as e:
+            resultado.append(Eliminada(op, error=str(e)))
+    return resultado
+

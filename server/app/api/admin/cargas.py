@@ -1156,7 +1156,8 @@ async def _bloqueos_para_cargar(sesion, vendedor_id, dia) -> list[str]:
                 """
                 SELECT c.folio, c.fecha_operativa, l.estado
                   FROM cargas c
-                  LEFT JOIN liquidaciones l ON l.carga_id = c.id
+                  LEFT JOIN liquidaciones l
+                         ON l.carga_id = c.id AND l.estado <> 'anulada'
                  WHERE c.vendedor_id = :v
                    AND c.fecha_operativa < :dia
                    -- 'confirmada' es la carga que salió y nadie ha contado;

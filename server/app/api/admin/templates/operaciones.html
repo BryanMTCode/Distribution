@@ -5,9 +5,11 @@
 <p class="subtitulo">
   Todo lo que pasó, junto: ventas, mayoreo, visitas sin venta, mermas, cargas,
   devoluciones, traspasos, entradas, salidas, ajustes y cortes. Abre cualquiera
-  para <strong>anularla</strong>: se deshace con todo lo que movió —la mercancía
-  regresa a donde estaba y el dinero sale de las cifras—, el teléfono del vendedor
-  se entera, y aquí se queda como <strong>anulada</strong>, con quién, cuándo y por qué.
+  para <strong>eliminarla</strong>: se deshace con todo lo que movió —la mercancía
+  regresa a donde estaba, el dinero sale de las cifras y el corte se deshace—, y
+  el teléfono del vendedor se entera. Lo eliminado sale de esta lista y se queda
+  en <strong>Eliminadas</strong>, con quién, cuándo y por qué. Para limpiar lo de
+  prueba, márcalas y elimínalas juntas.
 </p>
 
 {% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
@@ -31,7 +33,7 @@
       <option value="{{ p.id }}" {% if p.id|string == persona %}selected{% endif %}>{{ p.nombre }} · {{ p.codigo }}{% if not p.activo %} (desactivado){% endif %}</option>
     {% endfor %}
   </select>
-  <select name="estado" aria-label="Anuladas o no">
+  <select name="estado" aria-label="Eliminadas o no">
     {% for clave, nombre in estados %}
       <option value="{{ clave }}" {% if clave == estado %}selected{% endif %}>{{ nombre }}</option>
     {% endfor %}
@@ -40,8 +42,8 @@
 </form>
 
 <p class="sutil" id="cuantas_operaciones">
-  {{ operaciones|length }} operación(es) {{ periodo.descripcion }}{% if anuladas %} · {{ anuladas }} anulada(s){% endif %}.
-  {% if not puede_anular %}Puedes verlas; anular es solo del administrador.{% endif %}
+  {{ operaciones|length }} operación(es) {{ periodo.descripcion }}{% if anuladas %} · {{ anuladas }} eliminada(s){% endif %}.
+  {% if not puede_anular %}Puedes verlas; eliminar es solo del administrador.{% endif %}
 </p>
 
 {% if recortada %}
@@ -49,10 +51,23 @@
 {% endif %}
 
 {% if operaciones %}
+{% set eliminables = operaciones|selectattr('anulable')|list %}
+{% if puede_anular and eliminables %}
+<form method="post" action="/panel/operaciones/eliminar" id="forma_eliminar_varias">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="barra" style="margin:8px 0">
+    <button type="submit" class="peligro" id="boton_eliminar_marcadas">Eliminar las marcadas…</button>
+    <a class="boton-chico" id="marcar_todas"
+       href="?periodo={{ periodo.clave }}&desde={{ periodo.inicio.isoformat() }}&hasta={{ periodo.fin.isoformat() }}&tipo={{ tipo }}&persona={{ persona }}&estado={{ estado }}&marcar=todas">Marcar todas ({{ eliminables|length }})</a>
+    {% if marcar_todas %}<a class="boton-chico" href="?periodo={{ periodo.clave }}&desde={{ periodo.inicio.isoformat() }}&hasta={{ periodo.fin.isoformat() }}&tipo={{ tipo }}&persona={{ persona }}&estado={{ estado }}">Desmarcar</a>{% endif %}
+    <span class="sutil">Antes de eliminar se ve lo que va a pasar con cada una.</span>
+  </p>
+{% endif %}
 <div class="tabla-marco" style="overflow-x:auto">
   <table id="tabla_operaciones">
     <thead>
       <tr>
+        {% if puede_anular and eliminables %}<th></th>{% endif %}
         <th>Cuándo</th><th>Operación</th><th>Quién</th><th>Dónde / detalle</th>
         <th class="numero">Importe</th><th>Estado</th><th></th>
       </tr>
@@ -60,6 +75,9 @@
     <tbody>
       {% for o in operaciones %}
       <tr id="op_{{ o.ref }}" {% if o.anulada or o.cancelada %}style="color:var(--suave)"{% endif %}>
+        {% if puede_anular and eliminables %}
+        <td>{% if o.anulable %}<input type="checkbox" name="op" value="{{ o.tipo }}:{{ o.ref }}" id="marcar_{{ o.ref }}" aria-label="Marcar {{ o.nombre }} {{ o.folio or '' }}" {% if marcar_todas %}checked{% endif %}>{% endif %}</td>
+        {% endif %}
         <td style="white-space:nowrap">
           {{ o.fecha.strftime('%d/%m/%Y') }}
           {% if o.momento %}<div class="sutil">{{ o.momento.strftime('%H:%M') }}</div>{% endif %}
@@ -76,7 +94,7 @@
         <td class="numero">{% if o.importe is not none %}${{ '{:,.2f}'.format(o.importe) }}{% endif %}</td>
         <td>
           {% if o.anulada %}
-            <span class="etiqueta-motivo" style="background:var(--alerta-suave);color:var(--alerta)">anulada</span>
+            <span class="etiqueta-motivo" style="background:var(--alerta-suave);color:var(--alerta)">eliminada</span>
             <div class="sutil">{{ o.anulada_por or 'alguien' }} · {{ o.anulada_en.strftime('%d/%m %H:%M') }}</div>
             <div class="sutil">{{ o.anulacion_motivo }}</div>
           {% elif o.cancelada %}
@@ -87,7 +105,7 @@
         </td>
         <td class="acciones">
           {% if o.anulable and puede_anular %}
-            <a class="boton-chico peligro" href="{{ o.pagina }}" id="anular_{{ o.ref }}">Anular</a>
+            <a class="boton-chico peligro" href="{{ o.pagina }}" id="anular_{{ o.ref }}">Eliminar</a>
           {% else %}
             <a class="boton-chico" href="{{ o.pagina }}">Ver</a>
           {% endif %}
@@ -97,6 +115,7 @@
     </tbody>
   </table>
 </div>
+{% if puede_anular and eliminables %}</form>{% endif %}
 {% else %}
 <div class="vacio" id="sin_operaciones">Ninguna operación {{ periodo.descripcion }} con esos filtros.</div>
 {% endif %}

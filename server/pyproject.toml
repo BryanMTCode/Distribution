@@ -17,6 +17,8 @@ dependencies = [
     "python-multipart>=0.0.20",
     "sse-starlette>=2.1",
     "uuid6>=2024.7.10",
+    # El reporte en Excel del administrador (ADR 0002 §127).
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

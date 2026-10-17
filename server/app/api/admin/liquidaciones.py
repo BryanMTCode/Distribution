@@ -198,7 +198,9 @@ async def cargas_por_cortar(sesion) -> list:
                          WHERE carga_id = c.id AND estado = 'confirmada'
                   ) v ON true
                  WHERE c.estado IN ('confirmada', 'en_ruta')
-                   AND NOT EXISTS (SELECT 1 FROM liquidaciones l WHERE l.carga_id = c.id)
+                   -- El corte anulado no cuenta: la carga vuelve a cortarse (§126).
+                   AND NOT EXISTS (SELECT 1 FROM liquidaciones l
+                                    WHERE l.carga_id = c.id AND l.estado <> 'anulada')
                  ORDER BY c.fecha_operativa
                 """
             )
@@ -227,6 +229,8 @@ async def cortes_recientes(sesion) -> list:
                         SELECT count(*) AS faltantes FROM liquidacion_detalle
                          WHERE liquidacion_id = l.id AND diferencia <> 0
                   ) d ON true
+                 -- Los anulados están en Operaciones → Eliminadas (§126).
+                 WHERE l.estado <> 'anulada'
                  ORDER BY l.fecha_operativa DESC, l.folio DESC
                  LIMIT 100
                 """
@@ -300,7 +304,8 @@ async def abrir_corte(sesion, carga: uuid.UUID) -> uuid.UUID:
 
     ya = (
         await sesion.execute(
-            text("SELECT id FROM liquidaciones WHERE carga_id = :c"), {"c": carga}
+            text("SELECT id FROM liquidaciones WHERE carga_id = :c AND estado <> 'anulada'"),
+            {"c": carga},
         )
     ).scalar_one_or_none()
     if ya is not None:
@@ -402,7 +407,8 @@ async def detalle(
             "descuadres": datos["descuadres"],
             "divergencias": datos["divergencias"],
             "bloqueos": datos["bloqueos"],
-            "abierta": cabecera["estado"] != "cerrada",
+            "abierta": cabecera["estado"] not in ("cerrada", "anulada"),
+            "anulada": cabecera["estado"] == "anulada",
             "puede_editar": actor.puede(PERMISO),
             "esperado_texto": dinero(cabecera["efectivo_esperado"]),
             "entregado_texto": dinero(cabecera["efectivo_entregado"]),
@@ -446,7 +452,7 @@ async def datos_del_corte(sesion, liquidacion_id: uuid.UUID) -> dict | None:
     # mermado y devuelto que haya sincronizado hasta este momento, y el efectivo
     # que eso implica. Ver `_refrescar_cifras`: era el defecto de «vendo y el
     # camión del panel no baja». Lo contado no se toca.
-    if cabecera["estado"] != "cerrada":
+    if cabecera["estado"] not in ("cerrada", "anulada"):
         await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
         esperado = await _efectivo_esperado(
             sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
@@ -454,7 +460,7 @@ async def datos_del_corte(sesion, liquidacion_id: uuid.UUID) -> dict | None:
         await sesion.execute(
             text(
                 "UPDATE liquidaciones SET efectivo_esperado = :e "
-                " WHERE id = :l AND estado <> 'cerrada'"
+                " WHERE id = :l AND estado NOT IN ('cerrada', 'anulada')"
             ),
             {"e": esperado, "l": liquidacion_id},
         )
@@ -593,6 +599,8 @@ async def guardar_conteo(
         raise CorteNoExiste("Ese corte no existe.")
     if estado == "cerrada":
         raise CorteRechazado("Esta liquidación ya está cerrada.")
+    if estado == "anulada":
+        raise CorteRechazado("Este corte se eliminó: abre otro desde «Cargas por cerrar».")
 
     renglones = (
         await sesion.execute(
@@ -665,6 +673,8 @@ async def guardar_arqueo(
         raise CorteNoExiste("Ese corte no existe.")
     if cabecera["estado"] == "cerrada":
         raise CorteRechazado("Esta liquidación ya está cerrada.")
+    if cabecera["estado"] == "anulada":
+        raise CorteRechazado("Este corte se eliminó: abre otro desde «Cargas por cerrar».")
 
     entregado = leer_dinero(efectivo_entregado, campo="El efectivo entregado")
 
@@ -773,6 +783,8 @@ async def cerrar_corte(
         raise CorteNoExiste("Ese corte no existe.")
     if cabecera["estado"] == "cerrada":
         raise CorteRechazado("Ya estaba cerrada.")
+    if cabecera["estado"] == "anulada":
+        raise CorteRechazado("Este corte se eliminó: abre otro desde «Cargas por cerrar».")
 
     bloqueos = await _bloqueos_para_cerrar(sesion, cabecera)
     if bloqueos:

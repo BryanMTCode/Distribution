@@ -116,6 +116,9 @@
 <h2 id="cifras">{% if periodo.es_hoy %}Cifras de hoy{% elif periodo.clave == "rango" %}Cifras {{ periodo.descripcion }}{% else %}Cifras · {{ periodo.etiqueta|lower }}{% endif %}</h2>
 {% set ocultos = {} %}
 {% include "_periodo.html" %}
+{% if actor and actor.puede('tablero.ver') %}
+<p class="sutil" style="margin:4px 0 10px"><a href="/panel/reporte?{{ periodo.como_parametros() }}" id="ir_al_reporte">Bajar el reporte en Excel de este periodo →</a></p>
+{% endif %}
 <div class="tarjetas" id="cifras_periodo">
   <div class="tarjeta">
     <div class="numero">{{ indicadores.ventas_hoy }}</div>

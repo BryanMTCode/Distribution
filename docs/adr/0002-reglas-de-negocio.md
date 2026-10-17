@@ -5716,3 +5716,121 @@ artículos a la familia de Maruchan. Se agregarán solo en el almacén».
   venta, porque es el catálogo con el que arranca una base en blanco.
 
 Solo servidor: no hace falta APK nuevo.
+
+## 126. Eliminar sin topes desde el dashboard, deshaciendo todo (cortes incluidos)
+
+**Decisión (octubre 2026).** «Desde el dashboard quiero tener poder absoluto de
+eliminar lo que yo quiera y que se anulen los efectos… principalmente cargas,
+ventas, movimientos del almacén, cortes incluso.» «Quiero hacer esto de anular
+para jugar con el almacén y ver que funcionan bien, y luego eliminar lo que yo
+quiera.» Y: «¿cómo crees que sea bueno para que no se haga un desmadre, pero que
+me permita anular cosas?»
+
+- **Eliminar sigue siendo anular** (§119), no borrar. Se deshace todo lo que
+  movió, y la operación sale de la lista de siempre y de las cifras. Se queda en
+  **Operaciones → Eliminadas** con quién, cuándo y por qué. Borrar de verdad
+  dejaría el inventario y los teléfonos descuadrados sin rastro de por qué: ése
+  es el desmadre que se evita. La lista abre en «Sin eliminar», y «Todas» es un
+  filtro más.
+- **El corte del día se puede eliminar.** Se deshace el cierre:
+  - los ajustes que dejó en el camión regresan, y el teléfono los recibe como
+    ajuste del camión de tipo «anulación»;
+  - lo que le cargó al vendedor (faltantes, mermas a su cargo, efectivo) se le
+    **condona**: la cuenta del vendedor no se borra (migración 0039), así que se
+    compensa con una condonación que apunta a ese corte;
+  - el corte queda como «anulada» (migración 0061) y la carga vuelve a «por
+    cortar»;
+  - el corte que mandó el vendedor desde su teléfono vuelve a «Cortes por
+    cerrar», para cerrarlo otra vez contando el efectivo.
+  
+  Para que el teléfono acepte el ajuste del corte nuevo, la carga pasa un
+  instante por «cancelada» y vuelve a «confirmada»: el teléfono la resta, olvida
+  que la había cerrado y la vuelve a sumar. Su camión queda igual. Si el
+  vendedor ya trae una carga más nueva, esa se le vuelve a publicar, para que sus
+  ventas sigan amarradas a ella. No hace falta APK nuevo.
+- **La carga que ya entró a un corte** se elimina con su corte, en cascada. El
+  corte tiene su propia anulación, que dice «Se eliminó con la carga CG-…». El
+  corte que mandó el vendedor con esa carga queda «anulado». La solicitud que la
+  pidió queda **rechazada** con el motivo: el vendedor lo ve en su «Mi día» y
+  puede pedir otra para ese día.
+- **La compra ya pagada** se elimina junto con sus pagos al proveedor.
+- **Lo que dejaría un almacén en negativo** ya no está prohibido: pide una
+  casilla, «Eliminarla de todos modos». Casi siempre ese aviso significa que
+  falta eliminar primero lo que se hizo con esa mercancía (la venta, la carga),
+  así que sin la casilla no elimina. Con ella, el número queda abajo de cero y
+  se corrige con un conteo. La página de lo eliminado dice que quedó en
+  negativo.
+- **Varias a la vez.** Se marcan en la lista; «Marcar todas» marca las del filtro
+  elegido. «Eliminar las marcadas…» enseña, antes de tocar nada, lo que va a
+  pasar con cada una y en qué orden:
+  - las ventas, el mayoreo, las visitas, las mermas y los ajustes;
+  - después las devoluciones a bodega, los cortes y las cargas;
+  - al final los traspasos, las salidas y las entradas.
+  
+  Así nada queda en negativo a la mitad. Se escribe un solo motivo. Cada una va
+  en su propio punto de guardado: la que no se puede se queda como estaba y dice
+  por qué, y las demás siguen.
+- **Para probar sin desmadre**, la recomendación es un vendedor de prueba
+  (`VENDPRUEBA`) con su camión: cargas, ventas y cortes con él, y al final
+  Operaciones → filtrar por ese vendedor → «Marcar todas» → «Eliminar». Los
+  vendedores reales no se tocan. Antes de una limpieza grande, un respaldo.
+- **Lo único que no se deja:**
+  - eliminar dos veces;
+  - algo cuyo movimiento no está en el inventario;
+  - una venta a crédito ya cobrada (solo existen del piloto).
+- La venta de un día con el corte cerrado sigue pidiendo confirmar que ese corte
+  no cambia. Si se quiere que cambie, se elimina también el corte.
+- Eliminar es del administrador (`operaciones.anular`). El supervisor ve la
+  lista pero no los botones.
+- Servidor, migración 0061 (alembic `0054_eliminar_sin_topes`). En
+  `liquidaciones.estado` y `cortes_vendedor.estado` entra el valor anulado, y
+  una carga tiene un solo corte vivo. El delta de la carga liquidada lleva solo
+  los ajustes del corte vivo. Las listas de cortes, «Cargas por cerrar», el
+  historial del vendedor y el cierre desde el teléfono no cuentan el corte
+  anulado.
+
+## 127. El reporte en Excel para el administrador
+
+**Decisión (octubre 2026).** «También quiero generar un reporte en Excel para la
+persona que usa el perfil de administrador. Él no sabe usar mucho los sistemas,
+así que el dashboard solo lo uso yo, pero el reporte se lo daré a él.» Al
+preguntarle, eligió las cuatro cosas —ventas y efectivo, inventario, cargas y
+mermas, y la cuenta de cada vendedor— y que el periodo sea **el que se elija al
+bajarlo**.
+
+- **Administración → Reporte en Excel**: el selector de periodo de siempre (hoy,
+  la semana, el mes, un rango) y el botón «Bajar el reporte en Excel». El
+  Tablero lo enlaza debajo de su selector, con el mismo periodo. Lo baja quien
+  ve el Tablero (`tablero.ver`: gerencia y administrador). El supervisor no.
+- **El archivo** (`reporte_AAAA-MM-DD_a_AAAA-MM-DD.xlsx`) se lee sin saber nada
+  del sistema:
+  - encabezados en rojo y totales en negritas al final de cada tabla;
+  - pesos con signo y fechas con su día («viernes 16/10/2026»);
+  - ninguna clave interna: «En el camión», «Cortada», «Faltaron $50.00», «Se le
+    perdonó».
+- **Resumen**: lo vendido en la calle y cuánto en efectivo, el efectivo que se
+  entregó en los cortes y la diferencia, el mayoreo, lo que vale hoy el
+  inventario de la bodega y de los camiones, lo que deben los vendedores, y las
+  piezas cargadas y mermadas. Si hay artículos sin precio, lo dice: no suman en
+  el inventario.
+- **Ventas y efectivo**:
+  - cada vendedor día por día (ventas, piezas, importe, en efectivo) y su total;
+  - los cortes: lo que debía entregar, lo que entregó, la diferencia y «cómo
+    quedó». Si el corte lo mandó el vendedor y la oficina no lo ha cerrado, lo
+    dice con lo que declaró;
+  - las ventas de mayoreo.
+- **Inventario**: lo que hay **hoy** (no depende del periodo) en la bodega y en
+  cada camión, con el nombre de quien lo trae («Camión 01 · Juan Pérez»), por
+  familia, con el precio y lo que vale a precio de venta (§86).
+- **Cargas y mermas**: las cargas del periodo (camión, de qué bodega, artículos,
+  piezas y cómo va) y cada merma, devolución, cambio o merma de bodega,
+  artículo por artículo.
+- **Cuenta de vendedores**: de cada uno, lo que se le ha cargado, lo que ha
+  pagado, lo que se le perdonó y lo que debe hoy, y los movimientos del periodo
+  con su motivo.
+- **Las mismas cifras que el dashboard**: ventas confirmadas, el efectivo de las
+  ventas de contado en efectivo (el que decide el corte), y nada de lo eliminado
+  en Operaciones (§119, §126).
+- Servidor: `app/infra/reporte_excel.py` y `app/api/admin/reporte.py`, con
+  `openpyxl` como dependencia nueva (en `uv.lock`). La imagen la instala al
+  reconstruirse. No hay migración.

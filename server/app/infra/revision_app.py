@@ -735,40 +735,93 @@ SECCIONES: tuple[Seccion, ...] = (
         parte="dashboard",
     ),
     Seccion(
-        "panel_operaciones", "Operaciones: todas juntas, y anular",
+        "panel_operaciones", "Operaciones: todas juntas, y eliminar deshaciendo",
         "La computadora, entrando como admin, y el teléfono del vendedor a la mano",
         (
             Punto(
                 "panel_operaciones_lista", "Todas las operaciones juntas",
                 "Administración → Operaciones: cambia el periodo y filtra por tipo, por "
-                "vendedor y por «Anuladas».",
+                "vendedor y por «Eliminadas».",
                 "Ventas, mayoreo, visitas sin venta, mermas, cargas, devoluciones, "
                 "traspasos, entradas, salidas, ajustes y cortes en una sola lista, la más "
-                "reciente arriba; cada una abre su página.",
+                "reciente arriba; cada una abre su página. Lo eliminado no sale en la "
+                "lista de siempre: está en «Eliminadas».",
             ),
             Punto(
-                "panel_operaciones_anular_venta", "Anular una venta de prueba",
+                "panel_operaciones_anular_venta", "Eliminar una venta de prueba",
                 "Haz una venta de prueba en el teléfono y sincroniza. En Operaciones ábrela, "
-                "lee «Si la anulas», escribe el motivo → «Anular y deshacer». Sincroniza "
-                "el teléfono.",
-                "En la lista queda «anulada» con tu nombre, la hora y el motivo; la "
-                "mercancía vuelve al camión (Inventario), sale de las ventas del día, y en "
-                "el teléfono la venta aparece cancelada con el motivo.",
+                "lee «Si la eliminas», escribe el motivo → «Eliminar y deshacer». "
+                "Sincroniza el teléfono.",
+                "En «Eliminadas» queda con tu nombre, la hora y el motivo; la mercancía "
+                "vuelve al camión (Inventario), sale de las ventas del día, y en el "
+                "teléfono la venta aparece cancelada con el motivo.",
             ),
             Punto(
-                "panel_operaciones_anular_merma", "Anular una merma de prueba",
-                "Registra una merma de prueba en el teléfono y sincroniza. Anúlala en "
+                "panel_operaciones_anular_merma", "Eliminar una merma de prueba",
+                "Registra una merma de prueba en el teléfono y sincroniza. Elimínala en "
                 "Operaciones y vuelve a sincronizar el teléfono.",
                 "Las piezas regresan al camión en el dashboard y en el teléfono (llega un "
                 "ajuste «Anulación de merma…» con tu motivo), y deja de contar en las "
                 "mermas del día.",
             ),
             Punto(
-                "panel_operaciones_no_deja", "Lo que no deja anular",
-                "Abre una carga cuyo camión ya vendió parte, y un corte del día.",
-                "La carga dice que el camión ya no tiene esas piezas y no ofrece anular; "
-                "el corte dice que no se anula. Un supervisor ve la lista pero no el botón "
-                "«Anular».",
+                "panel_operaciones_eliminar_corte", "Eliminar un corte de prueba",
+                "Cierra el corte de un vendedor de prueba con un faltante de efectivo. En "
+                "Operaciones abre ese corte → «Eliminar y deshacer».",
+                "La carga vuelve a «Cargas por cerrar» y el corte del vendedor a «Cortes "
+                "por cerrar»; en su cuenta, el faltante queda condonado. Se puede cerrar "
+                "otra vez.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_operaciones_eliminar_carga", "Eliminar una carga con su corte",
+                "Con un vendedor de prueba: elimina primero su venta y luego su carga ya "
+                "cortada. Sincroniza el teléfono.",
+                "La página de la carga dice que se elimina también su corte; la mercancía "
+                "regresa a la bodega, el corte queda en «Eliminadas» y el camión del "
+                "teléfono se vacía de esa carga.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_operaciones_varias", "Eliminar varias de prueba a la vez",
+                "Operaciones → filtra por el vendedor de prueba → «Marcar todas» → «Eliminar "
+                "las marcadas…». Lee la lista y escribe el motivo.",
+                "Dice en qué orden se eliminan (ventas primero, entradas al final) y lo que "
+                "pasa con cada una; al confirmar, «Eliminadas: N de N». Lo que no se pudo "
+                "dice por qué.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_operaciones_negativo", "Lo que quedaría en negativo",
+                "Abre una carga cuyo camión ya vendió parte. Elimínala sin marcar la casilla; "
+                "luego entra como supervisor.",
+                "Dice «Quedaría en negativo» y no elimina sin la casilla «Eliminarla de "
+                "todos modos». El supervisor ve la lista pero no el botón «Eliminar».",
+                desde="+41",
+            ),
+        ),
+        parte="dashboard",
+    ),
+    Seccion(
+        "panel_reporte", "Reporte en Excel para el administrador",
+        "La computadora, entrando como admin, con Excel a la mano",
+        (
+            Punto(
+                "panel_reporte_bajar", "Bajar el reporte en Excel",
+                "Administración → Reporte en Excel → elige «Esta semana» → «Bajar el "
+                "reporte en Excel», y ábrelo.",
+                "Cinco hojas: Resumen, Ventas y efectivo, Inventario, Cargas y mermas, y "
+                "Cuenta de vendedores, con encabezados en rojo y totales. Lo vendido y el "
+                "efectivo del Resumen son los del Tablero de esa semana.",
+                desde="+41",
+            ),
+            Punto(
+                "panel_reporte_eliminado", "Lo eliminado no sale en el reporte",
+                "Elimina una venta de prueba en Operaciones y vuelve a bajar el reporte "
+                "del mismo periodo.",
+                "La venta ya no cuenta en el Resumen ni en Ventas y efectivo, y sus piezas "
+                "vuelven a estar en el camión en la hoja de Inventario.",
+                desde="+41",
             ),
         ),
         parte="dashboard",

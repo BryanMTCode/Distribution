@@ -33,6 +33,7 @@ from app.api.admin import panel
 from app.api.admin import piloto as panel_piloto
 from app.api.admin import plan_visita as panel_plan_visita
 from app.api.admin import productos as panel_productos
+from app.api.admin import reporte as panel_reporte
 from app.api.admin import revision_app as panel_revision_app
 from app.api.admin import salidas as panel_salidas
 from app.api.admin import sincronizaciones as panel_sincronizaciones
@@ -167,6 +168,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_mayoreo.router)
     app.include_router(panel_equipos.router)
     app.include_router(panel_piloto.router)
+    app.include_router(panel_reporte.router)
 
     @app.exception_handler(RequestValidationError)
     async def _validacion(peticion: Request, exc: RequestValidationError):

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Reporte en Excel{% endblock %}
+{% block contenido %}
+<h1>Reporte en Excel</h1>
+<p class="subtitulo">
+  Un archivo para quien no usa el dashboard: se abre en Excel y se lee sin saber
+  nada del sistema. Elige el periodo y bájalo.
+</p>
+
+{% set ocultos = {} %}
+{% include "_periodo.html" %}
+
+<form method="get" action="/panel/reporte/excel" class="barra" style="margin:18px 0" id="forma_bajar_reporte">
+  <input type="hidden" name="periodo" value="{{ periodo.clave }}">
+  <input type="hidden" name="desde" value="{{ periodo.inicio.isoformat() }}">
+  <input type="hidden" name="hasta" value="{{ periodo.fin.isoformat() }}">
+  <button type="submit" id="bajar_reporte">Bajar el reporte en Excel</button>
+  <span class="sutil">{{ periodo.descripcion|capitalize }}</span>
+</form>
+
+<h2>Qué trae</h2>
+<ul id="hojas_del_reporte">
+  <li><strong>Resumen</strong>: las cifras grandes en una hoja: lo vendido, el
+  efectivo que había que entregar y el que se entregó, lo que faltó o sobró, el
+  mayoreo, lo que vale el inventario y lo que deben los vendedores.</li>
+  <li><strong>Ventas y efectivo</strong>: cada vendedor día por día, su total, los
+  cortes con lo que debía entregar, lo que entregó y cómo quedó, y las ventas de
+  mayoreo.</li>
+  <li><strong>Inventario</strong>: lo que hay hoy en la bodega y en cada camión,
+  por familia, con lo que vale a precio de venta. No depende del periodo.</li>
+  <li><strong>Cargas y mermas</strong>: las cargas de cada camión y cada merma o
+  devolución, artículo por artículo.</li>
+  <li><strong>Cuenta de vendedores</strong>: lo que se le ha cargado a cada uno, lo
+  que ha pagado y lo que debe hoy, y lo que se movió en el periodo.</li>
+</ul>
+<p class="sutil">Lo que se eliminó en Operaciones no cuenta en ninguna hoja.</p>
+{% endblock %}
