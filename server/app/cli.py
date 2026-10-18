@@ -603,7 +603,8 @@ async def mapa_mazatlan(argumentos: list[str]) -> int:
 
 
 async def empezar_a_operar(argumentos: list[str]) -> int:
-    """La base en blanco para empezar a operar: solo queda ADMIN01 (ADR 0002 §131).
+    """Se van los usuarios menos ADMIN01 y la operación queda en cero; el catálogo y
+    las tiendas se quedan (ADR 0002 §131).
 
     Qué hace está en `app/infra/empezar_a_operar.py`. `--resumen` solo dice lo
     que haría; `--confirmado` no pregunta; `--se-queda CODIGO` cambia el
@@ -611,7 +612,6 @@ async def empezar_a_operar(argumentos: list[str]) -> int:
     """
     from app.core.db import CrearSesion
     from app.infra.empezar_a_operar import (
-        LO_QUE_SE_CUENTA,
         PALABRA,
         QUEDA_POR_OMISION,
         NoSePuede,
@@ -642,21 +642,24 @@ async def empezar_a_operar(argumentos: list[str]) -> int:
             print(f"NO SE PUEDE: {e}. No se cambió nada.")
             return 1
         q = plan.se_queda
-        print("BASE EN BLANCO PARA EMPEZAR A OPERAR\n")
+        print("EMPEZAR A OPERAR: SE VAN LOS USUARIOS, LA OPERACIÓN QUEDA EN CERO\n")
         print(f"Se queda: {q.codigo} «{q.nombre}», con {q.telefonos} teléfono(s) "
               "vinculado(s).")
         print(f"Se van {len(plan.usuarios_que_se_van)} usuario(s) y "
               f"{plan.telefonos_que_se_van} teléfono(s):")
         for codigo, nombre in plan.usuarios_que_se_van:
             print(f"  {codigo} «{nombre}»")
-        print("Y todo esto:")
-        for tabla, nombre in LO_QUE_SE_CUENTA:
-            print(f"  {plan.cuantos[tabla]:>8,} {nombre}")
-        if plan.tiendas_con_ubicacion:
-            print(f"OJO: {plan.tiendas_con_ubicacion:,} tienda(s) tienen la ubicación que "
-                  "capturaron los vendedores. Se pierde: el Excel de rutas no la trae. "
-                  "Solo queda en el respaldo.")
-        print("Queda una Bodega principal vacía; los folios empiezan en 1.\n")
+        if plan.camiones:
+            print(f"Se van sus {len(plan.camiones)} camión(es): {', '.join(plan.camiones)}.")
+        print("Queda en cero:")
+        for nombre, cuantos in plan.se_van.items():
+            print(f"  {cuantos:>8,} {nombre}")
+        print("Se queda:")
+        for nombre, cuantos in plan.se_quedan.items():
+            print(f"  {cuantos:>8,} {nombre}")
+        print(f"  ({plan.tiendas_con_ubicacion:,} tiendas con su ubicación, y todas con su "
+              "ruta y su plan de visita; las rutas sin titular y las bodegas vacías.)")
+        print("Los folios vuelven a empezar en 1.\n")
         if "--resumen" in opciones:
             print("Con --resumen no se cambió nada.")
             return 0
@@ -671,12 +674,11 @@ async def empezar_a_operar(argumentos: list[str]) -> int:
             print(f"ERROR: {e}. No se cambió nada.")
             return 1
 
-    print(f"Listo. La base está en blanco y solo queda {q.codigo}.")
-    print("Sigue: entra al panel con él, da de alta artículos, tiendas, rutas y "
-          "usuarios, y captura el inventario en Almacén → Entradas → «Inventario "
-          "inicial».")
+    print(f"Listo. Solo queda {q.codigo}, y la operación está en cero.")
+    print("Sigue en el panel: da de alta a los usuarios (cada vendedor con su camión), "
+          "asígnales su ruta, vincula sus teléfonos y captura el inventario en "
+          "Almacén → Entradas → «Inventario inicial».")
     return 0
-
 
 def main() -> int:
     comandos = {

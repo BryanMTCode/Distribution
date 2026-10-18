@@ -6040,51 +6040,66 @@ APK con un SDK pesado. La idea es la que él dijo: **bajar el mapa de Mazatlán*
 - App `0.1.0+43`. Servidor con `pmtiles` (Python puro) en `uv.lock`, el volumen
   nuevo y el comando. No hay migración.
 
-## 131. La base en blanco para empezar a operar: solo queda ADMIN01
+## 131. Empezar a operar: se van los usuarios, la operación queda en cero
 
-**Decisión (octubre 2026).** «Quiero formatear toda la base de datos como si no
-hubiera nada, porque ya empezaré a operar.» Se le preguntó qué se quedaba y
-respondió: **solo los usuarios y sus teléfonos**, el inventario **en cero** para
-capturar el real, y después: «**solo dejaré vivo el usuario ADMIN01**».
+**Decisión (octubre 2026).** El pedido llegó en tres tiempos:
+
+1. «Quiero formatear toda la base de datos como si no hubiera nada, porque ya
+   empezaré a operar… Solo dejaré vivo el usuario ADMIN01.»
+2. «Que se eliminen los usuarios solamente; lo demás en 0, el almacén… pero los
+   artículos, tiendas y eso se quedan.»
+3. Sobre el botón «Eliminar» del panel, que se niega con quien tiene ventas o
+   cargas firmadas: «no me importa, quiero eliminarlos». A la pregunta de cómo:
+   **todos de una vez**, no uno por uno desde el dashboard.
+
+Una primera versión de este comando, que también borraba artículos y tiendas,
+estuvo en `main` sin correrse y se reemplazó por esta.
 
 - **El comando:** `python -m app.cli empezar-a-operar`, con `--resumen` (dice qué
   se queda y qué se va, sin tocar nada) y la palabra `OPERAR` para seguir. Corre
   con la API y el worker detenidos: TRUNCATE espera a que nadie use las tablas, y
   falla a los 30 s diciendo por qué en lugar de colgarse. Va en UNA transacción:
-  o queda en blanco, o no cambia nada. PUESTA-EN-MARCHA, anexo «Empezar a
-  operar».
-- **Se queda** ADMIN01 con sus permisos y sus teléfonos vinculados, que quedan
-  marcados para empezar de cero (§90). También lo que siembran las migraciones
-  (roles y permisos, unidades, canales, sucursales, listas de precios sin
-  precios, motivos, criterios del piloto, el calendario de la analítica) y las
-  marcas de la Revisión de la app. Solo puede quedarse un **administrador
-  activo**: con otro, nadie podría entrar al panel a dar de alta lo demás.
-  `--se-queda CODIGO` nombra a otro.
-- **Se va todo lo demás:**
+  o queda así, o no cambia nada. PUESTA-EN-MARCHA, anexo «Empezar a operar».
+- **Se quedan:**
+  - ADMIN01, con sus permisos y teléfonos, marcados para empezar de cero (§90).
+    Solo puede quedarse un **administrador activo**: con otro, nadie podría
+    entrar al panel. `--se-queda CODIGO` nombra a otro;
+  - los artículos con sus unidades, precios, costos y familias; las marcas, las
+    promociones y los proveedores;
+  - las tiendas, con su ubicación, su ruta y su plan de visita. Pierden quién las
+    dio de alta y desde qué teléfono, y la visita reprogramada;
+  - las rutas, sin titular, y las bodegas, vacías y sin responsable;
+  - los objetivos de las rutas;
+  - lo que siembran las migraciones, y las marcas de la Revisión de la app.
+- **Se van:**
   - los demás usuarios con sus teléfonos;
-  - artículos, precios y familias;
-  - tiendas, con las ubicaciones capturadas: el resumen dice cuántas tenían, y
-    solo quedan en el respaldo;
-  - rutas, bodegas y camiones, proveedores;
-  - ventas, cobros, cargas, cortes, mermas, entradas y salidas;
-  - existencias y libro mayor, cuentas de los vendedores, objetivos y tablero;
-  - la bitácora de sincronización, las sesiones (hay que volver a entrar al
-    panel), la auditoría y los códigos apartados de §132.
+  - los camiones: un camión no existe sin responsable, y el panel le crea el suyo
+    a cada vendedor nuevo al darlo de alta;
+  - toda la operación: ventas, cobros, cargas, cortes, mermas, entradas, salidas,
+    traspasos, lo que se debe a proveedores, las cuentas de los vendedores, las
+    existencias y su libro mayor, el tablero, el piloto, la bitácora de
+    sincronización, las sesiones (hay que volver a entrar al panel), la
+    auditoría y los códigos apartados de §132.
 
-  Los folios vuelven a 1; los códigos de tienda nuevos, a 1934, para que el Excel
-  de rutas quepa del 100 al 1933 si se vuelve a cargar (§122).
-- **Queda una Bodega principal vacía**, donde se captura el inventario real
-  (Almacén → Entradas → «Inventario inicial»). No se carga ningún artículo, a
-  diferencia de `base-en-blanco` (§90).
+  Los folios vuelven a 1. Los códigos de tienda no: las tiendas se quedan, y la
+  siguiente sigue después de la última.
+- **Con eso, «Eliminar» del panel vuelve a funcionar**: nadie tiene nada firmado.
+  Ya operando, se sigue negando con quien tenga ventas o cargas, y está bien:
+  borrarlo borraría esas ventas.
+- **Lo que baja un teléfono nuevo.** El pull sale del `change_log` desde el cursor
+  0, así que se quedan los deltas del catálogo (artículos, unidades, precios,
+  familias, promociones, listas, motivos). Los de las tiendas se tiran y se
+  **vuelven a publicar al día**: el de antes podía decir quién la dio de alta, o
+  una visita reprogramada que ya no existe. La cartera, las cargas y lo demás de
+  la operación se tira.
 - **Los teléfonos de los vendedores** se borran con sus usuarios. Una app que
   tenía datos ya no puede subir nada, pero entraría sin señal con su credencial
-  vieja. Por eso, antes de operar, cada teléfono de vendedor **borra los datos de
-  la app** en Ajustes de Android y se vincula con su usuario nuevo.
+  vieja y su camión. Por eso, antes de operar, cada teléfono de vendedor **borra
+  los datos de la app** en Ajustes de Android y se vincula con su usuario nuevo.
 - **Ninguna tabla sin decidir.** El comando nombra cada tabla del esquema en una
-  de cuatro listas: se queda, se queda en parte, se borra a mano o se vacía. Una
-  prueba las compara con la base, así que una migración que agregue una tabla
-  hace fallar la prueba hasta que se decida. En `base-en-blanco` nada avisaba
-  de una tabla nueva.
+  de tres listas: se queda, se queda y se limpia, o se vacía. Una prueba las
+  compara con la base, así que una migración que agregue una tabla hace fallar
+  la prueba hasta que se decida.
 - Lo que no está en la base no se toca: el mapa de Mazatlán (§130) sigue en su
   volumen.
 
@@ -6126,6 +6141,5 @@ cambiarla a la que yo quiera, todo desde el dashboard.» Hasta aquí no se podí
 - **La regla del código**, también al dar de alta: de 2 a 20 letras sin acentos
   ni ñ, números o guion bajo. Va al principio de cada folio, que el cliente dicta
   por teléfono, y el guion separa el código del número.
-- Con la base en blanco para operar (§131) los códigos apartados se liberan: sin
-  folios no hay qué proteger. Por eso conviene poner los códigos definitivos
-  justo después de ese borrado y antes de vender.
+- Al empezar a operar (§131) los códigos apartados se liberan: sin folios no hay
+  qué proteger.

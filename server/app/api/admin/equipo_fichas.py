@@ -496,8 +496,9 @@ async def eliminar_usuario(
             error=(
                 f"{usuario['codigo']} no se puede borrar: tiene "
                 f"{documentos or 'documentos firmados'}, y borrarlo borraría esos "
-                "papeles. No se cambió nada. Si era de prueba, pon la base en blanco "
-                "y elimínalo después; si no, usa «Desactivar»."
+                "papeles. No se cambió nada. Si era de prueba, el comando «empezar a "
+                "operar» del servidor quita a todos los de prueba con lo que firmaron "
+                "(PUESTA-EN-MARCHA); si no, usa «Desactivar»."
             ),
         )
 
