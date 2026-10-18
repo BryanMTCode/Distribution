@@ -1,5 +1,6 @@
 """Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco,
-los camiones al sábado, las tiendas de las rutas y el mapa de Mazatlán.
+los camiones al sábado, las tiendas de las rutas, el mapa de Mazatlán y la base
+para empezar a operar.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -601,6 +602,82 @@ async def mapa_mazatlan(argumentos: list[str]) -> int:
     return 0
 
 
+async def empezar_a_operar(argumentos: list[str]) -> int:
+    """La base en blanco para empezar a operar: solo queda ADMIN01 (ADR 0002 §131).
+
+    Qué hace está en `app/infra/empezar_a_operar.py`. `--resumen` solo dice lo
+    que haría; `--confirmado` no pregunta; `--se-queda CODIGO` cambia el
+    administrador que se queda.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.empezar_a_operar import (
+        LO_QUE_SE_CUENTA,
+        PALABRA,
+        QUEDA_POR_OMISION,
+        NoSePuede,
+        aplicar,
+        planear,
+    )
+
+    opciones = set()
+    se_queda = QUEDA_POR_OMISION
+    resto = list(argumentos)
+    while resto:
+        arg = resto.pop(0)
+        if arg == "--se-queda" and resto:
+            se_queda = resto.pop(0)
+        elif arg.startswith("--se-queda="):
+            se_queda = arg.split("=", 1)[1]
+        elif arg in ("--resumen", "--confirmado"):
+            opciones.add(arg)
+        else:
+            print(f"Opción desconocida: {arg}. Van --resumen, --confirmado y "
+                  "--se-queda CODIGO.")
+            return 2
+
+    async with CrearSesion() as sesion:
+        try:
+            plan = await planear(sesion, se_queda)
+        except NoSePuede as e:
+            print(f"NO SE PUEDE: {e}. No se cambió nada.")
+            return 1
+        q = plan.se_queda
+        print("BASE EN BLANCO PARA EMPEZAR A OPERAR\n")
+        print(f"Se queda: {q.codigo} «{q.nombre}», con {q.telefonos} teléfono(s) "
+              "vinculado(s).")
+        print(f"Se van {len(plan.usuarios_que_se_van)} usuario(s) y "
+              f"{plan.telefonos_que_se_van} teléfono(s):")
+        for codigo, nombre in plan.usuarios_que_se_van:
+            print(f"  {codigo} «{nombre}»")
+        print("Y todo esto:")
+        for tabla, nombre in LO_QUE_SE_CUENTA:
+            print(f"  {plan.cuantos[tabla]:>8,} {nombre}")
+        if plan.tiendas_con_ubicacion:
+            print(f"OJO: {plan.tiendas_con_ubicacion:,} tienda(s) tienen la ubicación que "
+                  "capturaron los vendedores. Se pierde: el Excel de rutas no la trae. "
+                  "Solo queda en el respaldo.")
+        print("Queda una Bodega principal vacía; los folios empiezan en 1.\n")
+        if "--resumen" in opciones:
+            print("Con --resumen no se cambió nada.")
+            return 0
+        if "--confirmado" not in opciones and input(
+            f"NO HAY VUELTA ATRÁS. Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        try:
+            await aplicar(sesion, plan)
+        except NoSePuede as e:
+            print(f"ERROR: {e}. No se cambió nada.")
+            return 1
+
+    print(f"Listo. La base está en blanco y solo queda {q.codigo}.")
+    print("Sigue: entra al panel con él, da de alta artículos, tiendas, rutas y "
+          "usuarios, y captura el inventario en Almacén → Entradas → «Inventario "
+          "inicial».")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
@@ -611,6 +688,7 @@ def main() -> int:
         "tiendas-de-rutas": tiendas_de_rutas,
         "compra-zuko": compra_zuko,
         "mapa-mazatlan": mapa_mazatlan,
+        "empezar-a-operar": empezar_a_operar,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
@@ -618,6 +696,8 @@ def main() -> int:
     comando, opciones = sys.argv[1], set(sys.argv[2:])
     if comando == "mapa-mazatlan":
         return asyncio.run(mapa_mazatlan(sys.argv[2:]))
+    if comando == "empezar-a-operar":
+        return asyncio.run(empezar_a_operar(sys.argv[2:]))
     if comando in (
         "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "compra-zuko"
     ) and opciones <= {

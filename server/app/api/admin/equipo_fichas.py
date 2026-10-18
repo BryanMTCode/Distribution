@@ -28,8 +28,10 @@ archivo: ver `borrar_si_nadie_lo_usa`.
 ────────────────────────────────────────────────────────────────────────────
 LO QUE NO SE EDITA, Y POR QUÉ
 ────────────────────────────────────────────────────────────────────────────
-**El código de un usuario.** Es el prefijo del folio impreso (`VEND01-000077`):
-hay tickets en la calle con él.
+**El código de un usuario, en el formulario de datos.** Va aparte, en «Código
+para entrar» (ADR 0002 §132): es el prefijo del folio impreso (`VEND01-000077`),
+y el viejo queda apartado para esa persona —`usuarios_codigos_anteriores`—
+para que nadie más imprima folios con él.
 **El camión de un vendedor, si trae mercancía.** El teléfono del nuevo
 responsable empezaría su camión en cero —el inventario local se reinicia al
 cambiar de camión— y no podría vender lo que sí está arriba.
@@ -54,7 +56,13 @@ from app.api.admin.comun import (
     leer_entero,
     render,
 )
-from app.api.admin.equipo import PERMISO, ROLES, _sucursales
+from app.api.admin.equipo import (
+    CODIGO_VALIDO,
+    PERMISO,
+    ROLES,
+    _sucursales,
+    quien_tuvo_el_codigo,
+)
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 
 router = APIRouter(prefix="/panel/equipo", tags=["panel"], include_in_schema=False)
@@ -199,11 +207,20 @@ async def ficha_usuario(
         )
     ).mappings().all()
 
+    anteriores = (
+        await sesion.execute(
+            text("SELECT codigo, hasta FROM usuarios_codigos_anteriores "
+                 " WHERE usuario_id = :u ORDER BY hasta DESC"),
+            {"u": usuario_id},
+        )
+    ).mappings().all()
+
     return render(
         peticion,
         "equipo_usuario.html",
         {
             "u": usuario,
+            "anteriores": anteriores,
             "rutas": rutas,
             "roles": ROLES,
             "sucursales": await _sucursales(sesion),
@@ -299,6 +316,114 @@ async def editar_usuario(
         )
     if rol_codigo != antes["rol_codigo"]:
         aviso += " El rol nuevo cuenta desde su siguiente entrada."
+    return _a_ficha("usuarios", usuario_id, guardado=aviso)
+
+
+@router.post("/usuarios/{usuario_id}/codigo")
+async def cambiar_codigo(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    usuario_id: uuid.UUID,
+    codigo: Annotated[str, Form()] = "",
+    csrf: Annotated[str, Form()] = "",
+):
+    """Le pone a un usuario el código que se quiera (ADR 0002 §132).
+
+    El viejo queda apartado para él en `usuarios_codigos_anteriores`: sus folios
+    impresos llevan ese prefijo, y si otro lo tomara, su primer ticket saldría
+    con un número que ya está en la calle. Él sí puede volver a tenerlo: su
+    numeración sigue donde iba. El camión `CAMION_<viejo>` se renombra con él.
+    """
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+
+    antes = (
+        await sesion.execute(
+            text("SELECT codigo, nombre, rol_codigo, almacen_id FROM usuarios "
+                 " WHERE id = :u FOR UPDATE"),
+            {"u": usuario_id},
+        )
+    ).mappings().first()
+    if antes is None:
+        return _a_equipo(error="Ese usuario no existe.")
+    viejo = antes["codigo"]
+    nuevo = _clave(codigo)
+
+    def error(mensaje: str) -> RedirectResponse:
+        return _a_ficha("usuarios", usuario_id, error=mensaje)
+
+    if not CODIGO_VALIDO.fullmatch(nuevo):
+        return error(
+            "El código va de 2 a 20 letras (sin acentos ni ñ), números o guion bajo, "
+            "como VEND01 o JUAN_P: es el principio de cada folio que se imprime."
+        )
+    if nuevo == viejo:
+        return _a_ficha("usuarios", usuario_id, guardado=f"{viejo}: sin cambios.")
+    otro = (
+        await sesion.execute(
+            text("SELECT nombre FROM usuarios WHERE codigo = :c AND id <> :u"),
+            {"c": nuevo, "u": usuario_id},
+        )
+    ).scalar_one_or_none()
+    if otro is not None:
+        return error(f"El código {nuevo} ya lo tiene «{otro}».")
+    tuvo = await quien_tuvo_el_codigo(sesion, nuevo)
+    if tuvo is not None and tuvo[0] != usuario_id:
+        return error(
+            f"{nuevo} fue de «{tuvo[1]}»: sus tickets impresos empiezan así, y quedó "
+            "apartado para esa persona. Elige otro."
+        )
+
+    try:
+        # Si vuelve a un código que ya fue suyo, deja de estar apartado: es el suyo.
+        await sesion.execute(
+            text("DELETE FROM usuarios_codigos_anteriores WHERE codigo = :c AND usuario_id = :u"),
+            {"c": nuevo, "u": usuario_id},
+        )
+        await sesion.execute(
+            text("INSERT INTO usuarios_codigos_anteriores (codigo, usuario_id, cambiado_por) "
+                 "VALUES (:c, :u, :quien)"),
+            {"c": viejo, "u": usuario_id, "quien": actor.usuario_id},
+        )
+        await sesion.execute(
+            text("UPDATE usuarios SET codigo = :c, actualizado_en = now() WHERE id = :u"),
+            {"c": nuevo, "u": usuario_id},
+        )
+        camion = None
+        if antes["almacen_id"] is not None:
+            camion = (
+                await sesion.execute(
+                    text("UPDATE almacenes SET codigo = :nuevo "
+                         " WHERE id = :a AND codigo = :viejo "
+                         "   AND NOT EXISTS (SELECT 1 FROM almacenes WHERE codigo = :nuevo) "
+                         "RETURNING codigo"),
+                    {"a": antes["almacen_id"], "viejo": f"CAMION_{viejo}",
+                     "nuevo": f"CAMION_{nuevo}"},
+                )
+            ).scalar_one_or_none()
+        await auditar(
+            sesion,
+            entidad="usuario",
+            entidad_id=usuario_id,
+            accion="cambiar_codigo",
+            quien=actor.usuario_id,
+            antes={"codigo": viejo},
+            despues={"codigo": nuevo},
+        )
+        await sesion.commit()
+    except IntegrityError:
+        await sesion.rollback()
+        return error(f"Alguien más acaba de tomar {nuevo}. Elige otro.")
+
+    aviso = (f"{viejo} ahora es {nuevo}. Avísale a {antes['nombre']}: desde ya entra "
+             f"con {nuevo}. {viejo} queda apartado para esa persona.")
+    if antes["rol_codigo"] == "vendedor":
+        aviso += (f" Su teléfono imprime «{viejo}-…» hasta que vuelva a entrar con "
+                  "internet (cuando le venza el acceso, o al volver a vincularlo); la "
+                  "numeración es la misma, así que ningún folio se repite.")
+    if camion:
+        aviso += f" Su camión ahora es {camion}."
     return _a_ficha("usuarios", usuario_id, guardado=aviso)
 
 

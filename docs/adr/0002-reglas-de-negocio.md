@@ -6039,3 +6039,93 @@ APK con un SDK pesado. La idea es la que él dijo: **bajar el mapa de Mazatlán*
   con el punto «Bajar el mapa» de la Revisión.
 - App `0.1.0+43`. Servidor con `pmtiles` (Python puro) en `uv.lock`, el volumen
   nuevo y el comando. No hay migración.
+
+## 131. La base en blanco para empezar a operar: solo queda ADMIN01
+
+**Decisión (octubre 2026).** «Quiero formatear toda la base de datos como si no
+hubiera nada, porque ya empezaré a operar.» Se le preguntó qué se quedaba y
+respondió: **solo los usuarios y sus teléfonos**, el inventario **en cero** para
+capturar el real, y después: «**solo dejaré vivo el usuario ADMIN01**».
+
+- **El comando:** `python -m app.cli empezar-a-operar`, con `--resumen` (dice qué
+  se queda y qué se va, sin tocar nada) y la palabra `OPERAR` para seguir. Corre
+  con la API y el worker detenidos: TRUNCATE espera a que nadie use las tablas, y
+  falla a los 30 s diciendo por qué en lugar de colgarse. Va en UNA transacción:
+  o queda en blanco, o no cambia nada. PUESTA-EN-MARCHA, anexo «Empezar a
+  operar».
+- **Se queda** ADMIN01 con sus permisos y sus teléfonos vinculados, que quedan
+  marcados para empezar de cero (§90). También lo que siembran las migraciones
+  (roles y permisos, unidades, canales, sucursales, listas de precios sin
+  precios, motivos, criterios del piloto, el calendario de la analítica) y las
+  marcas de la Revisión de la app. Solo puede quedarse un **administrador
+  activo**: con otro, nadie podría entrar al panel a dar de alta lo demás.
+  `--se-queda CODIGO` nombra a otro.
+- **Se va todo lo demás:**
+  - los demás usuarios con sus teléfonos;
+  - artículos, precios y familias;
+  - tiendas, con las ubicaciones capturadas: el resumen dice cuántas tenían, y
+    solo quedan en el respaldo;
+  - rutas, bodegas y camiones, proveedores;
+  - ventas, cobros, cargas, cortes, mermas, entradas y salidas;
+  - existencias y libro mayor, cuentas de los vendedores, objetivos y tablero;
+  - la bitácora de sincronización, las sesiones (hay que volver a entrar al
+    panel), la auditoría y los códigos apartados de §132.
+
+  Los folios vuelven a 1; los códigos de tienda nuevos, a 1934, para que el Excel
+  de rutas quepa del 100 al 1933 si se vuelve a cargar (§122).
+- **Queda una Bodega principal vacía**, donde se captura el inventario real
+  (Almacén → Entradas → «Inventario inicial»). No se carga ningún artículo, a
+  diferencia de `base-en-blanco` (§90).
+- **Los teléfonos de los vendedores** se borran con sus usuarios. Una app que
+  tenía datos ya no puede subir nada, pero entraría sin señal con su credencial
+  vieja. Por eso, antes de operar, cada teléfono de vendedor **borra los datos de
+  la app** en Ajustes de Android y se vincula con su usuario nuevo.
+- **Ninguna tabla sin decidir.** El comando nombra cada tabla del esquema en una
+  de cuatro listas: se queda, se queda en parte, se borra a mano o se vacía. Una
+  prueba las compara con la base, así que una migración que agregue una tabla
+  hace fallar la prueba hasta que se decida. En `base-en-blanco` nada avisaba
+  de una tabla nueva.
+- Lo que no está en la base no se toca: el mapa de Mazatlán (§130) sigue en su
+  volumen.
+
+## 132. Cambiar el código de un usuario desde el dashboard
+
+**Decisión (octubre 2026).** «Quiero también poder cambiar la cuenta de los
+usuarios que ya tengo registrados: si antes se llamaban VEND000, ahora quiero
+cambiarla a la que yo quiera, todo desde el dashboard.» Hasta aquí no se podía
+(0001, 0035, `panel/equipo`): el código es el prefijo del folio impreso
+(`VEND01-000077`).
+
+- **Por qué era peligroso.** El número del folio es consecutivo **por vendedor**:
+  cada uno empieza en 1. Lo que hace único al folio es el prefijo. Si Juan suelta
+  VEND01 y Pedro lo toma, el primer ticket de Pedro sale «VEND01-000001», igual a
+  uno de Juan. La base lo rechaza por duplicado (`uq_venta_folio_local`) y en la
+  calle hay dos papeles con el mismo número.
+- **Cómo se hace seguro: el viejo queda apartado para esa persona**
+  (`usuarios_codigos_anteriores`, migración 0062):
+  - Juan pasa de VEND01 a JUAN y sus folios siguen su misma cuenta, con el prefijo
+    viejo o con el nuevo. Su teléfono imprime con el viejo hasta que reescribe su
+    credencial: cuando le vence el acceso y entra con internet, o al volver a
+    vincularlo. El código no viaja por delta (0035) y así se queda.
+    Ninguno se repite. El servidor no exige que el prefijo sea el código actual,
+    así que lo que el teléfono traiga impreso con el viejo entra igual;
+  - nadie más puede tomar VEND01, ni al cambiar su código ni al darse de alta: el
+    panel dice de quién fue;
+  - Juan sí puede volver a VEND01: su numeración sigue donde iba.
+- **Dónde:** Usuarios y rutas → «Más ▾» → **«Cambiar código»**, que lleva a la
+  sección «Código para entrar» de su ficha. Dice qué pasa, y debajo los códigos
+  apartados con su fecha. Al guardar, el aviso dice el código nuevo, que el viejo
+  queda apartado, y para un vendedor que su teléfono imprime con el viejo hasta
+  que vuelva a entrar con internet.
+- **Lo que acompaña al cambio:**
+  - su camión `CAMION_<viejo>` pasa a `CAMION_<nuevo>`, si nadie más tiene ese
+    código. Uno con otro código, como `CAMION_01`, se queda como está;
+  - queda en la auditoría (`cambiar_codigo`, con el antes y el después);
+  - entra **solo con el nuevo**, a la app y al panel. Su sesión del panel, si
+    está abierta, sigue.
+- **La regla del código**, también al dar de alta: de 2 a 20 letras sin acentos
+  ni ñ, números o guion bajo. Va al principio de cada folio, que el cliente dicta
+  por teléfono, y el guion separa el código del número.
+- Con la base en blanco para operar (§131) los códigos apartados se liberan: sin
+  folios no hay qué proteger. Por eso conviene poner los códigos definitivos
+  justo después de ese borrado y antes de vender.

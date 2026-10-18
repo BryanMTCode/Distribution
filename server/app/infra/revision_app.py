@@ -758,6 +758,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "app.",
             ),
             Punto(
+                "panel_cambiar_codigo", "Cambiar el código de un usuario",
+                "Usuarios y rutas → «Más ▾» de uno de prueba → «Cambiar código»: ponle "
+                "otro (por ejemplo JUAN). Luego intenta darle su código viejo a otro "
+                "usuario.",
+                "Dice «VEND01 ahora es JUAN», entra con el nuevo y no con el viejo, y su "
+                "camión cambia con él. El código viejo sale como apartado en su ficha: "
+                "a otro no se le puede dar, y él sí puede volver a tenerlo.",
+                desde="+43",
+            ),
+            Punto(
                 "panel_rutas", "Rutas, camiones y almacenes",
                 "En Usuarios y rutas, «Editar» el nombre de una ruta o un almacén.",
                 "El nombre nuevo se ve en el dashboard y, al sincronizar, en el teléfono.",

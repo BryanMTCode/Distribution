@@ -103,7 +103,7 @@ la bodega sube cuando alguien la cuenta.
 | Modelos de lectura del tablero, recalculados al sincronizar (no al abrir la pantalla) | ✅ 25 + 19 pruebas |
 | **Objetivos: solo el diario de cada vendedor**; la semana, el mes, cualquier periodo y la empresa se suman (§115) | ✅ 5 pruebas |
 | **Objetivo diario fijo** en el panel — «$3,500 cada día, de lunes a sábado, hasta que lo cambie», con sus días de descanso —, con la semana día por día y lo de hoy en el Tablero | ✅ 4 pruebas |
-| **Revisión de la app y el dashboard** en el panel — 59 puntos del teléfono y 47 del dashboard, con cómo probarlos y qué debe pasar, marcados bien o falla por versión | ✅ 5 pruebas |
+| **Revisión de la app y el dashboard** en el panel — 59 puntos del teléfono y 48 del dashboard, con cómo probarlos y qué debe pasar, marcados bien o falla por versión | ✅ 5 pruebas |
 | **El mismo objetivo diario a todos los vendedores** a la vez | ✅ 1 prueba |
 | **Operaciones** en el panel — todas juntas, y **anular deshaciendo** lo que movieron: la mercancía regresa, el dinero sale de las cifras, el teléfono se entera y queda «anulada» con quién y por qué (§119) | ✅ 14 pruebas |
 | **Las tiendas de las rutas 1101–1107** desde los Excel de la dirección: 1,834, con los códigos 100 a 1933 en orden, su ruta y su día de visita (§120) | ✅ 5 pruebas |
@@ -117,6 +117,8 @@ la bodega sube cuando alguien la cuenta.
 | **El dashboard más fácil de leer**: los almacenes en una tabla con su selector (no un recuadro cada uno), el plan de visita filtrado por día, las acciones raras de cada usuario en «Más», y tablas más ligeras (§128) | ✅ 3 pruebas |
 | **Cómo llegar a un cliente sin señal**: «Guíame», una flecha con la distancia que usa solo el GPS (de frente / a tu derecha en marcha, contra el norte quieto, «Ya llegaste»); «Abrir en Mapas» con la app que ya tenga el teléfono, sin SDK; y «Cerca de mí», que ordena la lista por distancia (§129) | ✅ 7 de Dart y 11 de widget |
 | **El mapa dentro de la app, sin señal**: el servidor baja una vez de OpenStreetMap las calles de la zona de las tiendas (`mapa-mazatlan`), cada teléfono las copia con WiFi y verificadas, y el mapa muestra las tiendas de color, al vendedor y la línea hasta la tienda, sin pedir datos ni SDK (§130) | ✅ 10 pruebas, 17 de widget |
+| **La base en blanco para empezar a operar** (`empezar-a-operar`): solo queda ADMIN01 con sus teléfonos y lo que siembran las migraciones; todo lo demás se va, con una Bodega principal vacía y los folios en 1, y cada tabla del esquema decidida con prueba (§131) | ✅ 4 pruebas |
+| **Cambiar el código de un usuario desde el dashboard**: «Más ▾» → «Cambiar código»; el viejo queda apartado para esa persona para que ningún folio impreso se repita, y su camión cambia con él (§132) | ✅ 4 pruebas |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -140,7 +142,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1460 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **664 de Dart** y **346 de widget**, todas en verde.
+**1468 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **664 de Dart** y **346 de widget**, todas en verde.
 
 ## Stack
 
@@ -278,7 +280,7 @@ make instalar                       # venv + EXACTAMENTE lo de server/uv.lock
 make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
-make pruebas                        # 1460 pruebas de Python
+make pruebas                        # 1468 pruebas de Python
 make movil                          # 664 de Dart + 346 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado

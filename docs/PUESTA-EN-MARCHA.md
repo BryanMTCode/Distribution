@@ -1050,3 +1050,59 @@ con todas las calles. Si falla a la mitad no se cambia el mapa que había.
 **3. En cada teléfono, con WiFi:** lista de tiendas → **Mapa** → **«Bajar el mapa
 de Mazatlán»**. Para tener calles nuevas, se vuelve a correr el paso 2 cada pocos
 meses y en el teléfono: Mapa → ⋮ → «Volver a bajar el mapa».
+
+## Anexo · Empezar a operar: la base en blanco, solo con ADMIN01
+
+**DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen
+reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
+
+Borra **todo** menos el usuario ADMIN01 y sus teléfonos (ADR 0002 §131): los demás
+usuarios con sus teléfonos, artículos, tiendas (con las ubicaciones capturadas),
+rutas, bodegas y camiones, ventas, cargas, cortes, inventario. Queda una
+**Bodega principal vacía** y los folios empiezan en 1. **No hay vuelta atrás**
+más que el respaldo.
+
+**1. El respaldo, primero:**
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh
+```
+
+**2. Lo que va a hacer** (no cambia nada):
+
+```bash
+docker compose run --rm --no-deps api python -m app.cli empezar-a-operar --resumen
+```
+
+**✅ Debes ver** «Se queda: ADMIN01 …», la lista de usuarios que se van y cuántas
+ventas, tiendas, artículos… se borran. **Si dice «OJO: … tiendas tienen la
+ubicación»**, esas ubicaciones se pierden (solo quedan en el respaldo).
+
+**3. El borrado**, con la API y el worker detenidos:
+
+```bash
+docker compose stop api worker
+docker compose run --rm --no-deps api python -m app.cli empezar-a-operar
+docker compose up -d
+```
+
+Pide escribir `OPERAR`; con cualquier otra cosa no cambia nada.
+
+**✅ Debes ver** «Listo. La base está en blanco y solo queda ADMIN01.» Entra al
+panel otra vez con ADMIN01 (las sesiones se cerraron).
+
+**4. Los teléfonos de los vendedores**, antes de vender nada: en cada uno,
+*Ajustes → Apps → Distribuciones SE → Almacenamiento → Borrar datos* (o
+desinstalar e instalar el APK). Su usuario ya no existe; sin esto la app entraría
+sin señal con lo de antes.
+
+**5. Lo que sigue, en el panel:**
+
+- los usuarios con el código que quieras (si te equivocas, «Cambiar código»);
+- los artículos con su precio;
+- las rutas, y vincular cada teléfono (Teléfonos → «Vincular un teléfono»);
+- el inventario real en Almacén → Entradas → «Inventario inicial».
+
+Las 1,834 tiendas de las rutas se pueden volver a cargar con el anexo «Las tiendas
+de las rutas 1101–1107», sin ubicación.

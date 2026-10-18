@@ -32,6 +32,7 @@ petición y su dispositivo deja de poder sincronizar.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections import Counter
 from typing import Annotated
@@ -74,6 +75,24 @@ PLURAL_DE_ROL = {
     "gerente": "Gerencia",
     "admin": "Administradores",
 }
+
+
+# Lo que puede llevar un código: va al principio de cada folio impreso, que el
+# cliente dicta por teléfono, así que nada de acentos, espacios ni guiones (el
+# guion separa el código del número: `VEND01-000077`).
+CODIGO_VALIDO = re.compile(r"[A-Z0-9_]{2,20}")
+
+
+async def quien_tuvo_el_codigo(sesion, codigo: str) -> tuple[uuid.UUID, str] | None:
+    """Si el código fue de alguien antes, de quién: queda apartado para él (§132)."""
+    fila = (
+        await sesion.execute(
+            text("SELECT a.usuario_id, u.nombre FROM usuarios_codigos_anteriores a "
+                 "  JOIN usuarios u ON u.id = a.usuario_id WHERE a.codigo = :c"),
+            {"c": codigo},
+        )
+    ).first()
+    return (fila.usuario_id, fila.nombre) if fila else None
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +322,9 @@ async def crear_usuario(
     normaliza a mayúsculas y sin espacios — un código con un espacio produciría un
     folio con un espacio en medio, en un papel que el cliente dicta por teléfono.
 
-    Y por eso **no se puede cambiar después**: hay tickets en la calle con ese
-    prefijo.
+    Se puede cambiar después, en la ficha del usuario (ADR 0002 §132), y el
+    viejo queda apartado para esa persona: hay tickets en la calle con ese
+    prefijo. Por eso aquí tampoco se acepta un código que ya fue de alguien.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -312,6 +332,11 @@ async def crear_usuario(
     clave = codigo.strip().upper().replace(" ", "")
     if not clave:
         return _volver(error="Falta el código de empleado: es con lo que entra.")
+    if not CODIGO_VALIDO.fullmatch(clave):
+        return _volver(
+            error="El código va de 2 a 20 letras (sin acentos ni ñ), números o guion "
+            "bajo, como VEND02: es el principio de cada folio que se imprime."
+        )
     if not nombre.strip():
         return _volver(error="Falta el nombre.")
     if rol_codigo not in {r[0] for r in ROLES}:
@@ -337,6 +362,12 @@ async def crear_usuario(
     ).scalar_one_or_none()
     if existe is not None:
         return _volver(error=f"El código {clave} ya lo tiene «{existe}».")
+    tuvo = await quien_tuvo_el_codigo(sesion, clave)
+    if tuvo is not None:
+        return _volver(
+            error=f"{clave} fue de «{tuvo[1]}»: sus tickets impresos empiezan así, y "
+            "quedó apartado para esa persona. Elige otro."
+        )
 
     sucursal = uuid.UUID(sucursal_id) if sucursal_id else await _sucursal_por_omision(sesion)
 
