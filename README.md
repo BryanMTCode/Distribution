@@ -116,7 +116,7 @@ la bodega sube cuando alguien la cuenta.
 | **Reporte en Excel para el administrador**: del periodo que se elija, con Resumen, Ventas y efectivo, Inventario, Cargas y mermas, y la Cuenta de cada vendedor, en palabras para quien no usa el sistema (§127) | ✅ 3 pruebas |
 | **El dashboard más fácil de leer**: los almacenes en una tabla con su selector (no un recuadro cada uno), el plan de visita filtrado por día, las acciones raras de cada usuario en «Más», y tablas más ligeras (§128) | ✅ 3 pruebas |
 | **Cómo llegar a un cliente sin señal**: «Guíame», una flecha con la distancia que usa solo el GPS (de frente / a tu derecha en marcha, contra el norte quieto, «Ya llegaste»); «Abrir en Mapas» con la app que ya tenga el teléfono, sin SDK; y «Cerca de mí», que ordena la lista por distancia (§129) | ✅ 7 de Dart y 11 de widget |
-| **El mapa dentro de la app, sin señal**: el servidor baja una vez de OpenStreetMap las calles de la zona de las tiendas (`mapa-mazatlan`), cada teléfono las copia con WiFi y verificadas, y el mapa muestra las tiendas de color, al vendedor y la línea hasta la tienda, sin pedir datos ni SDK (§130) | ✅ 10 pruebas, 15 de widget |
+| **El mapa dentro de la app, sin señal**: el servidor baja una vez de OpenStreetMap las calles de la zona de las tiendas (`mapa-mazatlan`), cada teléfono las copia con WiFi y verificadas, y el mapa muestra las tiendas de color, al vendedor y la línea hasta la tienda, sin pedir datos ni SDK (§130) | ✅ 10 pruebas, 17 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -140,7 +140,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1450 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **664 de Dart** y **329 de widget**, todas en verde.
+**1450 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **664 de Dart** y **346 de widget**, todas en verde.
 
 ## Stack
 
@@ -279,7 +279,7 @@ make candado                        # regenera los candados — REVISA EL DIFF
 make migrar DB=postgresql+psycopg://…/dsd
 make usuario                        # el primer usuario de oficina — NO hay uno por omisión
 make pruebas                        # 1450 pruebas de Python
-make movil                          # 664 de Dart + 329 de widget
+make movil                          # 664 de Dart + 346 de widget
 make movil-ticket                   # regenera la vista previa del ticket — MÍRALA
 make app                            # corre la app en un teléfono conectado
 make app-demo                       # ídem, con datos sembrados y sin necesidad de servidor
