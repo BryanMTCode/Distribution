@@ -28,6 +28,7 @@ import '../../datos/repo_clientes.dart';
 import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
 import 'comunes.dart';
+import 'mapa.dart';
 
 final abridorDeMapasProvider = Provider<AbridorDeMapas>(
   (_) => const AbridorDeMapasDelSistema(),
@@ -145,6 +146,16 @@ class _EstadoGuia extends ConsumerState<PantallaGuia> {
           else ...[
             _cuerpo(context),
             const SizedBox(height: 20),
+            // El mapa de la app, con la tienda y el vendedor (ADR 0002 §130).
+            FilledButton.tonalIcon(
+              key: const Key('guia_ver_en_mapa'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => PantallaMapa(destino: c)),
+              ),
+              icon: const Icon(Icons.map),
+              label: const Text('Ver en el mapa'),
+            ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               key: const Key('abrir_en_mapas'),
               onPressed: () => abrirEnMapas(context, ref, c),
@@ -153,9 +164,11 @@ class _EstadoGuia extends ConsumerState<PantallaGuia> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Mapas usa la app que tengas (Google Maps, Waze, Organic Maps). Para '
-              'que funcione sin señal, descarga una vez el mapa de Mazatlán en esa '
-              'app con WiFi. La flecha de arriba no necesita mapa.',
+              '«Ver en el mapa» usa el mapa de la app, que se baja una vez con WiFi. '
+              '«Abrir en Mapas» usa la app que tengas (Google Maps, Waze, Organic '
+              'Maps), que da la ruta por calles; sin señal funciona si descargas una '
+              'vez el mapa de Mazatlán en esa app. La flecha de arriba no necesita '
+              'mapa.',
               style: estilo.bodySmall,
             ),
           ],

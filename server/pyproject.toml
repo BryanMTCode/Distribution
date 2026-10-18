@@ -19,6 +19,9 @@ dependencies = [
     "uuid6>=2024.7.10",
     # El reporte en Excel del administrador (ADR 0002 §127).
     "openpyxl>=3.1",
+    # El mapa de Mazatlán para los teléfonos (ADR 0002 §130): leer y escribir
+    # PMTiles. Python puro, sin dependencias.
+    "pmtiles>=3.8",
 ]
 
 [project.optional-dependencies]

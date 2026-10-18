@@ -141,7 +141,7 @@ void main() {
     await tester.tap(find.byKey(const Key('abrir_en_mapas')));
     await tester.pumpAndSettle();
     expect(mapas.abiertos, [(_tiendaLat, _tiendaLng, 'Abarrotes La Esperanza')]);
-    expect(textoQueContiene('descarga una vez el mapa de Mazatlán'), findsOneWidget);
+    expect(textoQueContiene('descargas una vez el mapa de Mazatlán'), findsOneWidget);
   });
 
   testWidgets('sin app de mapas lo dice, y manda a la flecha', (tester) async {

@@ -51,6 +51,11 @@ ENV PATH="/srv/.venv/bin:$PATH" \
 
 # No corre como root: si algo se escapa, que no sea con todos los permisos.
 RUN useradd --create-home --uid 10001 dsd && chown -R dsd /srv
+# El mapa de Mazatlán para los teléfonos (ADR 0002 §130) vive en el volumen
+# `datos_mapas`. La carpeta se crea aquí, del usuario `dsd`, porque un volumen
+# nuevo copia el dueño de lo que encuentra en la imagen: sin esto sería de root
+# y `mapa-mazatlan` no podría escribir.
+RUN mkdir -p /datos/mapas && chown -R dsd /datos
 USER dsd
 
 EXPOSE 8000

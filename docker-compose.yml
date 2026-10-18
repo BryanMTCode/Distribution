@@ -112,6 +112,11 @@ services:
       # Vacío = Sentry apagado. Manda errores a un tercero: es una decisión.
       DSD_SENTRY_DSN: ${DSD_SENTRY_DSN:-}
       DSD_VERSION: ${DSD_VERSION:-0.1.0}
+    # El mapa de Mazatlán que se les da a los teléfonos (ADR 0002 §130). Se baja
+    # una vez con `docker compose exec api python -m app.cli mapa-mazatlan` y
+    # sobrevive a cada `build`.
+    volumes:
+      - datos_mapas:/datos/mapas
     depends_on:
       postgres:
         condition: service_healthy
@@ -217,3 +222,4 @@ services:
 volumes:
   datos_postgres:
   datos_caddy:
+  datos_mapas:

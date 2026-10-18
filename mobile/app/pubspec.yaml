@@ -5,7 +5,7 @@ publish_to: none
 # repartir un APK nuevo, por dos razones distintas: Android rechaza instalar
 # encima un versionCode MENOR que el instalado, y dos APK con el MISMO número
 # son indistinguibles con el teléfono en la mano. `make apk` lo imprime.
-version: 0.1.0+42
+version: 0.1.0+43
 
 environment:
   sdk: ^3.9.0
@@ -39,10 +39,23 @@ dependencies:
   # Compartir los tickets del corte y de la carga (WhatsApp, correo, lo que
   # tenga el teléfono) como texto, sin depender de la impresora.
   share_plus: ^12.0.2
+  # El mapa dentro de la app, sin señal (ADR 0002 §130). Todo Dart: ni el SDK
+  # de Google ni el de Mapbox. Las calles son el archivo de OpenStreetMap que
+  # el teléfono baja una vez del servidor con WiFi (no van dentro del APK), y
+  # se dibujan en el teléfono.
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  vector_map_tiles: ^8.0.0
+  vector_map_tiles_pmtiles: ^1.5.0
+  vector_tile_renderer: ^5.2.0
+  # La suma del mapa descargado: llega completo o no se usa.
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Para armar en las pruebas una tesela del mapa y ver que el tema la dibuja.
+  vector_tile: ^2.0.1
   flutter_lints: ^5.0.0
 
 flutter:

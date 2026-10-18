@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.api.deps import SesionDep
 from app.core.config import obtener_config
 from app.core.metricas import exponer
+from app.infra.mapa import leer_ficha
 
 router = APIRouter(tags=["salud"])
 
@@ -38,6 +39,10 @@ class Salud(BaseModel):
     # Pasa cuando se reconstruye `api` sin reconstruir `migraciones`.
     esquema: str | None = None
     esquema_esperado: str | None = None
+
+    # La versión del mapa de Mazatlán que se les da a los teléfonos (ADR 0002
+    # §130), o nulo si todavía no se baja con `python -m app.cli mapa-mazatlan`.
+    mapa: str | None = None
 
 
 @cache
@@ -101,6 +106,7 @@ async def salud(sesion: SesionDep) -> Salud:
         rls=cfg.rls_activa,
         esquema=esquema,
         esquema_esperado=esperado,
+        mapa=ficha.version if (ficha := leer_ficha()) else None,
     )
 
 

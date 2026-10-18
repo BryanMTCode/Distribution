@@ -1009,3 +1009,44 @@ detener la API.
 $28,200.00, en la bodega». En el panel, *Productos* con los siete en la familia de
 Maruchan (sin precio), *Entradas* con la compra de El Competidor e *Inventario* con
 la bodega. Correrlo otra vez dice «Ya estaba».
+
+## Anexo · El mapa de Mazatlán para los teléfonos
+
+**DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen
+reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
+El servidor necesita **internet**: baja el mapa de OpenStreetMap.
+
+El servidor baja **una vez** las calles de la zona de las tiendas —Mazatlán
+entero, y lo que haga falta alrededor según las tiendas con ubicación— y las
+guarda para que cada teléfono las copie con WiFi (ADR 0002 §130). Con eso, el
+mapa de la app funciona **sin señal**.
+
+**1. Qué zona va a bajar** (no baja nada):
+
+```bash
+cd ~/Distribution
+docker compose run --rm --no-deps api python -m app.cli mapa-mazatlan --resumen
+```
+
+**✅ Debes ver** «Zona: …» con su tamaño en km y de cuántas tiendas sale. **Si dice
+que hay tiendas FUERA del mapa**, alguna tiene mal sus coordenadas (revísalas en
+*Clientes*); si de verdad hay tiendas lejos, la zona se da a mano con
+`--zona=oeste,sur,este,norte`.
+
+**2. Bajarlo:**
+
+```bash
+cd ~/Distribution
+docker compose run --rm --no-deps api python -m app.cli mapa-mazatlan
+```
+
+Tarda unos minutos. No hace falta detener la API.
+
+**✅ Debes ver** «Listo: … teselas, … MB, en … peticiones. Versión AAAAMMDD.», y en
+`https://api.distribucionesse.com/salud` el campo `mapa` con esa versión. **Si pesa
+demasiado** para los teléfonos, `--zoom 14` lo deja en una cuarta parte, todavía
+con todas las calles. Si falla a la mitad no se cambia el mapa que había.
+
+**3. En cada teléfono, con WiFi:** lista de tiendas → **Mapa** → **«Bajar el mapa
+de Mazatlán»**. Para tener calles nuevas, se vuelve a correr el paso 2 cada pocos
+meses y en el teléfono: Mapa → ⋮ → «Volver a bajar el mapa».

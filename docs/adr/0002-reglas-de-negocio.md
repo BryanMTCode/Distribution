@@ -5950,3 +5950,92 @@ está en la base local. Con eso alcanza para guiar sin dibujar una calle.
 - Solo la app (versión `0.1.0+42`). No hay cambio en el servidor salvo los tres
   puntos nuevos de la Revisión del teléfono («Guíame», «Abrir en Mapas», «Cerca
   de mí»). No hay migración.
+
+## 130. El mapa dentro de la app, sin señal: Mazatlán bajado una vez
+
+**Decisión (octubre 2026).** Después de §129: «Pero yo quiero que les aparezca el
+mapa en la app, ¿se puede? Tal vez podría descargar el mapa de Mazatlán o algo
+así.» Sí se puede sin romper la restricción de §129, que sigue igual: nada que
+pida datos en la calle, nada que se quede en blanco sin señal, nada que infle el
+APK con un SDK pesado. La idea es la que él dijo: **bajar el mapa de Mazatlán**.
+
+- **De dónde salen las calles.** De OpenStreetMap, en el corte diario que publica
+  Protomaps (`build.protomaps.com/AAAAMMDD.pmtiles`): el planeta en un solo
+  archivo PMTiles vectorial, que se puede leer por pedazos. Del archivo, de cien
+  y tantos GB, se baja solo la zona de las tiendas hasta el zoom 15, el de calle:
+  todas las calles con su nombre, colonias, parques, el mar y las manzanas. Son
+  unas decenas de MB; el comando dice cuántos.
+- **Quién lo baja: el servidor, una vez.** `python -m app.cli mapa-mazatlan`
+  (PUESTA-EN-MARCHA, anexo del mapa):
+  - la zona es la de las tiendas con ubicación, con 2 km de margen, y siempre al
+    menos Mazatlán (de Cerritos a la isla de la Piedra). Se usan los percentiles 1
+    y 99, no el mínimo y el máximo: una coordenada mal puesta en Culiacán no
+    vuelve el mapa de medio estado. Las tiendas que quedan fuera se cuentan y el
+    comando las dice. Una zona de más de 1.2° por lado se rechaza por error;
+  - como `pmtiles extract`: la cabecera y la raíz en una petición, cada hoja de
+    directorio una vez, y las teselas juntas en tramos contiguos. Una docena de
+    peticiones para la ciudad, no miles;
+  - el archivo se escribe aparte y se cambia de un golpe: si algo falla a la
+    mitad, se queda el mapa que había. Lo acompaña una ficha (versión, tamaño,
+    SHA-256);
+  - vive en el volumen `datos_mapas` (`/datos/mapas`), que sobrevive a cada
+    `build`. `--zoom 14` lo deja en una cuarta parte con todas las calles;
+    `--zona` y `--fuente` cambian lo que se calcula solo;
+  - `/salud` dice en `mapa` qué versión hay, o nulo.
+- **Cómo llega al teléfono.** `GET /v1/mapa` (si hay, versión, MB, SHA-256) y
+  `GET /v1/mapa/archivo`, con la credencial de siempre. El mapa no tiene nada de
+  la operación (las tiendas no van en el archivo), pero tampoco se sirve a
+  cualquiera. En la app: lista de tiendas → **Mapa** → **«Bajar el mapa de
+  Mazatlán»**, con WiFi:
+  - una barra con los MB que van; se guarda en un `.parcial` y solo se usa si
+    llegó completo y con la suma que dijo el servidor. Cortado o dañado, no se
+    guarda nada y se puede volver a intentar;
+  - sin sesión en línea (entró sin señal), sin conexión o sin mapa en el servidor,
+    lo dice en palabras;
+  - queda en la carpeta de la app, no en la de documentos. En ⋮, «Volver a bajar
+    el mapa» con su fecha, para cuando el servidor tenga uno nuevo. Las calles
+    van ligadas a la versión: al bajar otra, la pantalla abre el archivo nuevo y
+    borra las teselas ya dibujadas del anterior, que si no seguirían saliendo
+    hasta 30 días. Si la actualización falla, el aviso se cierra y queda el mapa
+    que había.
+- **El mapa.** flutter_map con vector_map_tiles: las teselas del archivo se
+  dibujan en el teléfono, cada una una vez, y se guardan como imagen. Encima:
+  - las tiendas de la ruta como pines: las de hoy en color, las visitadas en
+    verde con palomita, las de otro día en gris;
+  - el vendedor como punto azul, del GPS (sin datos), y un botón «Dónde estoy»;
+  - tocar una tienda abre su ficha: a cuánto está, su código, si le toca hoy, y
+    «Guíame» (la flecha de §129), «Ruta por calles» (la app de mapas del
+    teléfono) y «Perfil»;
+  - desde la guía, **«Ver en el mapa»**: la tienda en rojo, el vendedor en azul y
+    una línea punteada entre los dos, encuadrados;
+  - no gira: con dos dedos en un camión que brinca, el norte se quedaba de lado;
+  - el crédito «Calles © OpenStreetMap», que pide la licencia (ODbL), en la
+    leyenda.
+
+  Sin el mapa bajado la pantalla sirve igual: las tiendas y el vendedor sobre un
+  fondo liso, y arriba cómo bajarlo.
+- **El tema** es propio y corto (`tema_del_mapa.dart`). El que trae el paquete
+  tiene setenta capas, con túneles, puentes, aeropuertos y un icono por negocio.
+  Éste tiene tierra y mar, parques y playa, manzanas, calles con borde y nombre,
+  carreteras, colonias y ciudades. Es menos trabajo para un teléfono sencillo y
+  se lee al sol. Una calle de tipo desconocido se dibuja como calle chica, para
+  que un cambio en el esquema no deje huecos.
+- **El peso.** El APK no lleva el mapa: lleva cuatro paquetes de Dart puro
+  (flutter_map 7, vector_map_tiles 8, vector_map_tiles_pmtiles y pmtiles), sin el
+  SDK de Google ni el de Mapbox, y sin llave de nadie. Se calcula que suman uno o
+  dos MB; no se midió en un APK.
+- **No hay ruta por calles dentro de la app.** Calcularla sin señal pediría la red
+  de calles como grafo y un motor de rutas, otro archivo y otro peso. Para eso
+  sigue «Ruta por calles» de §129, con la app de mapas del teléfono.
+- **Las pruebas.**
+  - En Python: la extracción contra un PMTiles de decenas de miles de teselas con
+    hojas, la zona, la fuente, el comando y los dos endpoints.
+  - En la app: la pantalla con una fuente falsa, y el tema dibujando una tesela
+    con el esquema de Protomaps, revisada por el color de sus pixeles.
+  - La cadena entera: el archivo de `test/fijos` lo armó `mapa.extraer`, la app lo
+    abre con su proveedor y lo dibuja.
+
+  Lo que ninguna prueba ve es el corte real de Protomaps de hoy: eso se revisa
+  con el punto «Bajar el mapa» de la Revisión.
+- App `0.1.0+43`. Servidor con `pmtiles` (Python puro) en `uv.lock`, el volumen
+  nuevo y el comando. No hay migración.

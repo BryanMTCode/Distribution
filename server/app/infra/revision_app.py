@@ -182,6 +182,34 @@ SECCIONES: tuple[Seccion, ...] = (
                 "orden de la ruta. Con «Hoy» elegido, ordena solo las de hoy.",
                 desde="+42",
             ),
+            Punto(
+                "mapa_bajar", "Bajar el mapa de Mazatlán al teléfono",
+                "Antes, en el servidor: `python -m app.cli mapa-mazatlan` (PUESTA-EN-MARCHA, "
+                "anexo del mapa). En el teléfono, con WiFi: lista → «Mapa» → «Bajar el "
+                "mapa de Mazatlán».",
+                "Una barra con los MB que van y el total; al terminar, «Listo» y las "
+                "calles con su nombre, las colonias y el mar. Si se corta el WiFi a la "
+                "mitad, lo dice y el botón vuelve a intentar. En ⋮ queda «Volver a bajar "
+                "el mapa» con su fecha.",
+                desde="+43",
+            ),
+            Punto(
+                "mapa_sin_senal", "El mapa sin señal, con las tiendas y tú",
+                "Ya con el mapa bajado, modo avión con la ubicación prendida: lista → "
+                "«Mapa». Mueve y acerca el mapa; toca una tienda.",
+                "Las calles se ven igual que con WiFi. Las tiendas de hoy en color, las "
+                "visitadas en verde, las de otro día en gris, y tú como punto azul. "
+                "Tocar una tienda dice a cuánto está, con «Guíame», «Ruta por calles» y "
+                "«Perfil».",
+                desde="+43",
+            ),
+            Punto(
+                "mapa_desde_la_guia", "«Ver en el mapa» desde la guía",
+                "En «Cómo llegar» de una tienda, toca «Ver en el mapa».",
+                "El mapa con la tienda marcada en rojo, tú en azul y una línea punteada "
+                "entre los dos, encuadrados en la pantalla.",
+                desde="+43",
+            ),
         ),
     ),
     Seccion(

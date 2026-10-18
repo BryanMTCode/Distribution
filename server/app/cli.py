@@ -1,5 +1,5 @@
 """Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco,
-los camiones al sábado y las tiendas de las rutas.
+los camiones al sábado, las tiendas de las rutas y el mapa de Mazatlán.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import math
 import sys
 import uuid
 
@@ -509,6 +510,97 @@ async def compra_zuko(*, solo_resumen: bool = False, confirmado: bool = False) -
     return 0
 
 
+async def mapa_mazatlan(argumentos: list[str]) -> int:
+    """Baja de OpenStreetMap el mapa de la zona de las tiendas para los teléfonos
+    (ADR 0002 §130).
+
+    Qué hace está en `app/infra/mapa.py`. `--resumen` solo dice qué zona y de
+    dónde; `--zoom 14` lo hace más ligero; `--zona oeste,sur,este,norte` y
+    `--fuente URL` cambian lo que se calcula solo.
+    """
+    import argparse
+    from datetime import date
+
+    from app.core.db import CrearSesion
+    from app.infra import mapa
+
+    lector = argparse.ArgumentParser(prog="python -m app.cli mapa-mazatlan")
+    lector.add_argument("--resumen", action="store_true")
+    lector.add_argument("--zoom", type=int, default=mapa.ZOOM_MAXIMO, choices=range(10, 16))
+    lector.add_argument("--zona")
+    lector.add_argument("--fuente")
+    # «--zona -106.50,…» empieza con guion y argparse lo tomaría por otra opción:
+    # se pega a su nombre, como si se hubiera escrito «--zona=-106.50,…».
+    pegados: list[str] = []
+    for arg in argumentos:
+        if pegados and pegados[-1] == "--zona":
+            pegados[-1] = f"--zona={arg}"
+        else:
+            pegados.append(arg)
+    try:
+        opciones = lector.parse_args(pegados)
+    except SystemExit as e:
+        return int(e.code or 0)
+
+    async with CrearSesion() as sesion:
+        try:
+            if opciones.zona:
+                partes = [float(p) for p in opciones.zona.split(",")]
+                if len(partes) != 4:
+                    raise ValueError
+                zona = (partes[0], partes[1], partes[2], partes[3])
+                mapa.validar_zona(zona)
+                con_ubicacion = None
+            else:
+                percentiles, con_ubicacion = await mapa.percentiles_de_las_tiendas(sesion)
+                zona = mapa.zona_de_las_tiendas(percentiles)
+        except ValueError:
+            print("ERROR: --zona va como oeste,sur,este,norte, por ejemplo "
+                  "-106.50,23.13,-106.28,23.33")
+            return 1
+        except mapa.MapaInvalido as e:
+            print(f"ERROR: {e}")
+            return 1
+        fuera = await mapa.tiendas_fuera(sesion, zona)
+
+    oeste, sur, este, norte = zona
+    ancho = (este - oeste) * 111.32 * math.cos(math.radians((sur + norte) / 2))
+    alto = (norte - sur) * 110.57
+    print("MAPA DE MAZATLÁN PARA LOS TELÉFONOS\n")
+    print(f"  Zona: {oeste}, {sur} a {este}, {norte} (unos {ancho:.0f} × {alto:.0f} km)")
+    if con_ubicacion is not None:
+        print(f"  Sale de {con_ubicacion:,} tiendas con ubicación, más Mazatlán entero.")
+    if fuera:
+        print(f"  {fuera} tienda(s) con ubicación quedan FUERA del mapa: revisa sus "
+              "coordenadas en Clientes, o da la zona con --zona.")
+    print(f"  Hasta el zoom {opciones.zoom} (calle).")
+    if opciones.resumen:
+        print("\nCon --resumen no se baja nada.")
+        return 0
+
+    try:
+        fuente = opciones.fuente or mapa.fuente_reciente(date.today())
+        print(f"  Fuente: {fuente}\n\nBajando… (unos minutos)")
+        directorio = mapa.directorio_de_mapas()
+        extraccion = mapa.extraer(
+            mapa.lector_http(fuente), zona, directorio / mapa.ARCHIVO,
+            zoom_maximo=opciones.zoom, fuente=fuente,
+        )
+    except mapa.MapaInvalido as e:
+        print(f"ERROR: {e}. No se cambió el mapa que había.")
+        return 1
+    except OSError as e:
+        print(f"ERROR al bajar o guardar: {e}. No se cambió el mapa que había.")
+        return 1
+    version = fuente.rsplit("/", 1)[-1].removesuffix(".pmtiles")
+    ficha = mapa.guardar_ficha(directorio, extraccion, version=version, tiendas_fuera=fuera)
+    print(f"Listo: {ficha.teselas:,} teselas, {ficha.bytes / 1_000_000:.1f} MB, en "
+          f"{extraccion.peticiones} peticiones. Versión {ficha.version}.")
+    print("Cada teléfono lo baja con WiFi: lista de tiendas → Mapa → «Bajar el mapa de "
+          "Mazatlán».")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
@@ -518,11 +610,14 @@ def main() -> int:
         "camiones-al-sabado": camiones_al_sabado,
         "tiendas-de-rutas": tiendas_de_rutas,
         "compra-zuko": compra_zuko,
+        "mapa-mazatlan": mapa_mazatlan,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
         return 2
     comando, opciones = sys.argv[1], set(sys.argv[2:])
+    if comando == "mapa-mazatlan":
+        return asyncio.run(mapa_mazatlan(sys.argv[2:]))
     if comando in (
         "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "compra-zuko"
     ) and opciones <= {

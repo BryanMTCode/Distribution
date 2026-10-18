@@ -74,6 +74,10 @@ class Config(BaseSettings):
     # sistema que cree tener RLS y no lo tiene es peor que uno que sabe que no.
     database_url_api: str = ""
 
+    # Dónde queda el mapa de Mazatlán que se les da a los teléfonos (ADR 0002
+    # §130). En Docker es el volumen `datos_mapas`.
+    mapas_dir: str = "/datos/mapas"
+
     @property
     def es_produccion(self) -> bool:
         return self.entorno == "produccion"

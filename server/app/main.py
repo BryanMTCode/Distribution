@@ -51,6 +51,7 @@ from app.api.v1 import (
     clientes,
     cortes,
     dispositivos,
+    mapa,
     mayoreo,
     objetivos,
     oficina_clientes,
@@ -135,6 +136,7 @@ def crear_app() -> FastAPI:
     app.include_router(vendedores.router, prefix="/v1")
     app.include_router(objetivos.router, prefix="/v1")
     app.include_router(mayoreo.router, prefix="/v1")
+    app.include_router(mapa.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una
     # interfaz. Versionar sus rutas obligaría a mantener la vieja viva cuando

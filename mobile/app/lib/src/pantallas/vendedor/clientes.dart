@@ -24,6 +24,7 @@ import 'alta_cliente.dart';
 import 'camion.dart';
 import 'catalogo.dart';
 import 'guia.dart';
+import 'mapa.dart';
 import 'mi_dia.dart';
 import 'merma.dart';
 import 'perfil_cliente.dart';
@@ -258,11 +259,13 @@ class PantallaClientes extends ConsumerWidget {
               ),
             ),
           ),
-          if (hayPlan || todos.any((c) => c.conUbicacion))
+          // Siempre, aunque nadie tenga plan ni ubicación: el «Mapa» sirve para
+          // bajar las calles con WiFi antes de salir (ADR 0002 §130).
+          if (todos.isNotEmpty || hayPlan)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              // `Wrap` y no `Row`: en 360 de ancho «Hoy · Todos», «Cerca de mí» y el
-              // avance no caben en un renglón, y el avance baja al siguiente.
+              // `Wrap` y no `Row`: en 360 de ancho «Hoy · Todos», «Cerca de mí», el
+              // mapa y el avance no caben en un renglón, y lo que no cabe baja.
               child: Wrap(
                 spacing: 8,
                 runSpacing: 6,
@@ -283,7 +286,15 @@ class PantallaClientes extends ConsumerWidget {
                       onSelectionChanged: (s) =>
                           ref.read(verSoloHoyProvider.notifier).state = s.first,
                     ),
-                  _CercaDeMi(activo: cerca != null),
+                  if (todos.any((c) => c.conUbicacion)) _CercaDeMi(activo: cerca != null),
+                  ActionChip(
+                    key: const Key('abrir_mapa'),
+                    avatar: const Icon(Icons.map_outlined, size: 18),
+                    label: const Text('Mapa'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const PantallaMapa()),
+                    ),
+                  ),
                   if (deHoy.isNotEmpty)
                     Text(
                       key: const Key('avance_de_hoy'),
