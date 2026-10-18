@@ -528,6 +528,11 @@ final otrasTiendasPlegadasProvider = StateProvider<bool>((_) => false);
 /// es el día (0–6, 1 = lunes) o «sin». Abiertos de entrada.
 final diasPlegadosProvider = StateProvider<Set<String>>((_) => const {});
 
+/// «Cerca de mí» (ADR 0002 §129): dónde estaba el vendedor cuando lo tocó. Con
+/// él, la lista va de la tienda más cercana a la más lejana, con su distancia;
+/// nulo, en el orden de la ruta. Una sola lectura del GPS, sin datos.
+final cercaDeMiProvider = StateProvider<Ubicacion?>((_) => null);
+
 /// Lo que hay sin sincronizar. Alimenta el indicador que el vendedor ve
 /// siempre: un número de pendientes que crece es la señal de que algo va mal.
 final resumenColaProvider = Provider<ResumenCola>(

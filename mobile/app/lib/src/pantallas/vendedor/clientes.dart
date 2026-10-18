@@ -14,13 +14,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/repo_clientes.dart';
+import '../../datos/servicio_ubicacion.dart';
 import '../../demo.dart';
+import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import 'alta_cliente.dart';
 import 'camion.dart';
 import 'catalogo.dart';
+import 'guia.dart';
 import 'mi_dia.dart';
 import 'merma.dart';
 import 'perfil_cliente.dart';
@@ -53,33 +56,51 @@ class PantallaClientes extends ConsumerWidget {
     final porDias = hayPlan && !soloHoy && !buscando;
     final plegados = ref.watch(diasPlegadosProvider);
     final hoy = ref.watch(relojProvider)().toLocal().weekday % 7;
-    final renglones = <Object>[
-      if (filtrando && deHoy.isEmpty) const _SinNadieHoy(),
-      if (!porDias) ...(filtrando ? deHoy : todos),
-      if (otras.isNotEmpty) _EncabezadoDeOtras(otras.length, plegadas: otrasPlegadas),
-      // Las demás, también por día; sin plegarse cada uno: ya se pliegan juntas.
-      if (otras.isNotEmpty && !otrasPlegadas)
-        for (final (dia, suyas) in _porDia(otras)) ...[
-          _EncabezadoDeDia(dia, suyas.length, clave: 'dia_otras', esHoy: false),
-          ...suyas,
-        ],
-      if (porDias)
-        for (final (dia, suyas) in _porDia(todos)) ...[
-          _EncabezadoDeDia(
-            dia,
-            suyas.length,
-            clave: 'dia_ruta',
-            esHoy: dia == hoy,
-            plegado: plegados.contains(_claveDeDia(dia)),
-            alTocar: () {
-              final ahora = {...ref.read(diasPlegadosProvider)};
-              if (!ahora.remove(_claveDeDia(dia))) ahora.add(_claveDeDia(dia));
-              ref.read(diasPlegadosProvider.notifier).state = ahora;
-            },
-          ),
-          if (!plegados.contains(_claveDeDia(dia))) ...suyas,
-        ],
-    ];
+    // «Cerca de mí» (ADR 0002 §129): las de la vista, de la más cercana a la más
+    // lejana, sin días ni «Las demás»; las que no tienen ubicación, al final.
+    final cerca = ref.watch(cercaDeMiProvider);
+    final distancias = <String, double>{
+      if (cerca != null)
+        for (final c in todos)
+          if (c.conUbicacion)
+            c.id: cerca.distanciaA(
+              Ubicacion(lat: c.lat!, lng: c.lng!, origen: OrigenUbicacion.gps),
+            ),
+    };
+    final porDistancia = cerca == null
+        ? null
+        : ([...(filtrando ? deHoy : todos)]
+          ..sort((a, b) => (distancias[a.id] ?? double.infinity)
+              .compareTo(distancias[b.id] ?? double.infinity)));
+    final renglones = porDistancia != null
+        ? <Object>[...porDistancia]
+        : <Object>[
+            if (filtrando && deHoy.isEmpty) const _SinNadieHoy(),
+            if (!porDias) ...(filtrando ? deHoy : todos),
+            if (otras.isNotEmpty) _EncabezadoDeOtras(otras.length, plegadas: otrasPlegadas),
+            // Las demás, también por día; sin plegarse cada uno: ya se pliegan juntas.
+            if (otras.isNotEmpty && !otrasPlegadas)
+              for (final (dia, suyas) in _porDia(otras)) ...[
+                _EncabezadoDeDia(dia, suyas.length, clave: 'dia_otras', esHoy: false),
+                ...suyas,
+              ],
+            if (porDias)
+              for (final (dia, suyas) in _porDia(todos)) ...[
+                _EncabezadoDeDia(
+                  dia,
+                  suyas.length,
+                  clave: 'dia_ruta',
+                  esHoy: dia == hoy,
+                  plegado: plegados.contains(_claveDeDia(dia)),
+                  alTocar: () {
+                    final ahora = {...ref.read(diasPlegadosProvider)};
+                    if (!ahora.remove(_claveDeDia(dia))) ahora.add(_claveDeDia(dia));
+                    ref.read(diasPlegadosProvider.notifier).state = ahora;
+                  },
+                ),
+                if (!plegados.contains(_claveDeDia(dia))) ...suyas,
+              ],
+          ];
 
     final cola = ref.watch(resumenColaProvider);
     final sync = ref.watch(syncProvider);
@@ -237,34 +258,37 @@ class PantallaClientes extends ConsumerWidget {
               ),
             ),
           ),
-          if (hayPlan)
+          if (hayPlan || todos.any((c) => c.conUbicacion))
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
+              // `Wrap` y no `Row`: en 360 de ancho «Hoy · Todos», «Cerca de mí» y el
+              // avance no caben en un renglón, y el avance baja al siguiente.
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  SegmentedButton<bool>(
-                    key: const Key('filtro_hoy'),
-                    showSelectedIcon: false,
-                    segments: [
-                      ButtonSegment(
-                        value: true,
-                        label: Text('Hoy · ${deHoy.length}'),
-                      ),
-                      const ButtonSegment(value: false, label: Text('Todos')),
-                    ],
-                    selected: {soloHoy},
-                    onSelectionChanged: (s) =>
-                        ref.read(verSoloHoyProvider.notifier).state = s.first,
-                  ),
-                  const SizedBox(width: 12),
+                  if (hayPlan)
+                    SegmentedButton<bool>(
+                      key: const Key('filtro_hoy'),
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment(
+                          value: true,
+                          label: Text('Hoy · ${deHoy.length}'),
+                        ),
+                        const ButtonSegment(value: false, label: Text('Todos')),
+                      ],
+                      selected: {soloHoy},
+                      onSelectionChanged: (s) =>
+                          ref.read(verSoloHoyProvider.notifier).state = s.first,
+                    ),
+                  _CercaDeMi(activo: cerca != null),
                   if (deHoy.isNotEmpty)
-                    Expanded(
-                      child: Text(
-                        key: const Key('avance_de_hoy'),
-                        'Visitados $visitadosHoy de ${deHoy.length}',
-                        textAlign: TextAlign.end,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                    Text(
+                      key: const Key('avance_de_hoy'),
+                      'Visitados $visitadosHoy de ${deHoy.length}',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                 ],
               ),
@@ -291,6 +315,7 @@ class PantallaClientes extends ConsumerWidget {
                         ),
                       final ClienteEnRuta cliente => _Renglon(
                           cliente: cliente,
+                          distanciaMetros: distancias[cliente.id],
                           // Tocar un cliente ABRE SU VISITA: fija de quién es el
                           // carrito y entra al catálogo con SUS precios. El
                           // catálogo no existe "en general" — el precio depende
@@ -556,14 +581,19 @@ class _Renglon extends StatelessWidget {
   const _Renglon({
     required this.cliente,
     required this.alTocar,
+    this.distanciaMetros,
   });
 
   final ClienteEnRuta cliente;
   final VoidCallback alTocar;
 
+  /// Con «Cerca de mí», a cuánto está en línea recta (ADR 0002 §129).
+  final double? distanciaMetros;
+
   @override
   Widget build(BuildContext context) {
     final subtitulo = [
+      if (distanciaMetros != null) 'a ${distanciaEnPalabras(distanciaMetros!)}',
       if (cliente.codigo != null) cliente.codigo,
       if (cliente.direccion != null) cliente.direccion,
     ].whereType<String>().join(' · ');
@@ -598,18 +628,38 @@ class _Renglon extends StatelessWidget {
       // La ubicación a un toque, sin entrar a la visita: con el GPS o escrita a
       // mano (ADR 0002 §84 y §107). En rojo la tienda que todavía no tiene: sin
       // ella la venta no tiene geocerca.
-      trailing: IconButton(
-        key: Key('ubicar_${cliente.id}'),
-        tooltip: cliente.conUbicacion ? 'Ubicación' : 'Ponerle ubicación',
-        icon: Icon(
-          cliente.conUbicacion ? Icons.location_on_outlined : Icons.add_location_alt_outlined,
-          color: cliente.conUbicacion ? null : Theme.of(context).colorScheme.error,
-        ),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PantallaPerfilDelCliente(cliente: cliente),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Cómo llegar, sin mapa ni señal (ADR 0002 §129): solo la que ya tiene
+          // dónde llegar.
+          if (cliente.conUbicacion)
+            IconButton(
+              key: Key('guia_${cliente.id}'),
+              tooltip: 'Cómo llegar',
+              icon: const Icon(Icons.near_me_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => PantallaGuia(cliente: cliente),
+                ),
+              ),
+            ),
+          IconButton(
+            key: Key('ubicar_${cliente.id}'),
+            tooltip: cliente.conUbicacion ? 'Ubicación' : 'Ponerle ubicación',
+            icon: Icon(
+              cliente.conUbicacion
+                  ? Icons.location_on_outlined
+                  : Icons.add_location_alt_outlined,
+              color: cliente.conUbicacion ? null : Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PantallaPerfilDelCliente(cliente: cliente),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
       onTap: alTocar,
     );
@@ -640,4 +690,58 @@ class _Renglon extends StatelessWidget {
       ],
     );
   }
+}
+
+/// «Cerca de mí» (ADR 0002 §129): una lectura del GPS —sin datos— y la lista
+/// queda de la más cercana a la más lejana. Otro toque la regresa a su orden.
+class _CercaDeMi extends ConsumerStatefulWidget {
+  const _CercaDeMi({required this.activo});
+
+  final bool activo;
+
+  @override
+  ConsumerState<_CercaDeMi> createState() => _EstadoCercaDeMi();
+}
+
+class _EstadoCercaDeMi extends ConsumerState<_CercaDeMi> {
+  bool _leyendo = false;
+
+  Future<void> _alternar() async {
+    if (widget.activo) {
+      ref.read(cercaDeMiProvider.notifier).state = null;
+      return;
+    }
+    setState(() => _leyendo = true);
+    final lectura = await ref.read(servicioUbicacionProvider).leer();
+    if (!mounted) return;
+    setState(() => _leyendo = false);
+    final motivo = switch (lectura) {
+      GpsObtenido(:final ubicacion) => () {
+          ref.read(cercaDeMiProvider.notifier).state = ubicacion;
+          return null;
+        }(),
+      GpsApagado() => 'La ubicación del teléfono está apagada: préndela.',
+      GpsSinPermiso() => 'La app no tiene permiso de ubicación.',
+      GpsSinLectura() =>
+        'El GPS no encontró los satélites. Sal de techo y vuelve a tocar.',
+    };
+    if (motivo != null) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(motivo)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FilterChip(
+        key: const Key('cerca_de_mi'),
+        label: Text(_leyendo ? 'Buscando…' : 'Cerca de mí'),
+        avatar: _leyendo
+            ? const SizedBox(
+                width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.near_me_outlined, size: 18),
+        showCheckmark: false,
+        selected: widget.activo,
+        onSelected: _leyendo ? null : (_) => _alternar(),
+      );
 }

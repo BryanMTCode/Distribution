@@ -153,6 +153,35 @@ SECCIONES: tuple[Seccion, ...] = (
                 "corrige a mano, y guarda.",
                 "Queda guardado y, al sincronizar, el panel muestra la ubicación nueva.",
             ),
+            Punto(
+                "guia_flecha", "«Guíame»: la flecha hacia la tienda, sin señal",
+                "Pon el teléfono en modo avión y deja prendida la ubicación. En la lista, "
+                "toca la flechita junto a una tienda con ubicación («Cómo llegar»). "
+                "Primero quieto; luego camina o ve en el camión hacia ella.",
+                "Quieto: a cuánto está («350 m»), hacia dónde («al noreste») y la flecha "
+                "con la «N» arriba. En marcha: «de frente», «a tu derecha»… y la flecha "
+                "gira contigo. A unos metros de la puerta dice «Ya llegaste». Todo sin "
+                "datos.",
+                desde="+42",
+            ),
+            Punto(
+                "abrir_en_mapas", "«Abrir en Mapas»: la ruta por calles",
+                "En «Cómo llegar» (o en el perfil de la tienda), toca «Abrir en Mapas». "
+                "Antes, con WiFi, descarga una vez el mapa de Mazatlán en Google Maps "
+                "(«Mapas sin conexión») u Organic Maps.",
+                "Abre la app de mapas del teléfono con la tienda marcada y su nombre, para "
+                "pedir la ruta. Con el mapa descargado sirve en modo avión. Si el teléfono "
+                "no tiene app de mapas, lo dice y manda a la flecha.",
+                desde="+42",
+            ),
+            Punto(
+                "cerca_de_mi", "«Cerca de mí»: las tiendas de la más cercana a la más lejana",
+                "En la lista, toca «Cerca de mí» (afuera, sin techo). Vuelve a tocarlo.",
+                "La lista se ordena por distancia y cada tienda dice «a 300 m», «a 1.2 km»; "
+                "las que no tienen ubicación quedan al final. Otro toque la regresa al "
+                "orden de la ruta. Con «Hoy» elegido, ordena solo las de hoy.",
+                desde="+42",
+            ),
         ),
     ),
     Seccion(

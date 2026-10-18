@@ -5880,3 +5880,73 @@ camiones, los 39 artículos y las 1,834 tiendas.
   - Los números grandes del Tablero y de La empresa llevan comas («1,834»).
 - Solo plantillas y estilos del panel, y el filtro del plan de visita en el
   servidor. No hay migración y no hace falta APK nuevo.
+
+## 129. Cómo llegar a un cliente sin señal: la flecha, la app de mapas y «Cerca de mí»
+
+**Decisión (octubre 2026).** «Ya tenemos las coordenadas de los clientes guardadas
+en el SQLite local. El vendedor necesita poder guiarse o navegar hacia esos
+clientes. Restricción estricta: el vendedor operará en zonas sin señal. No podemos
+depender de APIs de mapas integradas dentro de la app que consuman datos en tiempo
+real, se queden en blanco sin internet, o inflen el peso del APK con SDKs pesados.»
+
+**Lo que no se hizo, y por qué.** Un mapa dentro de la app, sea Google Maps SDK,
+Mapbox o flutter_map con teselas, necesita una de dos cosas: datos para bajar las
+teselas, o un paquete de mapa dentro del APK, que para Mazatlán son decenas de MB
+y hay que actualizar. Las dos chocan con la restricción. Lo que sí se tiene sin
+señal es el **GPS**, que no usa datos, y **la coordenada de la tienda**, que ya
+está en la base local. Con eso alcanza para guiar sin dibujar una calle.
+
+- **«Guíame» (la flecha).** En la lista, junto a cada tienda con ubicación, un
+  botón «Cómo llegar» (la flechita). También está en el perfil de la tienda, como
+  «Guíame (sin internet)». Abre una pantalla que escucha al GPS y dice:
+  - **a cuánto está**: «37 m», «350 m» (de diez en diez arriba de 100 m, porque
+    el GPS no tiene más precisión), «1.2 km», «13 km»;
+  - **hacia dónde**. Con el teléfono **en marcha** (≥ 0.8 m/s, un paso
+    tranquilo) la flecha va contra el rumbo de marcha que da el GPS: «de frente»,
+    «un poco a la derecha», «a tu izquierda», «atrás de ti: da la vuelta»;
+  - **quieto**, el rumbo de marcha del GPS es ruido. Entonces la flecha va contra
+    el norte, con una «N» arriba, el rumbo en palabras («al noreste») y la
+    indicación de caminar unos pasos para orientarla;
+  - en un alto breve (un semáforo, menos de 20 s) se sigue usando el último
+    rumbo bueno, para que la flecha no brinque al norte en cada esquina;
+  - **«Ya llegaste»** a 30 m o menos, o dentro del margen de error del GPS si es
+    mayor;
+  - la precisión de la lectura («GPS ±8 m») y que es **en línea recta, no por
+    calles**. Sirve para no perderse en una colonia y para encontrar la puerta en
+    la última cuadra.
+
+  Sin lectura dice «Buscando tu ubicación…» y que el GPS no necesita datos. Con
+  la ubicación apagada o sin permiso lo dice, con «Volver a intentar» para no
+  salir de la pantalla. Si la ubicación se apaga a medio camino, también lo dice
+  en lugar de tronar.
+- **No hay brújula, a propósito.** Saber hacia dónde mira el teléfono parado
+  pediría el magnetómetro: otro paquete, y una calibración que en la cabina de un
+  camión (metal, bocinas) falla a menudo. El rumbo de marcha del GPS no depende
+  de eso.
+- **«Abrir en Mapas» (la ruta por calles).** Le pasa la coordenada y el nombre de
+  la tienda a la app de mapas que el teléfono ya tiene, con un Intent de Android
+  `geo:0,0?q=lat,lng(nombre)`. Android ofrece las que haya (Google Maps, Waze,
+  Organic Maps) y recuerda la que se elija; desde ahí se pide «Cómo llegar».
+  - No es un SDK ni un paquete nuevo: son unas líneas de Kotlin en `MainActivity`
+    (el canal `dsd/mapas`). El APK no crece.
+  - **Sin señal funciona si esa app tiene el mapa de la zona descargado**. Se
+    hace una vez, con WiFi: en Google Maps, foto de perfil → «Mapas sin conexión»
+    → «Selecciona tu mapa» y se encuadra Mazatlán; Google lo actualiza solo cada
+    tanto. En Organic Maps (gratis, sin cuenta) se baja la región donde está
+    Mazatlán, y esa no caduca.
+  - Si el teléfono no tiene ninguna app de mapas, lo dice y manda a la flecha.
+- **«Cerca de mí».** En la lista de tiendas, un botón que lee el GPS una vez y
+  ordena de la más cercana a la más lejana, con la distancia en cada una («a 300
+  m · …»). Las que no tienen ubicación van al final. Con «Hoy» elegido ordena
+  solo las de hoy; otro toque regresa al orden de la ruta. Sirve cuando el plan se
+  movió, o para ver qué tienda queda a la vuelta. Si no hay satélites lo dice y
+  la lista se queda como estaba.
+- **Detalles.**
+  - Las cuentas (semiverseno y rumbo inicial) son las de `Ubicacion`, las mismas
+    del lienzo espacial y de la geocerca. Viven en `dsd_core/lib/src/guia.dart`,
+    con sus pruebas de Dart.
+  - El GPS se escucha solo mientras la pantalla de la guía está abierta, cada 3 m
+    o más, y se suelta al salir.
+- Solo la app (versión `0.1.0+42`). No hay cambio en el servidor salvo los tres
+  puntos nuevos de la Revisión del teléfono («Guíame», «Abrir en Mapas», «Cerca
+  de mí»). No hay migración.

@@ -25,6 +25,7 @@ export 'src/esquema_local.dart';
 export 'src/dispositivo_cliente.dart';
 export 'src/folios.dart';
 export 'src/forma_de_pago.dart';
+export 'src/guia.dart';
 export 'src/mayoreo_cliente.dart';
 export 'src/merma.dart';
 export 'src/mi_dia.dart';

@@ -15,6 +15,7 @@ import '../../estado/mermas.dart';
 import '../../estado/sesion.dart';
 import '../editor_de_ubicacion.dart';
 import 'comunes.dart';
+import 'guia.dart';
 
 final registroDeUbicacionProvider = Provider<RegistroDeUbicacion?>((ref) {
   final sesion = ref.watch(sesionProvider);
@@ -49,6 +50,32 @@ class PantallaPerfilDelCliente extends ConsumerWidget {
           if (cliente.direccion != null) Text(cliente.direccion!),
           if (cliente.referencias != null)
             Text(cliente.referencias!, style: estilo.bodySmall),
+          // Cómo llegar, sin mapa ni señal (ADR 0002 §129).
+          if (cliente.conUbicacion) ...[
+            const SizedBox(height: 20),
+            Text('Cómo llegar', style: estilo.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const Key('perfil_guiame'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => PantallaGuia(cliente: cliente)),
+                  ),
+                  icon: const Icon(Icons.near_me_outlined),
+                  label: const Text('Guíame (sin internet)'),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('perfil_abrir_en_mapas'),
+                  onPressed: () => abrirEnMapas(context, ref, cliente),
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('Abrir en Mapas'),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
           Text('Ubicación del negocio', style: estilo.titleMedium),
           const Text('Es la geocerca de tus ventas: tómala con el GPS parado en la '
