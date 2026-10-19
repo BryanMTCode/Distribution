@@ -2,6 +2,10 @@
 
 ## Al terminar cualquier cambio: los comandos de actualización
 
+**Los comandos se dan SOLO cuando todo está terminado**: todo lo pedido hecho, la
+suite completa en verde y el cambio ya en `main`. Nunca a medias, ni «cuando te
+confirme», ni con un commit por llegar: si algo sigue corriendo, se espera.
+
 Siempre que se suba un cambio a `main`, la respuesta termina con los comandos exactos
 para aplicarlo, aunque el cambio parezca no necesitarlos:
 
