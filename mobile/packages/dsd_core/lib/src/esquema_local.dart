@@ -222,11 +222,18 @@ CREATE TABLE IF NOT EXISTS existencias_camion (
 -- Se guarda el folio y la nota para poder decirle al vendedor QUÉ le cambiaron y
 -- por qué: un número que baja sin explicación es la forma más rápida de que deje
 -- de confiar en el sistema.
+--
+-- `producto_id` y `delta` son eso, qué cambió: el artículo y la diferencia, para
+-- el aviso de «Mi camión» (ADR 0002 §145). Nulos en los que llegaron antes. El
+-- comentario va aquí y no entre las columnas: SQLite reescribe el texto del
+-- CREATE al quitar una columna, y un comentario adentro lo deja roto.
 CREATE TABLE IF NOT EXISTS ajustes_camion_aplicados (
     ajuste_id   TEXT PRIMARY KEY,
     folio       TEXT,
     nota        TEXT,
-    aplicado_en TEXT NOT NULL
+    aplicado_en TEXT NOT NULL,
+    producto_id TEXT,
+    delta       REAL
 );
 
 -- Las devoluciones a la bodega que el vendedor capturó.

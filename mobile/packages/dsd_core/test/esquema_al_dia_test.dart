@@ -79,6 +79,26 @@ void main() {
     expect(columnasDe('clientes'), contains('plan_visita'));
   });
 
+  test('UNA BASE VIEJA RECIBE el artículo y la diferencia de los ajustes (§145)', () {
+    // El aplicador de `ajuste_camion` las escribe: sin ellas, el primer ajuste
+    // de la oficina después de actualizar la app reventaría el pull. Los
+    // ajustes de antes se quedan, con las columnas en NULL.
+    aplicarEsquemaLocal(db);
+    db.execute('ALTER TABLE ajustes_camion_aplicados DROP COLUMN producto_id');
+    db.execute('ALTER TABLE ajustes_camion_aplicados DROP COLUMN delta');
+    db.execute(
+      "INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) "
+      "VALUES ('aj-1', 'AC-000001', 'de antes', '2026-10-05T18:00:00.000Z')",
+    );
+
+    aplicarEsquemaLocal(db);
+
+    final fila = db.select('SELECT * FROM ajustes_camion_aplicados').single;
+    expect(fila['folio'], equals('AC-000001'), reason: 'no se pierde la fila');
+    expect(fila['producto_id'], isNull);
+    expect(fila['delta'], isNull);
+  });
+
   test('aplicarlo dos veces no truena', () {
     // Es lo que pasa en cada arranque de la app.
     aplicarEsquemaLocal(db);

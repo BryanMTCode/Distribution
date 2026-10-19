@@ -316,6 +316,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Lo que trae, por familia, con lo vendido ya descontado.",
             ),
             Punto(
+                "ajustes_de_la_oficina_del_dia", "Lo que la oficina le ajustó hoy",
+                "En el panel, Ajustar inventario: cuenta el camión de este vendedor, sube "
+                "un artículo y baja otro. En el teléfono, sincroniza y abre «Mi camión».",
+                "Arriba dice «Hoy la oficina hizo 2 ajustes a tu camión», cada artículo con "
+                "lo que cambió («+24 PZA», lo que bajó en rojo) y la nota una vez. Con más "
+                "de cinco, «Ver los N cambios» los enseña todos con su folio. Al día "
+                "siguiente el aviso ya no sale (ADR 0002 §145).",
+                desde="+48",
+            ),
+            Punto(
                 "devolver_a_bodega", "Devolver a la bodega",
                 "En «Mi camión», el botón de bodega → algunos productos o «Todo el "
                 "camión» → «Registrar la devolución».",

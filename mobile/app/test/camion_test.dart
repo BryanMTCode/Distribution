@@ -143,10 +143,12 @@ void main() {
     expect(textoQueContiene('Sopa de fideo'), findsNothing);
   });
 
-  testWidgets('AVISA CUANDO LA OFICINA AJUSTÓ EL CAMIÓN, con su nota', (tester) async {
+  testWidgets('AVISA CUANDO LA OFICINA AJUSTÓ EL CAMIÓN, con qué cambió y su nota',
+      (tester) async {
     // Gerencia puede corregir el inventario del camión desde el panel. Si solo
     // cambiara el número, el vendedor vería 12 donde ayer había 30 y no sabría si
-    // se lo ajustaron o si la app perdió una carga.
+    // se lo ajustaron o si la app perdió una carga. Y «que le muestre qué fue lo
+    // que cambió» (ADR 0002 §145): el artículo y cuánto, no solo un folio.
     await montarApp(
       tester,
       credencial: credencialDelServidor(),
@@ -158,19 +160,109 @@ void main() {
           cargada: 240,
           actual: 12,
         );
+        // Del mismo día que el reloj de la prueba (24 de septiembre).
         base.db.execute(
-          "INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) "
+          'INSERT INTO ajustes_camion_aplicados '
+          '  (ajuste_id, folio, nota, aplicado_en, producto_id, delta) '
           "VALUES ('aj-1', 'AC-000001', 'Juan reportó que trae 12, no 30', "
-          "        '2026-10-05T18:00:00Z')",
+          "        '${relojDePrueba().toUtc().toIso8601String()}', 'prod-SOPA-70G', -18)",
         );
       },
     );
     await entrarCon(tester, pinCorrecto);
     await abrirCamion(tester);
 
-    expect(find.byKey(const Key('aviso_ajustes_oficina')), findsOneWidget);
-    expect(textoQueContiene('La oficina ajustó tu camión'), findsOneWidget);
-    expect(textoQueContiene('Juan reportó que trae 12, no 30'), findsOneWidget);
+    final aviso = find.byKey(const Key('aviso_ajustes_oficina'));
+    Finder enElAviso(String texto) =>
+        find.descendant(of: aviso, matching: textoQueContiene(texto));
+    expect(aviso, findsOneWidget);
+    expect(enElAviso('Hoy la oficina ajustó tu camión'), findsOneWidget);
+    expect(enElAviso('Sopa de fideo'), findsOneWidget);
+    expect(enElAviso('-18 PZA'), findsOneWidget);
+    expect(enElAviso('Juan reportó que trae 12, no 30'), findsOneWidget);
+  });
+
+  testWidgets('un conteo de muchos artículos enseña cinco y los demás en «Ver» (§145)',
+      (tester) async {
+    // Un conteo de arranque toca decenas de artículos: el aviso no puede empujar
+    // el inventario fuera de la pantalla, pero todo lo que cambió se puede ver.
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        final hoy = relojDePrueba().toUtc().toIso8601String();
+        for (var i = 1; i <= 7; i++) {
+          sembrarEnElCamion(
+            base,
+            sku: 'ART-$i',
+            nombre: 'Artículo $i',
+            cargada: 0,
+            actual: i * 10,
+          );
+          base.db.execute(
+            'INSERT INTO ajustes_camion_aplicados '
+            '  (ajuste_id, folio, nota, aplicado_en, producto_id, delta) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            ['aj-$i', 'AC-00000$i', 'Conteo para arrancar la operación', hoy,
+             'prod-ART-$i', i * 10],
+          );
+        }
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirCamion(tester);
+
+    final aviso = find.byKey(const Key('aviso_ajustes_oficina'));
+    expect(
+      find.descendant(of: aviso, matching: textoQueContiene('hizo 7 ajustes')),
+      findsOneWidget,
+    );
+    // La nota, una vez aunque venga en los siete.
+    expect(
+      find.descendant(of: aviso, matching: textoQueContiene('Conteo para arrancar')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: aviso, matching: textoQueContiene('+70 PZA')),
+        findsOneWidget);
+    expect(find.descendant(of: aviso, matching: textoQueContiene('+10 PZA')),
+        findsNothing);
+
+    await tester.tap(find.byKey(const Key('boton_ver_ajustes_oficina')));
+    await tester.pumpAndSettle();
+
+    final lista = find.byKey(const Key('lista_ajustes_oficina'));
+    expect(lista, findsOneWidget);
+    expect(find.descendant(of: lista, matching: textoQueContiene('+10 PZA')),
+        findsOneWidget);
+    expect(find.descendant(of: lista, matching: textoQueContiene('AC-000001')),
+        findsOneWidget);
+  });
+
+  testWidgets('el aviso de un ajuste de ayer ya no sale (ADR 0002 §145)', (tester) async {
+    // «Que solo se le muestre ese día al vendedor, no de manera permanente.»
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) {
+        sembrarEnElCamion(
+          base,
+          sku: 'SOPA-70G',
+          nombre: 'Sopa de fideo',
+          cargada: 240,
+          actual: 12,
+        );
+        final ayer = relojDePrueba().subtract(const Duration(days: 1));
+        base.db.execute(
+          "INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) "
+          "VALUES ('aj-1', 'AC-000001', 'el de ayer', '${ayer.toUtc().toIso8601String()}')",
+        );
+      },
+    );
+    await entrarCon(tester, pinCorrecto);
+    await abrirCamion(tester);
+
+    expect(find.byKey(const Key('aviso_ajustes_oficina')), findsNothing);
+    expect(textoQueContiene('el de ayer'), findsNothing);
   });
 
   testWidgets('sin ajustes no estorba con el aviso', (tester) async {

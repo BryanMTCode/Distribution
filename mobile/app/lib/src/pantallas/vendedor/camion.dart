@@ -93,46 +93,11 @@ class _EstadoCamion extends ConsumerState<PantallaCamion>
 
           // El aviso de los ajustes de la oficina va ARRIBA del resumen, porque la
           // pregunta que trae al vendedor a esta pantalla es «¿por qué dice 12?».
+          // Solo los de hoy, y diciendo qué artículo cambió y cuánto (§145).
           if (ajustes.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Container(
-                key: const Key('aviso_ajustes_oficina'),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colores.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.inventory_2_outlined,
-                            size: 18, color: colores.outline),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            ajustes.length == 1
-                                ? 'La oficina ajustó tu camión'
-                                : 'La oficina hizo ${ajustes.length} ajustes a tu camión',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    for (final a in ajustes)
-                      if (a.nota != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            '${a.folio ?? ''} «${a.nota}»',
-                            style: TextStyle(fontSize: 12, color: colores.outline),
-                          ),
-                        ),
-                  ],
-                ),
-              ),
+              child: _AvisoDeAjustes(ajustes: ajustes),
             ),
 
           // El resumen va arriba porque es lo que se mira de reojo: cuántos
@@ -300,5 +265,158 @@ class _Renglon extends StatelessWidget {
     final enteros = milesimos ~/ 1000;
     final resto = (milesimos % 1000).toString().padLeft(3, '0');
     return '$enteros.$resto';
+  }
+}
+
+/// «Hoy la oficina ajustó tu camión», con lo que cambió renglón por renglón.
+///
+/// Se ven los primeros [_aLaVista]; un conteo de arranque puede tocar cien
+/// artículos, y cien renglones aquí empujarían el inventario fuera de la
+/// pantalla. Los demás, con «Ver los N cambios».
+class _AvisoDeAjustes extends StatelessWidget {
+  const _AvisoDeAjustes({required this.ajustes});
+
+  static const _aLaVista = 5;
+
+  final List<AjusteDeOficina> ajustes;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    // La nota suele ser la misma para todo un conteo: se dice una vez.
+    final notas = {
+      for (final a in ajustes)
+        if (a.nota != null && a.nota!.trim().isNotEmpty) a.nota!.trim(),
+    };
+
+    return Container(
+      key: const Key('aviso_ajustes_oficina'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colores.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.inventory_2_outlined, size: 18, color: colores.outline),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  ajustes.length == 1
+                      ? 'Hoy la oficina ajustó tu camión'
+                      : 'Hoy la oficina hizo ${ajustes.length} ajustes a tu camión',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (final a in ajustes.take(_aLaVista)) _RenglonDeAjuste(ajuste: a),
+          if (ajustes.length > _aLaVista)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('boton_ver_ajustes_oficina'),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _verTodos(context),
+                child: Text('Ver los ${ajustes.length} cambios'),
+              ),
+            ),
+          for (final nota in notas)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Nota de la oficina: «$nota»',
+                style: TextStyle(fontSize: 12, color: colores.outline),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _verTodos(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, desplazador) => ListView(
+          key: const Key('lista_ajustes_oficina'),
+          controller: desplazador,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Text(
+              'Lo que la oficina ajustó hoy',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final a in ajustes) _RenglonDeAjuste(ajuste: a, conFolio: true),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// «Sopa de fideo 70 g ······ +24 PZA». Lo que bajó, en rojo.
+class _RenglonDeAjuste extends StatelessWidget {
+  const _RenglonDeAjuste({required this.ajuste, this.conFolio = false});
+
+  final AjusteDeOficina ajuste;
+  final bool conFolio;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final cambio = ajuste.cambio;
+    final baja = (ajuste.delta?.milesimos ?? 0) < 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // Sin artículo: llegó antes de §145, o el catálogo del
+                  // teléfono todavía no lo conoce.
+                  ajuste.producto ??
+                      (cambio == null ? 'Un ajuste' : 'Un artículo nuevo'),
+                  style: const TextStyle(fontSize: 13),
+                ),
+                if (conFolio && ajuste.folio != null)
+                  Text(
+                    ajuste.folio!,
+                    style: TextStyle(fontSize: 11, color: colores.outline),
+                  ),
+              ],
+            ),
+          ),
+          if (cambio != null) ...[
+            const SizedBox(width: 8),
+            Text(
+              cambio,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: baja ? colores.error : null,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

@@ -6444,3 +6444,24 @@ tiene instalada cada vendedor?»
   compila en la PC de la oficina y el servidor solo sabe lo que los teléfonos le
   dicen.
 - Las versiones se comparan por número («0.1.0+47» va después de «0.1.0+9»).
+
+## 145. El aviso de los ajustes de la oficina: solo ese día, y qué cambió
+
+**Decisión (octubre 2026).** «Quiero que cuando se modifique un inventario, como
+un camión, solo se le muestre ese día al vendedor, no que quede el mensaje de
+manera permanente», «y que le muestre qué fue lo que cambió».
+
+- **Solo los del día.** El aviso «La oficina ajustó tu camión» de «Mi camión»
+  sale con los ajustes que el teléfono aplicó hoy —el mismo día operativo que
+  estampa las ventas— y al día siguiente ya no. El registro de lo aplicado
+  (`ajustes_camion_aplicados`) se queda: es lo que impide sumar dos veces el
+  mismo ajuste; lo que se filtra es el aviso.
+- **Qué cambió.** El teléfono guarda ahora, de cada ajuste, el artículo y la
+  diferencia (`producto_id`, `delta`; nulos en los de antes), y el aviso los
+  dice renglón por renglón: «Sopa de fideo 70 g · +24 PZA»; lo que bajó, en
+  rojo. La nota se dice una vez aunque venga en todo un conteo.
+- **Un conteo grande no tapa el camión.** Se ven los primeros cinco; los demás,
+  con «Ver los N cambios», que los enseña todos con su folio.
+- Aplica a todo lo que la oficina le manda al camión como ajuste: el conteo
+  (§142), mover mercancía (§135) y el ajuste de uno por uno.
+

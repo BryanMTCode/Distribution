@@ -82,6 +82,18 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
     'reprogramada_para',
     'ALTER TABLE no_drops ADD COLUMN reprogramada_para TEXT',
   ),
+  // Qué cambió en cada ajuste de la oficina, para decírselo al vendedor (ADR
+  // 0002 §145).
+  (
+    'ajustes_camion_aplicados',
+    'producto_id',
+    'ALTER TABLE ajustes_camion_aplicados ADD COLUMN producto_id TEXT',
+  ),
+  (
+    'ajustes_camion_aplicados',
+    'delta',
+    'ALTER TABLE ajustes_camion_aplicados ADD COLUMN delta REAL',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

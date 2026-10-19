@@ -1005,13 +1005,16 @@ class AplicadorDeltas {
     // La marca se escribe aunque el renglón no existiera: lo que importa es no
     // volver a aplicar este ajuste si el delta llega otra vez.
     _db.execute(
-      'INSERT INTO ajustes_camion_aplicados (ajuste_id, folio, nota, aplicado_en) '
-      'VALUES (?, ?, ?, ?)',
+      'INSERT INTO ajustes_camion_aplicados '
+      '  (ajuste_id, folio, nota, aplicado_en, producto_id, delta) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
       [
         delta.entidadId,
         a['folio'] as String?,
         a['nota'] as String?,
         recibidoEn,
+        producto,
+        cantidad.milesimos / 1000,
       ],
     );
     return true;

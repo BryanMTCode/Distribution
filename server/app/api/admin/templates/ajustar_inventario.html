@@ -95,7 +95,7 @@
   <div class="campo" style="margin-top:12px; max-width:560px">
     <label for="nota">Nota del conteo</label>
     <input type="text" id="nota" name="nota" value="{{ nota }}" style="width:100%" required>
-    <div class="ayuda">Va en cada ajuste{% if elegido.tipo == 'camion' %} y el vendedor la ve en su teléfono{% endif %}.</div>
+    <div class="ayuda">Va en cada ajuste{% if elegido.tipo == 'camion' %}. Ese día, el vendedor la ve en «Mi camión» con lo que cambió de cada artículo{% endif %}.</div>
   </div>
   <button type="submit" id="boton_guardar_conteo" style="margin-top:12px">
     Guardar el conteo de {{ elegido.nombre }}

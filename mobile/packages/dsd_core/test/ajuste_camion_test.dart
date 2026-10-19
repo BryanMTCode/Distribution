@@ -191,6 +191,20 @@ void main() {
     expect(fila['nota'], equals('se contó con él por teléfono'));
   });
 
+  test('se guarda qué artículo cambió y cuánto, para el aviso de «Mi camión» (§145)', () {
+    // «Y que le muestre qué fue lo que cambió»: con solo el folio y la nota el
+    // vendedor sabía que algo cambió, pero no qué renglón.
+    aplicar(ajuste('aj-8', '-18.000'));
+    aplicar(ajuste('aj-9', '24.500'));
+
+    final filas = db.select(
+      'SELECT ajuste_id, producto_id, delta FROM ajustes_camion_aplicados '
+      ' ORDER BY ajuste_id',
+    );
+    expect(filas.map((f) => f['producto_id']), equals([_atun, _atun]));
+    expect(filas.map((f) => f['delta']), equals([-18.0, 24.5]));
+  });
+
   test('el ajuste no cae en deltas_desconocidos', () {
     final r = aplicador.aplicar(
       [ajuste('aj-8', '-1.000')],

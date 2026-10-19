@@ -131,6 +131,7 @@ la bodega sube cuando alguien la cuenta.
 | **Ajustar el inventario de una bodega o un camión contando**: todo el catálogo a la vista, se escribe lo que hay en cajas y piezas, todo o nada, y el del camión le llega al teléfono (§142) | ✅ 5 pruebas del servidor, 2 de Dart |
 | **La ruta del vendedor arriba** («Ruta 1101») y **confirmar antes de quitar** la impresora o un renglón (§143) | ✅ 1 prueba del servidor, 7 de widget |
 | **Qué versión de la app trae cada vendedor**: el teléfono la dice también al bajar, y Teléfonos marca la que va atrás (§144) | ✅ 3 pruebas del servidor, 2 de Dart |
+| **El aviso de los ajustes de la oficina, solo ese día y diciendo qué cambió**: artículo y «+24 PZA» en «Mi camión»; al día siguiente ya no sale (§145) | ✅ 2 pruebas de Dart, 3 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
