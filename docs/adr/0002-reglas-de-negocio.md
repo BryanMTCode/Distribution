@@ -6297,3 +6297,38 @@ Tres borrados del panel caían ahí (migración 0065):
 
 Cada uno tiene su prueba **con el rol de producción** (`test_rls.py`), que es la
 que faltaba.
+
+## 139. La impresora Bluetooth de verdad (EC Line EC-MP200)
+
+**Decisión (octubre 2026).** «Ya tengo la impresora, ¿cómo la puedo probar?»
+Hasta aquí la app solo tenía la impresora **simulada** (la de la interfaz
+`Impresora`, arriba): guardaba el ticket en un archivo y decía «salió». Ahora habla con la
+térmica de verdad.
+
+- **Cómo.** Las térmicas portátiles de 58 mm hablan el perfil serial de Bluetooth
+  (SPP). Del lado de Android (`ImpresoraBluetooth.kt`, canal `dsd/impresora`) se
+  abre un socket RFCOMM con la impresora **ya emparejada** en los Ajustes del
+  teléfono, se mandan los bytes ESC/POS de a 256 y se cierra con un respiro para
+  que termine de imprimir. Si el camino normal no conecta se prueba el inseguro y
+  el canal 1 directo, que es como contestan varias térmicas baratas. El ticket no
+  cambia: lo sigue armando `dsd_core`, probado byte por byte.
+- **Permisos.** Hasta Android 11, `BLUETOOTH` (al instalar). Desde Android 12,
+  `BLUETOOTH_CONNECT`, que la app pide la primera vez que se busca o se usa la
+  impresora. No se pide escaneo ni ubicación: solo se usan las ya emparejadas.
+- **Elegirla y probarla.** En «Mi ruta» → menú → **«Impresora»**: «Buscar
+  impresoras» lista las emparejadas (las que se anuncian como impresora,
+  primero); se toca la del camión y queda guardada **en el teléfono**
+  (`sync_estado`), no en el vendedor. «Imprimir una prueba» saca un ticket con el
+  ancho del papel (32 números en una línea), los acentos y un total.
+- **Sin elegir, ninguna.** Antes, la simulada decía «salió» sin papel y marcaba
+  la venta como impresa. Ahora sin impresora elegida el ticket dice «Este equipo
+  no tiene impresora configurada: elígela en el menú de «Mi ruta» →
+  «Impresora»», y se puede mandar por WhatsApp. Solo el modo demo sigue con la
+  simulada.
+- **Lo que el teléfono contesta**, dicho para el vendedor: apagada o lejos
+  («no contestó: revisa que esté encendida, con batería y cerca»), Bluetooth
+  apagado, sin permiso (con la ruta en Ajustes), o se cortó a media impresión.
+  Sin papel no se detecta: la impresora no lo avisa por este camino.
+- **El encabezado del ticket** decía los datos de ejemplo («Distribuidora El
+  Ñandú», una dirección y un teléfono inventados). Ahora dice «Distribuciones
+  SE»; la dirección y el teléfono se agregan cuando la dirección los dé.

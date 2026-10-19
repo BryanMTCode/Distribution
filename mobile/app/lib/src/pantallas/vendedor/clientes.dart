@@ -20,6 +20,7 @@ import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
+import '../impresora.dart';
 import 'alta_cliente.dart';
 import 'camion.dart';
 import 'catalogo.dart';
@@ -215,6 +216,10 @@ class PantallaClientes extends ConsumerWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const PantallaMerma()),
                 );
+              } else if (opcion == 'impresora') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const PantallaImpresora()),
+                );
               } else if (opcion == 'salir') {
                 ref.read(sesionProvider.notifier).salir();
               }
@@ -226,6 +231,16 @@ class PantallaClientes extends ConsumerWidget {
                 child: ListTile(
                   leading: Icon(Icons.delete_outline),
                   title: Text('Registrar merma'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              // La impresora del camión: elegirla y probarla (ADR 0002 §139).
+              PopupMenuItem(
+                value: 'impresora',
+                key: Key('boton_impresora'),
+                child: ListTile(
+                  leading: Icon(Icons.print_outlined),
+                  title: Text('Impresora'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

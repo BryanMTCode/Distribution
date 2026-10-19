@@ -329,6 +329,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "con «Ver hoy».",
             ),
             Punto(
+                "impresora_real", "Elegir la impresora y probarla",
+                "Prende la impresora y emparéjala en Ajustes del teléfono → Bluetooth "
+                "(clave 0000 o 1234). En la app: «Mi ruta» → menú (⋮) → «Impresora» → "
+                "«Buscar impresoras» → toca la tuya → «Imprimir una prueba».",
+                "Sale un ticket de PRUEBA con los 32 números en una sola línea, los "
+                "acentos legibles y un total. Luego una venta: «Imprimir» saca el ticket "
+                "en papel. Con la impresora apagada dice que no contestó (ADR 0002 §139).",
+                desde="+45",
+            ),
+            Punto(
                 "corte_vendedor", "Hacer el corte del día",
                 "En «Mi día», «Hacer el corte del día»: revisa lo que entregas —ya no se "
                 "escribe, la app lo calcula de lo vendido en efectivo— → «Confirmar el "

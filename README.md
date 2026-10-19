@@ -125,6 +125,7 @@ la bodega sube cuando alguien la cuenta.
 | **La contraseña que se cambia en el panel entra sin volver a vincular**: con señal, el teléfono la confirma con el servidor al teclearla; al sincronizar trae la vigente y la vieja deja de servir. Las contraseñas no se pueden ver: solo se guarda su hash (§136) | ✅ 1 prueba del servidor, 4 de widget |
 | **Un vendedor recién creado se elimina** aunque su teléfono ya haya dado de alta una tienda o tenga operaciones rechazadas; lo que sí lo impide se nombra (§137) | ✅ 3 pruebas |
 | **Lo que el panel borra, también con el rol de producción** (RLS): el usuario con camión, la tienda sin historia y la visita sin venta ya se borran de verdad (§138) | ✅ 3 pruebas con `dsd_api` |
+| **La impresora Bluetooth de verdad** (EC-MP200, SPP): elegirla entre las emparejadas, imprimir una prueba, y que la usen la venta y el corte; sin elegir, ninguna (§139) | ✅ 11 pruebas de widget; el Kotlin compila |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |

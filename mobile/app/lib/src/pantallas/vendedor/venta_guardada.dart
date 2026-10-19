@@ -91,7 +91,8 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
       case ImpresoraDesconectada():
         _falla('La impresora no está conectada. Revisa que esté encendida.');
       case ImpresoraNoConfigurada():
-        _falla('Este equipo no tiene impresora configurada.');
+        _falla('Este equipo no tiene impresora configurada: elígela en el menú '
+            'de «Mi ruta» → «Impresora».');
       case ImpresionFallida(:final detalle):
         _falla('No se pudo imprimir: $detalle');
     }

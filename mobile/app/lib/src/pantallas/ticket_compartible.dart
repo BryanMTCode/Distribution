@@ -50,7 +50,8 @@ class PantallaTicketCompartible extends ConsumerWidget {
       ImpresionHecha() => 'Listo: el ticket salió en la impresora.',
       ImpresoraSinPapel() => 'La impresora no tiene papel. Pon papel y vuelve a intentar.',
       ImpresoraDesconectada() => 'La impresora no está conectada. Revisa que esté encendida.',
-      ImpresoraNoConfigurada() => 'Este equipo no tiene impresora configurada.',
+      ImpresoraNoConfigurada() => 'Este equipo no tiene impresora configurada: elígela en el '
+          'menú de «Mi ruta» → «Impresora».',
       ImpresionFallida(:final detalle) => 'No se pudo imprimir: $detalle',
     };
     ScaffoldMessenger.of(context)

@@ -17,8 +17,11 @@ import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datos/impresora.dart';
+import '../datos/impresora_bluetooth.dart';
 import '../datos/repo_catalogo.dart';
 import '../datos/repo_clientes.dart';
+import '../demo.dart';
+import 'impresora.dart';
 import 'sesion.dart';
 
 final repoCatalogoProvider = Provider<RepoCatalogo>(
@@ -381,10 +384,15 @@ final cobroProvider = NotifierProvider<ControladorCobro, EstadoCobro>(
 
 /// La impresora del equipo.
 ///
-/// Hoy es la simulada: la EC Line EC-MP200 no está disponible. Cuando llegue, se
-/// sustituye ESTE provider por la implementación Bluetooth y **nada más cambia**
-/// —ni la pantalla, ni el generador del ticket, ni el registro de la impresión—.
-final impresoraProvider = Provider<Impresora>((_) => ImpresoraSimulada());
+/// La que se eligió en el menú → «Impresora», por Bluetooth (ADR 0002 §139). Sin
+/// elegir, ninguna: la simulada decía «el ticket salió» sin papel y marcaba la
+/// venta como impresa. Solo el modo demo sigue con la simulada. Ni la pantalla,
+/// ni el generador del ticket, ni el registro de la impresión cambian.
+final impresoraProvider = Provider<Impresora>((ref) {
+  final elegida = ref.watch(impresoraElegidaProvider);
+  if (elegida != null) return ImpresoraBluetooth(elegida: elegida);
+  return modoDemoDisponible ? ImpresoraSimulada() : const SinImpresora();
+});
 
 /// Los datos del negocio que van en el encabezado del ticket.
 ///
@@ -392,9 +400,7 @@ final impresoraProvider = Provider<Impresora>((_) => ImpresoraSimulada());
 /// mismo binario sirve para otra distribuidora.
 final negocioProvider = Provider<DatosDelNegocio>(
   (_) => const DatosDelNegocio(
-    nombre: 'Distribuidora El Ñandú',
-    direccion: 'Av. Hidalgo 145, Col. Centro',
-    telefono: '55 1234 5678',
+    nombre: 'Distribuciones SE',
     leyendaFinal: 'Gracias por su compra',
   ),
 );

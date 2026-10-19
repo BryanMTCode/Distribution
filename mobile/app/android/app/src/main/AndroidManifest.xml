@@ -15,6 +15,16 @@
          y capturar la ubicación a mano. -->
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
 
+    <!-- La impresora térmica por Bluetooth (ADR 0002 §139). Hasta Android 11 el
+         permiso es BLUETOOTH y se concede al instalar; desde Android 12 es
+         BLUETOOTH_CONNECT y lo pide la app la primera vez que se busca o se usa
+         la impresora. Solo impresoras ya emparejadas: sin BLUETOOTH_SCAN ni
+         ubicación para buscar. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
+
     <!-- Sincronizar necesita saber si hay red. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>

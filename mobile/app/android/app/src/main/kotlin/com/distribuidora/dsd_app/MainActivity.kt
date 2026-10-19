@@ -8,8 +8,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    // La impresora térmica por Bluetooth (ADR 0002 §139).
+    private var impresora: ImpresoraBluetooth? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        impresora = ImpresoraBluetooth(this, flutterEngine.dartExecutor.binaryMessenger)
         // La ubicación de un cliente, a la app de mapas del teléfono (ADR 0002
         // §129). Un Intent `geo:` y nada más: sin SDK de mapas dentro del APK.
         // Android ofrece las que tenga (Google Maps, Waze, Organic Maps) y
@@ -41,5 +45,16 @@ class MainActivity : FlutterActivity() {
                     resultado.success(false)
                 }
             }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        // El del Bluetooth lo atiende la impresora; los demás (la ubicación), los
+        // plugins, por el camino de siempre.
+        if (impresora?.alContestarPermiso(requestCode, grantResults) == true) return
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 }
