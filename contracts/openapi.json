@@ -1005,6 +1005,23 @@
               "default": 500,
               "title": "Limite"
             }
+          },
+          {
+            "name": "app_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Version"
+            }
           }
         ],
         "responses": {

@@ -20,7 +20,7 @@ from app.domain.sync.sobres import (
     Operacion,
     Sobre,
 )
-from app.infra.sync.ingesta import procesar_lote
+from app.infra.sync.ingesta import anotar_version_de_la_app, procesar_lote
 from app.infra.sync.manejadores import Contexto
 
 router = APIRouter(prefix="/sync", tags=["sincronización"])
@@ -284,6 +284,8 @@ async def pull(
     sesion: SesionDep,
     cursor: int = Query(default=0, ge=0),
     limite: int = Query(default=500, ge=1, le=2000),
+    # La versión de la app que trae el teléfono, para el panel (ADR 0002 §144).
+    app_version: str | None = Query(default=None, max_length=40),
 ) -> DeltaSalida:
     """Entrega los cambios posteriores al cursor.
 
@@ -308,6 +310,7 @@ async def pull(
             status.HTTP_403_FORBIDDEN,
             "sincronizar exige un token emitido para un dispositivo registrado",
         )
+    await anotar_version_de_la_app(sesion, actor.dispositivo_id, app_version)
 
     # ------------------------------------------------------------------
     # ¿Le alcanza el cursor al dispositivo?

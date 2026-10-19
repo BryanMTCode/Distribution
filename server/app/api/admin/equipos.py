@@ -158,6 +158,23 @@ async def listar(
             )
         )
 
+    # La versión de la app de cada teléfono, contra la más nueva que ya trae
+    # alguno (ADR 0002 §144): la que va atrás se marca. No hay otra fuente de
+    # «la última»: el APK se compila en la PC de la oficina y el servidor solo
+    # sabe lo que los teléfonos le dicen.
+    activos = [e for e in equipos if e["estado"] == "activo"]
+    claves = [c for c in (clave_de_version(e["app_version"]) for e in activos) if c]
+    mas_nueva = max(claves) if claves else None
+    for e in equipos:
+        clave = clave_de_version(e["app_version"])
+        e["version_vieja"] = bool(
+            mas_nueva and e["estado"] == "activo" and (clave is None or clave < mas_nueva)
+        )
+    version_mas_nueva = next(
+        (e["app_version"] for e in activos if clave_de_version(e["app_version"]) == mas_nueva),
+        None,
+    )
+
     # Los vendedores que todavía no tienen un equipo activo: son los únicos a
     # quienes tiene sentido vincular uno, y presentarlos ya filtrados evita el
     # único error que esta pantalla puede dar — «ya tiene uno activo».
@@ -196,6 +213,8 @@ async def listar(
                 and e["dias_restantes"] <= 2
             ),
             "borrados_pendientes": sum(1 for e in equipos if e["borrado_pendiente"]),
+            "version_mas_nueva": version_mas_nueva,
+            "con_version_vieja": [e for e in equipos if e["version_vieja"]],
             "aviso": aviso,
             "error": error,
         },
@@ -623,3 +642,16 @@ async def cancelar_borrado(
     if not actualizadas:
         return _volver(error="No hay orden que cancelar: el teléfono ya borró.")
     return _volver(aviso="Orden de borrado cancelada. El equipo sigue suspendido.")
+
+
+def clave_de_version(version: str | None) -> tuple[int, ...] | None:
+    """«0.1.0+47» → (0, 1, 0, 47), para comparar versiones. `None` si no se
+    puede leer: un teléfono que nunca dijo la suya."""
+    if not version:
+        return None
+    nombre, _, compilacion = version.strip().partition("+")
+    try:
+        partes = [int(x) for x in nombre.split(".")]
+        return (*partes, int(compilacion or 0))
+    except ValueError:
+        return None

@@ -230,10 +230,20 @@ class ClienteSync {
     );
   }
 
-  Future<RespuestaPull> pull({required int cursor, int limite = 500}) async {
+  Future<RespuestaPull> pull({
+    required int cursor,
+    int limite = 500,
+    String? appVersion,
+  }) async {
     final respuesta = await _transporte.obtener(
       '/v1/sync/pull',
-      parametros: {'cursor': '$cursor', 'limite': '$limite'},
+      parametros: {
+        'cursor': '$cursor',
+        'limite': '$limite',
+        // Al bajar también: un teléfono recién actualizado que todavía no vende
+        // nada la dice igual, y el panel sabe qué versión trae (ADR 0002 §144).
+        if (appVersion != null) 'app_version': appVersion,
+      },
     );
     _revisar(respuesta);
     return RespuestaPull.deJson(

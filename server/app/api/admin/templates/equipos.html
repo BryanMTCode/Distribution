@@ -94,6 +94,19 @@
   {% endif %}
 {% endif %}
 
+{% if version_mas_nueva %}
+<div class="aviso-caja {% if con_version_vieja %}aviso{% else %}bien{% endif %}" id="aviso_versiones">
+  {% if con_version_vieja %}
+  <strong>{{ con_version_vieja|length }} teléfono(s) con una versión anterior a la {{ version_mas_nueva }}:</strong>
+  {% for e in con_version_vieja %}{{ e.usuario_nombre }} ({{ e.app_version or 'sin reportar' }}){% if not loop.last %}, {% endif %}{% endfor %}.
+  Instálales el APK nuevo encima, sin desinstalar. La versión se actualiza aquí
+  cuando el teléfono sincroniza.
+  {% else %}
+  Todos los teléfonos activos traen la versión {{ version_mas_nueva }}.
+  {% endif %}
+</div>
+{% endif %}
+
 <h2>Por equipo</h2>
 <div class="tabla-marco">
 <table>
@@ -115,9 +128,11 @@
         {% if e.clave_vinculo %}<br><span class="sutil">clave</span>
           <span class="mono" id="clave_{{ e.id }}">{{ e.clave_vinculo }}</span>{% endif %}
         {% if e.modelo %}<br><span class="sutil">{{ e.modelo }}</span>{% endif %}
-        {% if e.app_version %}
-          <br><span class="sutil mono">app {{ e.app_version }}</span>
-        {% endif %}
+        {# La versión de la app, a la vista: la que va atrás, en rojo (§144). #}
+        <br><span class="mono {% if e.version_vieja %}version-vieja{% else %}sutil{% endif %}"
+              id="version_{{ e.usuario_codigo }}"
+              {% if e.version_vieja %}style="color:var(--alerta); font-weight:600"{% endif %}>
+          app {{ e.app_version or 'sin reportar' }}{% if e.version_vieja %} · vieja{% endif %}</span>
       </td>
       <td>
         {{ e.usuario_nombre }}<br>

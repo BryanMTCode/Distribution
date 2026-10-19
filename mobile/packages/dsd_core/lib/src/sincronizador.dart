@@ -369,7 +369,7 @@ class Sincronizador {
     while (vueltas < maxTandas) {
       final RespuestaPull delta;
       try {
-        delta = await _cliente.pull(cursor: cursor);
+        delta = await _cliente.pull(cursor: cursor, appVersion: appVersion);
       } on ErrorDeRed catch (e) {
         return ResultadoSincronizacion(
           fin: FinDeSync.sinRed,

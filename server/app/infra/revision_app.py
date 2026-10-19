@@ -977,6 +977,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+44",
             ),
             Punto(
+                "panel_version_de_cada_telefono", "Qué versión trae cada vendedor",
+                "Instala la versión nueva en un teléfono y sincroniza (aunque no haya "
+                "vendido nada). Luego Administración → Teléfonos.",
+                "Cada equipo dice «app 0.1.0+…» junto al vendedor; los que van atrás de la "
+                "más nueva salen en rojo con «· vieja», y arriba dice a quién falta "
+                "instalarle el APK (ADR 0002 §144).",
+                desde="+47",
+            ),
+            Punto(
                 "panel_usuarios_mas", "Las acciones de cada usuario",
                 "Administración → Usuarios y rutas: toca «Más ▾» en un vendedor.",
                 "Cada renglón mide una línea con «Editar» y «Más ▾»; ahí se abren la "

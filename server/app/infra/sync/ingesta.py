@@ -57,13 +57,31 @@ log = logging.getLogger("dsd.sync")
 # recibida, y el tablero lo DICE: muestra la antigüedad de cada cifra.
 RETRASO_TABLERO_SEG = 60
 
-__all__ = ["procesar_lote", "reprocesar_cuarentena"]
+__all__ = ["anotar_version_de_la_app", "procesar_lote", "reprocesar_cuarentena"]
+
+
+async def anotar_version_de_la_app(
+    sesion: AsyncSession, dispositivo_id: uuid.UUID, app_version: str | None
+) -> None:
+    """La versión de la app que el teléfono dice traer, en su equipo (ADR 0002
+    §144). Llega al subir Y al bajar: un teléfono recién actualizado que todavía
+    no vende nada también la dice, y es lo que el panel muestra en Teléfonos."""
+    if not app_version:
+        return
+    await sesion.execute(
+        text(
+            "UPDATE dispositivos SET app_version = :v "
+            " WHERE id = :d AND app_version IS DISTINCT FROM :v"
+        ),
+        {"d": dispositivo_id, "v": app_version[:40]},
+    )
 
 
 async def _registrar_lote(
     sesion: AsyncSession, lote_id: uuid.UUID, ctx: Contexto, total: int, app_version: str | None
 ) -> None:
     """Registra el lote. Idempotente: reenviarlo no crea un segundo renglón."""
+    await anotar_version_de_la_app(sesion, ctx.dispositivo_id, app_version)
     await sesion.execute(
         text(
             """

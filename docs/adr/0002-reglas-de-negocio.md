@@ -6425,3 +6425,22 @@ uno: abrir cada artículo, «Ajustar», nota.
 
 De paso: `contracts/openapi.json` llevaba tiempo sin regenerarse (24 rutas de 74)
 y la revisión de CI lo habría marcado; se regeneró.
+
+## 144. Qué versión de la app trae cada vendedor
+
+**Decisión (octubre 2026).** «¿Hay forma de poner en el dashboard qué versión
+tiene instalada cada vendedor?»
+
+- **El teléfono la dice al bajar, no solo al subir.** Desde el principio la
+  mandaba con cada lote de ventas (`sync_lotes.app_version`), y el equipo
+  guardaba la de cuando se registró. Un teléfono recién actualizado que todavía
+  no vendía nada seguía viéndose con la vieja. Ahora el pull también la lleva
+  (`app_version`), y la del equipo (`dispositivos.app_version`) se pone al día en
+  cada sincronización, al subir y al bajar.
+- **Teléfonos** la muestra en cada equipo, junto al vendedor, y marca en rojo
+  («· vieja») la que va atrás de la **más nueva que ya trae algún teléfono**
+  activo. Arriba, un aviso dice a quién falta instalarle el APK; si todos van al
+  día, lo dice también. No hay otra forma de saber cuál es «la última»: el APK se
+  compila en la PC de la oficina y el servidor solo sabe lo que los teléfonos le
+  dicen.
+- Las versiones se comparan por número («0.1.0+47» va después de «0.1.0+9»).
