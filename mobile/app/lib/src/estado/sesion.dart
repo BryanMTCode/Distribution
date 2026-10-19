@@ -104,11 +104,16 @@ Future<void> guardarCredencialAlDia(
   if (guardada == null || guardada.usuarioId != nueva.usuarioId) return;
   final igual = guardada.passwordHash == nueva.passwordHash &&
       guardada.codigo == nueva.codigo &&
+      // La ruta que la oficina le cambió llega igual (ADR 0002 §143).
+      _mismasRutas(guardada.rutas, nueva.rutas) &&
       (!renovarVigencia || guardada.validaHasta == nueva.validaHasta);
   if (igual) return;
   await repo.guardar(cruda);
   ref.invalidate(credencialGuardadaProvider);
 }
+
+bool _mismasRutas(List<RutaAsignada> a, List<RutaAsignada> b) =>
+    a.length == b.length && [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((x) => x);
 
 final repoClientesProvider = Provider<RepoClientes>(
   (ref) => RepoClientes(ref.watch(baseLocalProvider).db),

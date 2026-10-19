@@ -14,6 +14,7 @@ import '../datos/impresora_bluetooth.dart';
 import '../estado/carrito.dart';
 import '../estado/impresora.dart';
 import '../estado/sesion.dart';
+import 'confirmar.dart';
 
 /// Para las pruebas: de dónde salen las emparejadas.
 final buscadorDeImpresorasProvider = Provider<Future<Emparejadas> Function()>(
@@ -212,7 +213,16 @@ class _EstadoImpresora extends ConsumerState<PantallaImpresora> {
           if (elegida != null)
             TextButton(
               key: const Key('boton_olvidar_impresora'),
-              onPressed: () => ref.read(impresoraElegidaProvider.notifier).olvidar(),
+              onPressed: () async {
+                final si = await confirmarAntesDeQuitar(
+                  context,
+                  titulo: '¿Olvidar la impresora ${elegida.nombre}?',
+                  detalle: 'Los tickets ya no se imprimen en ella hasta que la vuelvas a '
+                      'elegir.',
+                  accion: 'Olvidar',
+                );
+                if (si) ref.read(impresoraElegidaProvider.notifier).olvidar();
+              },
               child: const Text('Olvidar esta impresora'),
             ),
           const Divider(height: 32),

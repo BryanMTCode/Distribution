@@ -175,6 +175,7 @@ void main() {
 
       await capturar(tester, cuantas: '3');
       await tocar(tester, const Key('quitar_p-sopa'));
+      await tocar(tester, const Key('confirmar_quitar_si')); // §143
       await escoger(tester, const Key('motivo_de_merma'), 'Empaque roto');
       await tocar(tester, const Key('registrar_merma'));
 

@@ -94,6 +94,8 @@ async def test_credencial_local_trae_el_hash_y_los_parametros(cliente, semilla, 
     assert credencial["argon2"]["memoria_kib"] == 65536
     assert credencial["rol"] == "vendedor"
     assert "ventas.crear" in credencial["permisos"]
+    # Su ruta, para el título de la app (ADR 0002 §143).
+    assert credencial["rutas"] == [{"codigo": "R04", "nombre": "Ruta 4"}]
     # Vencimiento explícito: un equipo extraviado no opera indefinidamente.
     assert credencial["valida_hasta"].endswith("Z")
 

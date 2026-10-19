@@ -123,7 +123,17 @@ void main() {
         (tester) async {
       await abrirPedido(tester, cajas: 1);
       await tocar(tester, const Key('linea_quitar_p-sopa|CAJA'));
+      // Antes de quitar, la segunda confirmación (ADR 0002 §143).
+      expect(find.text('¿Quitar Sopa de fideo 70 g del pedido?'), findsOneWidget);
+      await tocar(tester, const Key('confirmar_quitar_si'));
       expect(find.byKey(const Key('pedido_vacio')), findsOneWidget);
+    });
+
+    testWidgets('si no se confirma, el renglón se queda', (tester) async {
+      await abrirPedido(tester, cajas: 1);
+      await tocar(tester, const Key('linea_quitar_p-sopa|CAJA'));
+      await tocar(tester, const Key('confirmar_quitar_no'));
+      expect(find.byKey(const Key('pedido_vacio')), findsNothing);
     });
 
     testWidgets('vaciar pide confirmación', (tester) async {

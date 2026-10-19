@@ -45,6 +45,7 @@ import '../../datos/repo_clientes.dart';
 import '../../estado/mermas.dart';
 import '../familias.dart';
 import 'comunes.dart';
+import '../confirmar.dart';
 
 /// Un renglón a medio capturar: producto, presentación y cuántas.
 class _EnCaptura {
@@ -138,7 +139,12 @@ class _EstadoMerma extends ConsumerState<PantallaMerma> {
     });
   }
 
-  void _quitar(_EnCaptura renglon) {
+  Future<void> _quitar(_EnCaptura renglon) async {
+    final si = await confirmarAntesDeQuitar(
+      context,
+      titulo: '¿Quitar ${renglon.producto.nombre} de la merma?',
+    );
+    if (!si || !mounted) return;
     setState(() {
       _renglones.remove(renglon);
       renglon.liberar();

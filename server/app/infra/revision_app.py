@@ -323,6 +323,22 @@ SECCIONES: tuple[Seccion, ...] = (
                 "panel.",
             ),
             Punto(
+                "ruta_en_el_titulo", "Su ruta arriba",
+                "Entra con un vendedor que tenga ruta asignada (Usuarios y rutas) y con "
+                "señal.",
+                "Arriba dice el nombre de su ruta («Ruta 1101») en vez de «Mi ruta». Si en "
+                "el panel le cambias la ruta, al sincronizar se actualiza (ADR 0002 §143).",
+                desde="+47",
+            ),
+            Punto(
+                "confirmar_quitar", "Confirmar antes de quitar",
+                "En un pedido, toca la «×» de un renglón; luego en «Impresora», «Olvidar "
+                "esta impresora».",
+                "Cada uno pregunta antes («¿Quitar … del pedido?», «¿Olvidar la "
+                "impresora …?»): con «No» no pasa nada (ADR 0002 §143).",
+                desde="+47",
+            ),
+            Punto(
                 "mi_dia", "Mi día y los días anteriores",
                 "Botón «Mi día» (arriba).",
                 "Las ventas del día con su total; se puede ir a días anteriores y volver "

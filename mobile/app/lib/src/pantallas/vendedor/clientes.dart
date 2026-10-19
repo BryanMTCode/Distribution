@@ -35,6 +35,7 @@ class PantallaClientes extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final sesion = ref.watch(sesionProvider);
     final todos = ref.watch(clientesProvider);
     final soloHoy = ref.watch(verSoloHoyProvider);
     final buscando = ref.watch(busquedaClientesProvider).trim().isNotEmpty;
@@ -139,8 +140,17 @@ class PantallaClientes extends ConsumerWidget {
           // es lo correcto: el nombre de la pantalla se adivina, un botón
           // recortado no se puede tocar.
           children: [
-            const Flexible(
-              child: Text('Mi ruta', overflow: TextOverflow.ellipsis),
+            // La ruta que trae, «Ruta 1101» (ADR 0002 §143). De la credencial
+            // guardada, que se pone al día al renovar el acceso; sin rutas, «Mi ruta».
+            Flexible(
+              child: Text(
+                (ref.watch(credencialGuardadaProvider).valueOrNull ??
+                            (sesion is SesionAbierta ? sesion.credencial : null))
+                        ?.tituloDeLaRuta ??
+                    'Mi ruta',
+                key: const Key('titulo_ruta'),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             if (modoDemoDisponible) ...[
               const SizedBox(width: 8),

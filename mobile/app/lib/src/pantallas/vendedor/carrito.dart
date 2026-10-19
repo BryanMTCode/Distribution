@@ -22,6 +22,7 @@ import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
 import 'venta_guardada.dart';
+import '../confirmar.dart';
 
 class PantallaCarrito extends ConsumerWidget {
   const PantallaCarrito({super.key});
@@ -275,7 +276,13 @@ class _RenglonLinea extends ConsumerWidget {
                 key: Key('linea_quitar_${p.llave}'),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Quitar',
-                onPressed: () => control.quitar(p.llave),
+                onPressed: () async {
+                  final si = await confirmarAntesDeQuitar(
+                    context,
+                    titulo: '¿Quitar ${p.nombre} del pedido?',
+                  );
+                  if (si) control.quitar(p.llave);
+                },
                 icon: Icon(Icons.close, color: colores.error),
               ),
             ],

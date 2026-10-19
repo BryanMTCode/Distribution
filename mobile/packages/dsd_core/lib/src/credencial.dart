@@ -61,6 +61,21 @@ enum ResultadoLogin {
   credencialCorrupta,
 }
 
+/// Una ruta del vendedor: «R1101», «Ruta 1101» (ADR 0002 §143).
+class RutaAsignada {
+  const RutaAsignada({required this.codigo, required this.nombre});
+
+  final String codigo;
+  final String nombre;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RutaAsignada && other.codigo == codigo && other.nombre == nombre;
+
+  @override
+  int get hashCode => Object.hash(codigo, nombre);
+}
+
 /// Lo que el teléfono guarda para poder autenticar sin señal.
 class CredencialLocal {
   const CredencialLocal({
@@ -72,6 +87,7 @@ class CredencialLocal {
     required this.permisos,
     required this.validaHasta,
     this.almacenId,
+    this.rutas = const [],
   });
 
   /// Desde la respuesta de `POST /v1/auth/login`.
@@ -84,6 +100,14 @@ class CredencialLocal {
         permisos: ((json['permisos'] ?? const <Object?>[]) as List).cast<String>(),
         almacenId: json['almacen_id'] as String?,
         validaHasta: DateTime.parse(json['valida_hasta']! as String).toUtc(),
+        // Una credencial de antes de §143 no las trae: el título dice «Mi ruta».
+        rutas: [
+          for (final r in (json['rutas'] as List? ?? const []))
+            RutaAsignada(
+              codigo: (r as Map)['codigo']! as String,
+              nombre: (r['nombre'] as String?) ?? r['codigo']! as String,
+            ),
+        ],
       );
 
   final String usuarioId;
@@ -98,6 +122,13 @@ class CredencialLocal {
   final List<String> permisos;
   final String? almacenId;
   final DateTime validaHasta;
+
+  /// Las rutas que trae, para el título de su app.
+  final List<RutaAsignada> rutas;
+
+  /// «Ruta 1101», o varias separadas; «Mi ruta» si no trae ninguna.
+  String get tituloDeLaRuta =>
+      rutas.isEmpty ? 'Mi ruta' : rutas.map((r) => r.nombre).join(' · ');
 
   bool puede(String permiso) => rol == 'admin' || permisos.contains(permiso);
 

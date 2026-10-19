@@ -6403,3 +6403,25 @@ uno: abrir cada artículo, «Ajustar», nota.
   que el sistema no tenía no aparecía para vender. Lo que baja nunca crea un
   renglón negativo.
 - Pide ver y ajustar el inventario, como «Mover mercancía».
+
+## 143. La ruta del vendedor arriba, y confirmar antes de quitar
+
+**Decisión (octubre 2026).** Dos pedidos de la dirección para la app:
+
+1. **«A los vendedores, arriba donde dice Mi ruta, que diga Ruta 1101 o la que
+   tengan asignada.»** La credencial del teléfono (la del login sin señal) trae
+   ahora las rutas del vendedor —las de su alcance, `usuarios_rutas`— con su
+   código y su nombre, y el título de la pantalla principal dice el nombre:
+   «Ruta 1101»; con dos, «Ruta 1101 · Ruta 1102». Como la credencial se pone al
+   día al entrar con señal y al renovar el acceso (§136), si la oficina le cambia
+   la ruta le llega al sincronizar. Una credencial de antes, sin rutas, sigue
+   diciendo «Mi ruta» hasta que se renueve.
+2. **«Para eliminar algo, como la impresora, quiero una doble confirmación.»**
+   Quitar pide confirmar con un diálogo que nombra lo que se va y un botón que
+   dice la acción («Quitar», «Olvidar»): olvidar la impresora, quitar un renglón
+   del pedido, de la merma, de la devolución a la bodega y de la venta de
+   mayoreo. Ya lo pedían vaciar el pedido, cancelar una carga o una venta de
+   mayoreo y quitar un objetivo.
+
+De paso: `contracts/openapi.json` llevaba tiempo sin regenerarse (24 rutas de 74)
+y la revisión de CI lo habría marcado; se regeneró.

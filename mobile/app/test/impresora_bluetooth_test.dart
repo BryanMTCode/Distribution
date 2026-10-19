@@ -259,7 +259,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(textoQueContiene('La impresora no contestó'), findsOneWidget);
 
+      // Olvidarla pide una segunda confirmación (ADR 0002 §143): con «No» se queda.
+      await tester.ensureVisible(find.byKey(const Key('boton_olvidar_impresora')));
       await tester.tap(find.byKey(const Key('boton_olvidar_impresora')));
+      await tester.pumpAndSettle();
+      expect(find.text('¿Olvidar la impresora EC-MP200?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirmar_quitar_no')));
+      await tester.pumpAndSettle();
+      expect(find.text('Ninguna elegida'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('boton_olvidar_impresora')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirmar_quitar_si')));
       await tester.pumpAndSettle();
       expect(find.text('Ninguna elegida'), findsOneWidget);
     });

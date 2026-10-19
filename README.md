@@ -129,6 +129,7 @@ la bodega sube cuando alguien la cuenta.
 | **Entradas y salidas con todo a la vista**: el catálogo entero (o lo que hay en la bodega) por familia, y se escribe solo la cantidad; lo bueno se guarda y lo malo se nombra (§140) | ✅ 6 pruebas |
 | **«Mover a la derecha» en la impresora**: la EC-MP200 se comía la primera letra; el margen (`GS L`) va al mandar, después de cada reinicio, y el ancho se ajusta (§141) | ✅ 6 pruebas de Dart, 1 de widget |
 | **Ajustar el inventario de una bodega o un camión contando**: todo el catálogo a la vista, se escribe lo que hay en cajas y piezas, todo o nada, y el del camión le llega al teléfono (§142) | ✅ 5 pruebas del servidor, 2 de Dart |
+| **La ruta del vendedor arriba** («Ruta 1101») y **confirmar antes de quitar** la impresora o un renglón (§143) | ✅ 1 prueba del servidor, 7 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |

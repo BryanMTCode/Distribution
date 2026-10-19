@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.api.deps import ActorDep, SesionDep, cargar_permisos
 from app.core.config import obtener_config
@@ -41,6 +41,13 @@ class PeticionLogin(BaseModel):
     )
 
 
+class RutaAsignada(BaseModel):
+    """Una ruta del vendedor, para que su app diga cuál es («Ruta 1101»)."""
+
+    codigo: str
+    nombre: str
+
+
 class CredencialLocal(BaseModel):
     """Lo que el teléfono guarda para poder autenticar sin señal.
 
@@ -57,6 +64,9 @@ class CredencialLocal(BaseModel):
     almacen_id: uuid.UUID | None
     valida_hasta: str
     argon2: dict[str, int | str]
+    # Las rutas que trae, para el título de su app (ADR 0002 §143). Viaja con la
+    # credencial, que se pone al día al entrar y al renovar el acceso (§136).
+    rutas: list[RutaAsignada] = []
 
 
 class Perfil(BaseModel):
@@ -99,8 +109,21 @@ async def _armar_credencial(sesion, usuario: Usuario, permisos: list[str]) -> Cr
     # debe poder operar indefinidamente.
     dias = usuario.dias_max_offline or cfg.dias_max_offline
     hasta = datetime.now(UTC) + timedelta(days=dias)
+    rutas = [
+        RutaAsignada(codigo=f.codigo, nombre=f.nombre or f.codigo)
+        for f in await sesion.execute(
+            text(
+                "SELECT r.codigo, r.nombre FROM usuarios_rutas ur "
+                "  JOIN rutas r ON r.id = ur.ruta_id "
+                " WHERE ur.usuario_id = :u AND r.activo "
+                " ORDER BY r.codigo"
+            ),
+            {"u": usuario.id},
+        )
+    ]
     return CredencialLocal(
         usuario_id=usuario.id,
+        rutas=rutas,
         codigo=usuario.codigo,
         nombre=usuario.nombre,
         rol=usuario.rol_codigo,

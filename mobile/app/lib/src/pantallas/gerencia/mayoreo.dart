@@ -26,6 +26,7 @@ import '../familias.dart';
 import '../ticket_compartible.dart';
 import 'comunes.dart';
 import 'periodo.dart';
+import '../confirmar.dart';
 
 class PantallaMayoreo extends ConsumerStatefulWidget {
   const PantallaMayoreo({super.key, this.conBarra = true});
@@ -689,10 +690,17 @@ class _EstadoNuevaVenta extends ConsumerState<PantallaNuevaVentaMayoreo> {
                 IconButton(
                   tooltip: 'Quitar',
                   icon: const Icon(Icons.close),
-                  onPressed: () => setState(() {
-                    _renglones.remove(r);
-                    r.dispose();
-                  }),
+                  onPressed: () async {
+                    final si = await confirmarAntesDeQuitar(
+                      context,
+                      titulo: '¿Quitar ${r.producto.nombre} de la venta?',
+                    );
+                    if (!si || !mounted) return;
+                    setState(() {
+                      _renglones.remove(r);
+                      r.dispose();
+                    });
+                  },
                 ),
               ],
             ),
