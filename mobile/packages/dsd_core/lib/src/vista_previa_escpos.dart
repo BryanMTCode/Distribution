@@ -238,6 +238,9 @@ VistaPrevia decodificar(
         case 0x56: // GS V m — corte
           if (actual.isNotEmpty) cerrarLinea();
           i += 3;
+        case 0x4C: // GS L nL nH — margen izquierdo (§141): no cambia el texto
+        case 0x57: // GS W nL nH — ancho del área de impresión
+          i += 4;
         default:
           desconocidos.add('GS 0x${siguiente.toRadixString(16)}');
           i += 2;

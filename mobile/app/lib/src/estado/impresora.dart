@@ -7,6 +7,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datos/impresora_bluetooth.dart';
@@ -45,6 +46,13 @@ class ControladorImpresora extends Notifier<ImpresoraEmparejada?> {
     state = impresora;
   }
 
+  /// Corre lo impreso a la derecha (ADR 0002 §141), sin cambiar de impresora.
+  void ajustarMargen(int letras) {
+    final actual = state;
+    if (actual == null) return;
+    elegir(actual.conMargen(letras));
+  }
+
   void olvidar() {
     ref
         .read(baseLocalProvider)
@@ -53,3 +61,10 @@ class ControladorImpresora extends Notifier<ImpresoraEmparejada?> {
     state = null;
   }
 }
+
+/// Las columnas del papel con el margen de la impresora elegida: lo que se corre
+/// a la derecha se le quita al ancho, o el final de cada renglón saldría del
+/// papel por el otro lado (ADR 0002 §141).
+final columnasDelPapelProvider = Provider<int>(
+  (ref) => columnas58mm - (ref.watch(impresoraElegidaProvider)?.margen ?? 0),
+);

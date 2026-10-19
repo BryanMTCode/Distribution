@@ -26,8 +26,12 @@ List<int> ticketDePrueba({
   required String negocio,
   required String impresora,
   required DateTime ahora,
+  int columnas = columnas58mm,
 }) {
-  final b = ConstructorEscPos()
+  // La regla con un número por columna: si falta el «1» de la izquierda, la
+  // impresora se come la primera letra y hay que correrla (ADR 0002 §141).
+  final regla = List.generate(columnas, (i) => '${(i + 1) % 10}').join();
+  final b = ConstructorEscPos(columnas: columnas)
     ..inicializar()
     ..alinear(Alineacion.centro)
     ..negrita(true)
@@ -41,8 +45,9 @@ List<int> ticketDePrueba({
     ..separador()
     ..parrafo('Si lees esto completo, la impresora quedó lista.')
     ..linea()
-    ..linea('Ancho: 32 números en una línea')
-    ..linea('12345678901234567890123456789012')
+    ..parrafo('Ancho: $columnas números en una línea, empezando por el 1. Si no '
+        'ves el 1, córrela a la derecha.')
+    ..linea(regla)
     ..linea()
     ..linea('Acentos: á é í ó ú ñ Ñ ü ¿? ¡!')
     ..linea()
@@ -79,6 +84,11 @@ class _EstadoImpresora extends ConsumerState<PantallaImpresora> {
   String? _resultado;
   bool _salioBien = false;
 
+  void _margen(int letras) {
+    ref.read(impresoraElegidaProvider.notifier).ajustarMargen(letras);
+    setState(() => _resultado = null);
+  }
+
   Future<void> _buscar() async {
     setState(() {
       _buscando = true;
@@ -102,14 +112,16 @@ class _EstadoImpresora extends ConsumerState<PantallaImpresora> {
       negocio: ref.read(negocioProvider).nombre,
       impresora: impresora.nombre,
       ahora: ref.read(relojProvider)(),
+      columnas: ref.read(columnasDelPapelProvider),
     ));
     if (!mounted) return;
     setState(() {
       _imprimiendo = false;
       _salioBien = r is ImpresionHecha;
       _resultado = switch (r) {
-        ImpresionHecha() => 'Se mandó la prueba. Revisa el papel: los 32 números en una '
-            'línea y los acentos legibles. Si sale bien, ya imprime las ventas y el corte.',
+        ImpresionHecha() => 'Se mandó la prueba. Revisa el papel: los números completos en '
+            'una línea, empezando por el 1, y los acentos legibles. Si se come la primera '
+            'letra, toca «+» en «Mover a la derecha» y vuelve a imprimirla.',
         ImpresoraDesconectada() => 'La impresora no contestó. Revisa que esté encendida, con '
             'batería y cerca del teléfono, y vuelve a intentar.',
         ImpresoraSinPapel() => 'La impresora no tiene papel.',
@@ -162,6 +174,41 @@ class _EstadoImpresora extends ConsumerState<PantallaImpresora> {
               style: TextStyle(color: _salioBien ? null : colores.error),
             ),
           ],
+          if (elegida != null) ...[
+            const SizedBox(height: 8),
+            // La EC-MP200 se come la primera letra de cada renglón (§141).
+            Row(
+              children: [
+                const Expanded(child: Text('Mover a la derecha')),
+                IconButton(
+                  key: const Key('boton_margen_menos'),
+                  tooltip: 'Menos',
+                  onPressed: elegida.margen == 0
+                      ? null
+                      : () => _margen(elegida.margen - 1),
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text(
+                  '${elegida.margen} letra(s)',
+                  key: const Key('margen_impresora'),
+                ),
+                IconButton(
+                  key: const Key('boton_margen_mas'),
+                  tooltip: 'Más',
+                  onPressed: elegida.margen >= ImpresoraEmparejada.margenMaximo
+                      ? null
+                      : () => _margen(elegida.margen + 1),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            Text(
+              'Si la impresora se come la primera letra de cada renglón, súbelo y vuelve '
+              'a imprimir la prueba. Lo que se corre se le quita al ancho: quedan '
+              '${ref.watch(columnasDelPapelProvider)} letras por renglón.',
+              style: estilo.bodySmall,
+            ),
+          ],
           if (elegida != null)
             TextButton(
               key: const Key('boton_olvidar_impresora'),
@@ -212,7 +259,9 @@ class _EstadoImpresora extends ConsumerState<PantallaImpresora> {
                   ? Icon(Icons.check_circle, color: colores.primary)
                   : null,
               onTap: () {
-                ref.read(impresoraElegidaProvider.notifier).elegir(i);
+                // La misma otra vez se queda con su margen.
+                ref.read(impresoraElegidaProvider.notifier).elegir(i.conMargen(
+                    elegida?.direccion == i.direccion ? elegida!.margen : 0));
                 setState(() => _resultado = null);
               },
             ),

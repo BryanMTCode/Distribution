@@ -6,6 +6,7 @@
 /// usaba la simulada: ni el ticket ni las pantallas cambian.
 library;
 
+import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/services.dart';
 
 import 'impresora.dart';
@@ -18,13 +19,18 @@ class ImpresoraEmparejada {
     required this.nombre,
     required this.direccion,
     this.pareceImpresora = false,
+    this.margen = 0,
   });
 
   factory ImpresoraEmparejada.deMapa(Map<Object?, Object?> m) => ImpresoraEmparejada(
         nombre: (m['nombre'] as String?) ?? (m['direccion'] as String? ?? ''),
         direccion: m['direccion']! as String,
         pareceImpresora: m['es_impresora'] == true,
+        margen: (m['margen'] as int?) ?? 0,
       );
+
+  /// Lo más que se deja mover: con 6 letras quedan 26 columnas.
+  static const margenMaximo = 6;
 
   final String nombre;
 
@@ -34,7 +40,20 @@ class ImpresoraEmparejada {
   /// Si se anuncia como impresora. Solo sirve para ponerla primero.
   final bool pareceImpresora;
 
-  Map<String, Object?> aMapa() => {'nombre': nombre, 'direccion': direccion};
+  /// Cuántas letras se corre a la derecha lo impreso (ADR 0002 §141): hay
+  /// impresoras cuya cabeza empieza antes del borde del papel y se comen la
+  /// primera letra de cada renglón. Lo que se corre se le quita al ancho.
+  final int margen;
+
+  ImpresoraEmparejada conMargen(int letras) => ImpresoraEmparejada(
+        nombre: nombre,
+        direccion: direccion,
+        pareceImpresora: pareceImpresora,
+        margen: letras.clamp(0, margenMaximo),
+      );
+
+  Map<String, Object?> aMapa() =>
+      {'nombre': nombre, 'direccion': direccion, 'margen': margen};
 }
 
 /// Lo que contestó el teléfono al buscar las emparejadas.
@@ -87,7 +106,9 @@ class ImpresoraBluetooth implements Impresora {
     try {
       final r = await canal.invokeMapMethod<String, Object?>('imprimir', {
         'direccion': elegida.direccion,
-        'bytes': Uint8List.fromList(bytes),
+        'bytes': Uint8List.fromList(
+          conMargenIzquierdo(bytes, elegida.margen * puntosPorLetra),
+        ),
       });
       if (r == null) return const ImpresionFallida('el teléfono no contestó');
       return switch (r['codigo']) {

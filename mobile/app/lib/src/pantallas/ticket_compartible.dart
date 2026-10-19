@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datos/impresora.dart';
 import '../estado/carrito.dart';
+import '../estado/impresora.dart';
 import '../estado/cierre.dart';
 
 class PantallaTicketCompartible extends ConsumerWidget {
@@ -44,7 +45,9 @@ class PantallaTicketCompartible extends ConsumerWidget {
   final bool imprimible;
 
   Future<void> _imprimir(BuildContext context, WidgetRef ref) async {
-    final resultado = await ref.read(impresoraProvider).imprimir(escPosDelTicket(texto));
+    final resultado = await ref
+        .read(impresoraProvider)
+        .imprimir(escPosDelTicket(texto, columnas: ref.read(columnasDelPapelProvider)));
     if (!context.mounted) return;
     final mensaje = switch (resultado) {
       ImpresionHecha() => 'Listo: el ticket salió en la impresora.',

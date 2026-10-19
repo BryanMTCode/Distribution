@@ -333,10 +333,12 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Prende la impresora y emparéjala en Ajustes del teléfono → Bluetooth "
                 "(clave 0000 o 1234). En la app: «Mi ruta» → menú (⋮) → «Impresora» → "
                 "«Buscar impresoras» → toca la tuya → «Imprimir una prueba».",
-                "Sale un ticket de PRUEBA con los 32 números en una sola línea, los "
-                "acentos legibles y un total. Luego una venta: «Imprimir» saca el ticket "
-                "en papel. Con la impresora apagada dice que no contestó (ADR 0002 §139).",
-                desde="+45",
+                "Sale un ticket de PRUEBA con la regla de números en una sola línea "
+                "empezando por el 1, los acentos legibles y un total. Si se come la "
+                "primera letra, «Mover a la derecha» → «+» y otra prueba, hasta ver el 1. "
+                "Luego una venta: «Imprimir» saca el ticket completo en papel. Con la "
+                "impresora apagada dice que no contestó (ADR 0002 §139 y §141).",
+                desde="+46",
             ),
             Punto(
                 "corte_vendedor", "Hacer el corte del día",

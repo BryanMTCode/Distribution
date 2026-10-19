@@ -6354,3 +6354,23 @@ los productos disponibles y yo solo agregar la cantidad.»
 - Un filtro por nombre, SKU o código de barras acorta la lista. El de uno por uno
   sigue, plegado, para el lector de código de barras.
 - La carga ya funcionaba así (con lo que hay en la bodega) y no cambia.
+
+## 141. La impresora que se come la primera letra: «Mover a la derecha»
+
+**Corrección (octubre 2026).** La primera prueba en la EC-MP200 salió completa
+—acentos, total, los 32 números en una línea—, pero **corrida a la izquierda**:
+la primera letra de cada renglón quedaba fuera del papel («ncho», «centos»,
+«TAL») y a la derecha sobraban unos 11 mm. La cabeza de esa impresora empieza
+antes del borde del papel.
+
+- **En la pantalla «Impresora»**, con la impresora elegida: **«Mover a la
+  derecha»**, de 0 a 6 letras, que se guarda con la impresora en el teléfono. Se
+  sube y se vuelve a imprimir la prueba hasta que se vea el «1» de la regla.
+- **Cómo.** Al mandar el ticket se pone el margen izquierdo de la impresora
+  (`GS L`, 12 puntos por letra) después de **cada** `ESC @` —que lo reinicia; la
+  reimpresión trae dos, el del aviso de copia y el del original—. Va al mandar y
+  no al armar el ticket porque la venta guarda sus bytes y la copia los reusa.
+- **Lo que se corre se le quita al ancho**: la venta, la copia, el corte y la
+  prueba se arman con 32 − margen columnas. La cabeza mide lo mismo; si no, el
+  final de cada renglón saldría del papel por el otro lado.
+- La prueba ahora trae una regla con un número por columna y dice qué buscar.

@@ -196,6 +196,56 @@ void main() {
       expect(vista.desconocidos, isEmpty);
     });
 
+    testWidgets('mover a la derecha: el margen va en los bytes y el ancho se ajusta '
+        '(ADR 0002 §141)', (tester) async {
+      final telefono = _Telefono();
+      _conectar(telefono);
+      final base = await montarApp(tester, credencial: credencialDelServidor());
+      base.db.execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('impresora_elegida', ?)",
+        ['{"nombre":"Printer001","direccion":"66:22:A1:3F:00:12"}'],
+      );
+      await entrarCon(tester, pinCorrecto);
+      await tocarEnElMenu(tester, const Key('boton_impresora'));
+      expect(tester.widget<Text>(find.byKey(const Key('margen_impresora'))).data, '0 letra(s)');
+
+      await tester.tap(find.byKey(const Key('boton_margen_mas')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('boton_margen_mas')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.byKey(const Key('margen_impresora'))).data, '2 letra(s)');
+      expect(textoQueContiene('quedan 30 letras por renglón'), findsOneWidget);
+      // Se queda guardado con la impresora.
+      final guardada = base.db.select(
+          "SELECT valor FROM sync_estado WHERE clave = 'impresora_elegida'");
+      expect(guardada.single['valor'], contains('"margen":2'));
+
+      await tester.ensureVisible(find.byKey(const Key('boton_imprimir_prueba')));
+      await tester.tap(find.byKey(const Key('boton_imprimir_prueba')));
+      await tester.pumpAndSettle();
+      final enviado = ((telefono.llamadas.lastWhere((l) => l.method == 'imprimir').arguments
+              as Map)['bytes'] as Uint8List)
+          .toList();
+      // ESC @ y enseguida GS L de 24 puntos: dos letras.
+      expect(enviado.sublist(0, 6), [0x1B, 0x40, 0x1D, 0x4C, 24, 0]);
+      final vista = decodificar(enviado, columnas: 30);
+      expect(vista.desconocidos, isEmpty);
+      expect(vista.render(), contains('123456789012345678901234567890'));
+      expect(vista.render(), isNot(contains('1234567890123456789012345678901')));
+      for (final l in vista.lineas) {
+        expect(l.columnasOcupadas, lessThanOrEqualTo(30), reason: l.texto);
+      }
+
+      // Y volver a elegirla de la lista no le borra el margen.
+      await tester.ensureVisible(find.byKey(const Key('boton_buscar_impresoras')));
+      await tester.tap(find.byKey(const Key('boton_buscar_impresoras')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('emparejada_66:22:A1:3F:00:12')));
+      await tester.tap(find.byKey(const Key('emparejada_66:22:A1:3F:00:12')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.byKey(const Key('margen_impresora'))).data, '2 letra(s)');
+    });
+
     testWidgets('si no contesta, dice que la revise', (tester) async {
       _conectar(_Telefono(codigoAlImprimir: 'no_conecta'));
       final base = await montarApp(tester, credencial: credencialDelServidor());

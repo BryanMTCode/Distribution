@@ -305,6 +305,66 @@ class ConstructorEscPos {
   }
 }
 
+/// Puntos que mide una letra de la fuente normal (A, 12×24) en una térmica de
+/// 203 ppp: 32 letras son los 384 puntos de una cabeza de 58 mm.
+const puntosPorLetra = 12;
+
+/// `GS L nL nH` — el margen izquierdo, en puntos.
+List<int> margenIzquierdo(int puntos) =>
+    [_gs, 0x4C, puntos & 0xFF, (puntos >> 8) & 0xFF];
+
+/// El ticket con el margen izquierdo puesto después de CADA `ESC @` (ADR 0002
+/// §141).
+///
+/// Hay impresoras —la EC-MP200 de la dirección— cuya cabeza empieza antes del
+/// borde del papel: la primera letra de cada renglón sale fuera. El margen se
+/// pone aquí, al mandar, y no al armar el ticket, por dos razones: la venta
+/// guarda los bytes de su ticket y la reimpresión los reusa tal cual (con el
+/// margen de la impresora de HOY), y `ESC @` lo reinicia —la reimpresión trae
+/// dos: el del aviso de copia y el del original—.
+///
+/// Recorre el flujo comando por comando para no confundir con un `ESC @` el
+/// argumento de otro comando. Sin `ESC @`, el margen va al principio.
+List<int> conMargenIzquierdo(List<int> bytes, int puntos) {
+  if (puntos <= 0) return bytes;
+  final margen = margenIzquierdo(puntos);
+  final salida = <int>[];
+  var puesto = false;
+  var i = 0;
+  while (i < bytes.length) {
+    final largo = _largoDelComando(bytes, i);
+    salida.addAll(bytes.sublist(i, i + largo));
+    if (largo == 2 && bytes[i] == _esc && bytes[i + 1] == 0x40) {
+      salida.addAll(margen);
+      puesto = true;
+    }
+    i += largo;
+  }
+  return puesto ? salida : [...margen, ...bytes];
+}
+
+/// Cuántos bytes mide el comando (o el carácter) que empieza en [i].
+int _largoDelComando(List<int> b, int i) {
+  int hasta(int n) => n < b.length - i ? n : b.length - i;
+  final siguiente = i + 1 < b.length ? b[i + 1] : -1;
+  if (b[i] == _esc) {
+    return switch (siguiente) {
+      0x40 => hasta(2),
+      0x74 || 0x61 || 0x45 || 0x64 || 0x21 || 0x2D || 0x4D => hasta(3),
+      _ => hasta(2),
+    };
+  }
+  if (b[i] == _gs) {
+    return switch (siguiente) {
+      0x21 => hasta(3),
+      0x56 => hasta(i + 2 < b.length && (b[i + 2] == 0x41 || b[i + 2] == 0x42) ? 4 : 3),
+      0x4C || 0x57 => hasta(4),
+      _ => hasta(2),
+    };
+  }
+  return 1;
+}
+
 enum Alineacion {
   izquierda(0),
   centro(1),

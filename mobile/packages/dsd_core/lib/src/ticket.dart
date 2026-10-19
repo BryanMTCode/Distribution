@@ -114,7 +114,7 @@ void _encabezado(ConstructorEscPos t, DatosDelNegocio negocio, {required int cop
   // doble da 16 columnas, y "Distribuidora El Ñandú" son 22: partido en dos
   // renglones gigantes se lee peor que completo en tamaño normal. Se comprobó
   // mirando la vista previa, que es justo para lo que existe.
-  if (ancho(negocio.nombre, tabla: t.tabla) <= columnas58mm ~/ 2) {
+  if (ancho(negocio.nombre, tabla: t.tabla) <= t.columnas ~/ 2) {
     t
       ..tamano(ancho: 2, alto: 2)
       ..linea(negocio.nombre)

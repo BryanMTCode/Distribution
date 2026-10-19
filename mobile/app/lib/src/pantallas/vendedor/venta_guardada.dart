@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/impresora.dart';
 import '../../estado/carrito.dart';
+import '../../estado/impresora.dart';
 import 'vista_ticket.dart';
 
 class PantallaVentaGuardada extends ConsumerStatefulWidget {
@@ -65,7 +66,10 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
       direccionCliente: cliente?.direccion,
     );
     final aImprimir =
-        esCopia ? reimpresion(_original!, _impresiones) : _original!;
+        esCopia
+            ? reimpresion(_original!, _impresiones,
+                columnas: ref.read(columnasDelPapelProvider))
+            : _original!;
 
     final resultado = await ref.read(impresoraProvider).imprimir(aImprimir);
     if (!mounted) return;

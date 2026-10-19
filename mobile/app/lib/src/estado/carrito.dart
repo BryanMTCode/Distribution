@@ -423,6 +423,7 @@ List<int> armarTicket(
 
   return ticketDeVenta(
     venta,
+    columnas: ref.read(columnasDelPapelProvider),
     negocio: ref.read(negocioProvider),
     visita: DatosDeLaVisita(
       nombreCliente: nombreCliente,
