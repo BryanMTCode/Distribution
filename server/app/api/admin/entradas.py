@@ -72,8 +72,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import (
+    MAXIMO_CAMPOS_DE_RENGLONES,
     CapturaInvalida,
     SesionDep,
+    agrupar_por_familia,
     render,
     sin_decimales,
     texto_o_nulo,
@@ -499,6 +501,7 @@ async def detalle(
     entrada_id: uuid.UUID,
     error: str = "",
     guardado: str = "",
+    buscar: str = "",
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
@@ -506,6 +509,13 @@ async def detalle(
     if datos is None:
         return _a_lista(error="Esa entrada no existe.")
     entrada = datos["entrada"]
+    editable = entrada["estado"] in EDITABLE
+    # Todo el catálogo a la vista, para escribir solo la cantidad (ADR 0002 §140).
+    surtido = (
+        await surtido_para_la_entrada(sesion, entrada, buscar)
+        if editable and actor.puede(PERMISO)
+        else []
+    )
 
     presentaciones = (
         await sesion.execute(
@@ -530,9 +540,11 @@ async def detalle(
             "renglones": datos["renglones"],
             "proyectado": datos["proyectado"],
             "presentaciones": presentaciones,
-            "editable": entrada["estado"] in EDITABLE,
+            "editable": editable,
             "puede_editar": actor.puede(PERMISO),
             "total_piezas": datos["total_piezas"],
+            "grupos": agrupar_por_familia(surtido),
+            "buscar": buscar.strip(),
             "error": error,
             "guardado": guardado,
         },
@@ -860,6 +872,139 @@ async def agregar_renglon_a_entrada(
             f"${importe_de_renglon(bultos, por_bulto):,.2f}."
         )
     return aviso
+
+
+async def surtido_para_la_entrada(sesion, entrada, buscar: str = "") -> list[dict]:
+    """Todos los artículos activos del catálogo, por familia, con lo que ya hay en
+    la bodega y lo que ya va en esta entrada.
+
+    «Me pide SKU por SKU, nunca voy a terminar» (ADR 0002 §140): a diferencia de
+    la carga —que solo ofrece lo que hay en la bodega—, aquí entra lo que todavía
+    no hay, así que va el catálogo entero. La presentación por omisión es la más
+    grande: en la bodega se recibe por caja.
+    """
+    condiciones = ["p.activo"]
+    parametros: dict[str, object] = {"b": entrada["almacen_destino_id"], "e": entrada["id"]}
+    termino = (buscar or "").strip()
+    if termino:
+        condiciones.append("(p.nombre ILIKE :q OR p.sku ILIKE :q OR p.codigo_barras = :exacto)")
+        parametros["q"] = f"%{termino}%"
+        parametros["exacto"] = termino
+    filas = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT p.id, p.sku, p.nombre, p.unidad_base, p.maneja_lote,
+                       cat.id AS familia_id, cat.nombre AS familia,
+                       COALESCE(x.cantidad, 0) AS en_bodega,
+                       COALESCE(ya.cantidad, 0) AS ya_en_la_entrada,
+                       pu.presentaciones
+                  FROM productos p
+                  LEFT JOIN categorias cat ON cat.id = p.categoria_id
+                  LEFT JOIN existencias x ON x.producto_id = p.id AND x.almacen_id = :b
+                  LEFT JOIN LATERAL (
+                        SELECT sum(d.cantidad) AS cantidad FROM entrada_detalle d
+                         WHERE d.entrada_id = :e AND d.producto_id = p.id
+                  ) ya ON true
+                  JOIN LATERAL (
+                        SELECT json_agg(json_build_object(
+                                 'unidad', u.unidad_codigo, 'factor', u.factor::text)
+                               ORDER BY u.factor DESC) AS presentaciones
+                          FROM producto_unidades u
+                         WHERE u.producto_id = p.id AND u.activo
+                  ) pu ON pu.presentaciones IS NOT NULL
+                 WHERE {" AND ".join(condiciones)}
+                 -- Por familia, en el orden de la hoja de la dirección (§89).
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.nombre
+                 LIMIT 1000
+                """  # noqa: S608 — las condiciones son constantes del código
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    return [
+        {**dict(f), "por_omision": f["presentaciones"][0]["unidad"]} for f in filas
+    ]
+
+
+@router.post("/{entrada_id}/renglones")
+async def agregar_varios(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    entrada_id: uuid.UUID,
+):
+    """Agrega de una vez todos los renglones que traigan cantidad (ADR 0002 §140).
+
+    Los campos llegan como `cantidad_<producto_id>`, `unidad_<…>`, `costo_<…>`,
+    `lote_<…>` y `caducidad_<…>`. Un renglón vacío se ignora. Cada uno pasa por
+    las MISMAS validaciones que la captura de uno en uno, y como en la carga, se
+    guarda lo bueno y se nombra lo malo: perder cuarenta cantidades tecleadas por
+    un dedazo en una obligaría a capturar todo otra vez.
+    """
+    actor.exigir(PERMISO)
+    formulario = await peticion.form(max_fields=MAXIMO_CAMPOS_DE_RENGLONES)
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+
+    pedidos: list[uuid.UUID] = []
+    for clave, valor in formulario.multi_items():
+        if not clave.startswith("cantidad_") or not str(valor).strip():
+            continue
+        try:
+            pedidos.append(uuid.UUID(clave.removeprefix("cantidad_")))
+        except ValueError:
+            continue
+    if not pedidos:
+        return _volver(
+            entrada_id,
+            error="No escribiste ninguna cantidad. Llena la columna «Recibir» de los "
+            "artículos que llegaron.",
+        )
+
+    claves = {
+        f.id: (f.sku, f.nombre)
+        for f in await sesion.execute(
+            text("SELECT id, sku, nombre FROM productos WHERE id = ANY(:ids)"),
+            {"ids": pedidos},
+        )
+    }
+    def campo(nombre_campo: str, producto_id: uuid.UUID) -> str:
+        return str(formulario.get(f"{nombre_campo}_{producto_id}", ""))
+
+    agregados = 0
+    rechazados: list[str] = []
+    for producto_id in pedidos:
+        if producto_id not in claves:
+            rechazados.append("un artículo que ya no existe")
+            continue
+        sku, nombre = claves[producto_id]
+        try:
+            await agregar_renglon_a_entrada(
+                sesion,
+                entrada_id,
+                producto=sku,
+                unidad_codigo=campo("unidad", producto_id),
+                cantidad=campo("cantidad", producto_id),
+                costo=campo("costo", producto_id),
+                lote=campo("lote", producto_id),
+                caducidad=campo("caducidad", producto_id),
+            )
+            agregados += 1
+        except EntradaNoExiste as e:
+            return _a_lista(error=str(e))
+        except (EntradaRechazada, CapturaInvalida, CantidadInvalida) as e:
+            await sesion.rollback()
+            texto = str(e).rstrip(".")
+            rechazados.append(texto if nombre in texto else f"{nombre}: {texto}")
+
+    aviso = f"Se agregaron {agregados} artículo(s) a la entrada." if agregados else ""
+    if rechazados:
+        return _volver(
+            entrada_id,
+            guardado=aviso,
+            error="No entraron, corrígelos y agrégalos otra vez: " + "; ".join(rechazados) + ".",
+        )
+    return _volver(entrada_id, guardado=aviso)
 
 
 @router.post("/{entrada_id}/renglon/{renglon_id}/quitar")
@@ -1521,7 +1666,7 @@ async def recibir_devolucion(
     if not renglones:
         return _a_devolucion(traspaso_id, error="Esta devolución no trae renglones.")
 
-    formulario = await peticion.form()
+    formulario = await peticion.form(max_fields=MAXIMO_CAMPOS_DE_RENGLONES)
     try:
         contados = {
             r["id"]: _leer_contado(

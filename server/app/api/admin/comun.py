@@ -278,6 +278,13 @@ def modulo_de(seccion: str) -> str | None:
 
 SesionDep = Annotated[AsyncSession, Depends(obtener_sesion)]
 
+# Los formularios de varios renglones —la entrada, la salida, la carga y mover
+# mercancía— llevan dos a cinco campos POR ARTÍCULO, y el navegador los manda
+# todos aunque vayan vacíos. Starlette rechaza por omisión más de 1000 campos
+# («Too many fields»): con un catálogo de 300 artículos la entrada ya pasaba. Se
+# sube para esos formularios, y solo para esos (ADR 0002 §140).
+MAXIMO_CAMPOS_DE_RENGLONES = 20000
+
 # Cuatro decimales para precios, dos para dinero. La razón está en ADR 0002: una
 # caja de 24 a $296.00 da $12.3333 la pieza, y a dos decimales las 24 piezas
 # sumarían $295.92. El precio guarda cuatro; el importe redondea a dos una sola

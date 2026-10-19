@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import (
+    MAXIMO_CAMPOS_DE_RENGLONES,
     CapturaInvalida,
     SesionDep,
     agrupar_por_familia,
@@ -64,7 +65,7 @@ async def mover(peticion: Request, actor: ActorWeb, sesion: SesionDep):
     """Mueve lo que traiga cantidad. Todo o nada: ver `traspaso_camion.mover`."""
     for permiso in PERMISOS:
         actor.exigir(permiso)
-    formulario = await peticion.form()
+    formulario = await peticion.form(max_fields=MAXIMO_CAMPOS_DE_RENGLONES)
     exigir_csrf(peticion, str(formulario.get("csrf", "")))
 
     camion = str(formulario.get("camion", ""))

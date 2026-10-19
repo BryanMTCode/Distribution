@@ -754,14 +754,22 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "panel_entrada", "Recibir mercancía",
-                "Almacén → Entradas y salidas → Entradas → «Abrir borrador» → «Agregar» → "
-                "confirmar.",
-                "Sube la bodega y queda en la lista con su folio.",
+                "Almacén → Entradas y salidas → Entradas → «Abrir borrador»: salen todos "
+                "los artículos por familia. Escribe la cantidad de varios (y el costo, si "
+                "es compra) → «Agregar a la entrada» → confirmar.",
+                "Se agregan todos de un jalón, sin teclear SKU; si uno trae un error, los "
+                "demás entran y se dice cuál no. Sube la bodega y queda en la lista con su "
+                "folio (ADR 0002 §140).",
+                desde="+45",
             ),
             Punto(
-                "panel_salida", "Salida de bodega",
-                "Entradas y salidas → Salidas → «Abrir borrador» y regístrala.",
-                "Baja la bodega, con su motivo.",
+                "panel_salida", "Salida o conteo de bodega",
+                "Entradas y salidas → Salidas → «Abrir borrador»: sale lo que hay en la "
+                "bodega. En un conteo escribe lo que contaste de varios → «Capturar el "
+                "conteo».",
+                "Lo que falta se agrega con la resta hecha; lo que cuadra no se agrega. "
+                "Baja la bodega, con su motivo (ADR 0002 §140).",
+                desde="+45",
             ),
             Punto(
                 "panel_devolucion", "Recibir la devolución de un camión",

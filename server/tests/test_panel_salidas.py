@@ -838,3 +838,66 @@ async def test_entra_sale_y_la_cache_cuadra_con_el_libro_mayor(
         )
     ).scalar()
     assert Decimal(saldo) == Decimal("200")
+
+
+# ---------------------------------------------------------------------------
+# Lo que hay en la bodega, a la vista (ADR 0002 §140)
+# ---------------------------------------------------------------------------
+
+
+async def test_el_conteo_muestra_lo_que_hay_y_captura_varios_de_un_jalon(
+    cliente, sesion, semilla
+):
+    await _entrar(cliente)
+    coca = await _producto(sesion, sku="COCA600")
+    sopa = await _producto(sesion, sku="SOPA70")
+    nada = await _producto(sesion, sku="SINNADA")
+    await _sembrar(sesion, semilla["bodega"], coca, "100")
+    await _sembrar(sesion, semilla["bodega"], sopa, "40")
+    salida = _id_de(await _abrir(cliente, semilla, tipo="conteo"))
+
+    pagina = await cliente.get(f"/panel/salidas/{salida}")
+    assert 'id="salida_COCA600"' in pagina.text and 'id="salida_SOPA70"' in pagina.text
+    # Lo que no hay en la bodega no se ofrece.
+    assert 'id="salida_SINNADA"' not in pagina.text and str(nada) not in pagina.text
+    # En un conteo se cuenta por pieza.
+    assert '<option value="PZA" selected>PZA</option>' in pagina.text
+
+    r = await cliente.post(
+        f"/panel/salidas/{salida}/renglones",
+        data={"csrf": _csrf(cliente),
+              f"cantidad_{coca}": "90", f"unidad_{coca}": "PZA",     # faltan 10
+              f"cantidad_{sopa}": "40", f"unidad_{sopa}": "PZA"},    # cuadra
+        follow_redirects=True,
+    )
+    assert "Se agregaron 1 artículo(s) a la salida." in r.text
+    assert "1 cuadraron con el sistema" in r.text
+    assert "No entraron" not in r.text
+    await sesion.rollback()
+    fila = (
+        await sesion.execute(text("SELECT producto_id, cantidad, contado FROM salida_detalle"))
+    ).one()
+    assert (fila.producto_id, fila.cantidad, fila.contado) == (coca, Decimal(10), Decimal(90))
+
+
+async def test_la_merma_de_varios_nombra_lo_que_no_entro(cliente, sesion, semilla):
+    await _entrar(cliente)
+    coca = await _producto(sesion, sku="COCA600")
+    sopa = await _producto(sesion, sku="SOPA70")
+    await _sembrar(sesion, semilla["bodega"], coca, "100")
+    await _sembrar(sesion, semilla["bodega"], sopa, "40")
+    salida = _id_de(await _abrir(cliente, semilla, tipo="merma",
+                                 motivo="DANADO_BODEGA", nota="se mojó el anaquel"))
+    r = await cliente.post(
+        f"/panel/salidas/{salida}/renglones",
+        data={"csrf": _csrf(cliente),
+              f"cantidad_{coca}": "1", f"unidad_{coca}": "CAJA",
+              f"cantidad_{sopa}": "abc", f"unidad_{sopa}": "PZA"},
+        follow_redirects=True,
+    )
+    assert "Se agregaron 1 artículo(s) a la salida." in r.text
+    assert "No entraron" in r.text and "abc" in r.text
+    await sesion.rollback()
+    assert (
+        await sesion.execute(text("SELECT cantidad FROM salida_detalle"))
+    ).scalar_one() == Decimal(24)

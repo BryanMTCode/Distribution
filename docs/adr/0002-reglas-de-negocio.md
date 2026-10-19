@@ -6332,3 +6332,25 @@ térmica de verdad.
 - **El encabezado del ticket** decía los datos de ejemplo («Distribuidora El
   Ñandú», una dirección y un teléfono inventados). Ahora dice «Distribuciones
   SE»; la dirección y el teléfono se agregan cuando la dirección los dé.
+
+## 140. Entradas y salidas: todo a la vista, se escribe solo la cantidad
+
+**Decisión (octubre 2026).** «En el dashboard quiero que sea más fácil agregar los
+productos: me pide SKU por SKU, nunca voy a terminar. Tienen que aparecerme todos
+los productos disponibles y yo solo agregar la cantidad.»
+
+- **La entrada** (Entradas y salidas → Entradas → un borrador) muestra **todo el
+  catálogo activo**, por familia —aunque la bodega no tenga nada, que es justo
+  lo que se recibe—, con lo que ya hay en la bodega y lo que ya va en la entrada.
+  En cada renglón: cuántos, la presentación (la caja por omisión, como en la
+  carga), el costo por bulto (obligatorio en una compra) y, solo en los que
+  manejan lote, el lote y la caducidad. «Agregar a la entrada» los agrega todos.
+- **La salida** muestra **lo que hay en la bodega** —no se puede sacar lo que no
+  hay—, incluido lo que está en negativo. En un conteo se escribe lo contado
+  (por pieza por omisión) y lo que cuadra no se agrega ni cuenta como error: es
+  lo normal al contar el anaquel entero.
+- **Las mismas reglas** que el de uno por uno: cada renglón pasa por la misma
+  función. Como en la carga, **se guarda lo bueno y se nombra lo malo**: un dedazo en un renglón no hace perder los demás.
+- Un filtro por nombre, SKU o código de barras acorta la lista. El de uno por uno
+  sigue, plegado, para el lector de código de barras.
+- La carga ya funcionaba así (con lo que hay en la bodega) y no cambia.

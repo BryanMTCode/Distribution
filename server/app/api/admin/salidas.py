@@ -62,8 +62,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import (
+    MAXIMO_CAMPOS_DE_RENGLONES,
     CapturaInvalida,
     SesionDep,
+    agrupar_por_familia,
     render,
     sin_decimales,
     texto_o_nulo,
@@ -91,6 +93,18 @@ PERMISO = "inventario.ajustar"
 EDITABLE = ("borrador",)
 
 MAXIMO_BULTOS = Decimal("100000")
+
+
+class SalidaNoExiste(Exception):
+    """La salida no existe."""
+
+
+class SalidaRechazada(Exception):
+    """El renglón no se agregó; el mensaje dice por qué."""
+
+
+class RenglonCuadra(SalidaRechazada):
+    """En un conteo, lo contado es lo que el sistema tiene: no hay ajuste."""
 
 
 def _a_lista(*, error: str = "", guardado: str = "") -> RedirectResponse:
@@ -338,6 +352,7 @@ async def detalle(
     salida_id: uuid.UUID,
     error: str = "",
     guardado: str = "",
+    buscar: str = "",
 ) -> HTMLResponse:
     actor.exigir("inventario.ver")
 
@@ -423,11 +438,20 @@ async def detalle(
         )
     ).scalars().all()
 
+    # Lo que hay en la bodega, a la vista: se escribe solo la cantidad (§140).
+    surtido = (
+        await surtido_para_la_salida(sesion, salida, buscar)
+        if salida["estado"] in EDITABLE and actor.puede(PERMISO)
+        else []
+    )
+
     return render(
         peticion,
         "salida_detalle.html",
         {
             "salida": salida,
+            "grupos": agrupar_por_familia(surtido),
+            "buscar": buscar.strip(),
             "tipo_etiqueta": etiqueta_de_salida(salida["tipo"]),
             "cuenta": salida["tipo"] in CAPTURA_LO_CONTADO,
             "renglones": renglones,
@@ -458,15 +482,163 @@ async def agregar_renglon(
     lote: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Agrega un renglón. En un conteo, `cantidad` es LO CONTADO.
+    """Agrega un renglón. En un conteo, `cantidad` es LO CONTADO."""
+    actor.exigir(PERMISO)
+    exigir_csrf(peticion, csrf)
+    try:
+        aviso = await agregar_renglon_a_salida(
+            sesion, salida_id, producto=producto, unidad_codigo=unidad_codigo,
+            cantidad=cantidad, lote=lote,
+        )
+    except SalidaNoExiste as e:
+        return _a_lista(error=str(e))
+    except SalidaRechazada as e:
+        return _volver(salida_id, error=str(e))
+    return _volver(salida_id, guardado=aviso)
+
+
+async def surtido_para_la_salida(sesion, salida, buscar: str = "") -> list[dict]:
+    """Lo que la bodega tiene, por familia, con lo que ya va en esta salida
+    (ADR 0002 §140). En un conteo entra también lo que está en negativo: es lo
+    primero que hay que contar."""
+    condiciones = ["p.activo", "x.cantidad <> 0"]
+    parametros: dict[str, object] = {"b": salida["almacen_origen_id"], "s": salida["id"]}
+    termino = (buscar or "").strip()
+    if termino:
+        condiciones.append("(p.nombre ILIKE :q OR p.sku ILIKE :q OR p.codigo_barras = :exacto)")
+        parametros["q"] = f"%{termino}%"
+        parametros["exacto"] = termino
+    filas = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT p.id, p.sku, p.nombre, p.unidad_base, p.maneja_lote,
+                       cat.id AS familia_id, cat.nombre AS familia,
+                       x.cantidad AS en_bodega,
+                       COALESCE(ya.cantidad, 0) AS ya_en_la_salida,
+                       pu.presentaciones
+                  FROM existencias x
+                  JOIN productos p ON p.id = x.producto_id
+                  LEFT JOIN categorias cat ON cat.id = p.categoria_id
+                  LEFT JOIN LATERAL (
+                        SELECT sum(d.cantidad) AS cantidad FROM salida_detalle d
+                         WHERE d.salida_id = :s AND d.producto_id = p.id
+                  ) ya ON true
+                  JOIN LATERAL (
+                        SELECT json_agg(json_build_object(
+                                 'unidad', u.unidad_codigo, 'factor', u.factor::text)
+                               ORDER BY u.factor DESC) AS presentaciones
+                          FROM producto_unidades u
+                         WHERE u.producto_id = p.id AND u.activo
+                  ) pu ON pu.presentaciones IS NOT NULL
+                 WHERE x.almacen_id = :b AND {" AND ".join(condiciones)}
+                 ORDER BY (cat.id IS NULL), cat.orden, cat.nombre, p.nombre
+                 LIMIT 1000
+                """  # noqa: S608 — las condiciones son constantes del código
+            ),
+            parametros,
+        )
+    ).mappings().all()
+    # En un conteo se cuenta por pieza; en una merma, lo grande primero.
+    cuenta = salida["tipo"] in CAPTURA_LO_CONTADO
+    return [
+        {**dict(f), "por_omision": f["presentaciones"][-1 if cuenta else 0]["unidad"]}
+        for f in filas
+    ]
+
+
+@router.post("/{salida_id}/renglones")
+async def agregar_varios(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    salida_id: uuid.UUID,
+):
+    """Agrega de una vez todos los renglones que traigan cantidad (ADR 0002 §140).
+
+    Como en la entrada: cada uno con las mismas reglas que el de uno por uno, se
+    guarda lo bueno y se nombra lo malo. En un conteo, lo que cuadra no es un
+    error —es lo normal al contar el anaquel entero—: se cuenta aparte.
+    """
+    actor.exigir(PERMISO)
+    formulario = await peticion.form(max_fields=MAXIMO_CAMPOS_DE_RENGLONES)
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+
+    pedidos: list[uuid.UUID] = []
+    for clave, valor in formulario.multi_items():
+        if not clave.startswith("cantidad_") or not str(valor).strip():
+            continue
+        try:
+            pedidos.append(uuid.UUID(clave.removeprefix("cantidad_")))
+        except ValueError:
+            continue
+    if not pedidos:
+        return _volver(salida_id, error="No escribiste ninguna cantidad.")
+
+    skus = {
+        f.id: f.sku
+        for f in await sesion.execute(
+            text("SELECT id, sku FROM productos WHERE id = ANY(:ids)"), {"ids": pedidos}
+        )
+    }
+
+    def campo(nombre_campo: str, producto_id: uuid.UUID) -> str:
+        return str(formulario.get(f"{nombre_campo}_{producto_id}", ""))
+
+    agregados = cuadran = 0
+    rechazados: list[str] = []
+    for producto_id in pedidos:
+        if producto_id not in skus:
+            rechazados.append("un artículo que ya no existe")
+            continue
+        try:
+            await agregar_renglon_a_salida(
+                sesion,
+                salida_id,
+                producto=skus[producto_id],
+                unidad_codigo=campo("unidad", producto_id),
+                cantidad=campo("cantidad", producto_id),
+                lote=campo("lote", producto_id),
+            )
+            agregados += 1
+        except SalidaNoExiste as e:
+            return _a_lista(error=str(e))
+        except RenglonCuadra:
+            await sesion.rollback()
+            cuadran += 1
+        except SalidaRechazada as e:
+            await sesion.rollback()
+            rechazados.append(str(e).rstrip("."))
+
+    partes = []
+    if agregados:
+        partes.append(f"Se agregaron {agregados} artículo(s) a la salida.")
+    if cuadran:
+        partes.append(f"{cuadran} cuadraron con el sistema y no se agregan.")
+    if rechazados:
+        return _volver(
+            salida_id,
+            guardado=" ".join(partes),
+            error="No entraron, corrígelos y agrégalos otra vez: " + "; ".join(rechazados) + ".",
+        )
+    return _volver(salida_id, guardado=" ".join(partes))
+
+
+async def agregar_renglon_a_salida(
+    sesion,
+    salida_id: uuid.UUID,
+    *,
+    producto: str,
+    unidad_codigo: str,
+    cantidad: str,
+    lote: str = "",
+) -> str:
+    """Agrega (o suma, o en un conteo reemplaza) un renglón y devuelve el aviso.
 
     `FOR UPDATE` por lo mismo que en las entradas: sin candado, un renglón
     agregado mientras alguien confirma quedaría en el documento y no en el libro
     mayor.
     """
-    actor.exigir(PERMISO)
-    exigir_csrf(peticion, csrf)
-
     salida = (
         await sesion.execute(
             text(
@@ -477,12 +649,11 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if salida is None:
-        return _a_lista(error="Esa salida no existe.")
+        raise SalidaNoExiste("Esa salida no existe.")
     if salida["estado"] not in EDITABLE:
-        return _volver(
-            salida_id,
-            error=f"Esta salida ya está {salida['estado']}. Lo confirmado se "
-            "corrige con otro documento, no editando el historial.",
+        raise SalidaRechazada(
+            f"Esta salida ya está {salida['estado']}. Lo confirmado se "
+            "corrige con otro documento, no editando el historial."
         )
 
     cuenta = salida["tipo"] in CAPTURA_LO_CONTADO
@@ -498,7 +669,7 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if fila is None:
-        return _volver(salida_id, error=f"No hay producto activo con clave «{clave}».")
+        raise SalidaRechazada(f"No hay producto activo con clave «{clave}».")
 
     presentacion = (
         await sesion.execute(
@@ -510,10 +681,7 @@ async def agregar_renglon(
         )
     ).mappings().first()
     if presentacion is None:
-        return _volver(
-            salida_id,
-            error=f"{fila['nombre']} no tiene la presentación {unidad_codigo}.",
-        )
+        raise SalidaRechazada(f"{fila['nombre']} no tiene la presentación {unidad_codigo}.")
 
     try:
         tecleado = _leer_cantidad(
@@ -528,7 +696,7 @@ async def agregar_renglon(
             else Decimal(0)
         )
     except (CapturaInvalida, CantidadInvalida) as e:
-        return _volver(salida_id, error=str(e))
+        raise SalidaRechazada(str(e)) from e
 
     existencia = Decimal(
         (
@@ -548,40 +716,36 @@ async def agregar_renglon(
     if cuenta:
         # En un conteo, lo que SALE es la diferencia, y la calcula el sistema.
         if numero_lote:
-            return _volver(
-                salida_id,
-                error="Un conteo es por producto, no por lote: `existencias` "
+            raise SalidaRechazada(
+                "Un conteo es por producto, no por lote: `existencias` "
                 "guarda un número por (almacén, producto) y no tiene dimensión "
-                "de lote. Para identificar una tarima, usa una merma.",
+                "de lote. Para identificar una tarima, usa una merma."
             )
         if en_base > existencia:
             # El conteo encontró MÁS. Este no es el documento.
             sobran = en_base - existencia
-            return _volver(
-                salida_id,
-                error=f"Contaste {sin_decimales(en_base)} y el sistema tiene "
+            raise SalidaRechazada(
+                f"{fila['nombre']}: contaste {sin_decimales(en_base)} y el sistema tiene "
                 f"{sin_decimales(existencia)}: sobran {sin_decimales(sobran)}. "
                 "Eso es una ENTRADA con motivo «ajuste por conteo», no una "
-                "salida.",
+                "salida."
             )
         if en_base == existencia:
-            return _volver(
-                salida_id,
-                error=f"{fila['nombre']} cuadra: contaste lo mismo que el sistema "
-                "tiene. Un renglón de cero no describe ningún ajuste.",
+            raise RenglonCuadra(
+                f"{fila['nombre']} cuadra: contaste lo mismo que el sistema "
+                "tiene. Un renglón de cero no describe ningún ajuste."
             )
         sale = existencia - en_base
         contado, al_capturar = en_base, existencia
     else:
         if not tecleado:
-            return _volver(
-                salida_id, error="Una merma de cero no describe ninguna pérdida."
+            raise SalidaRechazada(
+                f"{fila['nombre']}: una merma de cero no describe ninguna pérdida."
             )
         if fila["maneja_lote"] and not numero_lote:
-            return _volver(
-                salida_id,
-                error=f"{fila['nombre']} maneja lote: captura el de la tarima que "
-                "se perdió.",
+            raise SalidaRechazada(
+                f"{fila['nombre']} maneja lote: captura el de la tarima que "
+                "se perdió."
             )
         sale = en_base
         contado, al_capturar = None, None
@@ -642,7 +806,9 @@ async def agregar_renglon(
             f"{fila['nombre']}: {sin_decimales(tecleado)} {unidad_codigo} "
             f"= {sin_decimales(sale)} {fila['unidad_base']}."
         )
-    return _volver(salida_id, guardado=aviso)
+    return aviso
+
+
 
 
 @router.post("/{salida_id}/renglon/{renglon_id}/quitar")

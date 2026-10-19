@@ -57,9 +57,86 @@
 {% endif %}
 
 {% if editable and puede_editar %}
+{# Lo que hay en la bodega a la vista: se escribe solo la cantidad (ADR 0002 §140). #}
+<h2 id="agregar">{% if cuenta %}Capturar lo que contaste{% else %}Agregar artículos{% endif %}</h2>
+<p class="sutil" style="margin-top:-4px">
+  Lo que tiene {{ salida.bodega_nombre }}, por familia.
+  {% if cuenta %}Escribe <strong>lo que hay en el anaquel</strong> de cada uno —el
+  sistema hace la resta—; cero si está vacío. Lo que cuadre no se agrega.
+  {% else %}Escribe cuántos salieron de cada uno.{% endif %}
+  Los renglones vacíos no se tocan.
+</p>
+<form class="barra" method="get" action="/panel/salidas/{{ salida.id }}#agregar">
+  <input type="search" name="buscar" value="{{ buscar }}"
+         placeholder="Filtrar por nombre, SKU o código de barras" style="min-width:300px">
+  <button type="submit" class="secundario">Filtrar</button>
+  {% if buscar %}<a href="/panel/salidas/{{ salida.id }}#agregar">ver todos</a>{% endif %}
+</form>
+{% if grupos %}
+<form method="post" action="/panel/salidas/{{ salida.id }}/renglones" id="forma_varios">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tabla-marco">
+  <table id="tabla_bodega">
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th class="numero">Hay en bodega</th>
+        <th class="numero">Ya va aquí</th>
+        <th class="numero">{% if cuenta %}Contaste{% else %}Sale{% endif %}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr class="fila-familia"><td colspan="4"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+      {% for s in g.filas %}
+      <tr id="salida_{{ s.sku }}">
+        <td>
+          <strong>{{ s.nombre }}</strong>
+          <div class="sutil"><span class="mono">{{ s.sku }}</span></div>
+          {% if s.maneja_lote and not cuenta %}
+          <input type="text" name="lote_{{ s.id }}" placeholder="lote" style="width:110px; margin-top:4px"
+                 aria-label="Lote de {{ s.nombre }}">
+          {% endif %}
+        </td>
+        <td class="numero" {% if s.en_bodega < 0 %}style="color:var(--alerta)"{% endif %}>{{ s.en_bodega|entero }} {{ s.unidad_base }}</td>
+        <td class="numero">
+          {% if s.ya_en_la_salida %}{{ s.ya_en_la_salida|entero }} {{ s.unidad_base }}
+          {% else %}<span class="sutil">—</span>{% endif %}
+        </td>
+        <td class="numero" style="white-space:nowrap">
+          <input type="text" name="cantidad_{{ s.id }}" inputmode="numeric"
+                 style="width:70px; text-align:right" aria-label="Cuántos de {{ s.nombre }}">
+          <select name="unidad_{{ s.id }}" aria-label="Presentación de {{ s.nombre }}">
+            {% for u in s.presentaciones %}
+            <option value="{{ u.unidad }}" {% if u.unidad == s.por_omision %}selected{% endif %}>{{ u.unidad }}{% if u.factor|entero != '1' %} de {{ u.factor|entero }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <button type="submit" id="boton_agregar_varios" style="margin-top:12px">
+    {% if cuenta %}Capturar el conteo{% else %}Agregar a la salida{% endif %}
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Si un renglón trae un error, los demás se guardan igual y se te dice cuál no entró.
+  </span>
+</form>
+{% else %}
+<div class="vacio">
+  {% if buscar %}Nada en la bodega coincide con «{{ buscar }}».
+  {% else %}{{ salida.bodega_nombre }} no tiene nada con existencia.{% endif %}
+</div>
+{% endif %}
+
+<details style="margin:18px 0">
+<summary>Agregar uno por uno, con el lector de código de barras</summary>
 <form method="post" action="/panel/salidas/{{ salida.id }}/renglon"
       style="background:var(--papel); border:1px solid var(--linea);
-             border-radius:10px; padding:16px; margin:18px 0">
+             border-radius:10px; padding:16px; margin:12px 0">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2 style="margin-top:0">
     {% if cuenta %}Capturar lo que contaste{% else %}Agregar un renglón{% endif %}
@@ -75,7 +152,7 @@
   <div class="rejilla">
     <div class="campo">
       <label for="producto">Producto</label>
-      <input type="text" id="producto" name="producto" required autofocus
+      <input type="text" id="producto" name="producto" required
              placeholder="SKU o código de barras">
     </div>
     <div class="campo">
@@ -118,6 +195,7 @@
     </span>
   {% endif %}
 </form>
+</details>
 {% endif %}
 
 {% if renglones %}

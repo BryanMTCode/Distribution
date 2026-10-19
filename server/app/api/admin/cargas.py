@@ -63,6 +63,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.api.admin.comun import (
+    MAXIMO_CAMPOS_DE_RENGLONES,
     CapturaInvalida,
     SesionDep,
     render,
@@ -639,7 +640,7 @@ async def agregar_varios(
     base con `cantidad_base`, la misma función que usa el teléfono.
     """
     actor.exigir(PERMISO)
-    formulario = await peticion.form()
+    formulario = await peticion.form(max_fields=MAXIMO_CAMPOS_DE_RENGLONES)
     exigir_csrf(peticion, str(formulario.get("csrf", "")))
 
     estado = (

@@ -844,3 +844,138 @@ async def test_sin_entradas_la_pantalla_de_inventario_dice_que_hacer(
     )
     assert "está vacío" in texto
     assert "inventario inicial" in texto
+
+
+# ---------------------------------------------------------------------------
+# Todo el catálogo a la vista (ADR 0002 §140)
+# ---------------------------------------------------------------------------
+# «Me pide SKU por SKU, nunca voy a terminar: tienen que aparecerme todos los
+# productos disponibles y yo solo agregar la cantidad.»
+
+
+async def test_la_entrada_muestra_todo_el_catalogo_y_agrega_varios_de_un_jalon(
+    cliente, sesion, semilla
+):
+    coca = await _producto(sesion, sku="COCA600")
+    sopa = await _producto(sesion, sku="SOPA70", factor=12)
+    queso = await _producto(sesion, sku="QUESO", maneja_lote=True)
+    await _entrar(cliente)
+    entrada = _id_de(await _abrir(cliente, semilla, motivo="inicial", nota="arranque"))
+
+    pagina = await cliente.get(f"/panel/entradas/{entrada}")
+    # Los tres, aunque la bodega no tenga ninguno, cada uno con su cantidad, y
+    # la caja por omisión.
+    for sku in ("COCA600", "SOPA70", "QUESO"):
+        assert f'id="recibir_{sku}"' in pagina.text, sku
+    assert f'name="cantidad_{coca}"' in pagina.text
+    assert '<option value="CAJA" selected>CAJA de 24</option>' in pagina.text
+    # El de lote pide su lote ahí mismo.
+    assert f'name="lote_{queso}"' in pagina.text and f'name="lote_{coca}"' not in pagina.text
+
+    r = await cliente.post(
+        f"/panel/entradas/{entrada}/renglones",
+        data={
+            "csrf": _csrf(cliente),
+            f"cantidad_{coca}": "10", f"unidad_{coca}": "CAJA",
+            f"cantidad_{sopa}": "5", f"unidad_{sopa}": "PZA",
+            f"cantidad_{queso}": "", f"unidad_{queso}": "CAJA",  # vacío: no se toca
+        },
+        follow_redirects=True,
+    )
+    assert "Se agregaron 2 artículo(s) a la entrada." in r.text
+    await sesion.rollback()
+    renglones = dict(
+        (await sesion.execute(
+            text("SELECT p.sku, d.cantidad FROM entrada_detalle d "
+                 "  JOIN productos p ON p.id = d.producto_id WHERE d.entrada_id = :e"),
+            {"e": entrada},
+        )).all()
+    )
+    assert renglones == {"COCA600": Decimal("240"), "SOPA70": Decimal("5")}
+    # Y en la tabla dice cuánto ya va.
+    pagina = await cliente.get(f"/panel/entradas/{entrada}")
+    assert "240 PZA" in pagina.text
+
+
+async def test_agregar_varios_guarda_lo_bueno_y_nombra_lo_malo(cliente, sesion, semilla):
+    coca = await _producto(sesion, sku="COCA600")
+    queso = await _producto(sesion, sku="QUESO", maneja_lote=True)
+    await _entrar(cliente)
+    entrada = _id_de(await _abrir(cliente, semilla, motivo="inicial", nota="arranque"))
+
+    r = await cliente.post(
+        f"/panel/entradas/{entrada}/renglones",
+        data={
+            "csrf": _csrf(cliente),
+            f"cantidad_{coca}": "2.5", f"unidad_{coca}": "CAJA",   # media caja: no
+            f"cantidad_{queso}": "3", f"unidad_{queso}": "CAJA",   # sin lote: no
+        },
+        follow_redirects=True,
+    )
+    assert "No entraron" in r.text
+    assert "Producto COCA600" in r.text and "Producto QUESO" in r.text
+    assert "maneja lote" in r.text
+
+    r = await cliente.post(
+        f"/panel/entradas/{entrada}/renglones",
+        data={"csrf": _csrf(cliente), f"cantidad_{queso}": "3", f"unidad_{queso}": "CAJA",
+              f"lote_{queso}": "L-2026-10", f"caducidad_{queso}": "2026-12-31"},
+        follow_redirects=True,
+    )
+    assert "Se agregaron 1 artículo(s)" in r.text
+    await sesion.rollback()
+    fila = (
+        await sesion.execute(
+            text("SELECT lote, caducidad FROM entrada_detalle WHERE entrada_id = :e"),
+            {"e": entrada},
+        )
+    ).one()
+    assert fila.lote == "L-2026-10"
+
+    # Sin escribir nada, lo dice.
+    r = await cliente.post(f"/panel/entradas/{entrada}/renglones",
+                           data={"csrf": _csrf(cliente)}, follow_redirects=True)
+    assert "No escribiste ninguna cantidad" in r.text
+
+
+async def test_en_una_compra_el_costo_va_en_el_mismo_renglon(cliente, sesion, semilla):
+    coca = await _producto(sesion, sku="COCA600")
+    await _entrar(cliente)
+    entrada = _id_de(await _abrir(cliente, semilla, motivo="compra"))
+    r = await cliente.post(
+        f"/panel/entradas/{entrada}/renglones",
+        data={"csrf": _csrf(cliente), f"cantidad_{coca}": "10", f"unidad_{coca}": "CAJA",
+              f"costo_{coca}": "240.00"},
+        follow_redirects=True,
+    )
+    assert "Se agregaron 1 artículo(s)" in r.text
+    await sesion.rollback()
+    importe = (
+        await sesion.execute(text("SELECT importe FROM entrada_detalle WHERE entrada_id = :e"),
+                             {"e": entrada})
+    ).scalar_one()
+    assert importe == Decimal("2400.00")
+    # Y sin costo, en una compra, no entra.
+    r = await cliente.post(
+        f"/panel/entradas/{entrada}/renglones",
+        data={"csrf": _csrf(cliente), f"cantidad_{coca}": "1", f"unidad_{coca}": "CAJA"},
+        follow_redirects=True,
+    )
+    assert "No entraron" in r.text
+
+
+async def test_un_catalogo_grande_no_choca_con_el_tope_de_campos(cliente, sesion, semilla):
+    """El navegador manda todos los campos aunque vayan vacíos: con 300 artículos
+    a tres campos cada uno, la entrada pasaba de los 1000 que Starlette acepta
+    por omisión y respondía 400 («Too many fields»)."""
+    coca = await _producto(sesion, sku="COCA600")
+    await _entrar(cliente)
+    entrada = _id_de(await _abrir(cliente, semilla, motivo="inicial", nota="arranque"))
+    datos = {"csrf": _csrf(cliente), f"cantidad_{coca}": "1", f"unidad_{coca}": "CAJA"}
+    for _ in range(600):  # 1800 campos vacíos, como los de un catálogo grande
+        otro = uuid.uuid4()
+        datos |= {f"cantidad_{otro}": "", f"unidad_{otro}": "CAJA", f"costo_{otro}": ""}
+    r = await cliente.post(f"/panel/entradas/{entrada}/renglones", data=datos,
+                           follow_redirects=True)
+    assert r.status_code == 200, r.text[:300]
+    assert "Se agregaron 1 artículo(s)" in r.text

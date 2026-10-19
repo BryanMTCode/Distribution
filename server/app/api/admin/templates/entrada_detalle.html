@@ -66,15 +66,102 @@
 {% endif %}
 
 {% if editable and puede_editar %}
+{# Todo el catálogo a la vista: se escribe solo la cantidad (ADR 0002 §140). #}
+<h2 id="agregar">Agregar artículos</h2>
+<p class="sutil" style="margin-top:-4px">
+  Todos los artículos del catálogo, por familia. Escribe cuántos llegaron de cada
+  uno —en cajas o en piezas— y agrégalos todos con un solo botón. Los renglones
+  vacíos no se tocan.
+</p>
+<form class="barra" method="get" action="/panel/entradas/{{ entrada.id }}#agregar">
+  <input type="search" name="buscar" value="{{ buscar }}"
+         placeholder="Filtrar por nombre, SKU o código de barras" style="min-width:300px">
+  <button type="submit" class="secundario">Filtrar</button>
+  {% if buscar %}<a href="/panel/entradas/{{ entrada.id }}#agregar">ver todos</a>{% endif %}
+</form>
+{% if grupos %}
+<form method="post" action="/panel/entradas/{{ entrada.id }}/renglones" id="forma_varios">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tabla-marco">
+  <table id="tabla_catalogo">
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th class="numero">Hay en bodega</th>
+        <th class="numero">Ya va aquí</th>
+        <th class="numero">Recibir</th>
+        <th class="numero">Costo por bulto{% if exige_costo %} *{% endif %}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr class="fila-familia"><td colspan="5"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+      {% for s in g.filas %}
+      <tr id="recibir_{{ s.sku }}">
+        <td>
+          <strong>{{ s.nombre }}</strong>
+          <div class="sutil"><span class="mono">{{ s.sku }}</span></div>
+          {% if s.maneja_lote %}
+          <div style="margin-top:4px">
+            <input type="text" name="lote_{{ s.id }}" placeholder="lote" style="width:110px"
+                   aria-label="Lote de {{ s.nombre }}">
+            <input type="date" name="caducidad_{{ s.id }}" aria-label="Caducidad de {{ s.nombre }}">
+          </div>
+          {% endif %}
+        </td>
+        <td class="numero">{{ s.en_bodega|entero }} {{ s.unidad_base }}</td>
+        <td class="numero">
+          {% if s.ya_en_la_entrada %}{{ s.ya_en_la_entrada|entero }} {{ s.unidad_base }}
+          {% else %}<span class="sutil">—</span>{% endif %}
+        </td>
+        <td class="numero" style="white-space:nowrap">
+          <input type="text" name="cantidad_{{ s.id }}" inputmode="numeric"
+                 style="width:70px; text-align:right" aria-label="Cuántos de {{ s.nombre }}">
+          <select name="unidad_{{ s.id }}" aria-label="Presentación de {{ s.nombre }}">
+            {% for u in s.presentaciones %}
+            <option value="{{ u.unidad }}" {% if u.unidad == s.por_omision %}selected{% endif %}>{{ u.unidad }}{% if u.factor|entero != '1' %} de {{ u.factor|entero }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td class="numero">
+          <input type="text" name="costo_{{ s.id }}" inputmode="decimal"
+                 style="width:90px; text-align:right" placeholder="{% if exige_costo %}296.00{% else %}opcional{% endif %}"
+                 aria-label="Costo por bulto de {{ s.nombre }}">
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <button type="submit" id="boton_agregar_varios" style="margin-top:12px">
+    Agregar a la entrada
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Si un renglón trae un error, los demás se guardan igual y se te dice cuál no
+    entró.{% if exige_costo %} En una compra el costo va por bulto, como en la
+    factura.{% endif %}
+  </span>
+</form>
+{% else %}
+<div class="vacio">
+  {% if buscar %}Ningún artículo coincide con «{{ buscar }}».
+  {% else %}El catálogo no tiene artículos activos con presentación. Dalos de
+  alta en <a href="/panel/productos">Productos</a>.{% endif %}
+</div>
+{% endif %}
+
+<details style="margin:18px 0">
+<summary>Agregar uno por uno, con el lector de código de barras</summary>
 <form method="post" action="/panel/entradas/{{ entrada.id }}/renglon"
       style="background:var(--papel); border:1px solid var(--linea);
-             border-radius:10px; padding:16px; margin:18px 0">
+             border-radius:10px; padding:16px; margin:12px 0">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2 style="margin-top:0">Agregar un renglón</h2>
   <div class="rejilla">
     <div class="campo">
       <label for="producto">Producto</label>
-      <input type="text" id="producto" name="producto" required autofocus
+      <input type="text" id="producto" name="producto" required
              placeholder="SKU o código de barras">
       <div class="ayuda">Acepta el SKU o el código del lector.</div>
     </div>
@@ -120,6 +207,7 @@
     de dos tarimas sin perder la primera.
   </span>
 </form>
+</details>
 {% endif %}
 
 {% if renglones %}
