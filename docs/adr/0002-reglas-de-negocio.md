@@ -6374,3 +6374,32 @@ antes del borde del papel.
   prueba se arman con 32 − margen columnas. La cabeza mide lo mismo; si no, el
   final de cada renglón saldría del papel por el otro lado.
 - La prueba ahora trae una regla con un número por columna y dice qué buscar.
+
+## 142. Ajustar el inventario de una bodega o un camión contando, de un jalón
+
+**Decisión (octubre 2026).** «Desde el dashboard quiero poder modificar el
+inventario de los camiones y el almacén de forma arbitraria, para hacer ajustes
+estos días que apenas empezaré la operación.» El ajuste de siempre era de uno en
+uno: abrir cada artículo, «Ajustar», nota.
+
+- **Inventario → pestaña «Ajustar inventario»** (`/panel/inventario/ajustar`): se
+  elige la bodega o el camión y sale **todo el catálogo** por familia —también lo
+  que no tiene existencia, y lo desactivado que todavía tenga— con lo que dice el
+  sistema («4 CAJA + 4 PZA»). Se escribe **lo que hay**, en cajas y piezas, de lo
+  que se contó, una nota para todo el conteo (trae «Conteo para arrancar la
+  operación») y «Guardar el conteo».
+- **Por dentro**, por cada artículo que no cuadra, el mismo ajuste de conteo que
+  el de uno por uno (`registrar_ajuste`): folio, asiento en el libro mayor,
+  existencia y nota. Lo que cuadra y lo que se deja en blanco no se tocan. Un
+  cero deja el artículo en cero. Todo o nada: con un dedazo o sin nota no se
+  guarda nada y la pantalla regresa con lo escrito. Cada ajuste se anula aparte
+  en Operaciones (§119).
+- **Un camión.** El ajuste le llega al teléfono de su vendedor como diferencia y
+  se suma a lo que traiga (0032, 0037). La pantalla lo dice, y si el teléfono
+  reportó operaciones sin subir, avisa que sincronice antes de contar: con ventas
+  sin subir, el sistema va atrás y el conteo no cuadraría.
+- **En el teléfono, lo que sube crea el renglón** aunque el camión no trajera ese
+  artículo. Antes solo lo hacía el traspaso (§135); un conteo que encontraba lo
+  que el sistema no tenía no aparecía para vender. Lo que baja nunca crea un
+  renglón negativo.
+- Pide ver y ajustar el inventario, como «Mover mercancía».

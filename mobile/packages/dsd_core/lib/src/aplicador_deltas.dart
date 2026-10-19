@@ -974,16 +974,17 @@ class AplicadorDeltas {
     if (producto == null) return true;
     final cantidad = Cantidad.deTexto(_aTextoCantidad(a['delta']));
 
-    // Sin `INSERT`: un ajuste sobre un producto que el camión no trae no crea el
-    // renglón. Si no lo trae, la carga no lo subió, y un renglón nuevo le
-    // mostraría al vendedor mercancía que no tiene.
+    // Lo que SUBE crea el renglón aunque el camión no trajera ese artículo: la
+    // oficina le pasó mercancía de la bodega (§135) o contó el camión y encontró
+    // lo que el sistema no tenía (§142). Antes no se creaba —«si no lo trae, la
+    // carga no lo subió»—, pero el ajuste lo escribe la oficina con el camión a
+    // la vista, y sin el renglón el vendedor no podía vender lo que sí trae.
     //
-    // Menos lo que la oficina le SUBE de la bodega (ADR 0002 §135): eso sí es
-    // mercancía que se le puso en el camión, la traiga o no de antes. Solo si el
-    // catálogo del teléfono ya conoce el producto; si no, el cuadre contra la foto
-    // del servidor lo pone en la siguiente.
-    final subeDeLaBodega = a['tipo'] == 'traspaso' && cantidad.milesimos > 0;
-    final conocido = subeDeLaBodega &&
+    // Solo si el catálogo del teléfono ya conoce el producto; si no, el cuadre
+    // contra la foto del servidor lo pone en la siguiente. Lo que BAJA nunca crea
+    // un renglón negativo de algo que el teléfono no tenía.
+    final sube = cantidad.milesimos > 0;
+    final conocido = sube &&
         _db.select('SELECT 1 FROM productos WHERE id = ?', [producto]).isNotEmpty;
     if (conocido) {
       _db.execute(

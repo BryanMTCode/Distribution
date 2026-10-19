@@ -147,6 +147,8 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/inventario", "Existencias"),
         # De la bodega al camión y de regreso, desde el panel (ADR 0002 §135).
         ("/panel/inventario/mover", "Mover mercancía"),
+        # Contar y dejar cada artículo en lo que hay, de un jalón (§142).
+        ("/panel/inventario/ajustar", "Ajustar inventario"),
     ],
     "Entradas y salidas": [
         ("/panel/entradas", "Entradas"),
@@ -189,6 +191,7 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel/inventario": "inventario.ver",
     # Ver lo que hay y moverlo: los dos.
     "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),
+    "/panel/inventario/ajustar": ("inventario.ver", "inventario.ajustar"),
     "/panel/entradas": "inventario.ver",
     "/panel/salidas": "inventario.ver",
     "/panel/compras": "inventario.ver",

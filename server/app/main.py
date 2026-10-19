@@ -10,6 +10,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 
+from app.api.admin import ajustar_inventario as panel_ajustar_inventario
 from app.api.admin import arranque as panel_arranque
 from app.api.admin import cargas as panel_cargas
 from app.api.admin import cierres as panel_cierres
@@ -152,8 +153,9 @@ def crear_app() -> FastAPI:
     app.include_router(panel_entradas.router)
     app.include_router(panel_compras.router)
     app.include_router(panel_salidas.router)
-    # Antes que Inventario: «/panel/inventario/mover» es suyo.
+    # Antes que Inventario: «/panel/inventario/mover» y «…/ajustar» son suyos.
     app.include_router(panel_mover_mercancia.router)
+    app.include_router(panel_ajustar_inventario.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_ventas.router)
     app.include_router(panel_transferencias.router)

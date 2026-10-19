@@ -742,6 +742,17 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Existencias por familia; el ajuste del camión le llega al teléfono.",
             ),
             Punto(
+                "panel_ajustar_inventario", "Ajustar el inventario contando",
+                "Almacén → Inventario → pestaña «Ajustar inventario»: elige la bodega, "
+                "escribe lo que hay de varios artículos (cajas y piezas) → «Guardar el "
+                "conteo». Luego elige un camión y haz lo mismo, con uno que no traía.",
+                "Cada artículo queda en lo contado; lo que cuadra o dejas en blanco no se "
+                "toca, y sale en «Lo último que se ajustó». Lo del camión le llega al "
+                "teléfono al sincronizar, también el que no traía. Sin nota o con un "
+                "dedazo no guarda nada (ADR 0002 §142).",
+                desde="+47",
+            ),
+            Punto(
                 "panel_mover_mercancia", "Mover mercancía entre la bodega y un camión",
                 "Almacén → Inventario → pestaña «Mover mercancía»: «De la bodega al "
                 "camión», el camión y la bodega → «Ver lo que hay» → escribe cuánto de "

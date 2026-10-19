@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block titulo %}Ajustar inventario{% endblock %}
+{% block contenido %}
+<h1>Ajustar inventario</h1>
+<p class="subtitulo">
+  Cuenta y escribe <strong>lo que hay</strong> de cada artículo en una bodega o un
+  camión: el sistema hace la resta y deja cada uno en lo que contaste. Solo se
+  tocan los que escribas y no cuadren. Cada cambio queda como un ajuste con su
+  folio y tu nota, y se puede anular en <a href="/panel/operaciones?tipo=ajuste">Operaciones</a>.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="aviso_error">{{ error }}</div>{% endif %}
+
+{% if not almacenes %}
+<div class="vacio">No hay bodegas ni camiones activos. Créalos en <a href="/panel/equipo">Usuarios y rutas</a>.</div>
+{% else %}
+<form class="barra" method="get" action="/panel/inventario/ajustar" id="elegir_almacen">
+  <select name="almacen" aria-label="Almacén" style="min-width:260px">
+    {% for grupo, tipo in (('Bodegas', 'bodega'), ('Camiones', 'camion')) %}
+      {% set suyos = almacenes|selectattr('tipo', 'equalto', tipo)|list %}
+      {% if suyos %}
+      <optgroup label="{{ grupo }}">
+        {% for a in suyos %}
+        <option value="{{ a.id }}" {% if elegido and a.id == elegido.id %}selected{% endif %}>{{ a.nombre }}{% if a.tipo == 'camion' %} · {{ a.responsable or 'sin vendedor' }}{% endif %}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <input type="search" name="buscar" value="{{ buscar }}"
+         placeholder="Filtrar por nombre, SKU o código de barras" style="min-width:260px">
+  <button type="submit" class="secundario">Ver</button>
+  {% if buscar %}<a href="/panel/inventario/ajustar?almacen={{ elegido.id }}">ver todos</a>{% endif %}
+</form>
+
+{% if elegido.tipo == 'camion' %}
+<div class="aviso-caja {% if telefono_atrasado %}error{% else %}neutro{% endif %}" id="aviso_camion">
+  {% if telefono_atrasado %}
+  <strong>El teléfono de {{ elegido.responsable or 'su vendedor' }} reportó {{ telefono_atrasado }}
+  operación(es) sin subir.</strong> Lo que dice el sistema va atrás de lo que trae:
+  que sincronice antes de contar, o el ajuste no va a cuadrar.
+  {% else %}
+  Lo que cambie le llega al teléfono de {{ elegido.responsable or 'su vendedor' }} al
+  sincronizar, y se suma a lo que traiga. Cuenta con el teléfono ya sincronizado.
+  {% endif %}
+</div>
+{% endif %}
+
+{% if grupos %}
+<form method="post" action="/panel/inventario/ajustar" id="formulario_conteo">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="almacen" value="{{ elegido.id }}">
+  <input type="hidden" name="buscar" value="{{ buscar }}">
+  <div class="tabla-marco">
+  <table id="tabla_conteo">
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th class="numero">Dice el sistema</th>
+        <th class="numero">Hay de verdad</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr class="fila-familia"><td colspan="3"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+      {% for f in g.filas %}
+      <tr id="contar_{{ f.sku }}">
+        <td>
+          <strong>{{ f.nombre }}</strong>
+          <div class="sutil"><span class="mono">{{ f.sku }}</span>{% if not f.activo %} · desactivado{% endif %}</div>
+        </td>
+        <td class="numero" {% if f.cantidad < 0 %}style="color:var(--alerta)"{% endif %}>
+          <strong>{{ f.cantidad|entero }}</strong> {{ f.unidad_base }}
+          {% if f.en_cajas %}<div class="sutil">{{ f.en_cajas }}</div>{% endif %}
+        </td>
+        <td class="numero" style="white-space:nowrap">
+          {% if f.caja %}
+          <input type="text" name="cajas_{{ f.producto_id }}" inputmode="numeric"
+                 value="{{ capturado.get('cajas_' ~ f.producto_id, '') }}"
+                 style="width:60px; text-align:right" aria-label="Cajas de {{ f.nombre }}">
+          <span class="sutil">{{ f.caja }} de {{ f.factor_caja|entero }} +</span>
+          {% endif %}
+          <input type="text" name="piezas_{{ f.producto_id }}" inputmode="numeric"
+                 value="{{ capturado.get('piezas_' ~ f.producto_id, '') }}"
+                 style="width:60px; text-align:right" aria-label="Piezas de {{ f.nombre }}">
+          <span class="sutil">{{ f.unidad_base }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="campo" style="margin-top:12px; max-width:560px">
+    <label for="nota">Nota del conteo</label>
+    <input type="text" id="nota" name="nota" value="{{ nota }}" style="width:100%" required>
+    <div class="ayuda">Va en cada ajuste{% if elegido.tipo == 'camion' %} y el vendedor la ve en su teléfono{% endif %}.</div>
+  </div>
+  <button type="submit" id="boton_guardar_conteo" style="margin-top:12px">
+    Guardar el conteo de {{ elegido.nombre }}
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Deja en blanco lo que no contaste. Un cero deja el artículo en cero. Si un
+    renglón trae un error, no se guarda nada y se te dice cuál.
+  </span>
+</form>
+{% else %}
+<div class="vacio">
+  {% if buscar %}Ningún artículo coincide con «{{ buscar }}».
+  {% else %}El catálogo no tiene artículos activos. Dalos de alta en <a href="/panel/productos">Productos</a>.{% endif %}
+</div>
+{% endif %}
+
+{% if recientes %}
+<h2>Lo último que se ajustó en {{ elegido.nombre }}</h2>
+<div class="tabla-marco">
+<table id="tabla_recientes">
+  <thead>
+    <tr><th>Folio</th><th>Cuándo</th><th>Artículo</th><th class="numero">Cambio</th>
+        <th>Nota</th><th>Quién</th></tr>
+  </thead>
+  <tbody>
+  {% for r in recientes %}
+    <tr>
+      <td class="mono">{{ r.folio }}</td>
+      <td>{{ r.creado_en.strftime('%d/%m %H:%M') }}</td>
+      <td>{{ r.producto }}</td>
+      <td class="numero">{% if r.delta > 0 %}+{% endif %}{{ r.delta|entero }} {{ r.unidad_base }}</td>
+      <td class="sutil">{{ r.nota }}</td>
+      <td>{{ r.quien }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

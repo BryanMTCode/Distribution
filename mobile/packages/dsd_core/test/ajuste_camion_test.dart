@@ -101,7 +101,28 @@ void main() {
     expect(enCamion(_atun), equals(100.0));
   });
 
-  test('el ajuste no revive un producto que el camión no trae', () {
+  test('un conteo que encuentra lo que el camión no tenía lo agrega (ADR 0002 §142)', () {
+    db.execute(
+      "INSERT INTO productos (id, sku, nombre, unidad_base) "
+      "VALUES ('p-chicle', 'CHICLE', 'Chicle', 'PZA')",
+    );
+    aplicar(ajuste('aj-c', '15.000', producto: 'p-chicle', nota: 'conteo de arranque'));
+    expect(enCamion('p-chicle'), equals(15.0));
+  });
+
+  test('lo que baja no crea un renglón negativo de algo que no trae', () {
+    db.execute(
+      "INSERT INTO productos (id, sku, nombre, unidad_base) "
+      "VALUES ('p-chicle', 'CHICLE', 'Chicle', 'PZA')",
+    );
+    aplicar(ajuste('aj-n', '-3.000', producto: 'p-chicle'));
+    expect(
+      db.select('SELECT * FROM existencias_camion WHERE producto_id = ?', ['p-chicle']),
+      isEmpty,
+    );
+  });
+
+  test('un producto que el catálogo del teléfono no conoce espera al cuadre', () {
     aplicar(ajuste('aj-6', '10.000', producto: 'producto-que-no-subio'));
 
     expect(
