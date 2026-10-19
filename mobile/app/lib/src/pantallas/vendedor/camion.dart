@@ -307,7 +307,7 @@ class _AvisoDeAjustes extends StatelessWidget {
                 child: Text(
                   ajustes.length == 1
                       ? 'Hoy la oficina ajustó tu camión'
-                      : 'Hoy la oficina hizo ${ajustes.length} ajustes a tu camión',
+                      : 'Hoy la oficina hizo ${ajustes.length} cambios a tu camión',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),

@@ -214,7 +214,7 @@ void main() {
 
     final aviso = find.byKey(const Key('aviso_ajustes_oficina'));
     expect(
-      find.descendant(of: aviso, matching: textoQueContiene('hizo 7 ajustes')),
+      find.descendant(of: aviso, matching: textoQueContiene('hizo 7 cambios')),
       findsOneWidget,
     );
     // La nota, una vez aunque venga en los siete.

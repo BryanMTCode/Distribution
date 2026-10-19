@@ -27,9 +27,10 @@ teléfono vendió algo que no ha subido, regresar lo que el sistema dice regresa
 mercancía que ya no está. Por eso lo que se puede bajar es lo que el sistema dice,
 y el corte de ese día lo deja ver si algo no cuadró.
 
-Todo va en una transacción: o se mueve todo lo capturado, o nada. Y se anula
-en Operaciones (§119) por pareja: la mitad que entra apunta a la que sale
-(`pareja_id`), y anular una deshace las dos.
+Todo va en una transacción: o se mueve todo lo capturado, o nada. Y es UNA
+operación (§146), por muchos artículos que lleve: todos sus ajustes, las dos
+mitades de cada artículo, van juntos con un solo folio, y en Operaciones (§119)
+anularla deshace todo.
 """
 
 from __future__ import annotations
@@ -40,7 +41,11 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.infra.ajuste_de_existencia import existencia_con_candado, registrar_ajuste
+from app.infra.ajuste_de_existencia import (
+    UnaSolaOperacion,
+    existencia_con_candado,
+    registrar_ajuste,
+)
 
 
 class MovimientoRechazado(Exception):
@@ -49,6 +54,8 @@ class MovimientoRechazado(Exception):
 
 @dataclass(frozen=True)
 class Movimiento:
+    # El de la operación, y el de cada mitad (el primero es el mismo).
+    folio: str
     folios: list[str]
     articulos: int
     piezas: Decimal
@@ -155,19 +162,19 @@ async def mover(
 
     adicional = " ".join((nota or "").split())
     folios = []
+    # La cabeza es la primera mitad que sale; lo demás va con ella.
+    operacion = UnaSolaOperacion()
     for producto_id, cantidad in pedidas.items():
         en_origen, en_destino = actuales[producto_id]
         lado = f"De {origen['nombre']} a {destino['nombre']}"
-        sale_id = uuid.uuid4()
         folio_sale = await registrar_ajuste(
             sesion,
             almacen_id=origen["id"], producto_id=producto_id,
             es_camion=origen["tipo"] == "camion", tipo="traspaso",
             actual=en_origen, delta=-cantidad, contado=None,
             nota=f"{lado}{': ' + adicional if adicional else ''}", quien=quien,
-            ajuste_id=sale_id,
+            operacion=operacion,
         )
-        # La que entra apunta a la que sale: Operaciones anula las dos juntas.
         folio_entra = await registrar_ajuste(
             sesion,
             almacen_id=destino["id"], producto_id=producto_id,
@@ -175,7 +182,7 @@ async def mover(
             actual=en_destino, delta=cantidad, contado=None,
             nota=f"{lado} (sale con {folio_sale})"
                  f"{': ' + adicional if adicional else ''}",
-            quien=quien, pareja_id=sale_id,
+            quien=quien, operacion=operacion,
         )
         folios += [folio_sale, folio_entra]
 
@@ -183,13 +190,14 @@ async def mover(
     sentido = (f"de {bodega['nombre']} a {camion['nombre']}" if al_camion
                else f"de {camion['nombre']} a {bodega['nombre']}")
     return Movimiento(
+        folio=operacion.folio,
         folios=folios,
         articulos=len(pedidas),
         piezas=piezas,
         mensaje=(
             f"Se movieron {len(pedidas)} artículo(s), {_piezas(piezas)} piezas, {sentido}"
-            f" ({folios[0]} a {folios[-1]}). Al teléfono de {camion['responsable']} le "
-            "llega al sincronizar, y se suma a lo que traiga."
+            f", en una sola operación ({operacion.folio}). Al teléfono de "
+            f"{camion['responsable']} le llega al sincronizar, y se suma a lo que traiga."
         ),
     )
 

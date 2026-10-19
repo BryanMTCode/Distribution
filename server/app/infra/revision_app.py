@@ -319,7 +319,7 @@ SECCIONES: tuple[Seccion, ...] = (
                 "ajustes_de_la_oficina_del_dia", "Lo que la oficina le ajustó hoy",
                 "En el panel, Ajustar inventario: cuenta el camión de este vendedor, sube "
                 "un artículo y baja otro. En el teléfono, sincroniza y abre «Mi camión».",
-                "Arriba dice «Hoy la oficina hizo 2 ajustes a tu camión», cada artículo con "
+                "Arriba dice «Hoy la oficina hizo 2 cambios a tu camión», cada artículo con "
                 "lo que cambió («+24 PZA», lo que bajó en rojo) y la nota una vez. Con más "
                 "de cinco, «Ver los N cambios» los enseña todos con su folio. Al día "
                 "siguiente el aviso ya no sale (ADR 0002 §145).",
@@ -945,6 +945,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "pasa con cada una; al confirmar, «Eliminadas: N de N». Lo que no se pudo "
                 "dice por qué.",
                 desde="+41",
+            ),
+            Punto(
+                "panel_una_sola_operacion", "Una captura, una operación",
+                "Ajustar inventario: cuenta tres artículos de un camión → «Guardar el "
+                "conteo». Luego Mover mercancía con dos artículos. Abre Operaciones → "
+                "Ajuste de inventario.",
+                "Cada captura es un solo renglón con un folio («3 artículos, … pza de más»), "
+                "no uno por artículo. Al abrirla salen todos sus artículos, y eliminarla "
+                "los deshace todos (ADR 0002 §146).",
+                desde="+48",
             ),
             Punto(
                 "panel_operaciones_negativo", "Lo que quedaría en negativo",

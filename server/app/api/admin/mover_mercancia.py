@@ -230,7 +230,8 @@ async def _pintar(
                 "  FROM ajustes_camion j "
                 "  JOIN productos p ON p.id = j.producto_id "
                 "  JOIN usuarios u ON u.id = j.usuario_id "
-                " WHERE j.tipo = 'traspaso' AND j.pareja_id IS NULL "
+                # Un renglón por artículo: la mitad que sale.
+                " WHERE j.tipo = 'traspaso' AND j.delta < 0 "
                 " ORDER BY j.creado_en DESC, j.folio DESC LIMIT 15"
             )
         )

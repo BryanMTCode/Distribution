@@ -12,7 +12,8 @@ su nota. El de un camión le llega al teléfono de su vendedor como diferencia y
 suma a lo que traiga (0032, 0037); el de una bodega no viaja a ninguno.
 
 Lo que cuadra no se toca. Todo va en una transacción: o se guarda todo el conteo,
-o nada. Cada ajuste se puede anular después en Operaciones (§119).
+o nada. Y el conteo es UNA operación (§146): sus ajustes van juntos, con un solo
+folio, y en Operaciones (§119) se ve y se anula entero.
 """
 
 from __future__ import annotations
@@ -23,7 +24,11 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.infra.ajuste_de_existencia import existencia_con_candado, registrar_ajuste
+from app.infra.ajuste_de_existencia import (
+    UnaSolaOperacion,
+    existencia_con_candado,
+    registrar_ajuste,
+)
 
 TIPOS_AJUSTABLES = ("bodega", "camion")
 NOTA_MINIMA = 10
@@ -35,6 +40,8 @@ class ConteoRechazado(Exception):
 
 @dataclass(frozen=True)
 class ConteoAplicado:
+    # El de la operación, y el de cada artículo (el primero es el mismo).
+    folio: str
     folios: list[str]
     articulos: int
     suben: Decimal
@@ -145,6 +152,7 @@ async def aplicar_conteo(
 
     folios = []
     suben = bajan = Decimal(0)
+    operacion = UnaSolaOperacion()
     for producto_id, actual, contado in cambios:
         delta = contado - actual
         folios.append(
@@ -159,6 +167,7 @@ async def aplicar_conteo(
                 contado=contado,
                 nota=limpia,
                 quien=quien,
+                operacion=operacion,
             )
         )
         if delta > 0:
@@ -168,8 +177,8 @@ async def aplicar_conteo(
 
     mensaje = (
         f"Se ajustaron {len(cambios)} artículo(s) en {almacen['nombre']}: "
-        f"{_piezas(suben)} piezas de más y {_piezas(bajan)} de menos "
-        f"({folios[0]}{' a ' + folios[-1] if len(folios) > 1 else ''})."
+        f"{_piezas(suben)} piezas de más y {_piezas(bajan)} de menos, en una sola "
+        f"operación ({operacion.folio})."
     )
     cuadran = len(conteos) - len(cambios)
     if cuadran:
@@ -180,7 +189,8 @@ async def aplicar_conteo(
             "sincronizar."
         )
     return ConteoAplicado(
-        folios=folios, articulos=len(cambios), suben=suben, bajan=bajan, mensaje=mensaje
+        folio=operacion.folio, folios=folios, articulos=len(cambios), suben=suben,
+        bajan=bajan, mensaje=mensaje,
     )
 
 

@@ -70,7 +70,11 @@ from sqlalchemy.exc import IntegrityError
 from app.api.admin import ventas as panel_ventas
 from app.api.admin.comun import auditar, dinero, sin_decimales
 from app.infra import mayoreo
-from app.infra.ajuste_de_existencia import existencia_con_candado
+from app.infra.ajuste_de_existencia import (
+    UnaSolaOperacion,
+    existencia_con_candado,
+    folio_del_ajuste,
+)
 
 # El orden del filtro: lo de la calle primero, lo de la oficina después.
 TIPOS: tuple[tuple[str, str], ...] = (
@@ -254,16 +258,36 @@ WITH ops AS (
 
     UNION ALL
     -- Los ajustes de tipo «anulación» no son operaciones: son lo que dejó una
-    -- anulación, y anularlos sería deshacer el deshacer. De un traspaso
-    -- bodega↔camión (§135) se ve la mitad que sale; la que entra va con ella.
+    -- anulación, y anularlos sería deshacer el deshacer. Una captura de varios
+    -- artículos —el conteo, mover mercancía— es UNA operación (§146): se ve su
+    -- cabeza, y los demás ajustes van con ella (`pareja_id`). Lo que suma `g`
+    -- es lo del almacén de la cabeza: de un traspaso, lo que salió.
     SELECT j.creado_en, j.creado_en::date, 'ajuste', j.id, j.folio,
            COALESCE(a.responsable_id, j.usuario_id), a.nombre,
-           p.nombre || ' ' || CASE WHEN j.delta > 0 THEN '+' ELSE '' END
-             || trim_scale(j.delta)::text || ' · ' || j.nota,
-           NULL, 'confirmada', '/panel/inventario/' || j.almacen_id || '/' || j.producto_id
+           CASE WHEN g.articulos = 1
+                THEN p.nombre || ' ' || CASE WHEN j.delta > 0 THEN '+' ELSE '' END
+                       || trim_scale(j.delta)::text
+                WHEN j.tipo = 'traspaso'
+                THEN g.articulos || ' artículos, ' || trim_scale(g.bajan)::text || ' pza'
+                ELSE g.articulos || ' artículos'
+                       || COALESCE(', ' || trim_scale(g.suben)::text || ' pza de más', '')
+                       || COALESCE(', ' || trim_scale(g.bajan)::text || ' de menos', '')
+           END || ' · ' || j.nota,
+           NULL, 'confirmada',
+           CASE WHEN g.articulos = 1
+                THEN '/panel/inventario/' || j.almacen_id || '/' || j.producto_id END
       FROM ajustes_camion j
       JOIN almacenes a ON a.id = j.almacen_id
       JOIN productos p ON p.id = j.producto_id
+     CROSS JOIN LATERAL (
+           SELECT count(DISTINCT x.producto_id) AS articulos,
+                  sum(x.delta) FILTER (WHERE x.almacen_id = j.almacen_id AND x.delta > 0)
+                    AS suben,
+                  -sum(x.delta) FILTER (WHERE x.almacen_id = j.almacen_id AND x.delta < 0)
+                    AS bajan
+             FROM ajustes_camion x
+            WHERE x.id = j.id OR x.pareja_id = j.id
+     ) g
      WHERE j.tipo <> 'anulacion' AND j.pareja_id IS NULL
        AND j.creado_en::date BETWEEN :desde AND :hasta
 
@@ -755,46 +779,57 @@ async def _revisar_salida(sesion, op: Operacion, plan: Plan, candado: bool) -> N
 
 
 async def _revisar_ajuste(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
-    # Con su pareja, si es un traspaso bodega↔camión (§135): las dos mitades.
+    # Con todos los de su operación (§146): los artículos de un conteo, las dos
+    # mitades de cada artículo de un traspaso bodega↔camión (§135).
     ajustes = (
         await sesion.execute(
             text(
-                "SELECT j.tipo, a.nombre AS almacen, a.tipo AS almacen_tipo, "
-                "       u.nombre AS responsable "
+                "SELECT j.tipo, j.delta, j.producto_id, j.almacen_id, a.nombre AS almacen, "
+                "       a.tipo AS almacen_tipo, u.nombre AS responsable "
                 "  FROM ajustes_camion j JOIN almacenes a ON a.id = j.almacen_id "
                 "  LEFT JOIN usuarios u ON u.id = a.responsable_id "
                 " WHERE j.id = :j OR j.pareja_id = :j"
-                " ORDER BY j.pareja_id NULLS FIRST"
+                " ORDER BY j.pareja_id NULLS FIRST, j.creado_en"
             ),
             {"j": op.ref},
         )
     ).mappings().all()
     await _llenar_movimientos(sesion, plan, await _movimientos_del_ajuste(sesion, op.ref), candado)
-    if len(ajustes) == 2:
+    articulos = len({a["producto_id"] for a in ajustes})
+    sale = next((a for a in ajustes if a["delta"] < 0), None)
+    entra = next((a for a in ajustes if a["delta"] > 0), None)
+    if ajustes and ajustes[0]["tipo"] == "traspaso" and sale and entra:
         plan.efectos.append(
-            f"La mercancía regresa de {ajustes[1]['almacen']} a {ajustes[0]['almacen']}: "
+            f"La mercancía regresa de {entra['almacen']} a {sale['almacen']}: "
             "el traspaso no ocurrió."
+        )
+    elif articulos > 1:
+        plan.efectos.append(
+            f"Se escribe el ajuste contrario de los {articulos} artículos en {op.donde}: "
+            "la operación se deshace entera."
         )
     else:
         plan.efectos.append(f"Se escribe el ajuste contrario en {op.donde}.")
-    for ajuste in ajustes:
-        if ajuste["almacen_tipo"] == "camion":
-            plan.efectos.append(
-                f"El teléfono de {ajuste['responsable'] or 'su vendedor'} lo recibe con tu "
-                "motivo en su siguiente sincronización."
-            )
+    # Una vez por camión, no una por artículo.
+    camiones = {a["almacen_id"]: a for a in ajustes if a["almacen_tipo"] == "camion"}
+    for ajuste in camiones.values():
+        plan.efectos.append(
+            f"El teléfono de {ajuste['responsable'] or 'su vendedor'} lo recibe con tu "
+            "motivo en su siguiente sincronización."
+        )
 
 
 async def _movimientos_del_ajuste(sesion, ajuste_id: uuid.UUID) -> list[dict]:
-    """Lo que movió el ajuste y, si es la mitad que sale de un traspaso
-    bodega↔camión, lo que movió la que entra: se anulan juntas."""
+    """Lo que movió el ajuste y, si es la cabeza de una operación de varios
+    (§146), lo que movieron los demás: se anulan juntos."""
     movimientos = await _movimientos(sesion, "ajuste_camion", ajuste_id)
-    for pareja in (
+    for otro in (
         await sesion.execute(
-            text("SELECT id FROM ajustes_camion WHERE pareja_id = :j"), {"j": ajuste_id}
+            text("SELECT id FROM ajustes_camion WHERE pareja_id = :j ORDER BY creado_en"),
+            {"j": ajuste_id},
         )
     ).scalars():
-        movimientos += await _movimientos(sesion, "ajuste_camion", pareja)
+        movimientos += await _movimientos(sesion, "ajuste_camion", otro)
     return movimientos
 
 
@@ -1067,6 +1102,8 @@ async def _deshacer_movimientos(
     """
     ajustes: dict[tuple, uuid.UUID] = {}
     folios: list[str] = []
+    # Los ajustes de la anulación también van juntos (§146): un solo folio.
+    operacion = UnaSolaOperacion()
     if avisar_al_telefono:
         camiones = {m["origen"] for m in movimientos if m["origen_tipo"] == "camion"} | {
             m["destino"] for m in movimientos if m["destino_tipo"] == "camion"
@@ -1075,7 +1112,8 @@ async def _deshacer_movimientos(
             if almacen not in camiones or delta == 0:
                 continue
             ajuste_id, folio = await _ajuste_de_anulacion(
-                sesion, almacen, producto, delta, nota=nota, quien=quien, ahora=ahora
+                sesion, almacen, producto, delta, nota=nota, quien=quien, ahora=ahora,
+                operacion=operacion,
             )
             ajustes[(almacen, producto)] = ajuste_id
             folios.append(folio)
@@ -1129,28 +1167,29 @@ async def _deshacer_movimientos(
 
 
 async def _ajuste_de_anulacion(
-    sesion, almacen, producto, delta: Decimal, *, nota: str, quien, ahora
+    sesion, almacen, producto, delta: Decimal, *, nota: str, quien, ahora,
+    operacion: UnaSolaOperacion,
 ) -> tuple[uuid.UUID, str]:
     """El ajuste del camión que le dice al teléfono «súmale esto». Su disparador
     (migración 0032) publica el delta al dueño del camión."""
     actual = await existencia_con_candado(sesion, almacen, producto)
-    consecutivo = (
-        await sesion.execute(text("SELECT nextval('seq_folio_ajuste_camion')"))
-    ).scalar_one()
-    folio = f"AC-{consecutivo:06d}"
     ajuste_id = uuid.uuid4()
+    folio, cabeza = await folio_del_ajuste(
+        sesion, prefijo="AC", ajuste_id=ajuste_id, operacion=operacion
+    )
     await sesion.execute(
         text(
             """
             INSERT INTO ajustes_camion
               (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
-               contado, delta, nota, usuario_id, creado_en)
+               contado, delta, nota, usuario_id, creado_en, pareja_id)
             VALUES (:id, :folio, :a, :p, 'anulacion', :actual, NULL, :delta,
-                    :nota, :quien, :ahora)
+                    :nota, :quien, :ahora, :cabeza)
             """
         ),
         {
             "id": ajuste_id,
+            "cabeza": cabeza,
             "folio": folio,
             "a": almacen,
             "p": producto,
@@ -1279,7 +1318,9 @@ async def anular(
     return (
         f"{op.nombre} {op.folio or ''} anulada. "
         + " ".join(plan.efectos[:1])
-        + (f" Ajuste(s) al teléfono: {', '.join(folios)}." if folios else "")
+        + (f" Ajuste al teléfono: {folios[0]}"
+           + (f", con {len(folios)} artículos." if len(folios) > 1 else ".")
+           if folios else "")
     ).replace("  ", " ")
 
 

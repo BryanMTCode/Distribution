@@ -251,6 +251,18 @@ async def test_cada_camion_queda_como_el_excel(sesion, semilla):
         1 for r in renglones if r.vendedor == "VEND1102" and r.total
     )
 
+    # Una operación por camión (ADR 0002 §146): cada camión, una sola cabeza, y
+    # sus demás ajustes van con ella.
+    assert len(resultado.operaciones) == len(VENDEDORES)
+    cabezas = (
+        await sesion.execute(
+            text("SELECT almacen_id, count(*) FILTER (WHERE pareja_id IS NULL) AS cabezas, "
+                 "       count(DISTINCT COALESCE(pareja_id, id)) AS operaciones "
+                 "  FROM ajustes_camion GROUP BY almacen_id")
+        )
+    ).all()
+    assert all((c.cabezas, c.operaciones) == (1, 1) for c in cabezas), cabezas
+
     # Los precios verdaderos, con su versión nueva; los nuevos en su familia.
     assert tuple(await _precio(sesion, "S-110")) == (Decimal("947.00"), 2)
     assert tuple(await _precio(sesion, "E-108")) == (Decimal("20.00"), 1)

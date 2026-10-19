@@ -133,15 +133,32 @@ WITH movimientos AS (
 
     UNION ALL
     -- Los ajustes son del CAMIÓN, no de una persona: los hace la oficina, y aquí se
-    -- muestran los del camión que el vendedor maneja hoy.
-    SELECT a.creado_en, a.creado_en::date, 'ajuste', a.folio, NULL,
-           p.nombre || ' ' || CASE WHEN a.delta > 0 THEN '+' ELSE '' END
-             || trim_scale(a.delta)::text || ' · ' || a.nota,
+    -- muestran los del camión que el vendedor maneja hoy. Una captura de varios
+    -- artículos es UNA operación (ADR 0002 §146): un renglón con el folio de su
+    -- cabeza (`c`), que en un traspaso puede ser la mitad de la bodega.
+    SELECT min(a.creado_en), min(a.creado_en)::date, 'ajuste', c.folio, NULL,
+           CASE WHEN count(*) = 1
+                THEN (array_agg(p.nombre))[1] || ' '
+                       || CASE WHEN sum(a.delta) > 0 THEN '+' ELSE '' END
+                       || trim_scale(sum(a.delta))::text
+                ELSE count(DISTINCT a.producto_id) || ' artículos'
+                       || COALESCE(', ' || trim_scale(sum(a.delta) FILTER (
+                                     WHERE a.delta > 0))::text || ' pza de más', '')
+                       || COALESCE(', ' || trim_scale(-sum(a.delta) FILTER (
+                                     WHERE a.delta < 0))::text || ' de menos', '')
+           END || ' · ' || c.nota,
            NULL, NULL, false,
-           '/panel/inventario/' || a.almacen_id || '/' || a.producto_id, a.id::text
+           CASE WHEN count(*) = 1
+                THEN '/panel/inventario/' || (array_agg(a.almacen_id))[1] || '/'
+                       || (array_agg(a.producto_id))[1]
+                WHEN c.tipo <> 'anulacion' THEN '/panel/operaciones/ajuste/' || c.id
+           END,
+           c.id::text
       FROM ajustes_camion a
+      JOIN ajustes_camion c ON c.id = COALESCE(a.pareja_id, a.id)
       JOIN productos p ON p.id = a.producto_id
      WHERE a.almacen_id = :camion AND a.creado_en::date BETWEEN :desde AND :hasta
+     GROUP BY c.id, c.folio, c.nota, c.tipo
 
     UNION ALL
     -- En la cuenta, un cargo es lo que el vendedor debe: positivo. Un abono o una

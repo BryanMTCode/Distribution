@@ -64,7 +64,11 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app.infra.ajuste_de_existencia import existencia_con_candado, registrar_ajuste
+from app.infra.ajuste_de_existencia import (
+    UnaSolaOperacion,
+    existencia_con_candado,
+    registrar_ajuste,
+)
 from app.infra.base_en_blanco import Articulo, leer_articulos
 
 CAMIONES = (
@@ -136,6 +140,8 @@ class Resultado:
     camiones_nuevos: int = 0
     ajustes: int = 0
     folios: list[str] = field(default_factory=list)
+    # Una operación por camión (ADR 0002 §146): el folio de cada una.
+    operaciones: list[str] = field(default_factory=list)
 
 
 def leer_camiones(ruta: Path = CAMIONES) -> list[Renglon]:
@@ -349,6 +355,8 @@ async def aplicar(
                         f"{INICIO_DE_NOTA}: no viene en la hoja de la ruta, queda en 0.",
                     )
                 )
+        # Todo el camión es una sola operación en Operaciones (§146).
+        operacion = UnaSolaOperacion()
         for producto_id, total, nota in objetivo:
             actual = await existencia_con_candado(sesion, camion, producto_id)
             delta = total - actual
@@ -365,9 +373,12 @@ async def aplicar(
                 contado=total,
                 nota=nota,
                 quien=quien,
+                operacion=operacion,
             )
             resultado.ajustes += 1
             resultado.folios.append(folio)
+        if operacion.folio:
+            resultado.operaciones.append(operacion.folio)
 
     await sesion.execute(
         text("INSERT INTO auditoria (entidad, entidad_id, accion, usuario_id, datos_despues, "

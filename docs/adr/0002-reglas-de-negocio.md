@@ -6465,3 +6465,33 @@ manera permanente», «y que le muestre qué fue lo que cambió».
 - Aplica a todo lo que la oficina le manda al camión como ajuste: el conteo
   (§142), mover mercancía (§135) y el ajuste de uno por uno.
 
+## 146. Una captura, una operación
+
+**Decisión (octubre 2026).** «Cuando se ajuste el inventario en el dashboard,
+quiero que sea una sola operación: en Operaciones se genera una por cada
+artículo del ajuste.» Y: «en general las operaciones son en conjunto: si hago
+una entrada, no quiero que haya una por cada artículo».
+
+- **Lo que ya era así.** La entrada, la salida, la carga, la venta, la merma y
+  la devolución a la bodega son un documento con sus renglones: una operación
+  con todos sus artículos, desde siempre.
+- **Lo que no.** El ajuste de inventario (`ajustes_camion`) es de un artículo,
+  así que lo que se capturaba de varios a la vez salía partido: el conteo de
+  «Ajustar inventario» (§142), «Mover mercancía» con varios artículos (§135) y
+  la carga de los camiones desde el Excel (§99), uno por artículo.
+- **Ahora van juntos.** El primer ajuste de la captura es la cabeza: lleva el
+  folio de la operación y es el renglón que enseña Operaciones (§119). Los demás
+  apuntan a él con el mismo amarre que ya tenían las dos mitades de un traspaso
+  (`pareja_id`) y llevan su número con el del renglón: AC-000120, AC-000120-2,
+  AC-000120-3… Operaciones dice «3 artículos, 30 pza de más, 6 de menos · nota»;
+  al abrirla salen todos los artículos, y eliminarla los deshace todos. Los
+  ajustes que deja la anulación también van juntos, con un folio.
+- **El Excel de los camiones**, una operación por camión.
+- **En los movimientos del vendedor**, la captura sobre su camión es un renglón,
+  con el folio de la operación y un enlace a ella.
+- **Al teléfono le sigue llegando uno por artículo**: es una diferencia por
+  producto la que suma a su camión. El aviso de «Mi camión» (§145) los cuenta
+  como cambios: «Hoy la oficina hizo 3 cambios a tu camión».
+- Lo de antes se queda como estaba: cada ajuste viejo sigue siendo su propia
+  operación.
+

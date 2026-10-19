@@ -350,7 +350,8 @@ async def camiones_al_sabado(*, solo_resumen: bool = False, confirmado: bool = F
             return 1
 
     print(f"Listo. {resultado.ajustes} ajuste(s) de conteo"
-          + (f" ({resultado.folios[0]} a {resultado.folios[-1]})" if resultado.folios else "")
+          + (f" en {len(resultado.operaciones)} operación(es), una por camión "
+             f"({', '.join(resultado.operaciones)})" if resultado.operaciones else "")
           + f", {resultado.precios} precio(s), {resultado.articulos_nuevos} artículo(s) "
           f"nuevo(s), {resultado.camiones_nuevos} camión(es) nuevo(s).")
     print("Cada teléfono recibe su camión en su próxima sincronización.")
