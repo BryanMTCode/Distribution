@@ -283,6 +283,14 @@ async def refrescar(peticion: PeticionRefresh, sesion: SesionDep) -> RespuestaLo
             permisos=permisos,
         ),
         dispositivo_id=dispositivo_id,
+        # Y la credencial del login sin red, como en el login: así le llega al
+        # teléfono la contraseña que la oficina cambió en el panel en cuanto
+        # sincroniza con señal, sin volver a vincularlo (ADR 0002 §136).
+        credencial_local=(
+            await _armar_credencial(sesion, usuario, permisos)
+            if dispositivo_id is not None
+            else None
+        ),
     )
 
 

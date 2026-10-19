@@ -118,6 +118,50 @@ void main() {
     );
   });
 
+  group('lo que la oficina mueve de la bodega al camión (ADR 0002 §135)', () {
+    const coca = 'p-coca';
+
+    setUp(() => db.execute(
+          "INSERT INTO productos (id, sku, nombre, unidad_base) "
+          "VALUES (?, 'COCA600', 'Coca 600 ml', 'PZA')",
+          [coca],
+        ));
+
+    test('sube aunque el camión no lo traiga: es mercancía que se le puso', () {
+      aplicar(ajuste('tr-1', '24.000', tipo: 'traspaso', producto: coca,
+          nota: 'De Bodega a Camión 01 (sale con AB-000001)'));
+      expect(enCamion(coca), equals(24.0));
+      final fila = db.select(
+        'SELECT cant_cargada FROM existencias_camion WHERE producto_id = ?',
+        [coca],
+      ).single;
+      // No es carga: lo cargado del día no cambia.
+      expect(fila['cant_cargada'], equals(0));
+      // Y una vez: el mismo delta otra vez no suma.
+      aplicar(ajuste('tr-1', '24.000', tipo: 'traspaso', producto: coca));
+      expect(enCamion(coca), equals(24.0));
+    });
+
+    test('sobre lo que ya trae, se suma', () {
+      aplicar(ajuste('tr-2', '24.000', tipo: 'traspaso'));
+      expect(enCamion(_atun), equals(144.0));
+    });
+
+    test('lo que regresa a la bodega baja', () {
+      aplicar(ajuste('tr-3', '-20.000', tipo: 'traspaso'));
+      expect(enCamion(_atun), equals(100.0));
+    });
+
+    test('un producto que el catálogo del teléfono no conoce espera al cuadre', () {
+      aplicar(ajuste('tr-4', '10.000', tipo: 'traspaso', producto: 'p-que-no-llega'));
+      expect(
+        db.select('SELECT * FROM existencias_camion WHERE producto_id = ?',
+            ['p-que-no-llega']),
+        isEmpty,
+      );
+    });
+  });
+
   test('se guarda el folio y la nota, para poder decirle al vendedor qué pasó', () {
     aplicar(ajuste('aj-7', '-18.000', nota: 'se contó con él por teléfono'));
 

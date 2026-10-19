@@ -143,6 +143,11 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/clientes", "Clientes"),
         ("/panel/plan-visita", "Plan de visita"),
     ],
+    "Inventario": [
+        ("/panel/inventario", "Existencias"),
+        # De la bodega al camión y de regreso, desde el panel (ADR 0002 §135).
+        ("/panel/inventario/mover", "Mover mercancía"),
+    ],
     "Entradas y salidas": [
         ("/panel/entradas", "Entradas"),
         ("/panel/salidas", "Salidas"),
@@ -163,8 +168,9 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
 # Tiene que decir lo mismo que el `actor.exigir(...)` de cada pantalla. No se
 # confía en que alguien se acuerde: `test_panel_arranque.py` entra con cada rol
 # y revisa que nada de lo que ve responda 403 y que lo que no ve, sí. Una pantalla
-# nueva en el menú sin renglón aquí truena al dibujar cualquier página.
-PERMISO_DEL_MENU: dict[str, str | None] = {
+# nueva en el menú sin renglón aquí truena al dibujar cualquier página. Una tupla
+# pide todos sus permisos.
+PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel": None,
     "/panel/empresa": "tablero.ver",
     "/panel/desempeno": "tablero.ver",
@@ -181,6 +187,8 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
     "/panel/clientes": "clientes.ver",
     "/panel/productos": "catalogo.ver",
     "/panel/inventario": "inventario.ver",
+    # Ver lo que hay y moverlo: los dos.
+    "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),
     "/panel/entradas": "inventario.ver",
     "/panel/salidas": "inventario.ver",
     "/panel/compras": "inventario.ver",
@@ -197,7 +205,7 @@ PERMISO_DEL_MENU: dict[str, str | None] = {
 }
 
 
-def permiso_de_la_pantalla(enlace: str) -> str | None:
+def permiso_de_la_pantalla(enlace: str) -> str | tuple[str, ...] | None:
     """El permiso de la pantalla a la que lleva un enlace, aunque traiga
     subruta, `?filtro=` o `#ancla`: manda la entrada del menú más larga que
     le quede de prefijo."""
@@ -231,8 +239,14 @@ def menu_para(actor) -> list[tuple[str, list[tuple[str, str]]]]:
 
 
 def _puede(actor, ruta: str) -> bool:
-    permiso = PERMISO_DEL_MENU[ruta]
-    return permiso is None or actor.puede(permiso)
+    return puede_todos(actor, PERMISO_DEL_MENU[ruta])
+
+
+def puede_todos(actor, permiso: str | tuple[str, ...] | None) -> bool:
+    """Si la persona tiene el permiso de la pantalla —o todos, si es tupla—."""
+    if permiso is None:
+        return True
+    return all(actor.puede(p) for p in ((permiso,) if isinstance(permiso, str) else permiso))
 
 
 def pestanas_para(actor, seccion: str) -> list[tuple[str, str]]:

@@ -143,7 +143,8 @@
             <div class="menu-acciones-caja">
               <form method="post" action="/panel/equipo/usuarios/{{ u.id }}/password">
                 <input type="hidden" name="csrf" value="{{ csrf }}">
-                <input type="password" name="password" placeholder="contraseña nueva"
+                <input type="text" name="password" placeholder="contraseña nueva"
+                       autocomplete="new-password" autocapitalize="off" spellcheck="false"
                        aria-label="Contraseña nueva de {{ u.nombre }}" style="width:150px">
                 <button type="submit" class="secundario boton-chico">Cambiar</button>
               </form>

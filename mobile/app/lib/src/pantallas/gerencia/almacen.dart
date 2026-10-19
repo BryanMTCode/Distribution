@@ -5,12 +5,13 @@
 /// pestaña Camiones (cargas y corte) se volvió Almacén, con estas partes:
 ///
 ///   · **Existencias**: qué hay en cada bodega y en cada camión.
-///   · **Entradas**: la mercancía que llega (compra, inventario inicial, ajuste).
-///   · **Traspasos** de una bodega a otra.
 ///   · **Cargas**: las que piden los vendedores para mañana, para aceptarlas, y
 ///     subirle mercancía al camión a mano.
-///   · **Corte del día**: los cortes que mandan los vendedores, para cerrarlos,
-///     y el corte contando el camión.
+///   · **Corte del día**: los cortes de los vendedores —que se cierran solos,
+///     ADR 0002 §133— y el corte contando el camión.
+///
+/// Entradas y Traspasos estuvieron aquí y se quitaron (§134): «de la app quitaré
+/// lo de entrada y traspasos». Se hacen en el panel.
 ///
 /// La carga y el corte van separados a propósito (ADR 0002 §82): primero se
 /// cierra el corte del vendedor y después se acepta su carga.
@@ -31,9 +32,7 @@ import '../familias.dart';
 import 'cargas.dart';
 import 'comunes.dart';
 import 'cortes.dart';
-import 'entradas.dart';
 import 'mayoreo.dart';
-import 'traspasos.dart';
 
 /// Si la pestaña Almacén aparece en la barra.
 final muestraAlmacenProvider = Provider<bool>(
@@ -58,8 +57,6 @@ class PantallaAlmacen extends ConsumerWidget {
           'Existencias',
           (b) => PantallaExistencias(conBarra: b),
         ),
-        (const Key('pestana_entradas'), 'Entradas', (b) => PantallaEntradas(conBarra: b)),
-        (const Key('pestana_traspasos'), 'Traspasos', (b) => PantallaTraspasos(conBarra: b)),
       ],
       if (ref.watch(puedeCargarProvider))
         (const Key('pestana_cargas'), 'Cargas', (b) => PantallaCargas(conBarra: b)),

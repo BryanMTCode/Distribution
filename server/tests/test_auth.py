@@ -224,3 +224,63 @@ async def test_refresh_con_token_de_access_es_rechazado(cliente, semilla):
     ).json()
     r = await cliente.post("/v1/auth/refresh", json={"refresh_token": login["access_token"]})
     assert r.status_code == 401
+
+
+async def test_al_renovar_el_telefono_trae_la_contrasena_que_cambio_la_oficina(
+    cliente, semilla, sesion
+):
+    """ADR 0002 §136: la contraseña cambiada en el panel le llega al teléfono en
+    cuanto renueva su acceso —al sincronizar con señal—, sin volver a vincularlo.
+    Sin dispositivo (Gerencia en la computadora) no viaja ninguna credencial."""
+    from app.core.seguridad import hashear_password, verificar_password
+
+    dispositivo_id = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos(id, usuario_id, etiqueta, estado, registrado_en) "
+            "VALUES (:d, :u, 'Moto G54', 'activo', now())"
+        ),
+        {"d": dispositivo_id, "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+    login = (
+        await cliente.post(
+            "/v1/auth/login",
+            json={"codigo": "VEND01", "password": PASSWORD_VENDEDOR,
+                  "dispositivo_id": str(dispositivo_id)},
+        )
+    ).json()
+
+    # La oficina le pone otra.
+    await sesion.execute(
+        text("UPDATE usuarios SET password_hash = :h WHERE id = :u"),
+        {"h": hashear_password("frase nueva larga"), "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    r = await cliente.post("/v1/auth/refresh", json={"refresh_token": login["refresh_token"]})
+    assert r.status_code == 200, r.text
+    credencial = r.json()["credencial_local"]
+    assert verificar_password("frase nueva larga", credencial["password_hash"])
+    assert not verificar_password(PASSWORD_VENDEDOR, credencial["password_hash"])
+    assert credencial["codigo"] == "VEND01"
+
+    # La nueva entra en línea con el mismo teléfono: es lo que hace la app
+    # cuando lo tecleado no coincide con lo que guardaba.
+    nueva = await cliente.post(
+        "/v1/auth/login",
+        json={"codigo": "VEND01", "password": "frase nueva larga",
+              "dispositivo_id": str(dispositivo_id)},
+    )
+    assert nueva.status_code == 200
+    assert nueva.json()["credencial_local"]["password_hash"] == credencial["password_hash"]
+
+    sin_equipo = (
+        await cliente.post(
+            "/v1/auth/login", json={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR}
+        )
+    ).json()
+    r = await cliente.post(
+        "/v1/auth/refresh", json={"refresh_token": sin_equipo["refresh_token"]}
+    )
+    assert r.json()["credencial_local"] is None

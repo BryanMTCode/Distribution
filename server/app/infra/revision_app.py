@@ -330,10 +330,15 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "corte_vendedor", "Hacer el corte del día",
-                "En «Mi día», «Hacer el corte del día»: escribe el efectivo que entregas y "
-                "«Terminar el corte».",
-                "Muestra lo que queda en el camión sin contarlo y deja ver y compartir el "
-                "ticket del corte. La oficina lo ve en Cortes y cargas → Por aceptar.",
+                "En «Mi día», «Hacer el corte del día»: revisa lo que entregas —ya no se "
+                "escribe, la app lo calcula de lo vendido en efectivo— → «Confirmar el "
+                "corte» → «Confirmar». En el ticket, «Imprimir» y luego «Enviar por "
+                "WhatsApp (o correo…)».",
+                "Muestra lo que queda en el camión sin contarlo. «Imprimir» dice si salió "
+                "en la impresora; WhatsApp manda el mismo ticket. Al sincronizar, el corte "
+                "se cierra solo: en «Mi día» dice «se cierra solo» y en el panel pasa a "
+                "«Resueltos» sin que nadie lo cierre (ADR 0002 §133).",
+                desde="+44",
             ),
             Punto(
                 "solicitar_carga", "Solicitar la carga de mañana",
@@ -434,22 +439,11 @@ SECCIONES: tuple[Seccion, ...] = (
                 "artículo.",
             ),
             Punto(
-                "entrada", "Entrada de mercancía",
-                "Almacén → Entradas → «Nueva entrada» → «Abrir la entrada» → «Agregar» "
-                "productos → «Confirmar».",
-                "La existencia de la bodega sube; en el panel sale en Entradas y salidas.",
-            ),
-            Punto(
-                "compra_sin_senal", "Recibir una compra sin señal",
-                "Con modo avión: Almacén → Entradas → «Recibir compra» → «Agregar "
-                "producto» → «Guardar compra». Quita el modo avión y «Mandar ahora».",
-                "Se guarda sin señal y se manda una sola vez; la bodega sube.",
-            ),
-            Punto(
-                "traspaso", "Traspaso entre bodegas",
-                "Almacén → Traspasos: de dónde, a dónde y cuánto.",
-                "Sale de una bodega y entra a la otra; si no alcanza, dice cuánto hay y "
-                "no mueve nada.",
+                "sin_entradas_ni_traspasos", "Sin Entradas ni Traspasos",
+                "Abre Almacén y mira las pestañas.",
+                "Existencias, Cargas, Corte del día y Mayoreo; Entradas y Traspasos ya no "
+                "están en la app: se hacen en el panel (ADR 0002 §134).",
+                desde="+44",
             ),
             Punto(
                 "cargas_por_fecha", "Cargas por fecha",
@@ -486,10 +480,12 @@ SECCIONES: tuple[Seccion, ...] = (
                 "qué no deja.",
             ),
             Punto(
-                "cerrar_corte", "Cerrar el corte de un vendedor",
-                "Almacén → Corte del día → «Cortes de los vendedores» → ábrelo → cuenta "
-                "el efectivo que recibes → «Cerrar el corte».",
+                "cerrar_corte", "Un corte que no se cerró solo",
+                "Almacén → Corte del día → «Cortes de los vendedores». Normalmente está "
+                "vacío: los cortes se cierran solos. Si hay uno, dice «No se cerró solo» "
+                "y por qué; ábrelo → «Cerrar el corte».",
                 "Dice la diferencia contra lo esperado y deja el ticket del corte.",
+                desde="+44",
             ),
             Punto(
                 "cortes_por_dia", "Cortes por día, sin repetirse",
@@ -605,11 +601,14 @@ SECCIONES: tuple[Seccion, ...] = (
         "panel_operacion", "Cortes, cargas y ventas", "La computadora, entrando como admin",
         (
             Punto(
-                "panel_cerrar_corte", "Cerrar el corte que mandó un vendedor",
-                "Cortes y cargas → Por aceptar → «Cortes por cerrar»: cuenta el efectivo "
-                "que recibes → «Cerrar el corte».",
-                "Dice la diferencia contra lo esperado, y el corte pasa a «Resueltos en la "
-                "última semana».",
+                "panel_cerrar_corte", "El corte del vendedor se cierra solo",
+                "Que un vendedor confirme su corte en el teléfono y sincronice. Luego "
+                "Cortes y cargas → Por aceptar.",
+                "Sin que nadie lo cierre, el corte sale en «Resueltos en la última semana» "
+                "a nombre del vendedor. Si el teléfono tenía algo sin subir, se queda en "
+                "«Cortes por cerrar» con «No se cerró solo: …» y se cierra en cuanto "
+                "suba; si urge, ahí mismo «Cerrar el corte» (ADR 0002 §133).",
+                desde="+44",
             ),
             Punto(
                 "panel_aceptar_carga", "Aceptar la carga que pidió un vendedor",
@@ -722,6 +721,19 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Existencias por familia; el ajuste del camión le llega al teléfono.",
             ),
             Punto(
+                "panel_mover_mercancia", "Mover mercancía entre la bodega y un camión",
+                "Almacén → Inventario → pestaña «Mover mercancía»: «De la bodega al "
+                "camión», el camión y la bodega → «Ver lo que hay» → escribe cuánto de "
+                "un artículo (en caja o pieza) → «Mover a …». Luego lo mismo «Del camión "
+                "a la bodega».",
+                "Baja el origen y sube el destino, y queda en «Lo último que se movió». "
+                "Al teléfono del vendedor le llega al sincronizar, aunque no trajera ese "
+                "artículo. Si escribes más de lo que hay, no mueve nada y dice cuánto "
+                "hay. En Operaciones sale una sola vez, y anularla regresa las dos "
+                "partes (ADR 0002 §135).",
+                desde="+44",
+            ),
+            Punto(
                 "panel_entrada", "Recibir mercancía",
                 "Almacén → Entradas y salidas → Entradas → «Abrir borrador» → «Agregar» → "
                 "confirmar.",
@@ -756,6 +768,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "«Cambiar contraseña» y «Desactivar» uno de prueba.",
                 "Los desactivados van aparte, y un vendedor desactivado ya no entra a la "
                 "app.",
+            ),
+            Punto(
+                "panel_contrasena_sin_vincular", "Cambiar la contraseña de un vendedor",
+                "Usuarios y rutas → «Más ▾» de un vendedor de prueba → escribe la "
+                "contraseña nueva (se ve lo que escribes) → «Cambiar». En su teléfono, "
+                "CON señal, sal y entra con la nueva; luego intenta con la vieja.",
+                "La nueva entra sin sincronizar ni volver a vincular, y la vieja ya no. "
+                "Sin señal, el teléfono sigue entrando con la vieja hasta que se conecte "
+                "(ADR 0002 §136).",
+                desde="+44",
             ),
             Punto(
                 "panel_cambiar_codigo", "Cambiar el código de un usuario",
@@ -888,6 +910,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "La lista queda solo con los clientes del lunes, en su orden. Al guardar "
                 "regresa al lunes, y los clientes de los demás días no cambian.",
                 desde="+41",
+            ),
+            Punto(
+                "panel_eliminar_vendedor_nuevo", "Eliminar un vendedor de prueba",
+                "Crea un vendedor de prueba con camión, vincula un teléfono, entra y da "
+                "de alta una tienda. Luego Usuarios y rutas → «Más ▾» → «Eliminar».",
+                "Se elimina con su teléfono y su camión vacío; la tienda se queda. Si "
+                "tuviera ventas o algo en su camión, el aviso dice qué es, no «documentos "
+                "firmados» (ADR 0002 §137).",
+                desde="+44",
             ),
             Punto(
                 "panel_usuarios_mas", "Las acciones de cada usuario",

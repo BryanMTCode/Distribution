@@ -161,8 +161,8 @@ class _EstadoCortesDeVendedores extends _EstadoSeccion<SeccionCortesDeVendedores
         if (c != null && c.pendientes.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Ningún corte por cerrar. Llegan cuando el teléfono del '
-                'vendedor sincroniza.'),
+            child: Text('Ningún corte por cerrar: se cierran solos cuando el '
+                'teléfono del vendedor termina de subir su día.'),
           ),
         for (final cierre in c?.pendientes ?? const <CierreDeVendedor>[])
           Card(
@@ -171,7 +171,9 @@ class _EstadoCortesDeVendedores extends _EstadoSeccion<SeccionCortesDeVendedores
               leading: const Icon(Icons.point_of_sale_outlined),
               title: Text(cierre.vendedor),
               subtitle: Text('Corte del ${diaEnPalabras(cierre.corte!.fechaOperativa)}\n'
-                  '${efectivoEnPalabras(cierre.corte!)}'),
+                  '${efectivoEnPalabras(cierre.corte!)}'
+                  // Se cierran solos (ADR 0002 §133): si éste no, el porqué.
+                  '${cierre.corte!.noSeCerroSolo == null ? '' : '\nNo se cerró solo: ${cierre.corte!.noSeCerroSolo}'}'),
               isThreeLine: true,
               trailing: const Icon(Icons.chevron_right),
               onTap: () => abrir(PantallaCorteDeVendedor(cierre: cierre)),

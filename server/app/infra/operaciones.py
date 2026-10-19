@@ -254,7 +254,8 @@ WITH ops AS (
 
     UNION ALL
     -- Los ajustes de tipo «anulación» no son operaciones: son lo que dejó una
-    -- anulación, y anularlos sería deshacer el deshacer.
+    -- anulación, y anularlos sería deshacer el deshacer. De un traspaso
+    -- bodega↔camión (§135) se ve la mitad que sale; la que entra va con ella.
     SELECT j.creado_en, j.creado_en::date, 'ajuste', j.id, j.folio,
            COALESCE(a.responsable_id, j.usuario_id), a.nombre,
            p.nombre || ' ' || CASE WHEN j.delta > 0 THEN '+' ELSE '' END
@@ -263,7 +264,8 @@ WITH ops AS (
       FROM ajustes_camion j
       JOIN almacenes a ON a.id = j.almacen_id
       JOIN productos p ON p.id = j.producto_id
-     WHERE j.tipo <> 'anulacion' AND j.creado_en::date BETWEEN :desde AND :hasta
+     WHERE j.tipo <> 'anulacion' AND j.pareja_id IS NULL
+       AND j.creado_en::date BETWEEN :desde AND :hasta
 
     UNION ALL
     SELECT COALESCE(l.cerrada_en, l.creado_en), l.fecha_operativa, 'corte', l.id, l.folio,
@@ -753,26 +755,47 @@ async def _revisar_salida(sesion, op: Operacion, plan: Plan, candado: bool) -> N
 
 
 async def _revisar_ajuste(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
-    ajuste = (
+    # Con su pareja, si es un traspaso bodega↔camión (§135): las dos mitades.
+    ajustes = (
         await sesion.execute(
             text(
-                "SELECT a.tipo AS almacen_tipo, u.nombre AS responsable "
+                "SELECT j.tipo, a.nombre AS almacen, a.tipo AS almacen_tipo, "
+                "       u.nombre AS responsable "
                 "  FROM ajustes_camion j JOIN almacenes a ON a.id = j.almacen_id "
                 "  LEFT JOIN usuarios u ON u.id = a.responsable_id "
-                " WHERE j.id = :j"
+                " WHERE j.id = :j OR j.pareja_id = :j"
+                " ORDER BY j.pareja_id NULLS FIRST"
             ),
             {"j": op.ref},
         )
-    ).mappings().one()
-    await _llenar_movimientos(
-        sesion, plan, await _movimientos(sesion, "ajuste_camion", op.ref), candado
-    )
-    plan.efectos.append(f"Se escribe el ajuste contrario en {op.donde}.")
-    if ajuste["almacen_tipo"] == "camion":
+    ).mappings().all()
+    await _llenar_movimientos(sesion, plan, await _movimientos_del_ajuste(sesion, op.ref), candado)
+    if len(ajustes) == 2:
         plan.efectos.append(
-            f"El teléfono de {ajuste['responsable'] or 'su vendedor'} lo recibe con tu "
-            "motivo en su siguiente sincronización."
+            f"La mercancía regresa de {ajustes[1]['almacen']} a {ajustes[0]['almacen']}: "
+            "el traspaso no ocurrió."
         )
+    else:
+        plan.efectos.append(f"Se escribe el ajuste contrario en {op.donde}.")
+    for ajuste in ajustes:
+        if ajuste["almacen_tipo"] == "camion":
+            plan.efectos.append(
+                f"El teléfono de {ajuste['responsable'] or 'su vendedor'} lo recibe con tu "
+                "motivo en su siguiente sincronización."
+            )
+
+
+async def _movimientos_del_ajuste(sesion, ajuste_id: uuid.UUID) -> list[dict]:
+    """Lo que movió el ajuste y, si es la mitad que sale de un traspaso
+    bodega↔camión, lo que movió la que entra: se anulan juntas."""
+    movimientos = await _movimientos(sesion, "ajuste_camion", ajuste_id)
+    for pareja in (
+        await sesion.execute(
+            text("SELECT id FROM ajustes_camion WHERE pareja_id = :j"), {"j": ajuste_id}
+        )
+    ).scalars():
+        movimientos += await _movimientos(sesion, "ajuste_camion", pareja)
+    return movimientos
 
 
 async def _revisar_corte(sesion, op: Operacion, plan: Plan, candado: bool) -> None:
@@ -1474,7 +1497,7 @@ async def _anular_ajuste(sesion, op, *, nota, quien, ahora, anulacion_id, **_) -
     # un camión viaja al teléfono.
     return await _deshacer_movimientos(
         sesion,
-        await _movimientos(sesion, "ajuste_camion", op.ref),
+        await _movimientos_del_ajuste(sesion, op.ref),
         anulacion_id=anulacion_id,
         nota=nota,
         quien=quien,

@@ -1466,7 +1466,9 @@ async def crear_corte(
 
     Si ese mismo día ya había mandado otro que nadie ha visto, el nuevo lo
     reemplaza: es el vendedor corrigiendo su corte antes de entregar, y lo que
-    vale es lo último que dijo. Uno que la oficina ya cerró no se toca.
+    vale es lo último que dijo. Uno que ya se cerró no se toca.
+
+    Ya no espera a la oficina: se encola su cierre automático (§133).
     """
     ya = await sesion.execute(
         text("SELECT 1 FROM cortes_vendedor WHERE id = :id"), {"id": entidad_id}
@@ -1558,6 +1560,11 @@ async def crear_corte(
             "nota": "; ".join(notas) or None,
         },
     )
+    # Se cierra solo (ADR 0002 §133): el worker lo intenta en cuanto este lote
+    # se confirme, y otra vez cuando el teléfono reporte su cola en cero.
+    from app.infra.cierre_del_vendedor import encolar_cierre_automatico
+
+    await encolar_cierre_automatico(sesion, entidad_id)
     for producto_id, cantidad in contados.items():
         if producto_id not in conocidos:
             continue

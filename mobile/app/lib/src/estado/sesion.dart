@@ -79,6 +79,37 @@ final repoCredencialProvider = Provider<RepoCredencial>(
 final credencialGuardadaProvider = FutureProvider<CredencialLocal?>(
   (ref) => ref.watch(repoCredencialProvider).leer(),
 );
+
+/// Reemplaza la credencial guardada por la que acaba de mandar el servidor, al
+/// entrar o al renovar el acceso (ADR 0002 §136).
+///
+/// Es como le llega al teléfono la contraseña que la oficina cambió en el panel
+/// —y su código, y la vigencia que vuelve a empezar— sin volver a vincularlo.
+/// Solo si ya había una credencial y es del mismo usuario: un teléfono sin
+/// credencial (Gerencia, o uno que se borró a distancia) no gana una por aquí.
+///
+/// Con `renovarVigencia` —al entrar con la contraseña y señal— se guarda aunque
+/// solo cambie la vigencia; al renovar el acceso, que pasa cada media hora, solo
+/// si cambió la contraseña o el código.
+Future<void> guardarCredencialAlDia(
+  Ref ref,
+  SesionEnLinea sesion, {
+  bool renovarVigencia = false,
+}) async {
+  final cruda = sesion.credencialCruda;
+  final nueva = sesion.credencialLocal;
+  if (cruda == null || nueva == null) return;
+  final repo = ref.read(repoCredencialProvider);
+  final guardada = await repo.leer();
+  if (guardada == null || guardada.usuarioId != nueva.usuarioId) return;
+  final igual = guardada.passwordHash == nueva.passwordHash &&
+      guardada.codigo == nueva.codigo &&
+      (!renovarVigencia || guardada.validaHasta == nueva.validaHasta);
+  if (igual) return;
+  await repo.guardar(cruda);
+  ref.invalidate(credencialGuardadaProvider);
+}
+
 final repoClientesProvider = Provider<RepoClientes>(
   (ref) => RepoClientes(ref.watch(baseLocalProvider).db),
 );
@@ -137,12 +168,29 @@ class ControladorSesion extends Notifier<Sesion> {
   /// sin datos. El login online solo hace falta la primera vez y cuando la
   /// credencial vence.
   Future<ResultadoLogin> entrarOffline(String password) async {
-    final credencial = await ref.read(repoCredencialProvider).leer();
-    final resultado = intentarLoginOffline(
+    var credencial = await ref.read(repoCredencialProvider).leer();
+    var resultado = intentarLoginOffline(
       credencial,
       password,
       ahora: ref.read(relojProvider)(),
     );
+
+    // LA CONTRASEÑA QUE LA OFICINA CAMBIÓ EN EL PANEL (ADR 0002 §136).
+    //
+    // El teléfono guarda el hash de la contraseña de cuando se vinculó; la nueva
+    // no la conoce hasta que se la diga el servidor. Si lo tecleado no coincide
+    // —o el acceso venció— y hay señal, se le pregunta al servidor: si la acepta,
+    // se guarda la credencial que manda y se entra, sin sincronizar ni volver a
+    // vincular. Sin señal, nada cambia: el teléfono no tiene cómo saberla.
+    if (credencial != null &&
+        (resultado == ResultadoLogin.passwordIncorrecta ||
+            resultado == ResultadoLogin.credencialVencida)) {
+      final nueva = await _confirmarEnLinea(credencial, password);
+      if (nueva != null) {
+        credencial = nueva;
+        resultado = ResultadoLogin.ok;
+      }
+    }
 
     state = resultado == ResultadoLogin.ok
         ? SesionAbierta(credencial!)
@@ -173,6 +221,50 @@ class ControladorSesion extends Notifier<Sesion> {
     return resultado;
   }
 
+  /// La contraseña que no coincidió con la guardada, preguntada al servidor.
+  ///
+  /// Devuelve la credencial nueva —ya guardada, con su token— si el servidor la
+  /// aceptó y la credencial que manda la verifica; `null` en cualquier otro caso
+  /// (sin red, contraseña de verdad incorrecta, servidor con problemas). Con
+  /// tiempo límite corto: quien la teclea está parado esperando.
+  Future<CredencialLocal?> _confirmarEnLinea(
+    CredencialLocal guardada,
+    String password,
+  ) async {
+    try {
+      final fila = ref
+          .read(baseLocalProvider)
+          .db
+          .select("SELECT valor FROM sync_estado WHERE clave = 'dispositivo_id'");
+      if (fila.isEmpty) return null;
+      final sesion = await ClienteAuth(ref.read(transporteSinSesionProvider))
+          .entrar(
+            codigo: guardada.codigo,
+            password: password,
+            dispositivoId: fila.first['valor'] as String,
+          )
+          .timeout(const Duration(seconds: 10));
+      final cruda = sesion.credencialCruda;
+      final nueva = sesion.credencialLocal;
+      if (cruda == null || nueva == null || nueva.usuarioId != guardada.usuarioId) {
+        return null;
+      }
+      if (intentarLoginOffline(nueva, password, ahora: ref.read(relojProvider)()) !=
+          ResultadoLogin.ok) {
+        return null;
+      }
+      await ref.read(repoCredencialProvider).guardar(cruda);
+      ref.invalidate(credencialGuardadaProvider);
+      ref.read(tokenProvider.notifier).state = sesion.accessToken;
+      await ref
+          .read(almacenSeguroProvider)
+          .escribir(claveRefreshToken, sesion.refreshToken);
+      return nueva;
+    } on Object {
+      return null;
+    }
+  }
+
   /// Login en línea silencioso, para dejar la sesión en condiciones de subir.
   ///
   /// Se traga cualquier error a propósito: nada de lo que pase aquí debe cambiar
@@ -195,6 +287,9 @@ class ControladorSesion extends Notifier<Sesion> {
       await ref
           .read(almacenSeguroProvider)
           .escribir(claveRefreshToken, sesion.refreshToken);
+      // Y la credencial al día: su vigencia vuelve a empezar y, si la oficina
+      // cambió algo del usuario, el teléfono lo trae (§136).
+      await guardarCredencialAlDia(ref, sesion, renovarVigencia: true);
     } on Object {
       // Sin red, o el servidor dijo que no. Se entró igual: es el punto.
     }

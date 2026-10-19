@@ -448,13 +448,17 @@ async def eliminar_usuario(
     borre (octubre 2026, ADR 0002 §88).
 
     Ahora se suelta primero todo lo que es SUYO y no es historia: sus teléfonos
-    (con sus folios y sesiones), los avisos pendientes de su teléfono, su
-    asignación a rutas, su camión si está vacío; y donde aparece como «quién lo
-    capturó» (un cliente, un proveedor, la auditoría) se queda sin nombre. Lo que
-    sí es historia —ventas, cargas, cortes, movimientos de inventario, cuentas—
-    no se borra: si existe, no se borra NADA, se dice qué tiene y se ofrece
-    desactivarlo. Todo va en un punto de guardado: o se borra completo, o no
-    cambia nada.
+    (con sus folios y sesiones), los avisos pendientes de su teléfono, lo que su
+    teléfono mandó y el servidor rechazó (cuarentena), las cargas que pidió y no
+    se le cargaron, su asignación a rutas, su camión si está vacío; y donde
+    aparece como «quién lo capturó» (una tienda —también el teléfono con que la
+    capturó—, un proveedor, la auditoría) se queda sin nombre. Si aun así algo lo
+    detiene, el aviso dice qué es (octubre 2026: «acabo de crear un vendedor y no
+    lo puedo eliminar porque dice que tiene cosas firmadas»: era una tienda que dio
+    de alta desde su teléfono, ADR 0002 §137). Lo que sí es historia —ventas,
+    cargas, cortes, movimientos de inventario, cuentas— no se borra: si existe, no
+    se borra NADA, se dice qué tiene y se ofrece desactivarlo. Todo va en un punto
+    de guardado: o se borra completo, o no cambia nada.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -488,8 +492,12 @@ async def eliminar_usuario(
         async with sesion.begin_nested():
             camiones = await _soltar_lo_suyo(sesion, usuario_id, usuario["codigo"])
             await sesion.execute(text("DELETE FROM usuarios WHERE id = :u"), {"u": usuario_id})
-    except IntegrityError:
+    except IntegrityError as e:
         documentos = await _sus_documentos(sesion, usuario_id)
+        if not documentos:
+            # Lo que lo impide no está en la lista: se dice qué es, en vez de un
+            # «documentos firmados» que no le dice nada a quien lo lee.
+            documentos = await _lo_que_lo_impide(sesion, e)
         return _a_ficha(
             "usuarios",
             usuario_id,
@@ -529,6 +537,24 @@ async def _soltar_lo_suyo(sesion, usuario_id: uuid.UUID, codigo: str) -> list[st
     await sesion.execute(
         text(f"DELETE FROM sync_operaciones WHERE dispositivo_id IN ({equipos})"), p
     )
+    # Lo que su teléfono mandó y el servidor rechazó: no llegó a ser documento.
+    await sesion.execute(
+        text(f"DELETE FROM sync_cuarentena WHERE usuario_id = :u "
+             f"    OR dispositivo_id IN ({equipos})"),  # noqa: S608
+        p,
+    )
+    # Lo que pidió y no se le cargó —pendiente, rechazado o reemplazado— no movió
+    # mercancía: se va con él. La aceptada tiene su carga, que sí es historia.
+    await sesion.execute(
+        text("DELETE FROM solicitudes_carga WHERE vendedor_id = :u AND estado <> 'aceptada'"),
+        p,
+    )
+    # Las tiendas que dio de alta desde su teléfono se quedan, sin el teléfono
+    # que las capturó (como «creado_por», abajo).
+    await sesion.execute(
+        text(f"UPDATE clientes SET dispositivo_id = NULL WHERE dispositivo_id IN ({equipos})"),
+        p,
+    )
     await sesion.execute(text(f"DELETE FROM sync_lotes WHERE dispositivo_id IN ({equipos})"), p)
     await sesion.execute(text("DELETE FROM dispositivos WHERE usuario_id = :u"), p)
     await sesion.execute(
@@ -562,6 +588,8 @@ async def _soltar_lo_suyo(sesion, usuario_id: uuid.UUID, codigo: str) -> list[st
     for tabla, columna in (
         ("rutas", "vendedor_id"),
         ("clientes", "creado_por"),
+        ("clientes_posibles_duplicados", "resuelto_por"),
+        ("sync_cuarentena", "resuelto_por"),
         ("proveedores", "creado_por"),
         ("pilotos", "creado_por"),
         ("objetivos_ruta", "fijado_por"),
@@ -589,10 +617,16 @@ async def _sus_documentos(sesion, usuario_id: uuid.UUID) -> str:
         ("ventas", "vendedor_id", "venta(s)"),
         ("cargas", "vendedor_id", "carga(s)"),
         ("cortes_vendedor", "vendedor_id", "corte(s)"),
+        ("liquidaciones", "vendedor_id", "corte(s) del día"),
         ("mermas", "vendedor_id", "merma(s)"),
+        ("no_drops", "vendedor_id", "visita(s) sin venta"),
+        ("cobros", "vendedor_id", "cobro(s)"),
+        ("traspasos", "solicitado_por", "devolución(es) a la bodega"),
         ("cuenta_vendedor", "vendedor_id", "movimiento(s) en su cuenta"),
         ("movimientos_inventario", "usuario_id", "movimiento(s) de inventario"),
+        ("ajustes_camion", "usuario_id", "ajuste(s) de inventario"),
         ("entradas", "creado_por", "entrada(s) de mercancía"),
+        ("pilotos", "vendedor_id", "piloto(s)"),
     ):
         n = (
             await sesion.execute(
@@ -603,6 +637,43 @@ async def _sus_documentos(sesion, usuario_id: uuid.UUID) -> str:
         if n:
             partes.append(f"{n} {nombre}")
     return ", ".join(partes)
+
+
+# Lo que nombra el aviso cuando lo que impide borrar no está en `_sus_documentos`:
+# la tabla de la llave foránea que lo detuvo, dicha con palabras.
+_TABLAS_EN_PALABRAS = {
+    "ventas": "ventas",
+    "cargas": "cargas",
+    "liquidaciones": "cortes del día",
+    "movimientos_inventario": "movimientos de inventario de su camión",
+    "existencias": "mercancía en su camión",
+    "ajustes_camion": "ajustes del inventario de su camión",
+    "mermas": "mermas",
+    "traspasos": "devoluciones a la bodega",
+    "ventas_mayoreo": "ventas de mayoreo",
+    "salidas": "salidas de bodega",
+    "entradas": "entradas de mercancía",
+    "anulaciones": "operaciones eliminadas",
+}
+
+
+async def _lo_que_lo_impide(sesion, error: IntegrityError) -> str:
+    """La tabla que detuvo el borrado, dicha con palabras, si se sabe."""
+    restriccion = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+    if not restriccion:
+        return "documentos firmados"
+    tabla = (
+        await sesion.execute(
+            # El nombre es único por tabla, no en todo el esquema: la primera
+            # basta para decir de qué se trata.
+            text("SELECT conrelid::regclass::text FROM pg_constraint "
+                 " WHERE conname = :c AND contype = 'f' ORDER BY 1 LIMIT 1"),
+            {"c": restriccion},
+        )
+    ).scalar_one_or_none()
+    if tabla is None:
+        return "documentos firmados"
+    return _TABLAS_EN_PALABRAS.get(tabla, f"registros en «{tabla}»")
 
 
 # ===========================================================================

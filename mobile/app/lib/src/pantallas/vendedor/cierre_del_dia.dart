@@ -3,17 +3,18 @@
 /// ─────────────────────────────────────────────────────────────────────────
 /// EL FLUJO (ADR 0002 §82)
 /// ─────────────────────────────────────────────────────────────────────────
-/// 1. **Corte del día.** Dice el efectivo que entrega. Lo que le queda en el
-///    camión no lo cuenta: se calcula —lo que traía, más la carga, menos lo que
-///    vendió— y se le muestra. Sale el ticket con lo vendido, el efectivo y lo
-///    que le queda.
+/// 1. **Corte del día.** No cuenta nada: la app calcula lo que entrega —lo
+///    vendido en efectivo— y lo que le queda en el camión —lo que traía, más la
+///    carga, menos lo vendido— y él lo **confirma** (ADR 0002 §133). Nadie de la
+///    oficina lo valida: el servidor lo cierra solo en cuanto el teléfono sube el
+///    día. Sale el ticket, para imprimirlo o mandarlo por WhatsApp.
 /// 2. **Solicitar carga.** Ahí mismo pide la carga de mañana. Solo hay una al
 ///    día y es para el día siguiente.
-/// 3. La oficina cierra su corte y acepta la carga; le llega con la
-///    sincronización: «aceptada», con el folio, y la mercancía arriba del camión.
+/// 3. La oficina acepta la carga; le llega con la sincronización: «aceptada»,
+///    con el folio, y la mercancía arriba del camión.
 ///
 /// Todo funciona sin señal: el corte y la solicitud se guardan aquí y viajan
-/// por la cola. Los tickets se comparten como texto (WhatsApp).
+/// por la cola.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -49,29 +50,42 @@ class PantallaCorteDelDia extends ConsumerStatefulWidget {
 
 class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
     with FamiliasPlegables<PantallaCorteDelDia> {
-  final _efectivo = TextEditingController();
   final _observaciones = TextEditingController();
-  String? _error;
 
   @override
   void dispose() {
-    _efectivo.dispose();
     _observaciones.dispose();
     super.dispose();
   }
 
-  void _terminar() {
+  Future<void> _confirmar(Dinero entrega) async {
     final registro = ref.read(registroDeCierreProvider);
     if (registro == null) return;
+    final si = await showDialog<bool>(
+      context: context,
+      builder: (dialogo) => AlertDialog(
+        key: const Key('dialogo_confirmar_corte'),
+        title: const Text('¿Confirmas tu corte?'),
+        content: Text('Entregas ${entrega.enPesos} en efectivo. Se cierra solo en '
+            'cuanto tu teléfono suba el día, y ya no se puede cambiar.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogo).pop(false),
+            child: const Text('Todavía no'),
+          ),
+          FilledButton(
+            key: const Key('confirmar_corte_si'),
+            onPressed: () => Navigator.of(dialogo).pop(true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    if (si != true || !mounted) return;
 
-    final efectivo = leerPesos(_efectivo.text);
-    if (efectivo == null) {
-      setState(() => _error = 'Escribe cuánto efectivo entregas, por ejemplo 2250.50.');
-      return;
-    }
-
+    // El efectivo no lo escribe nadie: es lo vendido en efectivo (§133).
     final corte = registro.hacerCorte(
-      efectivo: efectivo,
+      efectivo: entrega,
       observaciones: _observaciones.text,
     );
     ref.read(revisionDelCierreProvider.notifier).state++;
@@ -84,8 +98,9 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
         builder: (_) => PantallaTicketCompartible(
           titulo: 'Corte del día',
           texto: corte.textoTicket,
-          aviso: 'Tu corte quedó guardado. Se manda a la oficina al sincronizar, '
-              'detrás de todas tus ventas de hoy.',
+          imprimible: true,
+          aviso: 'Tu corte quedó guardado. Se cierra solo al sincronizar, detrás de '
+              'todas tus ventas de hoy. Imprímelo o mándalo por WhatsApp.',
           etiquetaSiguiente: 'Solicitar carga para mañana',
           iconoSiguiente: Icons.local_shipping_outlined,
           siguiente: () => navegador.pushReplacement(
@@ -130,12 +145,20 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
                   Text(
                     'En efectivo: ${resumen.efectivo.enPesos}',
                     key: const Key('corte_efectivo_vendido'),
-                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   // Solo efectivo (ADR 0002 §81); una de antes todavía se dice.
                   if (!resumen.transferencias.esCero)
                     Text('Por transferencia: ${resumen.transferencias.enPesos} '
                         '(llegó al banco, no a tu bolsa)'),
+                  const Divider(height: 24),
+                  Text('Entregas', style: estilo.titleMedium),
+                  Text(
+                    resumen.efectivo.enPesos,
+                    key: const Key('corte_efectivo_a_entregar'),
+                    style: estilo.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const Text('Es lo que vendiste en efectivo: no lo cuentas, lo '
+                      'calcula la app.'),
                 ],
               ),
             ),
@@ -145,19 +168,6 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
               '${resumen.sinSincronizar} venta(s) no han subido. El corte viaja '
               'detrás de ellas; sincroniza en cuanto tengas señal.',
             ),
-          const SizedBox(height: 16),
-          Text('¿Cuánto efectivo entregas?', style: estilo.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            key: const Key('campo_efectivo_corte'),
-            controller: _efectivo,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              prefixText: r'$ ',
-              border: OutlineInputBorder(),
-              hintText: 'Lo que traes en la bolsa',
-            ),
-          ),
           const SizedBox(height: 20),
           Text('Lo que te queda en el camión', style: estilo.titleMedium),
           const Text('No lo cuentas: es lo que traías, más tu carga, menos lo que '
@@ -203,13 +213,12 @@ class _EstadoCorte extends ConsumerState<PantallaCorteDelDia>
               border: OutlineInputBorder(),
             ),
           ),
-          if (_error != null) Aviso(_error!, grave: true),
           const SizedBox(height: 8),
           FilledButton.icon(
             key: const Key('boton_terminar_corte'),
-            onPressed: _terminar,
+            onPressed: () => _confirmar(resumen.efectivo),
             icon: const Icon(Icons.check),
-            label: const Text('Terminar el corte'),
+            label: const Text('Confirmar el corte'),
           ),
         ],
       ),
@@ -486,8 +495,8 @@ class TarjetaDelCierre extends ConsumerWidget {
             Text('Cierre del día', style: estilo.titleMedium),
             const SizedBox(height: 8),
             if (corte == null) ...[
-              const Text('Al terminar tu ruta: cuenta lo que te sobró y el efectivo, '
-                  'y pide tu carga de mañana.'),
+              const Text('Al terminar tu ruta: confirma tu corte —la app calcula lo '
+                  'que entregas— y pide tu carga de mañana.'),
               const SizedBox(height: 8),
               FilledButton.icon(
                 key: const Key('boton_corte_del_dia'),
@@ -499,7 +508,7 @@ class TarjetaDelCierre extends ConsumerWidget {
               Text(
                 'Corte hecho a las ${_hora(corte.fechaDispositivo)}: entregas '
                 '${corte.efectivoDeclarado.enPesos}'
-                '${corte.sincronizado ? '' : ' · falta subirlo'}',
+                '${corte.sincronizado ? ' · se cierra solo' : ' · falta subirlo'}',
                 key: const Key('estado_corte'),
               ),
               Wrap(
@@ -510,14 +519,18 @@ class TarjetaDelCierre extends ConsumerWidget {
                     onPressed: () => abrir(PantallaTicketCompartible(
                       titulo: 'Corte del día',
                       texto: corte.textoTicket,
+                      imprimible: true,
                     )),
-                    child: const Text('Ver ticket'),
+                    child: const Text('Ver o imprimir el ticket'),
                   ),
-                  TextButton(
-                    key: const Key('rehacer_corte'),
-                    onPressed: () => abrir(const PantallaCorteDelDia()),
-                    child: const Text('Rehacer el corte'),
-                  ),
+                  // Ya subido, el servidor lo cierra solo (§133): rehacerlo
+                  // después no cambiaría nada. Antes de subir, todavía se puede.
+                  if (!corte.sincronizado)
+                    TextButton(
+                      key: const Key('rehacer_corte'),
+                      onPressed: () => abrir(const PantallaCorteDelDia()),
+                      child: const Text('Rehacer el corte'),
+                    ),
                 ],
               ),
             ],

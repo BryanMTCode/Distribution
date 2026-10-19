@@ -436,13 +436,16 @@ async def cambiar_password(
     password: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
-    """Reemplaza la contraseña. No hay forma de recuperar la anterior.
+    """Reemplaza la contraseña. No hay forma de recuperar la anterior: se guarda
+    solo su hash, y por eso el panel no puede mostrar ninguna.
 
-    El hash **también viaja al teléfono** para el login sin red, así que el cambio
-    no surte efecto en el dispositivo hasta que sincronice. Mientras no lo haga,
-    el vendedor sigue entrando con la vieja — y eso es correcto: si el cambio
-    bloqueara el acceso offline de inmediato, cambiar una contraseña dejaría a un
-    vendedor sin poder trabajar en media ruta.
+    El hash **también viaja al teléfono** para el login sin red (ADR 0002 §136).
+    Con señal, la nueva entra en cuanto se teclea —el teléfono se la pregunta al
+    servidor—, sin sincronizar ni volver a vincular; y al sincronizar, el
+    teléfono la trae y la vieja deja de servir. Sin señal, el teléfono no tiene
+    cómo saberla: sigue entrando con la vieja, y eso es correcto —si el cambio
+    bloqueara el acceso offline, cambiar una contraseña dejaría a un vendedor sin
+    poder trabajar a media ruta—.
     """
     actor.exigir(PERMISO)
     exigir_csrf(peticion, csrf)
@@ -466,9 +469,9 @@ async def cambiar_password(
     )
     await sesion.commit()
     return _volver(
-        guardado=f"Contraseña de {fila} cambiada. En su teléfono surte efecto "
-        "cuando sincronice: hasta entonces entra con la anterior, y así no se "
-        "queda sin poder trabajar a media ruta."
+        guardado=f"Contraseña de {fila} cambiada. En su teléfono entra con la nueva "
+        "en cuanto tenga señal, sin sincronizar ni volver a vincularlo; sin señal "
+        "sigue entrando con la anterior hasta que se conecte."
     )
 
 

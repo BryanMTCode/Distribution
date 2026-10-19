@@ -85,6 +85,8 @@ class CorteDelVendedor(BaseModel):
     resuelto_en: datetime | None
     liquidacion_folio: str | None
     nota: str | None
+    # Por qué no se cerró solo al llegar (§133), si no se cerró.
+    no_se_cerro_solo: str | None = None
     renglones: list[RenglonDelCorte]
 
 

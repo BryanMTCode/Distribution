@@ -130,6 +130,13 @@ Future<bool> renovarAcceso(Ref ref) async {
     final sesion =
         await ClienteAuth(ref.read(transporteSinSesionProvider)).renovar(refresh);
     ref.read(tokenProvider.notifier).state = sesion.accessToken;
+    // La contraseña que la oficina cambió en el panel llega aquí: el teléfono
+    // renueva su acceso en cuanto sincroniza con señal (ADR 0002 §136).
+    try {
+      await guardarCredencialAlDia(ref, sesion);
+    } on Object {
+      // El acceso ya se renovó; la credencial se pone al día la próxima vez.
+    }
     return true;
   } on Object {
     return false;

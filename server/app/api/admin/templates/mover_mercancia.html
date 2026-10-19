@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block titulo %}Mover mercancía{% endblock %}
+{% block contenido %}
+<h1>Mover mercancía</h1>
+<p class="subtitulo">
+  De la bodega a un camión, o de un camión a la bodega. Al teléfono del vendedor le
+  llega como diferencia —«súmale 24», «quítale 6»— en su siguiente
+  sincronización, y se suma a lo que traiga aunque haya vendido en medio. No es
+  la <a href="/panel/cargas">carga</a> del día: eso sigue igual.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="aviso_error">{{ error }}</div>{% endif %}
+
+{% if not camiones or not bodegas %}
+<div class="vacio">
+  {% if not bodegas %}No hay bodega activa.{% else %}No hay camiones activos.{% endif %}
+  Créalos en <a href="/panel/equipo">Usuarios y rutas</a>.
+</div>
+{% else %}
+
+<form class="barra" method="get" action="/panel/inventario/mover" id="elegir_movimiento">
+  <select name="sentido" aria-label="Hacia dónde">
+    {% for codigo, nombre in sentidos.items() %}
+    <option value="{{ codigo }}" {% if codigo == sentido %}selected{% endif %}>{{ nombre }}</option>
+    {% endfor %}
+  </select>
+  <select name="camion" aria-label="Camión" style="min-width:240px">
+    {% if not camion %}<option value="">Elige el camión</option>{% endif %}
+    {% for c in camiones %}
+    <option value="{{ c.id }}" {% if camion and c.id == camion.id %}selected{% endif %}>{{ c.nombre }} · {{ c.responsable or 'sin vendedor' }}</option>
+    {% endfor %}
+  </select>
+  <select name="bodega" aria-label="Bodega">
+    {% for b in bodegas %}
+    <option value="{{ b.id }}" {% if bodega and b.id == bodega.id %}selected{% endif %}>{{ b.nombre }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Ver lo que hay</button>
+</form>
+
+{% if origen %}
+<h2>{{ sentidos[sentido] }}: de {{ origen.nombre }} a {{ destino.nombre }}</h2>
+
+{% if grupos %}
+<form method="post" action="/panel/inventario/mover" id="formulario_mover">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="sentido" value="{{ sentido }}">
+  <input type="hidden" name="camion" value="{{ camion.id }}">
+  <input type="hidden" name="bodega" value="{{ bodega.id }}">
+  <div class="tabla-marco">
+  <table id="tabla_mover">
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th class="numero">Hay en {{ origen.nombre }}</th>
+        <th class="numero">Mover</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for g in grupos %}
+      <tr class="fila-familia"><td colspan="3"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+      {% for f in g.filas %}
+      {% set elegida = capturado.get('unidad_' ~ f.producto_id, f.por_omision) %}
+      <tr id="mover_{{ f.sku }}">
+        <td>
+          <strong>{{ f.nombre }}</strong>
+          <div class="sutil"><span class="mono">{{ f.sku }}</span></div>
+        </td>
+        <td class="numero">
+          <strong>{{ f.cantidad|entero }}</strong> {{ f.unidad_base }}
+          {% if f.en_bultos %}<div class="sutil">{{ f.en_bultos }}</div>{% endif %}
+        </td>
+        <td class="numero" style="white-space:nowrap">
+          <input type="text" name="cantidad_{{ f.producto_id }}" inputmode="numeric"
+                 value="{{ capturado.get('cantidad_' ~ f.producto_id, '') }}"
+                 style="width:80px; text-align:right" aria-label="Cuántos de {{ f.nombre }}">
+          {% if f.presentaciones %}
+          <select name="unidad_{{ f.producto_id }}" aria-label="Presentación de {{ f.nombre }}">
+            {% for p in f.presentaciones %}
+            <option value="{{ p.unidad }}" {% if p.unidad == elegida %}selected{% endif %}>{{ p.unidad }}{% if p.factor|entero != '1' %} de {{ p.factor|entero }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <span class="sutil" title="Sin presentaciones activas">sin presentación</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="campo" style="margin-top:12px; max-width:560px">
+    <label for="nota">Nota (opcional)</label>
+    <input type="text" id="nota" name="nota" value="{{ nota }}" style="width:100%"
+           placeholder="Le faltó refresco a media ruta">
+    <div class="ayuda">Va en el ajuste, y el vendedor la ve en su teléfono.</div>
+  </div>
+  <button type="submit" id="boton_mover" style="margin-top:12px">
+    Mover a {{ destino.nombre }}
+  </button>
+  <span class="sutil" style="margin-left:8px">
+    Solo lo que lleve cantidad. Si un renglón no cuadra, no se mueve nada y se te
+    dice cuál.
+  </span>
+</form>
+{% else %}
+<div class="vacio" id="origen_vacio">
+  {{ origen.nombre }} no tiene nada con existencia.
+  {% if sentido == 'al_camion' %}La mercancía entra a la bodega por
+  <a href="/panel/entradas">Entradas</a>.{% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="vacio">Elige el camión para ver lo que hay.</div>
+{% endif %}
+{% endif %}
+
+{% if recientes %}
+<h2>Lo último que se movió</h2>
+<div class="tabla-marco">
+<table id="tabla_recientes">
+  <thead>
+    <tr><th>Folio</th><th>Cuándo</th><th>Artículo</th><th class="numero">Cantidad</th>
+        <th>De dónde a dónde</th><th>Quién</th></tr>
+  </thead>
+  <tbody>
+  {% for r in recientes %}
+    <tr>
+      <td class="mono">{{ r.folio }}</td>
+      <td>{{ r.creado_en.strftime('%d/%m %H:%M') }}</td>
+      <td>{{ r.producto }}</td>
+      <td class="numero">{{ r.cantidad|entero }} {{ r.unidad_base }}</td>
+      <td class="sutil">{{ r.nota }}</td>
+      <td>{{ r.quien }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil">Si uno estuvo mal, anúlalo en <a href="/panel/operaciones?tipo=ajuste">Operaciones</a>:
+  regresa las dos mitades.</p>
+{% endif %}
+{% endblock %}

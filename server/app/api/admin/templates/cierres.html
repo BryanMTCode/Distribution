@@ -3,12 +3,12 @@
 {% block contenido %}
 <h1>Cortes y cargas por aceptar</h1>
 <p class="subtitulo">
-  Cada vendedor hace su corte en el teléfono —el efectivo que entrega— y pide la
-  carga de mañana. Se resuelven por separado: primero se cierra el corte con el
-  efectivo que <strong>tú</strong> cuentas (el camión no se cuenta: se queda con
-  lo que traía, más la carga, menos lo vendido)
-  y después se acepta la carga, que sale de la bodega principal. Solo hay una
-  carga al día, y es para el día siguiente.
+  Cada vendedor confirma su corte en el teléfono y pide la carga de mañana. El
+  corte <strong>se cierra solo</strong> en cuanto su teléfono termina de subir el
+  día, con lo vendido en efectivo, y el camión se queda con lo que traía, más la
+  carga, menos lo vendido. Aquí solo quedan los que no pudieron cerrarse solos,
+  con el porqué. Después se acepta la carga, que sale de la bodega principal.
+  Solo hay una carga al día, y es para el día siguiente.
 </p>
 
 {% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}
@@ -16,7 +16,7 @@
 
 <h2 id="seccion_cortes">Cortes por cerrar</h2>
 {% if not cortes %}
-<div class="vacio">Ningún corte por cerrar: llegan cuando el teléfono del vendedor sincroniza.</div>
+<div class="vacio">Ningún corte por cerrar: se cierran solos cuando el teléfono del vendedor termina de subir.</div>
 {% endif %}
 
 {% for c in cortes %}
@@ -24,6 +24,12 @@
   <h3 style="margin-top:0">{{ c.vendedor }} <span class="sutil">· {{ c.camion or 'sin camión' }}
     · corte del {{ c.corte.fecha_operativa.strftime('%d/%m/%Y') }}</span></h3>
   <p>{{ c.corte.resumen }}</p>
+  {% if c.corte.no_se_cerro_solo %}
+  <div class="aviso-caja error" id="no_se_cerro_{{ c.vendedor_codigo }}">
+    No se cerró solo: {{ c.corte.no_se_cerro_solo }} Se vuelve a intentar cuando su
+    teléfono suba lo que falta; si urge, ciérralo aquí.
+  </div>
+  {% endif %}
   {% if c.corte.observaciones %}<p class="sutil">«{{ c.corte.observaciones }}»</p>{% endif %}
   <div class="tabla-marco">
     <table>

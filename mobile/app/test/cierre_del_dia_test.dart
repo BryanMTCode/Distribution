@@ -2,9 +2,10 @@
 ///
 /// Lo que se prueba aquí es el recorrido completo, como lo hace la gente:
 ///
-/// · El vendedor, sin señal: corte (solo el efectivo; lo que le queda en el
-///   camión se calcula y se le muestra) → ticket → solicitar carga → ticket.
-///   Los dos viajan por la cola, y el ticket se comparte como texto.
+/// · El vendedor, sin señal: corte (nada se escribe: lo que entrega y lo que le
+///   queda los calcula la app, y él confirma, ADR 0002 §133) → ticket, que se
+///   imprime o se manda por WhatsApp → solicitar carga → ticket. Los dos viajan
+///   por la cola; ya subido, el corte no se rehace.
 /// · Cuando la oficina acepta, «Mi día» lo dice con el folio.
 /// · El gerente, por separado: en «Corte del día» cierra el corte del vendedor;
 ///   en «Cargas» acepta la carga pedida —corrigiendo un renglón— y comparte el
@@ -15,7 +16,10 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dsd_app/src/datos/impresora.dart';
+import 'package:dsd_app/src/estado/carrito.dart';
 import 'package:dsd_app/src/estado/cierre.dart';
 import 'package:dsd_app/src/estado/sesion.dart';
 import 'package:dsd_app/src/estado/sincronizacion.dart';
@@ -35,8 +39,11 @@ class _CompartidorDePrueba implements Compartidor {
 
 void main() {
   group('el vendedor', () {
+    late ImpresoraSimulada impresora;
+
     Future<(dynamic, _CompartidorDePrueba)> abrirMiDia(WidgetTester tester) async {
       final compartidor = _CompartidorDePrueba();
+      impresora = ImpresoraSimulada(carpeta: Directory.systemTemp.createTempSync('corte'));
       final base = await montarApp(
         tester,
         credencial: credencialDelServidor(),
@@ -47,7 +54,10 @@ void main() {
           sembrarVentaDelDia(base, folio: 'V2', total: 500, cliente: 'cliente-1',
               formaPago: 'transferencia');
         },
-        extras: [compartidorProvider.overrideWithValue(compartidor)],
+        extras: [
+          compartidorProvider.overrideWithValue(compartidor),
+          impresoraProvider.overrideWithValue(impresora),
+        ],
       );
       await entrarCon(tester, pinCorrecto);
       await tester.tap(find.byKey(const Key('boton_mi_dia')));
@@ -71,25 +81,41 @@ void main() {
       // El camión no se cuenta: lo que le queda se calcula y se le muestra.
       expect(find.byKey(const Key('queda_SOPA-70G')), findsOneWidget);
       expect(textoQueContiene('240 PZA (10 CAJA)'), findsOneWidget);
-      expect(find.byType(TextField), findsNWidgets(2), reason: 'efectivo y notas, nada más');
+      // Nada se escribe más que las notas: lo que entrega lo calcula la app.
+      expect(find.byType(TextField), findsOneWidget, reason: 'solo las notas');
+      expect(textoDe(tester, const Key('corte_efectivo_a_entregar')), r'$2,250.00');
 
-      // Sin efectivo no se termina.
+      // Confirmar pide confirmación; «Todavía no» no guarda nada.
       await verYTocar(tester, const Key('boton_terminar_corte'));
-      expect(textoQueContiene('Escribe cuánto efectivo entregas'), findsOneWidget);
+      expect(find.byKey(const Key('dialogo_confirmar_corte')), findsOneWidget);
+      expect(textoQueContiene(r'Entregas $2,250.00 en efectivo'), findsOneWidget);
+      await tester.tap(find.text('Todavía no'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pantalla_corte_del_dia')), findsOneWidget);
+      expect(base.db.select("SELECT 1 FROM outbox WHERE tipo = 'corte.crear'"), isEmpty);
 
-      await tester.enterText(find.byKey(const Key('campo_efectivo_corte')), '2200');
-      // Escribir sube la lista hasta el campo: el botón queda abajo, sin construir.
-      await tester.scrollUntilVisible(find.byKey(const Key('boton_terminar_corte')), 200,
-          scrollable: find.byType(Scrollable).first);
       await verYTocar(tester, const Key('boton_terminar_corte'));
+      await tester.tap(find.byKey(const Key('confirmar_corte_si')));
+      await tester.pumpAndSettle();
 
-      // El ticket del corte.
+      // El ticket del corte: cuadra, porque lo que entrega es lo vendido.
       expect(find.byKey(const Key('pantalla_ticket_compartible')), findsOneWidget);
+      expect(textoQueContiene('Se cierra solo al sincronizar'), findsOneWidget);
       final ticket = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
       expect(ticket, contains('*CORTE DEL DÍA*'));
-      expect(ticket, contains(r'Faltan $50.00 contra lo vendido en efectivo.'));
+      expect(ticket, contains('Cuadra con lo vendido en efectivo.'));
       expect(ticket, contains('*LE QUEDA EN EL CAMIÓN*'));
       expect(ticket, contains('• Sopa de fideo 70 g: 10 CAJA'));
+
+      // Se imprime, con el mismo texto, y se manda por WhatsApp.
+      // La impresora simulada guarda el ticket en un archivo: el toque va con
+      // la entrada/salida de verdad.
+      await tocarConProgreso(tester, const Key('boton_imprimir_ticket'));
+      await tester.pumpAndSettle();
+      expect(textoQueContiene('el ticket salió en la impresora'), findsOneWidget);
+      final impreso = decodificar(impresora.enviados.single).lineas.map((l) => l.texto);
+      expect(impreso, contains('CORTE DEL DIA'));
+      expect(impreso, contains(r'$2,250.00'));
       await verYTocar(tester, const Key('boton_compartir_ticket'));
       expect(compartidor.compartidos.single, ticket);
 
@@ -115,6 +141,21 @@ void main() {
           .select("SELECT payload FROM outbox WHERE tipo = 'corte.crear'")
           .single['payload'] as String;
       expect(corte, isNot(contains('conteo')));
+      expect(corte, contains('"efectivo_declarado":"2250.00"'));
+
+      // En Mi día: hecho, y mientras no suba todavía se puede rehacer.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(textoQueContiene('falta subirlo'), findsOneWidget);
+      expect(find.byKey(const Key('rehacer_corte')), findsOneWidget);
+      // Ya subido, se cierra solo y no se rehace.
+      base.db.execute('UPDATE cortes_vendedor SET sincronizado = 1');
+      final contenedor = ProviderScope.containerOf(
+          tester.element(find.byKey(const Key('tarjeta_cierre'))));
+      contenedor.read(revisionDelCierreProvider.notifier).state++;
+      await tester.pumpAndSettle();
+      expect(textoQueContiene('se cierra solo'), findsOneWidget);
+      expect(find.byKey(const Key('rehacer_corte')), findsNothing);
     });
 
     testWidgets('cuando la oficina acepta, Mi día dice el folio de la carga', (tester) async {

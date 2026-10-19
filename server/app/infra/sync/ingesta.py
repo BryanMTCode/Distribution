@@ -237,6 +237,12 @@ async def procesar_lote(
             ),
             {"dev": ctx.dispositivo_id, "cola": cola_pendiente},
         )
+        # El teléfono terminó de subir: si su corte esperaba por eso, se vuelve a
+        # intentar cerrar solo (ADR 0002 §133).
+        if cola_pendiente == 0:
+            from app.infra.cierre_del_vendedor import encolar_los_pendientes
+
+            await encolar_los_pendientes(sesion, ctx.usuario_id)
 
         # El tablero de Gerencia se recalcula cuando ENTRA operación, no cada
         # vez que alguien abre la pantalla (ver migración 0021). Va aquí dentro,

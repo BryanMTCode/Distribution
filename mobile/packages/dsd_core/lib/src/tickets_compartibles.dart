@@ -17,6 +17,7 @@
 library;
 
 import 'dia_operativo.dart';
+import 'escpos.dart';
 import 'dinero.dart';
 import 'precio.dart';
 
@@ -258,4 +259,31 @@ String textoDeLaCarga(TicketDeCarga t) {
     ..writeln()
     ..write('Solicitud ${_folioCorto(t.id)}');
   return b.toString();
+}
+
+/// El mismo ticket, para la impresora térmica del camión (ADR 0002 §133).
+///
+/// El texto es el que se manda por WhatsApp: lo que va entre asteriscos —sus
+/// negritas— sale en negritas, cada renglón se parte entre palabras a lo ancho
+/// del papel, y la viñeta, que la tabla de la impresora no tiene, sale como
+/// guion. Así el papel y el mensaje dicen exactamente lo mismo.
+List<int> escPosDelTicket(String texto, {int columnas = columnas58mm}) {
+  final b = ConstructorEscPos(columnas: columnas)..inicializar();
+  for (final renglon in texto.split('\n')) {
+    final enNegritas =
+        renglon.length > 2 && renglon.startsWith('*') && renglon.endsWith('*');
+    if (renglon.trim().isEmpty) {
+      b.linea();
+    } else if (enNegritas) {
+      b
+        ..negrita(true)
+        ..parrafo(renglon.substring(1, renglon.length - 1))
+        ..negrita(false);
+    } else {
+      b.parrafo(renglon.replaceAll('•', '-').replaceAll('*', ''));
+    }
+  }
+  // Papel para arrancarlo: las impresoras de ruta no traen cortador.
+  b.avanzar(4);
+  return b.bytes;
 }

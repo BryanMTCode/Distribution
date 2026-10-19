@@ -75,6 +75,7 @@ class CorteRecibido {
     this.observaciones,
     this.liquidacionFolio,
     this.nota,
+    this.noSeCerroSolo,
   });
 
   factory CorteRecibido.deJson(Map<String, Object?> j) => CorteRecibido(
@@ -90,6 +91,7 @@ class CorteRecibido {
         recibidoEn: _momento(j['recibido_en'])!,
         liquidacionFolio: j['liquidacion_folio'] as String?,
         nota: j['nota'] as String?,
+        noSeCerroSolo: j['no_se_cerro_solo'] as String?,
         renglones: [
           for (final r in (j['renglones'] as List?) ?? const [])
             RenglonDelCamion.deJson((r as Map).cast()),
@@ -115,6 +117,9 @@ class CorteRecibido {
   final DateTime recibidoEn;
   final String? liquidacionFolio;
   final String? nota;
+
+  /// Por qué no se cerró solo al llegar (ADR 0002 §133), si no se cerró.
+  final String? noSeCerroSolo;
   final List<RenglonDelCamion> renglones;
 
   bool get pendiente => estado == 'pendiente';

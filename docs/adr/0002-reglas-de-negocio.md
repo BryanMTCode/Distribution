@@ -6143,3 +6143,132 @@ cambiarla a la que yo quiera, todo desde el dashboard.» Hasta aquí no se podí
   por teléfono, y el guion separa el código del número.
 - Al empezar a operar (§131) los códigos apartados se liberan: sin folios no hay
   qué proteger.
+
+## 133. El corte del vendedor se cierra solo
+
+**Decisión (octubre 2026).** «El corte será automático, no tendrá que ser
+validado por el supervisor: solo lo hará el vendedor. Le aparecerá la pantalla
+para confirmar, y entonces imprimirá el ticket o lo podrá enviar por WhatsApp.»
+Lo que entrega lo calcula la app: el vendedor ya no lo escribe.
+
+- **En el teléfono.** «Mi día» → «Hacer el corte del día» muestra lo vendido, lo
+  que va por transferencia, **lo que entrega** —lo vendido en efectivo— y lo que
+  le queda en el camión, sin contar nada. «Confirmar el corte» pregunta una vez
+  («¿Confirmas tu corte? Entregas $…») y guarda. El ticket sale con **«Imprimir»**
+  y **«Enviar por WhatsApp (o correo…)»**. Mientras el corte no ha subido se puede
+  rehacer; ya subido, no.
+- **En el servidor.** Al llegar el corte, en la misma transacción se encola su
+  cierre (trabajo `cerrar_corte_del_vendedor`, uno por corte). El worker lo
+  cierra **a nombre del vendedor**, con el efectivo que calculó su teléfono y el
+  camión en lo calculado, con las mismas funciones del corte a mano: la
+  liquidación queda cerrada y la carga de mañana se puede aceptar.
+- **Si no se puede cerrar todavía** —el teléfono reportó cosas sin subir, o algo
+  en cuarentena— no se fuerza: se escribe el motivo en `no_se_cerro_solo`
+  (migración 0063) y se reintenta cada 5 minutos, hasta 12 veces. Además, cada vez
+  que el teléfono termina de subir (cola en cero) se vuelven a encolar sus cortes
+  pendientes. La oficina ve el motivo en Cortes y cargas → Por aceptar («No se
+  cerró solo: …») y en la app de gerencia, y **sigue pudiendo cerrarlo a mano**.
+- **No hay arqueo de la oficina.** Lo recibido vale lo calculado. Si el dinero
+  que llega a la oficina no es ése, se corrige como cualquier faltante, en la
+  cuenta del vendedor.
+- **La impresora.** El ticket se manda en ESC/POS a 58 mm; mientras la EC Line
+  EC-MP200 no esté conectada, la app usa la impresora simulada, que guarda el
+  ticket en un archivo y dice que salió. Las letras con acento se imprimen sin
+  él (la tabla PC437 de la impresora).
+- Un teléfono con la app anterior (+43) todavía manda el efectivo que se escribió
+  a mano; su corte también se cierra solo, con ese efectivo.
+
+## 134. Sin Entradas ni Traspasos en la app de la oficina
+
+**Decisión (octubre 2026).** «También de la app quitaré lo de entrada y
+traspasos.» La pestaña Almacén de la app de gerencia queda con Existencias,
+Cargas, Corte del día y Mayoreo. Las entradas, las compras y los traspasos entre
+bodegas se hacen en el panel (Entradas y salidas, Compras), que no cambia. Los
+endpoints `/v1` que usaba la app se quedan: no estorban y no hay que migrar
+nada.
+
+## 135. Mover mercancía de la bodega a un camión, y de regreso, desde el panel
+
+**Decisión (octubre 2026).** «Quiero en el dashboard poder mover mercancía a los
+camiones y viceversa.» Inventario tiene una pestaña nueva, **«Mover mercancía»**
+(`/panel/inventario/mover`): se elige hacia dónde, el camión y la bodega; abajo
+sale lo que hay en el origen, por familia, y se escribe cuánto se mueve de cada
+artículo, en caja o en pieza, como en la carga.
+
+- **Por qué no es una carga ni un traspaso.** El camión tiene dueño (§0.2): su
+  teléfono vende sin señal con su propio inventario, así que la oficina no le
+  escribe existencias. Lo que sí sabe recibir es una **diferencia** —«súmale 24»,
+  «quítale 6»—, que es como viaja el ajuste del camión (0032, 0037). Mover es
+  **dos ajustes atados de tipo `traspaso`** (migración 0064): uno baja el origen y
+  otro sube el destino, y la nota de cada uno nombra al otro. El del camión le
+  llega al vendedor al sincronizar y se suma a lo que traiga, aunque haya vendido
+  en medio; el de la bodega no viaja a ningún teléfono.
+- **El teléfono crea el renglón** si el camión no traía ese artículo, solo para
+  este tipo de ajuste: es mercancía que de verdad se le puso. Si el catálogo del
+  teléfono todavía no conoce el artículo, lo pone el cuadre contra la foto del
+  servidor en la siguiente sincronización.
+- **Lo que no se deja.** Mover más de lo que el sistema dice que hay en el
+  origen. Del camión, el sistema puede ir atrás del teléfono —ventas que no han
+  subido—, así que lo que dice es lo más que puede traer, nunca menos. Si un
+  renglón no alcanza o trae un dedazo, **no se mueve nada** y la pantalla regresa
+  con lo escrito y dice cuál.
+- **No cambia el corte.** El corte del vendedor espera lo que el sistema tiene
+  ahora en el camión, ajustes incluidos, así que lo movido ya va contado.
+- **Se anula en Operaciones** (§119) por pareja: la mitad que entra apunta a la
+  que sale (`ajustes_camion.pareja_id`). La lista muestra solo la que sale, y
+  anularla regresa las dos; al teléfono le llega la contraria.
+- **Quién.** Pide ver y ajustar el inventario (`inventario.ver` e
+  `inventario.ajustar`). Sin los dos, ni la pestaña ni el enlace aparecen.
+
+## 136. La contraseña que se cambia en el panel entra sin volver a vincular
+
+**Decisión (octubre 2026).** «Quiero en el dashboard poder ver las contraseñas de
+todos los usuarios.» No se puede, y no se va a poder: el servidor guarda solo el
+hash Argon2id de cada contraseña (0001), que no se puede revertir, y guardarlas
+legibles pondría todas en la mano de cualquiera que viera el panel o un respaldo
+—y la gente repite contraseñas en otros lados—. Lo que se pidió después: «en dado
+que no se puedan ver, quiero poder cambiarlas desde el dashboard aunque no
+sincronicen».
+
+- **Dónde.** Usuarios y rutas → «Más ▾» → contraseña nueva → «Cambiar», o en la
+  ficha, «Contraseña y acceso». **Lo que se escribe se ve** (ya no son puntitos):
+  es la que se le va a dar a la persona. La ficha explica que la actual no se
+  puede ver.
+- **Antes**, el teléfono guardaba el hash de cuando se vinculó y nada lo
+  cambiaba: la nueva no entraba hasta **volver a vincular** el equipo. El aviso
+  del panel decía «surte efecto cuando sincronice», y no era cierto.
+- **Ahora, con señal, la nueva entra en cuanto se teclea.** Si lo tecleado no
+  coincide con lo guardado —o el acceso venció— y hay señal, la app se lo
+  pregunta al servidor (con el código y el equipo de siempre, 10 segundos a lo
+  más). Si lo acepta, guarda la credencial que le manda y entra; desde ahí la
+  vieja ya no entra.
+- **Y al sincronizar con señal**, el teléfono trae la credencial vigente:
+  `/v1/auth/refresh` la devuelve, como el login, cuando la sesión es de un
+  teléfono vinculado. Así, aunque el vendedor haya entrado con la vieja sin señal,
+  en cuanto sincroniza la vieja deja de servir. Un teléfono sin credencial
+  guardada (Gerencia, o uno borrado a distancia) no gana una por aquí.
+- **Sin señal no cambia nada**, porque no puede: el teléfono no tiene cómo saber
+  la nueva. Sigue entrando con la anterior hasta que se conecte, y es lo correcto
+  —cambiar una contraseña no debe dejar a un vendedor sin poder trabajar a media
+  ruta—. Para cortarle el acceso a un teléfono de inmediato está «Revocar» o
+  «Borrar el equipo» en Teléfonos.
+
+## 137. Un vendedor recién creado se elimina aunque ya haya usado su teléfono
+
+**Corrección (octubre 2026).** «Acabo de crear un vendedor pero no lo puedo
+eliminar porque dice que tiene cosas firmadas, no entiendo.» No tenía nada
+firmado. Lo detenía lo que hizo su teléfono al probarlo: la **tienda que dio de
+alta** (apunta al teléfono que la capturó, y el teléfono se borra con él) o lo
+que su teléfono mandó y el servidor **rechazó** (la cuarentena). Y el aviso decía
+«documentos firmados» sin decir cuáles, porque ninguno de los que revisaba
+estaba.
+
+- **Ahora se suelta también eso** (§88): la tienda se queda, sin quién ni con
+  qué teléfono la capturó; la cuarentena de su teléfono se borra —no llegó a ser
+  documento—, igual que las cargas que pidió y no se le cargaron (pendientes,
+  rechazadas o reemplazadas).
+- **Lo que sí es historia sigue impidiéndolo**, y el aviso lo nombra: ventas,
+  cargas, cortes, mermas, visitas sin venta, cobros, devoluciones a la bodega,
+  su cuenta, ajustes; y si lo que lo detiene es la historia de **su camión**
+  (un ajuste, mercancía, movimientos), lo dice así. Si fue de prueba, «empezar a
+  operar» (§131) sigue siendo el camino; si no, «Desactivar».

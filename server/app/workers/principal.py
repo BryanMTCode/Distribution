@@ -27,6 +27,8 @@ log = logging.getLogger("dsd.worker")
 
 INTERVALO_VACIO = 2.0        # segundos de espera cuando no hay trabajo
 INTERVALO_HUERFANOS = 60.0   # cada cuánto se buscan jobs de workers muertos
+# El corte que no se cerró solo se reintenta cada 5 minutos, una hora.
+REINTENTOS_DEL_CORTE = 12
 
 # Registro de manejadores. Cada fase agrega los suyos aquí.
 MANEJADORES: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {}
@@ -44,6 +46,41 @@ def manejador(tipo: str):
 async def _ping(payload: dict[str, Any]) -> None:
     """Job de humo: confirma que el worker está vivo y procesando."""
     log.info("ping %s", payload)
+
+
+@manejador("cerrar_corte_del_vendedor")
+async def _cerrar_corte_del_vendedor(payload: dict[str, Any]) -> None:
+    """El corte que mandó el vendedor, cerrado sin la oficina (ADR 0002 §133).
+
+    Su propia sesión: cerrar confirma por partes. Si no se puede, el motivo
+    queda en el corte y el job termina bien. Se vuelve a encolar solo cuando el
+    teléfono reporta su cola en cero; y por si ese aviso llegó justo mientras
+    este intento corría, se reintenta unas cuantas veces más, espaciadas.
+    """
+    import uuid
+    from datetime import timedelta
+
+    from app.infra.cierre_del_vendedor import TRABAJO_CERRAR_CORTE, cerrar_solo
+    from app.workers.cola import encolar
+
+    corte_id = uuid.UUID(payload["corte_id"])
+    intento = int(payload.get("intento", 0))
+    async with CrearSesion() as sesion:
+        await cerrar_solo(sesion, corte_id)
+        sigue = (
+            await sesion.execute(
+                text("SELECT estado = 'pendiente' FROM cortes_vendedor WHERE id = :c"),
+                {"c": corte_id},
+            )
+        ).scalar_one_or_none()
+        if sigue and intento < REINTENTOS_DEL_CORTE:
+            await encolar(
+                sesion, TRABAJO_CERRAR_CORTE,
+                {"corte_id": str(corte_id), "intento": intento + 1},
+                clave_unica=f"cerrar_corte:{corte_id}:{intento + 1}",
+                retraso=timedelta(minutes=5),
+            )
+            await sesion.commit()
 
 
 @manejador("refrescar_analitica")

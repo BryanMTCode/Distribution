@@ -337,6 +337,8 @@ async def _corte(sesion, corte_id: uuid.UUID) -> dict | None:
         "resuelto_en": c["resuelto_en"],
         "liquidacion_folio": c["liquidacion_folio"],
         "nota": c["nota"],
+        # Por qué no se cerró solo al llegar (§133), si no se cerró.
+        "no_se_cerro_solo": c["no_se_cerro_solo"],
         "renglones": await _lo_que_queda(sesion, dict(c)),
     }
 
@@ -553,6 +555,79 @@ async def cerrar_corte_del_vendedor(
         except CapturaInvalida as e:
             raise CierreRechazado(str(e)) from e
     return await _cerrar_el_corte(sesion, dict(corte), quien, recibido=recibido)
+
+
+# ---------------------------------------------------------------------------
+# El corte que se cierra solo (ADR 0002 §133)
+# ---------------------------------------------------------------------------
+# «El corte será automático, no tendrá que ser validado por el supervisor.» El
+# worker lo cierra con las mismas funciones que usaba la oficina, en su propia
+# transacción —cerrar confirma por partes y no cabe dentro de la del lote de
+# sincronización—, con el efectivo que calculó el teléfono.
+
+TRABAJO_CERRAR_CORTE = "cerrar_corte_del_vendedor"
+
+
+async def encolar_cierre_automatico(sesion, corte_id: uuid.UUID) -> None:
+    """Encola el cierre en la transacción del llamador. Dos veces es una sola."""
+    from app.workers.cola import encolar
+
+    await encolar(
+        sesion, TRABAJO_CERRAR_CORTE, {"corte_id": str(corte_id)},
+        clave_unica=f"cerrar_corte:{corte_id}", prioridad=10,
+    )
+
+
+async def encolar_los_pendientes(sesion, vendedor_id: uuid.UUID) -> None:
+    """Los cortes del vendedor que siguen esperando: se reintentan.
+
+    Se llama cuando su teléfono reporta la cola en cero, que es lo que más
+    seguido detiene el cierre: el corte llegó, pero detrás venía algo más.
+    """
+    pendientes = (
+        await sesion.execute(
+            text("SELECT id FROM cortes_vendedor WHERE vendedor_id = :v AND estado = 'pendiente'"),
+            {"v": vendedor_id},
+        )
+    ).scalars().all()
+    for corte_id in pendientes:
+        await encolar_cierre_automatico(sesion, corte_id)
+
+
+async def cerrar_solo(sesion, corte_id: uuid.UUID) -> str | None:
+    """Cierra el corte que mandó el vendedor, sin nadie de la oficina.
+
+    Lo cierra a nombre del vendedor —es su confirmación la que lo cierra— y con
+    el efectivo que declaró, que ya es el que calculó su teléfono. Si las reglas
+    de siempre lo detienen, se queda por cerrar con el motivo escrito
+    (`no_se_cerro_solo`) y la oficina lo ve; nada se cierra a medias. Devuelve el
+    aviso del cierre, o nulo si no se cerró.
+    """
+    corte = (
+        await sesion.execute(
+            text("SELECT estado, vendedor_id FROM cortes_vendedor WHERE id = :c"),
+            {"c": corte_id},
+        )
+    ).mappings().first()
+    if corte is None or corte["estado"] != "pendiente":
+        return None
+    try:
+        aviso = await cerrar_corte_del_vendedor(sesion, corte_id, quien=corte["vendedor_id"])
+    except (CierreRechazado, CierreNoExiste) as e:
+        await sesion.rollback()
+        await sesion.execute(
+            text("UPDATE cortes_vendedor SET no_se_cerro_solo = :m "
+                 " WHERE id = :c AND estado = 'pendiente'"),
+            {"c": corte_id, "m": str(e)},
+        )
+        await sesion.commit()
+        return None
+    await sesion.execute(
+        text("UPDATE cortes_vendedor SET no_se_cerro_solo = NULL WHERE id = :c"),
+        {"c": corte_id},
+    )
+    await sesion.commit()
+    return aviso
 
 
 async def aceptar_solicitud(

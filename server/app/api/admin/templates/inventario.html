@@ -14,7 +14,9 @@
   sincronizado.
   La mercancía entra por <a href="/panel/entradas">Entradas</a>, sube al camión
   con una <a href="/panel/cargas">carga</a>, y se corrige o se merma por
-  <a href="/panel/salidas">Salidas</a>.
+  <a href="/panel/salidas">Salidas</a>.{% if actor.puede('inventario.ajustar') %}
+  Para pasarle mercancía a un camión a media ruta, o bajársela, usa
+  <a href="/panel/inventario/mover">Mover mercancía</a>.{% endif %}
 </p>
 
 {% if not almacenes %}

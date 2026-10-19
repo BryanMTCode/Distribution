@@ -977,11 +977,29 @@ class AplicadorDeltas {
     // Sin `INSERT`: un ajuste sobre un producto que el camión no trae no crea el
     // renglón. Si no lo trae, la carga no lo subió, y un renglón nuevo le
     // mostraría al vendedor mercancía que no tiene.
-    _db.execute(
-      'UPDATE existencias_camion SET cant_actual = cant_actual + ? '
-      ' WHERE producto_id = ?',
-      [cantidad.milesimos / 1000, producto],
-    );
+    //
+    // Menos lo que la oficina le SUBE de la bodega (ADR 0002 §135): eso sí es
+    // mercancía que se le puso en el camión, la traiga o no de antes. Solo si el
+    // catálogo del teléfono ya conoce el producto; si no, el cuadre contra la foto
+    // del servidor lo pone en la siguiente.
+    final subeDeLaBodega = a['tipo'] == 'traspaso' && cantidad.milesimos > 0;
+    final conocido = subeDeLaBodega &&
+        _db.select('SELECT 1 FROM productos WHERE id = ?', [producto]).isNotEmpty;
+    if (conocido) {
+      _db.execute(
+        'INSERT INTO existencias_camion (producto_id, cant_cargada, cant_actual) '
+        'VALUES (?, 0, ?) '
+        'ON CONFLICT(producto_id) DO UPDATE SET '
+        '  cant_actual = existencias_camion.cant_actual + excluded.cant_actual',
+        [producto, cantidad.milesimos / 1000],
+      );
+    } else {
+      _db.execute(
+        'UPDATE existencias_camion SET cant_actual = cant_actual + ? '
+        ' WHERE producto_id = ?',
+        [cantidad.milesimos / 1000, producto],
+      );
+    }
 
     // La marca se escribe aunque el renglón no existiera: lo que importa es no
     // volver a aplicar este ajuste si el delta llega otra vez.

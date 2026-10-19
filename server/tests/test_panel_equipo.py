@@ -186,7 +186,7 @@ async def test_la_contrasena_nueva_sirve_para_entrar(cliente, semilla, sesion):
         data={"csrf": _csrf(cliente, pantalla), "password": "frase nueva larga"},
         follow_redirects=True,
     )
-    assert "surte efecto cuando sincronice" in r.text
+    assert "entra con la nueva en cuanto tenga señal" in r.text
 
     await cliente.get("/panel/salir")
     nueva = await cliente.post(

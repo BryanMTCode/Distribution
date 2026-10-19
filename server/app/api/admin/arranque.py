@@ -27,7 +27,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
-from app.api.admin.comun import SesionDep, dinero, permiso_de_la_pantalla, render
+from app.api.admin.comun import (
+    SesionDep,
+    dinero,
+    permiso_de_la_pantalla,
+    puede_todos,
+    render,
+)
 from app.api.admin.sesion_web import ActorWeb
 
 router = APIRouter(prefix="/panel/arranque", tags=["panel"], include_in_schema=False)
@@ -416,7 +422,6 @@ async def pendientes_de_hoy(sesion, actor) -> list[Pendiente]:
     ]
 
     def puede_abrir(enlace: str) -> bool:
-        permiso = permiso_de_la_pantalla(enlace)
-        return permiso is None or actor.puede(permiso)
+        return puede_todos(actor, permiso_de_la_pantalla(enlace))
 
     return [p for p in todos if p.cuantos and puede_abrir(p.enlace)]

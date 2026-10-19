@@ -49,11 +49,16 @@ async def registrar_ajuste(
     nota: str,
     quien,
     motivo_codigo: str | None = None,
+    ajuste_id: uuid.UUID | None = None,
+    pareja_id: uuid.UUID | None = None,
 ) -> str:
     """Escribe el ajuste y devuelve su folio (AC- camión, AB- bodega). No hace
-    commit: quien llama decide la transacción."""
+    commit: quien llama decide la transacción.
+
+    `ajuste_id` y `pareja_id` son del traspaso bodega↔camión (§135): la mitad que
+    entra apunta a la que sale."""
     ahora = datetime.now(UTC)
-    ajuste_id = uuid.uuid4()
+    ajuste_id = ajuste_id or uuid.uuid4()
     consecutivo = (
         await sesion.execute(text("SELECT nextval('seq_folio_ajuste_camion')"))
     ).scalar_one()
@@ -65,9 +70,9 @@ async def registrar_ajuste(
             """
             INSERT INTO ajustes_camion
               (id, folio, almacen_id, producto_id, tipo, existencia_al_capturar,
-               contado, delta, motivo_codigo, nota, usuario_id, creado_en)
+               contado, delta, motivo_codigo, nota, usuario_id, creado_en, pareja_id)
             VALUES (:id, :folio, :a, :p, :tipo, :actual, :contado, :delta,
-                    :motivo, :nota, :quien, :ahora)
+                    :motivo, :nota, :quien, :ahora, :pareja)
             """
         ),
         {
@@ -83,6 +88,7 @@ async def registrar_ajuste(
             "nota": nota[:600],
             "quien": quien,
             "ahora": ahora,
+            "pareja": pareja_id,
         },
     )
 
