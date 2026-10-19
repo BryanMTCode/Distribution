@@ -605,8 +605,10 @@ async def _soltar_lo_suyo(sesion, usuario_id: uuid.UUID, codigo: str) -> list[st
         ),
         {"u": usuario_id, "quien": f"lo hizo {codigo} (usuario eliminado)"},
     )
-    # Los avisos que esperaban a su teléfono: ya no hay teléfono que los lea.
-    await sesion.execute(text("DELETE FROM change_log WHERE vendedor_id = :u"), p)
+    # Los avisos que esperaban a su teléfono: ya no hay teléfono que los lea. Por
+    # la función y no con un DELETE: `change_log` tiene RLS solo de lectura, y con
+    # el rol de producción el DELETE no borraba nada (migración 0065, ADR 0002 §138).
+    await sesion.execute(text("SELECT fn_olvidar_avisos_del_usuario(:u)"), p)
     return [c["nombre"] for c in camiones]
 
 

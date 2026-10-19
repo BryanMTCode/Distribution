@@ -6272,3 +6272,28 @@ estaba.
   su cuenta, ajustes; y si lo que lo detiene es la historia de **su camión**
   (un ajuste, mercancía, movimientos), lo dice así. Si fue de prueba, «empezar a
   operar» (§131) sigue siendo el camino; si no, «Desactivar».
+
+## 138. Lo que el panel borra, también con el rol de producción
+
+**Corrección (octubre 2026).** «VEND00 no se puede borrar: tiene registros en
+change_log.» La causa de fondo de §137 no era la tienda ni la cuarentena (esas
+también se corrigieron): era la **seguridad por renglón** (0022). En producción
+la API habla con PostgreSQL como `dsd_api`, sin BYPASSRLS, y en una tabla con RLS
+y **sin política de DELETE**, un DELETE no ve ningún renglón y no borra nada, sin
+error. Las pruebas usan el rol dueño, que salta RLS, y por eso pasaban.
+
+Tres borrados del panel caían ahí (migración 0065):
+
+- **Eliminar un usuario.** Al darle camión, su disparador le deja un aviso al
+  teléfono en `change_log`. El panel lo borraba con un DELETE que no borraba, y
+  ese aviso detenía todo. Bastaba con tener camión. Ahora se borra con
+  `fn_olvidar_avisos_del_usuario`, `SECURITY DEFINER` como los disparadores
+  (0029), que solo borra los avisos de ese usuario y solo con alcance de
+  oficina. No se abrió `change_log` a cualquier DELETE de la API.
+- **Eliminar una tienda sin historia.** El panel decía «se eliminó» y la tienda
+  se quedaba. Ahora `clientes` tiene política de DELETE para la oficina.
+- **Eliminar una visita sin venta en Operaciones** (§119): lo mismo, en
+  `no_drops`.
+
+Cada uno tiene su prueba **con el rol de producción** (`test_rls.py`), que es la
+que faltaba.

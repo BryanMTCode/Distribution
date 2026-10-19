@@ -41,6 +41,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from tests.conftest import URL_PRUEBAS
+from tests.test_panel_venta_editar import venta_del_dia  # noqa: F401 — fixture
 
 CLAVE_API = "clave-de-pruebas-del-rol-api"
 
@@ -972,3 +973,123 @@ async def test_reprocesar_la_cuarentena_funciona_con_el_rol_restringido(
     await sesion.commit()
     r = await _reprocesar(cliente_rls, id_fila)
     assert 'id="aviso_guardado"' in r.text, r.text[-2000:]
+
+
+@pytest.mark.asyncio
+async def test_eliminar_un_vendedor_recien_creado_con_el_rol_restringido(
+    cliente_rls, sesion, semilla
+):
+    """«VEND00 no se puede borrar: tiene registros en change_log» (ADR 0002 §138).
+
+    Al darle su camión, el disparador le deja un aviso a su teléfono en
+    `change_log`. El panel lo borraba con un DELETE directo, pero `change_log`
+    tiene RLS con política solo de lectura: con el rol de producción el DELETE
+    no borraba nada —sin error—, y la llave del aviso detenía el borrado del
+    usuario. Con el rol dueño, el de las demás pruebas, pasaba.
+    """
+    from tests.conftest import PASSWORD_VENDEDOR, csrf_del_panel
+    from tests.test_panel_equipo import _crear_usuario
+
+    r = await cliente_rls.post(
+        "/panel/entrar",
+        data={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    await _crear_usuario(cliente_rls, codigo="VEND02")
+    await sesion.rollback()
+    usuario = (
+        await sesion.execute(text("SELECT id FROM usuarios WHERE codigo = 'VEND02'"))
+    ).scalar_one()
+    avisos = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE vendedor_id = :u"), {"u": usuario}
+        )
+    ).scalar_one()
+    assert avisos > 0  # el de su camión: es lo que lo detenía
+
+    ficha = await cliente_rls.get(f"/panel/equipo/usuarios/{usuario}")
+    r = await cliente_rls.post(
+        f"/panel/equipo/usuarios/{usuario}/eliminar",
+        data={"csrf": csrf_del_panel(cliente_rls, ficha), "confirmo": "1"},
+        follow_redirects=True,
+    )
+    assert "VEND02 se eliminó" in r.text, r.text[-1500:]
+    await sesion.rollback()
+    assert (
+        await sesion.execute(text("SELECT count(*) FROM usuarios WHERE id = :u"), {"u": usuario})
+    ).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_eliminar_una_tienda_sin_historia_con_el_rol_restringido(
+    cliente_rls, sesion, semilla
+):
+    """Mismo hueco que el del usuario (§138): `clientes` no tenía política de
+    DELETE, así que con el rol de producción el DELETE no borraba nada y el panel
+    decía «se eliminó»."""
+    from tests.conftest import PASSWORD_VENDEDOR
+    from tests.test_panel_cliente_eliminar import _eliminar
+
+    tienda = uuid.uuid4()
+    await sesion.execute(
+        text("INSERT INTO clientes (id, codigo, nombre_comercial, ruta_id, estatus, "
+             "                      creado_en, actualizado_en) "
+             "VALUES (:c, 'C00077', 'Abarrotes La Esperanza', :r, 'activo', now(), now())"),
+        {"c": tienda, "r": semilla["ruta"]},
+    )
+    await sesion.commit()
+    r = await cliente_rls.post(
+        "/panel/entrar",
+        data={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    r = await _eliminar(cliente_rls, tienda)
+    assert r.status_code == 303
+    await sesion.rollback()
+    assert (
+        await sesion.execute(text("SELECT count(*) FROM clientes WHERE id = :c"), {"c": tienda})
+    ).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_eliminar_una_visita_sin_venta_con_el_rol_restringido(
+    cliente_rls, sesion, semilla, venta_del_dia  # noqa: F811
+):
+    """Operaciones borra la visita sin venta al anularla (§119). `no_drops` no
+    tenía política de DELETE: con el rol de producción se quedaba."""
+    from datetime import date
+
+    from app.infra.sync.manejadores import obtener_manejador
+    from tests.conftest import PASSWORD_VENDEDOR
+    from tests.test_operaciones import _anular, _contexto
+
+    no_venta = uuid.uuid4()
+    await obtener_manejador("no_drop.crear")(
+        sesion,
+        _contexto(semilla, venta_del_dia),
+        no_venta,
+        {
+            "folio_consecutivo": 3,
+            "cliente_id": str(venta_del_dia["cliente"]),
+            "motivo_codigo": "CERRADO",
+            "lat": "20.6736000",
+            "lng": "-103.3440000",
+            "ubicacion_precision_m": "12.50",
+            "fecha_dispositivo": f"{date.today().isoformat()}T17:42:03.250Z",
+            "fecha_operativa": date.today().isoformat(),
+        },
+    )
+    await sesion.commit()
+    r = await cliente_rls.post(
+        "/panel/entrar",
+        data={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    await _anular(cliente_rls, "no_venta", no_venta, motivo="se capturó por error, era otra")
+    await sesion.rollback()
+    assert (
+        await sesion.execute(text("SELECT count(*) FROM no_drops WHERE id = :n"), {"n": no_venta})
+    ).scalar_one() == 0

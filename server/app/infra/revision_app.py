@@ -680,6 +680,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "al teléfono al sincronizar.",
             ),
             Punto(
+                "panel_cliente_eliminar_de_verdad", "Eliminar una tienda de prueba",
+                "Catálogos → Clientes: abre una tienda de prueba que nunca tuvo venta ni "
+                "visita → hasta abajo, «Eliminar el cliente»: marca la casilla → "
+                "«Eliminar». Búscala otra vez.",
+                "Ya no aparece en ninguna lista: se borró de verdad. Antes, en el "
+                "servidor decía «se eliminó» y se quedaba (ADR 0002 §138).",
+                desde="+44",
+            ),
+            Punto(
                 "panel_clientes_por_ruta", "Clientes por ruta y día",
                 "Catálogos → Clientes → «Todos»: toca una cifra de la tabla de rutas por "
                 "día; luego usa los filtros de ruta y día.",
@@ -917,7 +926,7 @@ SECCIONES: tuple[Seccion, ...] = (
                 "de alta una tienda. Luego Usuarios y rutas → «Más ▾» → «Eliminar».",
                 "Se elimina con su teléfono y su camión vacío; la tienda se queda. Si "
                 "tuviera ventas o algo en su camión, el aviso dice qué es, no «documentos "
-                "firmados» (ADR 0002 §137).",
+                "firmados» ni «change_log» (ADR 0002 §137 y §138).",
                 desde="+44",
             ),
             Punto(
