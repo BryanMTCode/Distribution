@@ -292,7 +292,9 @@ void main() {
     await _abrirCarga(tester);
 
     expect(find.byKey(const Key('pantalla_detalle_carga')), findsOneWidget);
-    expect(servidor.posts.first.$2, {'vendedor_id': 'v1', 'almacen_origen_id': 'b1'});
+    // Para mañana, que es lo normal (§82).
+    expect(servidor.posts.first.$2,
+        {'vendedor_id': 'v1', 'almacen_origen_id': 'b1', 'fecha_operativa': '2026-09-25'});
     // Se hizo hoy, para vender mañana (§151).
     expect(
       tester.widget<Text>(find.byKey(const Key('dia_de_la_carga'))).data,
@@ -329,6 +331,30 @@ void main() {
     expect(find.text('Carga CG-000007 confirmada.'), findsOneWidget);
     // Confirmada ya no se edita: sin botones de captura.
     expect(find.byKey(const Key('boton_confirmar_carga')), findsNothing);
+  });
+
+  testWidgets('la carga para hoy: el camión que sale a vender ese mismo día (§157)',
+      (tester) async {
+    // Con la fecha de mañana, el corte de esta noche no vería las ventas de hoy.
+    final servidor = _ServidorDeCargas();
+    await _montar(tester, servidor);
+    await tester.tap(find.byKey(const Key('nav_almacen')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('boton_nueva_carga')));
+    await tester.pumpAndSettle();
+    expect(textoQueContiene('Para vender mañana, viernes 25 de septiembre'), findsOneWidget);
+    expect(textoQueContiene('Cortes y cargas'), findsNothing);
+    await tester.tap(find.byKey(const Key('carga_para_hoy')));
+    await tester.pumpAndSettle();
+    expect(textoQueContiene('Para vender hoy, jueves 24 de septiembre'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('campo_vendedor_carga')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Juan Pérez · Camión 01').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('boton_abrir_carga')));
+    await tester.pumpAndSettle();
+    expect(servidor.posts.first.$2,
+        {'vendedor_id': 'v1', 'almacen_origen_id': 'b1', 'fecha_operativa': '2026-09-24'});
   });
 
   testWidgets('con pendientes, confirmar pide el motivo y lo manda',

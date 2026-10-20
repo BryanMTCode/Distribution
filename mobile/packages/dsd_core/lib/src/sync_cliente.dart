@@ -36,9 +36,11 @@ class RespuestaPush {
     required this.duplicadas,
     required this.rechazadas,
     required this.resultados,
+    this.desfaseRelojSeg,
   });
 
   factory RespuestaPush.deJson(Map<String, Object?> json) => RespuestaPush(
+        desfaseRelojSeg: (json['desfase_reloj_seg'] as num?)?.toInt(),
         aceptadas: json['aceptadas']! as int,
         duplicadas: json['duplicadas']! as int,
         rechazadas: json['rechazadas']! as int,
@@ -59,6 +61,10 @@ class RespuestaPush {
   final int duplicadas;
   final int rechazadas;
   final List<ResultadoDeSobre> resultados;
+
+  /// Cuánto va mal el reloj del teléfono contra el del servidor, en segundos
+  /// (positivo: atrasado). Nulo si el servidor no lo sabe (ADR 0002 §157).
+  final int? desfaseRelojSeg;
 }
 
 class Delta {

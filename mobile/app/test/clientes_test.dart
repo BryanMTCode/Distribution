@@ -260,6 +260,28 @@ void main() {
     expect(find.text('3'), findsOneWidget);
   });
 
+  testWidgets('si la hora del teléfono está mal, se avisa (§157)', (tester) async {
+    // Con esa hora se decide de qué día es cada venta.
+    await entrar(tester, (base) {
+      sembrarCliente(base, id: 'c1', nombre: 'Primera', secuencia: 1);
+      base.db.execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('desfase_reloj_seg', '3600')",
+      );
+    });
+    expect(find.byKey(const Key('aviso_reloj_desfasado')), findsOneWidget);
+    expect(textoQueContiene('La hora del teléfono va 1 h atrasada'), findsOneWidget);
+  });
+
+  testWidgets('con la hora bien, o unos segundos de red, no se avisa', (tester) async {
+    await entrar(tester, (base) {
+      sembrarCliente(base, id: 'c1', nombre: 'Primera', secuencia: 1);
+      base.db.execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('desfase_reloj_seg', '-40')",
+      );
+    });
+    expect(find.byKey(const Key('aviso_reloj_desfasado')), findsNothing);
+  });
+
   testWidgets('sin plan en ningún cliente, la lista es la de siempre', (tester) async {
     await entrar(tester, (base) {
       sembrarCliente(base, id: 'c1', nombre: 'Primera', secuencia: 1);

@@ -61,9 +61,11 @@
   <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel?periodo=mes">
     <div class="numero">{{ r.vendido_mes|dinero }}</div>
     <div class="etiqueta">vendido este mes</div>
+    {% if r.mayoreo_mes %}<div class="sutil" style="margin-top:6px">incluye {{ r.mayoreo_mes|dinero }} de mayoreo</div>{% endif %}
   </a>
   <div class="tarjeta">
     <div class="numero">{{ r.vendido_anio|dinero }}</div>
     <div class="etiqueta">vendido este año</div>
+    {% if r.mayoreo_anio %}<div class="sutil" style="margin-top:6px">incluye {{ r.mayoreo_anio|dinero }} de mayoreo</div>{% endif %}
   </div>
 </div>

@@ -143,6 +143,7 @@ la bodega sube cuando alguien la cuenta.
 | **Todo en efectivo**: la app del gerente y el dashboard ya no repiten lo vendido como «en efectivo»; la transferencia de un teléfono viejo se separa solo si llega (§154) | ✅ 3 de widget, 2 del servidor |
 | **El ticket con el logo, el domicilio del local y el RFC**: el parche en blanco y negro con `GS v 0`, que el margen de la EC-MP200 no rompe; también en la página de prueba (§155) | ✅ 6 de Dart |
 | **La venta cancelada devuelve la tienda a la lista**, roja con su número, como si no se le hubiera vendido (§156) | ✅ 1 de widget |
+| **Los arreglos de la revisión** (§157): carga «para hoy», corte de madrugada, Efectividad sin canceladas, «Sin cortar» como su corte, Mayoreo solo en efectivo y en los totales, aviso de la hora del teléfono, cantidades sin «.000», todo por día sin «esta semana», tocar un camión no abre su corte (y se puede descartar), y en Cortes solo lo que ya toca cortar | ✅ 7 pruebas del servidor, 9 de Dart, 5 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -166,7 +167,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1528 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **691 de Dart** y **364 de widget**, todas en verde.
+**1535 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **700 de Dart** y **369 de widget**, todas en verde.
 
 ## Stack
 

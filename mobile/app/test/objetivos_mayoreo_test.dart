@@ -208,6 +208,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(servidor.posts.last.$1, '/v1/mayoreo');
+    // Solo efectivo (ADR 0002 §157): no hay forma de pago que escoger.
+    expect(servidor.posts.last.$2['forma_pago'], 'efectivo');
+    expect(find.byKey(const Key('forma_pago_mayoreo')), findsNothing);
     expect(servidor.posts.last.$2['renglones'], [
       {'producto_id': 'p1', 'unidad': 'PZA', 'bultos': '4', 'precio': '625.00'},
     ]);

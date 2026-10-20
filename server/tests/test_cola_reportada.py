@@ -215,3 +215,20 @@ async def test_el_equipo_no_puede_declarar_de_quien_es_la_cola(
 
     # Y nada se guardó: el lote no se procesó en absoluto.
     assert (await _cola(sesion, equipo))["cola_pendiente"] is None
+
+
+async def test_la_respuesta_dice_cuanto_va_mal_el_reloj_del_telefono(cliente, semilla, sesion):
+    """Con la hora del teléfono se decide de qué día es cada venta: el teléfono se
+    entera de cuánto va mal para avisarle al vendedor (ADR 0002 §157)."""
+    from datetime import UTC, datetime, timedelta
+
+    _, cab = await _equipo(cliente, sesion, semilla)
+    cuerpo = a_json([sobre(operacion_cliente())])
+    cuerpo["enviado_en"] = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    desfase = (await _empujar(cliente, cab, cuerpo))["desfase_reloj_seg"]
+    # Una hora atrasado, con lo que tarda la red de prueba.
+    assert 3590 <= desfase <= 3700
+
+    # Una app vieja no manda su hora: no se inventa un desfase.
+    sin_hora = a_json([sobre(operacion_cliente())])
+    assert (await _empujar(cliente, cab, sin_hora))["desfase_reloj_seg"] is None

@@ -272,6 +272,20 @@ async def test_los_cortes_de_un_dia(cliente, sesion, semilla):
     assert len((await cliente.get("/v1/cortes", headers=cab)).json()["cortes"]) == 1
 
 
+async def test_lo_que_falta_cortar_cuenta_las_ventas_como_su_corte(cliente, sesion, semilla):
+    """El renglón «Sin cortar» dice las ventas que contará su corte: las del
+    vendedor, de su camión y del día de la carga. La venta que el teléfono amarró
+    a otra carga —o a ninguna— también es de ese corte."""
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    await sesion.execute(
+        text("UPDATE ventas SET carga_id = NULL WHERE id = :v"), {"v": dia["venta"]}
+    )
+    await sesion.commit()
+    cab = await _cab(cliente)
+    [pendiente] = (await cliente.get("/v1/cortes", headers=cab)).json()["por_cortar"]
+    assert (pendiente["ventas"], pendiente["importe"]) == (1, "2250.00")
+
+
 async def test_el_corte_es_del_dia_en_que_se_hizo(cliente, sesion, semilla):
     """«Si hago el corte a las 11 de la noche, es de ese día» (ADR 0002 §151).
 
@@ -313,6 +327,49 @@ async def test_el_corte_es_del_dia_en_que_se_hizo(cliente, sesion, semilla):
     await sesion.commit()
     de_ayer = (await cliente.get("/v1/cortes", params={"dia": str(ayer)}, headers=cab)).json()
     assert [(c["id"], c["hecho_el"]) for c in de_ayer["cortes"]] == [(corte["id"], str(ayer))]
+
+
+async def test_el_corte_del_vendedor_sin_liquidacion_sale_en_su_dia(cliente, sesion, semilla):
+    """«Me aparecen cerrados esta semana dos del lunes, pero cuando cambio a ese día
+    no aparecen» (ADR 0002 §157): el corte que el vendedor mandó sin carga abierta
+    de ese día se cierra sin liquidación, y ahora la lista lo enseña en su día."""
+    ayer = date.today() - timedelta(days=1)
+    await sesion.execute(
+        text(
+            "INSERT INTO cortes_vendedor (id, vendedor_id, fecha_operativa, efectivo_declarado, "
+            "                             efectivo_recibido, estado, nota) "
+            "VALUES (:k, :v, :d, 2250, 2250, 'cerrado', 'no había carga abierta que liquidar')"
+        ),
+        {"k": uuid.uuid4(), "v": semilla["vendedor"], "d": ayer},
+    )
+    await sesion.commit()
+    cab = await _cab(cliente)
+    de_ayer = (await cliente.get("/v1/cortes", params={"dia": str(ayer)}, headers=cab)).json()
+    assert de_ayer["cortes"] == []
+    [k] = de_ayer["sin_liquidacion"]
+    assert (k["vendedor"], k["efectivo_recibido"], k["nota"]) == (
+        "Juan Pérez", "2250.00", "no había carga abierta que liquidar"
+    )
+    hoy = (await cliente.get("/v1/cortes", params={"dia": str(date.today())}, headers=cab))
+    assert hoy.json()["sin_liquidacion"] == []
+
+
+async def test_el_corte_que_se_abrio_sin_querer_se_descarta(cliente, sesion, semilla):
+    """«Me aparecen dos abiertos cuando solo di click a los nombres» (ADR 0002
+    §157): el corte abierto se descarta y su carga vuelve a «Sin cortar»."""
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    cab = await _cab(cliente)
+    corte = await _abrir(cliente, cab, dia)
+    assert (await cliente.get("/v1/cortes", headers=cab)).json()["por_cortar"] == []
+
+    r = await cliente.post(f"/v1/cortes/{corte['id']}/descartar", headers=cab)
+    assert r.status_code == 200, r.text
+    lista = (await cliente.get("/v1/cortes", headers=cab)).json()
+    assert [c["carga_id"] for c in lista["por_cortar"]] == [str(dia["carga"])]
+    assert lista["cortes"] == []
+    # Dos veces no: ya está descartado.
+    otra = await cliente.post(f"/v1/cortes/{corte['id']}/descartar", headers=cab)
+    assert otra.status_code == 409
 
 
 async def test_un_corte_que_no_existe_es_404(cliente, semilla):

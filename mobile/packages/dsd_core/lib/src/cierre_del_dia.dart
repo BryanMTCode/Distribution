@@ -255,6 +255,11 @@ class SolicitudDeCarga {
   bool get rechazada => estado == 'rechazada';
 }
 
+/// Antes de esta hora, el cierre puede ser todavía el de ayer (ver
+/// `RegistroDeCierre.hoy`, ADR 0002 §157): nadie sale a vender a las 4 de la
+/// mañana, y quien hace su corte a esa hora está cerrando el día que terminó.
+const horaDeCambioDeDia = 5;
+
 /// Escribe y lee el cierre del día en la base del teléfono.
 class RegistroDeCierre {
   RegistroDeCierre({
@@ -280,7 +285,26 @@ class RegistroDeCierre {
   final String Function() _nuevoUuid;
   final DateTime Function() _ahora;
 
-  String get hoy => diaOperativoDe(_ahora());
+  /// El día que se cierra: el de hoy, salvo en la madrugada.
+  ///
+  /// «Si hago el corte a las 11 de la noche, es de ese día» (ADR 0002 §151), y
+  /// el que se hace a la 1 de la mañana también: antes de las
+  /// [horaDeCambioDeDia], si ayer tuvo ventas y hoy todavía no, el corte y la
+  /// solicitud de carga son los de ayer (§157). Sin esto, el corte de las 12:30
+  /// salía en ceros y la carga se pedía para pasado mañana.
+  String get hoy {
+    final ahora = _ahora().toLocal();
+    final delCalendario = diaOperativoDe(ahora);
+    if (ahora.hour >= horaDeCambioDeDia) return delCalendario;
+    final ayer = diaOperativoDe(
+      DateTime(ahora.year, ahora.month, ahora.day).subtract(const Duration(hours: 12)),
+    );
+    int ventasDe(String dia) => _db.select(
+          "SELECT COUNT(*) AS n FROM ventas WHERE fecha_operativa = ? AND estado = 'confirmada'",
+          [dia],
+        ).single['n'] as int;
+    return ventasDe(ayer) > 0 && ventasDe(delCalendario) == 0 ? ayer : delCalendario;
+  }
 
   // -------------------------------------------------------------------------
   // Lectura
@@ -616,10 +640,12 @@ class RegistroDeCierre {
 
     final instante = _ahora();
     final momento = instante.toUtc().toIso8601String();
-    final para = diaSiguiente(diaOperativoDe(instante));
+    // Para el día siguiente al que se cierra: en la madrugada, ese es hoy.
+    final dia = hoy;
+    final para = diaSiguiente(dia);
     final solicitudId = _nuevoUuid();
     final nota = (observaciones ?? '').trim();
-    final corte = corteId ?? corteDelDia(diaOperativoDe(instante))?.id;
+    final corte = corteId ?? corteDelDia(dia)?.id;
 
     final sobre = SobreLocal(
       operacionId: _nuevoUuid(),

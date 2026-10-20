@@ -921,6 +921,19 @@ class AplicadorDeltas {
     return true;
   }
 
+  /// Guarda cuánto va mal el reloj del teléfono, según el servidor en el último
+  /// envío (ADR 0002 §157). Con esa hora se decide de qué día es cada venta, así
+  /// que la app avisa cuando se desfasa. Nulo, el servidor no lo supo: se deja
+  /// el último que sí se midió.
+  void guardarDesfaseDeReloj(int? segundos) {
+    if (segundos == null) return;
+    _db.execute(
+      "INSERT INTO sync_estado (clave, valor) VALUES ('desfase_reloj_seg', ?) "
+      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      ['$segundos'],
+    );
+  }
+
   /// Vacía el inventario local del camión porque ya es otro camión.
   ///
   /// Se borran también las marcas de cargas aplicadas: las del camión anterior no

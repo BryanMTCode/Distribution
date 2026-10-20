@@ -200,6 +200,7 @@ class _ServidorDeOficina implements Transporte {
           'camiones': 5, 'piezas_en_bodegas': '4800.000',
           'piezas_en_camiones': '960.000', 'existencias_negativas': 0,
           'vendido_mes': '98000.00', 'vendido_anio': '980000.00',
+          'mayoreo_mes': '5000.00', 'mayoreo_anio': '5000.00',
         },
       '/v1/oficina/clientes' => _listaDeClientes(parametros),
       '/v1/oficina/clientes/cl1' => _fichaCliente(),
@@ -277,6 +278,9 @@ class _ServidorDeOficina implements Transporte {
         }
         cerrado = true;
         return RespuestaHttp(200, jsonEncode(_corte(mensaje: 'Liquidación LQ-000001 cerrada.')));
+      case '/v1/cortes/lq1/descartar':
+        return const RespuestaHttp(
+            200, '{"mensaje":"Corte descartado: su carga vuelve a «Sin cortar»."}');
     }
     return const RespuestaHttp(405, '{}');
   }
@@ -671,6 +675,10 @@ void main() {
           matching: find.text('5')), findsOneWidget);
       expect(find.descendant(of: find.byKey(const Key('empresa_articulos')),
           matching: find.text('210')), findsOneWidget);
+      // Lo vendido incluye el mayoreo, y lo dice (ADR 0002 §157).
+      await tester.scrollUntilVisible(find.byKey(const Key('empresa_vendido_mes')), 200);
+      expect(find.descendant(of: find.byKey(const Key('empresa_vendido_mes')),
+          matching: find.textContaining(r'incluye $5,000 de mayoreo')), findsOneWidget);
     });
   });
 
@@ -786,6 +794,28 @@ void main() {
   });
 
   group('el corte del día', () {
+    testWidgets('el que se abrió sin querer se descarta (§157)', (tester) async {
+      // «Me aparecen dos abiertos cuando solo di click a los nombres.»
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('nav_almacen')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('pestana_cortes')));
+      await tester.tap(find.byKey(const Key('pestana_cortes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('por_cortar_CG-000001')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirmar_abrir_corte')));
+      await tester.pumpAndSettle();
+
+      await tocar(tester, const Key('boton_descartar_corte'));
+      // Doble confirmación, como todo lo que se quita (§143).
+      await tester.tap(find.byKey(const Key('confirmar_quitar_si')));
+      await tester.pumpAndSettle();
+      expect(servidor.posts.last.$1, '/v1/cortes/lq1/descartar');
+      expect(find.byKey(const Key('pantalla_corte')), findsNothing);
+      expect(textoQueContiene('Corte descartado'), findsOneWidget);
+    });
+
     testWidgets('abrir, contar y cerrar confirmando la sincronización', (tester) async {
       final servidor = await _montar(tester);
       await tester.tap(find.byKey(const Key('nav_almacen')));
@@ -794,6 +824,9 @@ void main() {
       await tester.tap(find.byKey(const Key('pestana_cortes')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('por_cortar_CG-000001')));
+      await tester.pumpAndSettle();
+      // Pregunta antes de abrir el corte (ADR 0002 §157).
+      await tester.tap(find.byKey(const Key('confirmar_abrir_corte')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('pantalla_corte')), findsOneWidget);

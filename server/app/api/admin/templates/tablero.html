@@ -124,7 +124,9 @@
     <div class="numero">{{ indicadores.ventas_hoy|entero }}</div>
     <div class="etiqueta">ventas recibidas {{ cuando }}</div>
     <div class="sutil" style="margin-top:6px">
-      {{ indicadores.importe_hoy }} en total.
+      {# Todo en efectivo (§154): el importe ya está en la tarjeta del efectivo;
+         solo se repite si una transferencia vieja lo hace distinto. #}
+      {% if not indicadores.total_igual_al_efectivo %}{{ indicadores.importe_hoy }} en total.{% endif %}
       {# §0.3: el número se muestra con la advertencia de qué representa. #}
       Solo lo que ya sincronizó.
     </div>
@@ -136,7 +138,8 @@
     <div class="numero">{{ indicadores.efectivo_hoy }}</div>
     <div class="etiqueta">{% if periodo.es_hoy %}efectivo a entregar hoy{% else %}efectivo cobrado {{ cuando }}{% endif %}</div>
     <div class="sutil" style="margin-top:6px">
-      Ventas pagadas en efectivo: todo es de contado.
+      Lo vendido en la ruta: todo es en efectivo.
+      {% if indicadores.mayoreo_hoy %}<br>Y {{ indicadores.mayoreo_hoy }} de mayoreo, aparte: no lo entrega ningún vendedor.{% endif %}
     </div>
   </a>
 

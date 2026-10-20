@@ -65,7 +65,7 @@ Dinero? _leerPesos(String texto) {
 
 /// La lista de una de las dos secciones, que se carga sola.
 abstract class _Seccion extends ConsumerStatefulWidget {
-  const _Seccion({super.key, this.alCambiar, this.alLeer, this.yaListados = const {}});
+  const _Seccion({super.key, this.alCambiar, this.alLeer});
 
   /// Para que la pantalla que la contiene se recargue: cerrar un corte cambia
   /// lo que queda por cortar a mano, y aceptar una carga, las cargas abiertas.
@@ -73,12 +73,9 @@ abstract class _Seccion extends ConsumerStatefulWidget {
 
   /// Lo que se leyó, para que la pantalla lo junte con su lista: la carga
   /// aceptada va en el renglón de su carga, y el corte cerrado en el de su
-  /// corte (ADR 0002 §124).
+  /// corte (ADR 0002 §124). Lo resuelto ya no se lista aquí: va en su día
+  /// (§157, «quita lo de cerrados esta semana; que todo aparezca por día»).
   final ValueChanged<Cierres>? alLeer;
-
-  /// Los folios que la pantalla ya muestra en su lista: lo resuelto que cae en
-  /// uno de ellos no se repite aquí.
-  final Set<String> yaListados;
 }
 
 abstract class _EstadoSeccion<T extends _Seccion> extends ConsumerState<T> {
@@ -130,7 +127,6 @@ class SeccionCortesDeVendedores extends _Seccion {
     super.key,
     super.alCambiar,
     super.alLeer,
-    super.yaListados,
   });
 
   @override
@@ -146,11 +142,6 @@ class _EstadoCortesDeVendedores extends _EstadoSeccion<SeccionCortesDeVendedores
     final c = _cierres;
     final estilo = Theme.of(context).textTheme;
     final colores = Theme.of(context).colorScheme;
-    // El cerrado cuyo corte ya está en la lista por día va allá, no aquí.
-    final recientes = [
-      for (final r in c?.recientes ?? const <CierreDeVendedor>[])
-        if (!widget.yaListados.contains(r.corte!.liquidacionFolio)) r,
-    ];
     return Column(
       key: const Key('seccion_cortes_vendedores'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,19 +170,6 @@ class _EstadoCortesDeVendedores extends _EstadoSeccion<SeccionCortesDeVendedores
               onTap: () => abrir(PantallaCorteDeVendedor(cierre: cierre)),
             ),
           ),
-        if (recientes.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text('Cerrados esta semana', style: estilo.titleSmall),
-          for (final r in recientes)
-            ListTile(
-              key: Key('corte_vendedor_reciente_${r.corte!.id}'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('${r.vendedor} · ${diaEnPalabras(r.corte!.fechaOperativa)}'),
-              subtitle: Text('${r.corte!.liquidacionFolio ?? r.corte!.estado} · '
-                  '${efectivoEnPalabras(r.corte!)}'),
-            ),
-        ],
       ],
     );
   }
@@ -365,7 +343,6 @@ class SeccionCargasPedidas extends _Seccion {
     super.key,
     super.alCambiar,
     super.alLeer,
-    super.yaListados,
   });
 
   @override
@@ -381,12 +358,6 @@ class _EstadoCargasPedidas extends _EstadoSeccion<SeccionCargasPedidas> {
     final c = _cierres;
     final estilo = Theme.of(context).textTheme;
     final colores = Theme.of(context).colorScheme;
-    // La aceptada cuya carga ya está en la lista por día va allá, con su ticket;
-    // aquí queda la rechazada, o la que la lista de abajo no muestra.
-    final recientes = [
-      for (final r in c?.recientes ?? const <CierreDeVendedor>[])
-        if (!widget.yaListados.contains(r.solicitud!.cargaFolio)) r,
-    ];
     return Column(
       key: const Key('seccion_cargas_pedidas'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,33 +390,6 @@ class _EstadoCargasPedidas extends _EstadoSeccion<SeccionCargasPedidas> {
               onTap: () => abrir(PantallaCargaPedida(cierre: cierre)),
             ),
           ),
-        if (recientes.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text('Resueltas esta semana', style: estilo.titleSmall),
-          for (final r in recientes)
-            ListTile(
-              key: Key('carga_pedida_reciente_${r.clave}'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('${r.vendedor} · ${diaEnPalabras(r.solicitud!.fechaOperativa)}'),
-              subtitle: Text(r.solicitud!.aceptada
-                  ? 'Carga ${r.solicitud!.cargaFolio ?? ''}'
-                  : 'Rechazada: ${r.solicitud!.motivo ?? ''}'),
-              trailing: r.solicitud!.aceptada
-                  ? IconButton(
-                      key: Key('ticket_reciente_${r.clave}'),
-                      tooltip: 'Ticket de la carga',
-                      icon: const Icon(Icons.receipt_long_outlined),
-                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => PantallaTicketCompartible(
-                          titulo: 'Carga aceptada',
-                          texto: r.ticketDeLaCarga!,
-                        ),
-                      )),
-                    )
-                  : null,
-            ),
-        ],
       ],
     );
   }

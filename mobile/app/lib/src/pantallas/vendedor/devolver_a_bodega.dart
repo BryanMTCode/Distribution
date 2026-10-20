@@ -136,7 +136,7 @@ class _EstadoDevolver extends ConsumerState<PantallaDevolverABodega> {
           (u) => u.factor.diezmilesimos == Factor.uno.diezmilesimos,
           orElse: () => p.porOmision,
         );
-        renglon.cuantas.text = p.existenciaBase.texto;
+        renglon.cuantas.text = p.existenciaBase.textoCorto;
         _renglones.add(renglon);
       }
       _busqueda.clear();

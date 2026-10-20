@@ -18,6 +18,7 @@ import '../../datos/servicio_ubicacion.dart';
 import '../../demo.dart';
 import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
+import '../../estado/reloj.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import '../../marca.dart';
@@ -271,6 +272,7 @@ class PantallaClientes extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          const _AvisoDeReloj(),
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
@@ -483,6 +485,34 @@ class _BarraPendientes extends ConsumerWidget implements PreferredSizeWidget {
 }
 
 /// «Hoy» sin nadie del plan: se dice, y abajo siguen las demás de la ruta.
+/// «La hora del teléfono va 1 h atrasada» (ADR 0002 §157): con la hora mal, las
+/// ventas pueden quedar en otro día y el corte no las ve.
+class _AvisoDeReloj extends ConsumerWidget {
+  const _AvisoDeReloj();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cuanto = relojDesfasadoEnPalabras(ref.watch(desfaseDeRelojProvider));
+    if (cuanto == null) return const SizedBox.shrink();
+    final colores = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('aviso_reloj_desfasado'),
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colores.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'La hora del teléfono $cuanto. Ponla en automático (Ajustes → Fecha y hora): '
+        'con la hora mal, las ventas pueden quedar en otro día y tu corte no las ve.',
+        style: TextStyle(color: colores.onErrorContainer),
+      ),
+    );
+  }
+}
+
 class _SinNadieHoy extends StatelessWidget {
   const _SinNadieHoy();
 

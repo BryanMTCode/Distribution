@@ -30,7 +30,9 @@ from sqlalchemy import text
 from app.infra.codigo_de_cliente import siguiente_codigo
 
 PERMISO = "mayoreo.vender"
-FORMAS_DE_PAGO = ("efectivo", "transferencia")
+# Solo efectivo, como la venta de ruta: «en mayoreo va solo efectivo» (ADR 0002
+# §157). Las ventas de antes con transferencia se siguen leyendo tal cual.
+FORMAS_DE_PAGO = ("efectivo",)
 RENGLONES_MAXIMOS = 200
 
 
@@ -221,7 +223,7 @@ async def vender(
     """Registra la venta y saca la mercancía de la bodega. Devuelve (id, folio).
     No hace commit: si algo falla, quien llama hace rollback y no queda nada."""
     if forma_pago not in FORMAS_DE_PAGO:
-        raise MayoreoInvalido("La forma de pago es efectivo o transferencia.")
+        raise MayoreoInvalido("El mayoreo es solo en efectivo.")
     if not renglones:
         raise MayoreoInvalido("Agrega al menos un artículo.")
     if len(renglones) > RENGLONES_MAXIMOS:

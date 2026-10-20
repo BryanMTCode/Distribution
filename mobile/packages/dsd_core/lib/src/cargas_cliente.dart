@@ -301,8 +301,19 @@ class ClienteCargas {
   Future<DetalleDeCarga> ver(String id) async =>
       DetalleDeCarga.deJson(await _get('/v1/cargas/$id') as Map<String, Object?>);
 
-  Future<DetalleDeCarga> abrir({required String vendedorId, required String bodegaId}) =>
-      _post('/v1/cargas', {'vendedor_id': vendedorId, 'almacen_origen_id': bodegaId});
+  /// Abre la carga del vendedor. Sin `fecha` (`YYYY-MM-DD`) es para mañana, que
+  /// es lo normal (§82); con la de hoy, para la que se carga en la mañana y se
+  /// vende ese mismo día (§157): así sus ventas caen en su corte.
+  Future<DetalleDeCarga> abrir({
+    required String vendedorId,
+    required String bodegaId,
+    String? fecha,
+  }) =>
+      _post('/v1/cargas', {
+        'vendedor_id': vendedorId,
+        'almacen_origen_id': bodegaId,
+        if (fecha != null) 'fecha_operativa': fecha,
+      });
 
   Future<DetalleDeCarga> agregar(String id, List<PedidoDeCarga> pedidos) => _post(
         '/v1/cargas/$id/renglones',

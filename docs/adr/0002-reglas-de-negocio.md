@@ -6762,3 +6762,68 @@ se le vendiera nada.»
   (gris).
 - **En «Su ruta» del gerente** ya era así: el servidor solo cuenta las ventas
   confirmadas.
+
+## 157. Los arreglos de la revisión general, y Mayoreo solo en efectivo
+
+**Decisión (octubre 2026).** Tras la revisión general de la app: «Arregla
+todas. En mayoreo va solo efectivo.» Mientras tanto llegaron:
+· «En la app, las cantidades en los camiones aparecen 1 como 1.000».
+· «En cortes del día me aparecen cerrados esta semana dos del lunes, pero cuando
+  cambio a ese día no aparecen… quita lo de resueltas esta semana en cargas y
+  cortes, que solo aparezcan por día siempre».
+· «Hoy martes me aparecen dos abiertos cuando solo di click a los nombres».
+
+- **La carga para hoy.** «Nueva carga» deja escoger «Para mañana» (lo normal,
+  §82) o «Para hoy»: el camión que se carga en la mañana y sale a vender ese
+  mismo día. Con la fecha de mañana, su corte de esa noche no veía las ventas,
+  porque el corte cuenta las del día de la carga. Así pasó el primer día: las
+  cargas del lunes quedaron fechadas para el martes.
+- **El corte de madrugada.** Antes de las 5 de la mañana, si ayer tuvo ventas y
+  hoy todavía no, el corte y la solicitud de carga del teléfono son los de ayer.
+  El corte de las 12:30 salía en ceros, y la carga se pedía para pasado mañana.
+- **Efectividad** ya no cuenta la venta cancelada como visita del plan (§156).
+- **«Sin cortar» cuenta las ventas como su corte**: del vendedor, de su camión y
+  del día de la carga. Antes contaba las que traían el folio de esa carga.
+- **Mayoreo, solo en efectivo.**
+  · La app y el dashboard ya no tienen forma de pago que escoger.
+  · El servidor rechaza la transferencia: «El mayoreo es solo en efectivo».
+  · Las ventas de antes con transferencia se siguen leyendo tal cual.
+- **El mayoreo en los totales.** Iba en su propia tabla y no salía en ninguna
+  cifra:
+  · Empresa suma lo vendido del mes y del año con el mayoreo, y dice «incluye
+    $X de mayoreo»;
+  · el Tablero lo dice aparte («y $X de mayoreo, aparte»), porque su «vendido
+    hoy» es la ruta: la que se compara con los mismos días y la que entregan los
+    vendedores.
+- **El Tablero del dashboard** ya no repite la cifra: «$X en total» solo sale si
+  no es el efectivo (§154).
+- **La hora del teléfono.**
+  · El servidor ya medía el desfase en cada envío (`recibido_en − enviado_en`) y
+    marcaba las ventas en el dashboard; ahora se lo contesta al teléfono
+    (`desfase_reloj_seg`) y el teléfono lo guarda.
+  · Con diez minutos o más, la lista del vendedor avisa: «La hora del teléfono va
+    1 h atrasada. Ponla en automático…». Con esa hora se decide de qué día es cada
+    venta.
+- **Las cantidades sin ceros de sobra.** «Mi camión» y lo que «Devolver a bodega»
+  propone dicen «12», no «12.000»; «2 CAJA y 5 PZA», no «5.000 PZA».
+- **Texto viejo:** «Nueva carga» mandaba a «Cortes y cargas», que ya no existe.
+- **Todo por día, sin «esta semana».** Se quitan «Cerrados esta semana» (Cortes) y
+  «Resueltas esta semana» (Cargas); arriba solo queda lo que está por resolver:
+  · la carga aceptada va en su día, con su ticket;
+  · la rechazada, en el día en que se pidió, con su motivo;
+  · el corte que el vendedor mandó sin carga de ese día —que se cierra «sin
+    liquidación» y por eso no salía en ningún día— ahora sale en su día como «Sin
+    liquidación». Esos eran los dos «del lunes».
+- **Tocar un camión no abre su corte.**
+  · Antes, tocar el nombre abría el corte en ese momento: de ahí los dos
+    «Abierto» del martes. Ahora pregunta primero.
+  · Un corte abierto se puede «Descartar» (con doble confirmación): queda
+    anulado, como al eliminarlo en Operaciones, y su carga vuelve a la lista.
+    Uno cerrado se anula en el dashboard.
+- **En Cortes, solo lo que ya toca cortar.**
+  · La carga de hoy sale «En ruta»: su corte es en la noche.
+  · La de un día que ya pasó sale «Sin cortar» y se ofrece desde los otros días.
+  · La de mañana (la que se acepta en la noche) todavía no es un corte: va en
+    Cargas.
+
+(versionCode 51)

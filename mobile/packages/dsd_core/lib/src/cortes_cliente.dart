@@ -95,8 +95,43 @@ class CorteEnLista {
   final int faltantes;
 }
 
+/// El corte que mandó el vendedor y se cerró sin liquidación: no había carga
+/// abierta de ese día (ADR 0002 §157). Queda como constancia de lo que entregó.
+class CorteSinLiquidacion {
+  const CorteSinLiquidacion({
+    required this.id,
+    required this.fecha,
+    required this.vendedor,
+    required this.declarado,
+    this.recibido,
+    this.nota,
+  });
+
+  factory CorteSinLiquidacion.deJson(Map<String, Object?> j) => CorteSinLiquidacion(
+        id: j['id']! as String,
+        fecha: j['fecha_operativa']! as String,
+        vendedor: j['vendedor']! as String,
+        declarado: Dinero.deTexto(j['efectivo_declarado']! as String),
+        recibido: j['efectivo_recibido'] == null
+            ? null
+            : Dinero.deTexto(j['efectivo_recibido']! as String),
+        nota: j['nota'] as String?,
+      );
+
+  final String id;
+  final String fecha;
+  final String vendedor;
+  final Dinero declarado;
+  final Dinero? recibido;
+  final String? nota;
+}
+
 class ListaDeCortes {
-  const ListaDeCortes({required this.porCortar, required this.cortes});
+  const ListaDeCortes({
+    required this.porCortar,
+    required this.cortes,
+    this.sinLiquidacion = const [],
+  });
 
   factory ListaDeCortes.deJson(Map<String, Object?> j) => ListaDeCortes(
         porCortar: [
@@ -106,10 +141,18 @@ class ListaDeCortes {
         cortes: [
           for (final c in j['cortes']! as List) CorteEnLista.deJson((c as Map).cast()),
         ],
+        // Un servidor anterior no lo manda.
+        sinLiquidacion: [
+          for (final c in (j['sin_liquidacion'] ?? const <Object?>[]) as List)
+            CorteSinLiquidacion.deJson((c as Map).cast()),
+        ],
       );
 
   final List<CargaPorCortar> porCortar;
   final List<CorteEnLista> cortes;
+
+  /// Los cortes del vendedor del día que no tuvieron liquidación.
+  final List<CorteSinLiquidacion> sinLiquidacion;
 }
 
 class RenglonDelCorte {
@@ -266,6 +309,14 @@ class ClienteCortes {
 
   Future<CorteDelDia> cerrar(String id, {bool confirmoSincronizado = false}) =>
       _post('/v1/cortes/$id/cerrar', {'confirmo_sincronizado': confirmoSincronizado});
+
+  /// Descarta el corte que se abrió y no se cerró: queda anulado y su carga
+  /// vuelve a «Sin cortar» (ADR 0002 §157). Devuelve el aviso del servidor.
+  Future<String> descartar(String id) async {
+    final r = await _transporte.post('/v1/cortes/$id/descartar', const {});
+    _revisar(r);
+    return ((jsonDecode(r.cuerpo) as Map)['mensaje'] as String?) ?? 'Corte descartado.';
+  }
 
   Future<CorteDelDia> _post(String ruta, Map<String, Object?> cuerpo) async {
     final r = await _transporte.post(ruta, cuerpo);

@@ -35,13 +35,9 @@
         {% for c in clientes %}<option value="{{ c.id }}" {% if c.id|string == cliente %}selected{% endif %}>{{ c.nombre_comercial }}</option>{% endfor %}
       </select>
     </label>
-    <label>Pago
-      <select name="forma_pago">
-        <option value="efectivo">Efectivo</option>
-        <option value="transferencia">Transferencia</option>
-      </select>
-    </label>
-    <input name="referencia_pago" placeholder="Referencia (transferencia)" maxlength="80">
+    {# Solo efectivo (ADR 0002 §157). #}
+    <input type="hidden" name="forma_pago" value="efectivo">
+    <span class="sutil">Pago en efectivo</span>
   </div>
 
   <div class="tabla-marco">

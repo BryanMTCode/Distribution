@@ -32,7 +32,8 @@ void main() {
   String uuid() => '0198a2f4-0000-7000-8000-${(++contador).toString().padLeft(12, '0')}';
   // Hora LOCAL: el día operativo es el del calendario de quien vende, y así la
   // prueba no depende de la zona de la máquina que la corre.
-  final ahora = DateTime(2026, 10, 7, 18, 30);
+  final mediaTarde = DateTime(2026, 10, 7, 18, 30);
+  var ahora = mediaTarde;
 
   RegistroDeCierre registro() => RegistroDeCierre(
         db: db,
@@ -61,6 +62,7 @@ void main() {
 
   setUp(() {
     contador = 0;
+    ahora = mediaTarde;
     db = sqlite3.openInMemory();
     aplicarEsquemaLocal(db);
     outbox = Outbox(db);
@@ -101,6 +103,49 @@ void main() {
   });
 
   tearDown(() => db.dispose());
+
+  group('el corte de la madrugada (ADR 0002 §157)', () {
+    test('a la 1 de la mañana, sin ventas del día nuevo, se cierra el de ayer', () {
+      // Las ventas son del 7; el vendedor hace su corte a la 1:00 del 8.
+      ahora = DateTime(2026, 10, 8, 1, 0);
+      final cierre = registro();
+      expect(cierre.hoy, '2026-10-07');
+      final r = cierre.resumen();
+      expect((r.fechaOperativa, r.ventas), ('2026-10-07', 2));
+      // Y la carga se pide para el 8, no para el 9.
+      final s = cierre.pedirCarga(renglones: [
+        RenglonPedido(
+          productoId: _atun,
+          nombre: 'Atún en agua 140 g',
+          unidad: 'CAJA',
+          factor: Factor.deEnteros(24),
+          bultos: 10,
+        ),
+      ]);
+      expect(s.fechaOperativa, '2026-10-08');
+    });
+
+    test('desde las 5 de la mañana ya es el día nuevo', () {
+      ahora = DateTime(2026, 10, 8, horaDeCambioDeDia, 0);
+      expect(registro().hoy, '2026-10-08');
+    });
+
+    test('si ya vendió en el día nuevo, el día es el nuevo', () {
+      ahora = DateTime(2026, 10, 8, 1, 0);
+      db.execute(
+        'INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, '
+        'forma_pago, estado, total, fecha_dispositivo, fecha_operativa, sincronizada, creado_en) '
+        "VALUES ('v-madrugada', 99, 'VEND01-000099', 'c1', 'contado', 'efectivo', 'confirmada', "
+        "10, '2026-10-08T07:00:00Z', '2026-10-08', 0, '2026-10-08T07:00:00Z')",
+      );
+      expect(registro().hoy, '2026-10-08');
+    });
+
+    test('sin ventas de ayer, la madrugada es del día nuevo', () {
+      ahora = DateTime(2026, 10, 9, 1, 0);
+      expect(registro().hoy, '2026-10-09');
+    });
+  });
 
   group('el resumen del día', () {
     test('parte lo vendido en efectivo y transferencia, y dice qué no ha subido', () {

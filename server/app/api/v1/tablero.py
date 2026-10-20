@@ -126,6 +126,10 @@ class VentaDelDia(BaseModel):
     ticket_promedio: Dinero
     referencia: ReferenciaSalida
     calculado_en: datetime | None
+    # El mayoreo de la oficina ese día, aparte (ADR 0002 §157): `total` es la
+    # ruta, la que se compara con los mismos días y la que entregan los
+    # vendedores.
+    mayoreo: Dinero = Decimal("0.00")
 
 
 class VisitasDelDia(BaseModel):
@@ -412,6 +416,7 @@ async def ver_tablero(
                 incompleta=any(v.sin_sincronizar for v in vendedores),
             ),
             calculado_en=resumen["calculado_en"],
+            mayoreo=await _mayoreo_del_dia(sesion, dia),
         ),
         visitas=VisitasDelDia(
             visitas=visitas,
@@ -681,6 +686,21 @@ async def ver_periodo(
     )
 
 
+async def _mayoreo_del_dia(sesion, dia: date) -> Decimal:
+    """Lo vendido de mayoreo ese día: la oficina a sus clientes (ADR 0002 §157)."""
+    return Decimal(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo "
+                    " WHERE fecha = :d AND estado = 'confirmada'"
+                ),
+                {"d": dia},
+            )
+        ).scalar_one()
+    )
+
+
 # ---------------------------------------------------------------------------
 # La empresa: el tamaño del negocio
 # ---------------------------------------------------------------------------
@@ -701,8 +721,11 @@ class ResumenDeLaEmpresa(BaseModel):
     piezas_en_bodegas: Cantidad
     piezas_en_camiones: Cantidad
     existencias_negativas: int
+    # Incluyen el mayoreo, y cuánto es se dice aparte (ADR 0002 §157).
     vendido_mes: Dinero
     vendido_anio: Dinero
+    mayoreo_mes: Dinero = Decimal("0.00")
+    mayoreo_anio: Dinero = Decimal("0.00")
 
 
 @router.get("/empresa", response_model=ResumenDeLaEmpresa)

@@ -31,6 +31,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.api.admin.comun import CapturaInvalida
 from app.api.admin.liquidaciones import (
@@ -86,9 +87,24 @@ class CorteEnLista(BaseModel):
     cerrada_en: datetime | None
 
 
+class CorteSinLiquidacion(BaseModel):
+    """El corte que mandó el vendedor y se cerró sin liquidación: no había carga
+    abierta de ese día que cortar (ADR 0002 §157). Queda como constancia de lo
+    que entregó, y la lista lo enseña en su día."""
+
+    id: uuid.UUID
+    fecha_operativa: date
+    vendedor: str
+    efectivo_declarado: Dinero
+    efectivo_recibido: Dinero | None
+    nota: str | None
+
+
 class Cortes(BaseModel):
     por_cortar: list[CargaPorCortar]
     cortes: list[CorteEnLista]
+    # Solo con `dia`: los del vendedor de ese día que no tuvieron liquidación.
+    sin_liquidacion: list[CorteSinLiquidacion] = []
 
 
 class Presentacion(BaseModel):
@@ -188,6 +204,27 @@ async def lista(actor: ActorDep, sesion: SesionDep, dia: date | None = None) -> 
             CorteEnLista(**{k: c[k] for k in CorteEnLista.model_fields})
             for c in await cortes_recientes(sesion, dia)
         ],
+        sin_liquidacion=[] if dia is None else [
+            CorteSinLiquidacion(**dict(c)) for c in await _sin_liquidacion(sesion, dia)
+        ],
+    )
+
+
+async def _sin_liquidacion(sesion, dia: date) -> list:
+    return list(
+        (
+            await sesion.execute(
+                text(
+                    "SELECT k.id, k.fecha_operativa, u.nombre AS vendedor, "
+                    "       k.efectivo_declarado, k.efectivo_recibido, k.nota "
+                    "  FROM cortes_vendedor k JOIN usuarios u ON u.id = k.vendedor_id "
+                    " WHERE k.estado = 'cerrado' AND k.liquidacion_id IS NULL "
+                    "   AND k.fecha_operativa = :d "
+                    " ORDER BY k.recibido_en DESC"
+                ),
+                {"d": dia},
+            )
+        ).mappings().all()
     )
 
 
@@ -258,6 +295,40 @@ async def cerrar(
     except CorteRechazado as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return await _corte(sesion, liquidacion_id, mensaje=aviso)
+
+
+@router.post("/{liquidacion_id}/descartar")
+async def descartar(liquidacion_id: uuid.UUID, actor: ActorDep, sesion: SesionDep) -> dict:
+    """Descarta un corte que se abrió y no se cerró (ADR 0002 §157): «me aparecen
+    dos abiertos cuando solo di click a los nombres». Queda como anulado, igual
+    que al eliminarlo desde Operaciones, y su carga vuelve a «Sin cortar». Uno
+    cerrado no se descarta aquí: se anula en el dashboard, con su motivo."""
+    from app.infra.operaciones import AnulacionRechazada, OperacionNoExiste, anular
+
+    actor.exigir(PERMISO)
+    estado = (
+        await sesion.execute(
+            text("SELECT estado FROM liquidaciones WHERE id = :l"), {"l": liquidacion_id}
+        )
+    ).scalar_one_or_none()
+    if estado is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ese corte no existe")
+    if estado in ("cerrada", "anulada"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ese corte ya se cerró: se anula en el dashboard, en Operaciones, con su motivo."
+            if estado == "cerrada" else "Ese corte ya estaba descartado.",
+        )
+    try:
+        await anular(
+            sesion, "corte", liquidacion_id,
+            motivo="Se descartó desde la app sin cerrarlo.", quien=actor.usuario_id,
+        )
+    except (AnulacionRechazada, OperacionNoExiste) as e:
+        await sesion.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    await sesion.commit()
+    return {"mensaje": "Corte descartado: su carga vuelve a «Sin cortar»."}
 
 
 async def _corte(sesion, liquidacion_id: uuid.UUID, *, mensaje: str | None = None) -> Corte:

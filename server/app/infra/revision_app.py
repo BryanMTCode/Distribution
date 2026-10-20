@@ -329,7 +329,23 @@ SECCIONES: tuple[Seccion, ...] = (
             Punto(
                 "mi_camion", "Mi camión",
                 "Botón del camión (arriba).",
-                "Lo que trae, por familia, con lo vendido ya descontado.",
+                "Lo que trae, por familia, con lo vendido ya descontado. Las cantidades "
+                "enteras sin ceros de sobra: «12», no «12.000» (ADR 0002 §157).",
+                desde="+51",
+            ),
+            Punto(
+                "corte_de_madrugada", "El corte después de medianoche",
+                "Después de vender, haz el corte pasada la medianoche (antes de las 5).",
+                "Es el corte del día que acaba de terminar, con sus ventas, y la carga "
+                "se pide para hoy, no para pasado mañana (ADR 0002 §157).",
+                desde="+51",
+            ),
+            Punto(
+                "reloj_desfasado", "La hora del teléfono mal",
+                "Cambia la hora del teléfono una hora (sin automática) y sincroniza.",
+                "Arriba de la lista: «La hora del teléfono va 1 h …», con cómo ponerla en "
+                "automático. Al ponerla bien y sincronizar, el aviso se quita (§157).",
+                desde="+51",
             ),
             Punto(
                 "ajustes_de_la_oficina_del_dia", "Lo que la oficina le ajustó hoy",
@@ -559,20 +575,22 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+37",
             ),
             Punto(
-                "cargas_por_dia", "Cargas por día, sin repetirse",
-                "Almacén → Cargas, después de aceptar una que pidió un vendedor: ve a su "
-                "día (mañana).",
-                "La aceptada sale una sola vez, en su día, con «la pidió el vendedor» y "
-                "el botón del ticket; ya no se repite en «Resueltas esta semana», donde "
-                "solo quedan las rechazadas.",
-                desde="+41",
+                "cargas_por_dia", "Cargas por día, sin «Resueltas esta semana»",
+                "Almacén → Cargas, después de aceptar una que pidió un vendedor y de "
+                "rechazar otra.",
+                "Todo va por día: la aceptada en el día en que se aceptó, con «la pidió el "
+                "vendedor» y su ticket; la rechazada, en el día en que se pidió, con su "
+                "motivo. Ya no hay «Resueltas esta semana» (ADR 0002 §157).",
+                desde="+51",
             ),
             Punto(
-                "nueva_carga", "Una carga a mano",
-                "Almacén → Cargas → «Nueva carga» → «Abrir la carga» → «Agregar» → "
-                "«Confirmar».",
-                "Sube al camión. Si ese vendedor ya tiene la carga del día, explica por "
-                "qué no deja.",
+                "nueva_carga", "Una carga a mano, para hoy o para mañana",
+                "Almacén → Cargas → «Nueva carga»: escoge «Para hoy» → «Abrir la carga» → "
+                "«Agregar» → «Confirmar».",
+                "Sube al camión con la fecha de hoy, y sus ventas de hoy entran en su "
+                "corte de esta noche. Lo normal sigue siendo «Para mañana». Si ese "
+                "vendedor ya tiene la carga del día, explica por qué no deja (§157).",
+                desde="+51",
             ),
             Punto(
                 "cerrar_corte", "Un corte que no se cerró solo",
@@ -584,14 +602,21 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "cortes_por_dia", "Cortes por día, como las cargas",
-                "Almacén → Corte del día, después de cerrar en la noche el corte de un "
-                "vendedor. Muévete con ‹ › o el calendario.",
-                "Un día a la vez, como Cargas: el corte va en el día en que se hizo (el de "
-                "las 11 p. m. es de ese día), con su estatus —Abierto, Cuadrado, Con "
-                "diferencia, Cerrado—, y los camiones que faltan dicen «Sin cortar» "
-                "(«2 corte(s) · 2 cerrados · 1 sin cortar»). El que cerraste sale una sola "
-                "vez, con «Lo mandó el vendedor · Entregó …» (ADR 0002 §149, §151).",
-                desde="+50",
+                "Almacén → Corte del día. Muévete con ‹ › o el calendario.",
+                "Un día a la vez y nada «de esta semana»: el corte va en el día en que se "
+                "hizo, con su estatus —Abierto, Cuadrado, Con diferencia, Cerrado—; el "
+                "camión de hoy dice «En ruta» (su corte es en la noche) y el atrasado "
+                "«Sin cortar». El que mandó el vendedor sin carga de ese día sale en su "
+                "día como «Sin liquidación». La carga de mañana no sale (§149, §151, §157).",
+                desde="+51",
+            ),
+            Punto(
+                "tocar_no_abre_el_corte", "Tocar un camión no abre su corte",
+                "Almacén → Corte del día: toca un camión «En ruta» → «No». Luego tócalo "
+                "otra vez → «Abrir el corte» → «Descartar este corte» → «Descartar».",
+                "Con «No» no pasa nada. Abierto, «Descartar este corte» lo anula sin "
+                "cerrarlo y el camión vuelve a «En ruta» (ADR 0002 §157).",
+                desde="+51",
             ),
             Punto(
                 "mayoreo", "Venta de mayoreo",
@@ -600,6 +625,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Sale de la bodega con su folio MY- y su ticket; la cancelada devuelve la "
                 "mercancía. En el panel sale en Ventas → Mayoreo.",
                 desde="+33",
+            ),
+            Punto(
+                "mayoreo_solo_efectivo", "Mayoreo, solo en efectivo y en los totales",
+                "Pestaña Mayoreo → nueva venta. Después mira el Tablero y Empresa.",
+                "No hay forma de pago que escoger: «Pago en efectivo». El Tablero dice «y $X "
+                "de mayoreo, aparte» y Empresa «incluye $X de mayoreo» en lo vendido del "
+                "mes y del año (ADR 0002 §157).",
+                desde="+51",
             ),
         ),
     ),

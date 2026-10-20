@@ -193,9 +193,16 @@ async def cargas_por_cortar(sesion) -> list:
                   JOIN usuarios u ON u.id = c.vendedor_id
                   JOIN almacenes a ON a.id = c.almacen_destino_id
                   LEFT JOIN LATERAL (
+                        -- Las mismas que contará su corte: del vendedor, de ese
+                        -- camión y del día de la carga (ver
+                        -- `_renglones_calculados`). Por `carga_id` salían otras:
+                        -- la venta lleva la carga que el teléfono conocía.
                         SELECT count(*) AS ventas, sum(total) AS importe
                           FROM ventas
-                         WHERE carga_id = c.id AND estado = 'confirmada'
+                         WHERE vendedor_id = c.vendedor_id
+                           AND almacen_id = c.almacen_destino_id
+                           AND fecha_operativa = c.fecha_operativa
+                           AND estado = 'confirmada'
                   ) v ON true
                  WHERE c.estado IN ('confirmada', 'en_ruta')
                    -- El corte anulado no cuenta: la carga vuelve a cortarse (§126).

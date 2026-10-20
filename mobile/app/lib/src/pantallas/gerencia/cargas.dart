@@ -81,13 +81,23 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
   /// de cada una: su renglón dice que la pidió el vendedor y trae el ticket.
   Map<String, CierreDeVendedor> _pedidas = const {};
 
+  /// Las rechazadas esta semana: salen en el día en que se pidieron, la víspera
+  /// de su carga (ADR 0002 §157: «que todo aparezca por día»).
+  List<CierreDeVendedor> _rechazadas = const [];
+
   void _leerPedidas(Cierres c) {
     if (!mounted) return;
-    setState(() => _pedidas = {
-          for (final r in c.recientes)
-            if (r.solicitud!.aceptada && r.solicitud!.cargaFolio != null)
-              r.solicitud!.cargaFolio!: r,
-        });
+    setState(() {
+      _pedidas = {
+        for (final r in c.recientes)
+          if (r.solicitud!.aceptada && r.solicitud!.cargaFolio != null)
+            r.solicitud!.cargaFolio!: r,
+      };
+      _rechazadas = [
+        for (final r in c.recientes)
+          if (r.solicitud!.estado == 'rechazada') r,
+      ];
+    });
   }
 
   @override
@@ -175,14 +185,21 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
           : 'No hay bodegas dadas de alta.');
       return;
     }
-    final elegido = await showModalBottomSheet<(String, String)>(
+    final elegido = await showModalBottomSheet<(String, String, String)>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _NuevaCarga(opciones: opciones),
+      builder: (_) => _NuevaCarga(
+        opciones: opciones,
+        hoy: diaOperativoDe(ref.read(relojProvider)()),
+      ),
     );
     if (elegido == null || !mounted) return;
     try {
-      final carga = await cliente.abrir(vendedorId: elegido.$1, bodegaId: elegido.$2);
+      final carga = await cliente.abrir(
+        vendedorId: elegido.$1,
+        bodegaId: elegido.$2,
+        fecha: elegido.$3,
+      );
       if (!mounted) return;
       // La nueva se hizo hoy: al volver, la lista enseña hoy.
       _dia = null;
@@ -233,8 +250,6 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
               key: ValueKey(_vuelta),
               alCambiar: _cargar,
               alLeer: _leerPedidas,
-              // Las que ya están abajo, en su día, no se repiten arriba.
-              yaListados: {for (final c in cargas ?? const <ResumenDeCarga>[]) c.folio},
             ),
             const Divider(height: 32),
             if (_dia != null) ...[
@@ -276,6 +291,17 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                 ),
               for (final c in cargas)
                 if (!estaCancelado(c.estado)) _renglon(c),
+              // La que pidió el vendedor ese día y se rechazó: sin carga.
+              for (final r in _rechazadas)
+                if (diaSiguiente(_dia!) == r.solicitud!.fechaOperativa)
+                  ListTile(
+                    key: Key('solicitud_rechazada_${r.clave}'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.block),
+                    title: Text('${r.vendedor} · pidió carga y se rechazó'),
+                    subtitle: Text('Para el ${diaEnPalabras(r.solicitud!.fechaOperativa)}: '
+                        '${r.solicitud!.motivo ?? 'sin motivo'}'),
+                  ),
             ],
             // Las canceladas, aparte y plegadas (ADR 0002 §95).
             SeccionDeCanceladas(
@@ -455,9 +481,10 @@ class _ResumenDelDia extends StatelessWidget {
 
 /// A quién y de qué bodega. El camión no se elige: es el del vendedor.
 class _NuevaCarga extends StatefulWidget {
-  const _NuevaCarga({required this.opciones});
+  const _NuevaCarga({required this.opciones, required this.hoy});
 
   final OpcionesDeCarga opciones;
+  final String hoy;
 
   @override
   State<_NuevaCarga> createState() => _EstadoNuevaCarga();
@@ -466,6 +493,11 @@ class _NuevaCarga extends StatefulWidget {
 class _EstadoNuevaCarga extends State<_NuevaCarga> {
   String? _vendedor;
   late String _bodega = widget.opciones.bodegas.first.id;
+
+  /// Para qué día: mañana, que es lo normal (§82), u hoy, para el camión que se
+  /// carga en la mañana y sale a vender ese mismo día (§157). Con el día mal, el
+  /// corte no ve las ventas: cuenta las del día de su carga.
+  bool _paraHoy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -479,10 +511,34 @@ class _EstadoNuevaCarga extends State<_NuevaCarga> {
         children: [
           Text('Nueva carga', style: Theme.of(context).textTheme.titleLarge),
           // Una carga al día y se hace la víspera (ADR 0002 §82). Lo normal es
-          // aceptarla desde «Cortes y cargas»; esto es para cuando el vendedor no
-          // la pidió desde su teléfono.
-          const Text('Es para mañana. Lo normal es aceptar la que pidió el vendedor '
-              'en «Cortes y cargas».'),
+          // aceptar la que pidió el vendedor; esto es para cuando no la pidió.
+          const Text('Lo normal es aceptar arriba la que pidió el vendedor, en «Cargas que '
+              'pidieron los vendedores».'),
+          const SizedBox(height: 12),
+          SegmentedButton<bool>(
+            key: const Key('para_que_dia_carga'),
+            segments: [
+              ButtonSegment(
+                value: false,
+                label: Text('Para mañana', key: const Key('carga_para_manana')),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text('Para hoy', key: const Key('carga_para_hoy')),
+              ),
+            ],
+            selected: {_paraHoy},
+            onSelectionChanged: (v) => setState(() => _paraHoy = v.single),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _paraHoy
+                ? 'Para vender hoy, ${diaEnPalabras(widget.hoy)}: sus ventas de hoy '
+                    'entran en su corte de esta noche.'
+                : 'Para vender mañana, ${diaEnPalabras(diaSiguiente(widget.hoy))}.',
+            key: const Key('dia_de_la_nueva_carga'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             key: const Key('campo_vendedor_carga'),
@@ -521,7 +577,9 @@ class _EstadoNuevaCarga extends State<_NuevaCarga> {
             key: const Key('boton_abrir_carga'),
             onPressed: _vendedor == null
                 ? null
-                : () => Navigator.of(context).pop((_vendedor!, _bodega)),
+                : () => Navigator.of(context).pop(
+                      (_vendedor!, _bodega, _paraHoy ? widget.hoy : diaSiguiente(widget.hoy)),
+                    ),
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('Abrir la carga'),

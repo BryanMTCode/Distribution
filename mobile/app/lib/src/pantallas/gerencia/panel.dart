@@ -285,6 +285,10 @@ class _Cuerpo extends StatelessWidget {
                 // Toda venta es en efectivo (§81): lo vendido es lo que se
                 // entrega en el corte, y no se repite en otra tarjeta (§154).
                 if (t.venta.transferencia.esCero) 'todo en efectivo',
+                // La venta de la oficina a sus clientes de mayoreo va aparte: no
+                // la entrega ningún vendedor (ADR 0002 §157).
+                if (!t.venta.mayoreo.esCero)
+                  'y ${pesos(t.venta.mayoreo, conCentavos: false)} de mayoreo, aparte',
               ].join('\n'),
               alerta: t.venta.referencia.lectura == LecturaDeReferencia.abajo,
             ),

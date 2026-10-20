@@ -174,9 +174,12 @@ class VentaDelDia {
     required this.ticketPromedio,
     required this.calculadoEn,
     this.referencia = ReferenciaDelDia.sinDatos,
+    this.mayoreo = Dinero.cero,
   });
 
   factory VentaDelDia.deJson(Map<String, Object?> json) => VentaDelDia(
+        // Un servidor anterior no lo manda: sin mayoreo.
+        mayoreo: _dinero(json['mayoreo'] ?? '0.00'),
         fecha: DateTime.parse(json['fecha']! as String),
         total: _dinero(json['total']),
         // Una copia guardada antes del contado (ADR 0002 §81) trae 'contado' y
@@ -202,6 +205,10 @@ class VentaDelDia {
 
   /// El promedio de los mismos días de la semana anteriores.
   final ReferenciaDelDia referencia;
+
+  /// Lo vendido de mayoreo ese día, aparte: `total` es la ruta, la que se
+  /// compara con los mismos días y la que entregan los vendedores (§157).
+  final Dinero mayoreo;
 }
 
 class VisitasDelDia {

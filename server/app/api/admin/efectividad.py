@@ -368,8 +368,10 @@ plan AS (
       JOIN clientes c ON c.id = n.cliente_id AND c.estatus <> 'baja'
 ),
 hechas AS (
+    -- La venta cancelada no es visita: la tienda queda por visitar, igual que en
+    -- la lista del teléfono (ADR 0002 §156).
     SELECT fecha_operativa AS fecha, cliente_id FROM ventas
-     WHERE fecha_operativa BETWEEN :desde AND :hasta
+     WHERE fecha_operativa BETWEEN :desde AND :hasta AND estado <> 'cancelada'
     UNION
     SELECT fecha_operativa, cliente_id FROM no_drops
      WHERE fecha_operativa BETWEEN :desde AND :hasta

@@ -38,6 +38,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
 import '../../estado/vendedores.dart';
+import '../confirmar.dart';
 import 'cierres.dart';
 import 'comunes.dart';
 import 'selector_de_dia.dart';
@@ -188,9 +189,17 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
         if (c.hechoEl == dia) c,
     ];
     final porCortar = l?.porCortar ?? const <CargaPorCortar>[];
+    // Lo que ya toca cortar ese día: la carga de hoy —en ruta, su corte es esta
+    // noche— y la de un día que ya pasó. La de mañana todavía no es un corte: va
+    // en Cargas (ADR 0002 §157).
     final sinCortar = [
       for (final c in porCortar)
-        if (diaParaCortar(c.fecha, hoy: hoy) == dia) c,
+        if (c.fecha == dia && c.fecha.compareTo(hoy) <= 0) c,
+    ];
+    // Los que mandó el vendedor sin carga de ese día: constancia, sin liquidación.
+    final sinLiquidacion = [
+      for (final k in l?.sinLiquidacion ?? const <CorteSinLiquidacion>[])
+        if (k.fecha == dia) k,
     ];
     final cuerpo = RefreshIndicator(
       onRefresh: () async {
@@ -205,8 +214,6 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
             key: ValueKey(_vuelta),
             alCambiar: _cargar,
             alLeer: _leerDelVendedor,
-            // Los que ya están abajo, en su día, no se repiten arriba.
-            yaListados: {for (final c in l?.cortes ?? const <CorteEnLista>[]) c.folio},
           ),
           const Divider(height: 32),
           // El día, aunque esté cargando: es con lo que uno se mueve.
@@ -229,7 +236,7 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
               child: Center(child: CircularProgressIndicator()),
             ),
           if (l != null) ...[
-            if (delDia.isEmpty && sinCortar.isEmpty)
+            if (delDia.isEmpty && sinCortar.isEmpty && sinLiquidacion.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
@@ -241,22 +248,20 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
                 child: Text(
-                  _resumen(delDia, sinCortar: sinCortar.length),
+                  _resumen(
+                    delDia,
+                    enRuta: sinCortar.where((c) => c.fecha == hoy).length,
+                    sinCortar: sinCortar.where((c) => c.fecha != hoy).length,
+                    sinLiquidacion: sinLiquidacion.length,
+                  ),
                   key: Key('dia_de_cortes_$dia'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             // Lo que falta va primero: es lo que se atiende.
-            for (final c in sinCortar) _renglonSinCortar(c, dia),
-            if (sinCortar.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Toca uno sin cortar para cortarlo contando el camión tú mismo. Si el '
-                  'vendedor ya mandó su corte, ciérralo arriba.',
-                ),
-              ),
+            for (final c in sinCortar) _renglonSinCortar(c, hoy),
             for (final c in delDia) _renglon(c),
+            for (final k in sinLiquidacion) _renglonSinLiquidacion(k),
           ],
         ],
       ),
@@ -269,35 +274,94 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
     );
   }
 
-  Widget _renglonSinCortar(CargaPorCortar c, String dia) => Card(
-        child: ListTile(
-          key: Key('por_cortar_${c.folio}'),
-          leading: Icon(
-            Icons.fact_check_outlined,
-            color: c.dias > 0 ? Theme.of(context).colorScheme.error : null,
-          ),
-          title: Text('${c.vendedor} · ${c.camion}'),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Carga ${c.folio}${paraVender(c.fecha, dia: dia)}\n'
-                '${c.ventas} venta(s) · ${pesos(c.importe)}'
-                '${c.dias > 0 ? '\nHace ${c.dias} día(s) sin cortar' : ''}',
-              ),
-              const SizedBox(height: 6),
-              EtiquetaDeEstatus(
-                key: Key('estado_por_cortar_${c.folio}'),
-                texto: 'Sin cortar',
-                fondo: Colors.orange.shade100,
-                letra: Colors.orange.shade900,
-              ),
-            ],
-          ),
-          isThreeLine: true,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _abrirDetalle((cl) => cl.abrir(c.cargaId)),
+  Widget _renglonSinCortar(CargaPorCortar c, String hoy) {
+    final enRuta = c.fecha == hoy;
+    return Card(
+      child: ListTile(
+        key: Key('por_cortar_${c.folio}'),
+        leading: Icon(
+          enRuta ? Icons.local_shipping_outlined : Icons.fact_check_outlined,
+          color: c.dias > 0 ? Theme.of(context).colorScheme.error : null,
         ),
+        title: Text('${c.vendedor} · ${c.camion}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Carga ${c.folio} · ${c.ventas} venta(s) · ${pesos(c.importe)}\n'
+              '${enRuta ? 'Su corte es esta noche, cuando el vendedor lo mande.' : 'Hace ${c.dias} día(s) sin cortar.'}',
+            ),
+            const SizedBox(height: 6),
+            EtiquetaDeEstatus(
+              key: Key('estado_por_cortar_${c.folio}'),
+              texto: enRuta ? 'En ruta' : 'Sin cortar',
+              fondo: enRuta ? Colors.indigo.shade100 : Colors.orange.shade100,
+              letra: enRuta ? Colors.indigo.shade900 : Colors.orange.shade900,
+            ),
+          ],
+        ),
+        isThreeLine: true,
+        trailing: const Icon(Icons.chevron_right),
+        // Tocar el nombre NO abre el corte: «me aparecen dos abiertos cuando
+        // solo di click a los nombres» (§157). Se pregunta primero.
+        onTap: () => _confirmarCortar(c),
+      ),
+    );
+  }
+
+  Future<void> _confirmarCortar(CargaPorCortar c) async {
+    final si = await showDialog<bool>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        key: const Key('dialogo_abrir_corte'),
+        title: Text('¿Cortar el camión de ${c.vendedor}?'),
+        content: const Text(
+          'Se abre su corte para que cuentes tú la mercancía. Lo normal es que el '
+          'vendedor mande su corte desde su teléfono al terminar su día. Si lo abres '
+          'sin querer, adentro lo puedes descartar.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('cancelar_abrir_corte'),
+            onPressed: () => Navigator.of(contexto).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            key: const Key('confirmar_abrir_corte'),
+            onPressed: () => Navigator.of(contexto).pop(true),
+            child: const Text('Abrir el corte'),
+          ),
+        ],
+      ),
+    );
+    if (si != true || !mounted) return;
+    await _abrirDetalle((cl) => cl.abrir(c.cargaId));
+  }
+
+  /// El corte que mandó el vendedor sin carga de ese día (§157): sin él, el día
+  /// salía vacío aunque el vendedor sí entregó.
+  Widget _renglonSinLiquidacion(CorteSinLiquidacion k) => ListTile(
+        key: Key('corte_sin_liquidacion_${k.id}'),
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.receipt_outlined),
+        title: Text(k.vendedor),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Lo mandó el vendedor · entregó ${pesos(k.recibido ?? k.declarado)}\n'
+              'No había carga de ese día: queda como constancia, sin liquidación.',
+            ),
+            const SizedBox(height: 6),
+            EtiquetaDeEstatus(
+              key: Key('estado_sin_liquidacion_${k.id}'),
+              texto: 'Sin liquidación',
+              fondo: Theme.of(context).colorScheme.surfaceContainerHighest,
+              letra: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+        isThreeLine: true,
       );
 
   Widget _renglon(CorteEnLista c) {
@@ -359,22 +423,24 @@ class _EtiquetaDeCorte extends StatelessWidget {
   }
 }
 
-/// «3 corte(s) · 2 cerrados · 1 sin cerrar · 1 sin cortar»: el día de reojo.
-String _resumen(List<CorteEnLista> cortes, {required int sinCortar}) {
+/// «3 corte(s) · 2 cerrados · 1 sin cerrar · 1 en ruta»: el día de reojo.
+String _resumen(
+  List<CorteEnLista> cortes, {
+  required int enRuta,
+  required int sinCortar,
+  required int sinLiquidacion,
+}) {
   final cerrados = cortes.where((c) => c.estado == 'cerrada').length;
   final porCerrar = cortes.length - cerrados;
   return [
     if (cortes.isNotEmpty) '${cortes.length} corte(s)',
     if (cerrados > 0) '$cerrados ${cerrados == 1 ? 'cerrado' : 'cerrados'}',
     if (porCerrar > 0) '$porCerrar sin cerrar',
+    if (enRuta > 0) '$enRuta en ruta',
     if (sinCortar > 0) '$sinCortar sin cortar',
+    if (sinLiquidacion > 0) '$sinLiquidacion sin liquidación',
   ].join(' · ');
 }
-
-/// El día en que se ve una carga que falta cortar: el día en que se vende, y si
-/// no ha llegado —la de la noche es para mañana—, hoy (ADR 0002 §151).
-String diaParaCortar(String fecha, {required String hoy}) =>
-    fecha.compareTo(hoy) > 0 ? hoy : fecha;
 
 /// «También sin cortar: martes 20 (1)»: los que faltan de otros días.
 class _OtrosDiasSinCortar extends StatelessWidget {
@@ -392,10 +458,12 @@ class _OtrosDiasSinCortar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Solo los de días que ya pasaron: la de hoy está en ruta, no atrasada.
     final porDia = <String, int>{};
     for (final c in porCortar) {
-      final d = diaParaCortar(c.fecha, hoy: hoy);
-      if (d != dia) porDia[d] = (porDia[d] ?? 0) + 1;
+      if (c.fecha.compareTo(hoy) < 0 && c.fecha != dia) {
+        porDia[c.fecha] = (porDia[c.fecha] ?? 0) + 1;
+      }
     }
     if (porDia.isEmpty) return const SizedBox.shrink();
     final dias = porDia.keys.toList()..sort();
@@ -503,6 +571,34 @@ class _EstadoCorte extends ConsumerState<PantallaCorte> {
           observaciones: _observaciones.text.trim(),
         ),
       );
+
+  /// El que se abrió sin querer, o que ya no se va a usar (§157): se anula sin
+  /// cerrarlo y su carga vuelve a «Sin cortar».
+  Future<void> _descartar() async {
+    final si = await confirmarAntesDeQuitar(
+      context,
+      titulo: '¿Descartar este corte?',
+      detalle: 'Se anula sin cerrarlo y la carga de ${_corte.vendedor} vuelve a «Sin '
+          'cortar». Lo que hayas contado aquí no se guarda.',
+      accion: 'Descartar',
+    );
+    if (!si || !mounted) return;
+    final cliente = _cliente(ref);
+    if (cliente == null) return;
+    setState(() => _ocupado = true);
+    try {
+      final aviso = await cliente.descartar(_corte.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(aviso)));
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ocupado = false;
+        _error = explicarErrorDeOficina(e);
+      });
+    }
+  }
 
   Future<void> _cerrar() async {
     final confirmado = await showDialog<bool>(
@@ -621,6 +717,13 @@ class _EstadoCorte extends ConsumerState<PantallaCorte> {
               key: const Key('boton_guardar_arqueo'),
               onPressed: _ocupado ? null : _guardarArqueo,
               child: const Text('Guardar el arqueo'),
+            ),
+            const Divider(height: 32),
+            TextButton.icon(
+              key: const Key('boton_descartar_corte'),
+              onPressed: _ocupado ? null : _descartar,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Descartar este corte'),
             ),
           ],
           const SizedBox(height: 24),

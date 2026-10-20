@@ -173,8 +173,13 @@ class ResumenDeLaEmpresa {
   String get piezasEnBodegas => _j['piezas_en_bodegas']! as String;
   String get piezasEnCamiones => _j['piezas_en_camiones']! as String;
   int get existenciasNegativas => _n('existencias_negativas');
+  /// Lo vendido incluye el mayoreo, que se dice aparte (ADR 0002 §157).
   Dinero get vendidoMes => _d('vendido_mes');
   Dinero get vendidoAnio => _d('vendido_anio');
+
+  /// Un servidor anterior no lo manda: cero.
+  Dinero get mayoreoMes => _j['mayoreo_mes'] == null ? Dinero.cero : _d('mayoreo_mes');
+  Dinero get mayoreoAnio => _j['mayoreo_anio'] == null ? Dinero.cero : _d('mayoreo_anio');
 }
 
 class ClientePeriodo {

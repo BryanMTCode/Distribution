@@ -50,6 +50,7 @@ Map<String, Object?> tableroDelServidor({
   // en efectivo (ADR 0002 §81).
   String efectivo = '31180.00',
   String transferencia = '11000.00',
+  String mayoreo = '0.00',
 }) =>
     {
       'frescura': {
@@ -66,6 +67,7 @@ Map<String, Object?> tableroDelServidor({
         'total': total,
         'efectivo': efectivo,
         'transferencia': transferencia,
+        'mayoreo': mayoreo,
         'documentos': 34,
         'ticket_promedio': '1240.59',
         'calculado_en': calculadoEn,
@@ -312,6 +314,21 @@ void main() {
       expect(find.text('en efectivo'), findsNothing);
       expect(find.textContaining('todo en efectivo'), findsOneWidget);
       expect(find.textContaining('por transferencia'), findsNothing);
+      expect(find.textContaining('de mayoreo'), findsNothing);
+    });
+
+    testWidgets('el mayoreo del día se dice aparte de lo vendido en la ruta (§157)',
+        (tester) async {
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(
+            efectivo: '42180.00', transferencia: '0.00', mayoreo: '2500.00',
+          ),
+        ),
+      );
+      expect(find.text(r'$42,180'), findsOneWidget);
+      expect(find.textContaining(r'y $2,500 de mayoreo, aparte'), findsOneWidget);
     });
 
     testWidgets('los no-drops nuestros se marcan como lo accionable',

@@ -334,8 +334,6 @@ class _EstadoNuevaVenta extends ConsumerState<PantallaNuevaVentaMayoreo> {
   List<ProductoDeBodega> _surtido = const [];
   String? _cliente;
   String? _bodega;
-  String _formaPago = 'efectivo';
-  final _referencia = TextEditingController();
   final _busqueda = TextEditingController();
   final List<_Renglon> _renglones = [];
   String? _error;
@@ -349,7 +347,6 @@ class _EstadoNuevaVenta extends ConsumerState<PantallaNuevaVentaMayoreo> {
 
   @override
   void dispose() {
-    _referencia.dispose();
     _busqueda.dispose();
     for (final r in _renglones) {
       r.dispose();
@@ -486,8 +483,8 @@ class _EstadoNuevaVenta extends ConsumerState<PantallaNuevaVentaMayoreo> {
       final venta = await api.vender(
         clienteId: _cliente!,
         bodegaId: _bodega!,
-        formaPago: _formaPago,
-        referenciaPago: _referencia.text,
+        // Solo efectivo: «en mayoreo va solo efectivo» (ADR 0002 §157).
+        formaPago: 'efectivo',
         renglones: [
           for (final r in _renglones)
             RenglonDeMayoreo(
@@ -643,27 +640,7 @@ class _EstadoNuevaVenta extends ConsumerState<PantallaNuevaVentaMayoreo> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SegmentedButton<String>(
-                  key: const Key('forma_pago_mayoreo'),
-                  segments: const [
-                    ButtonSegment(value: 'efectivo', label: Text('Efectivo')),
-                    ButtonSegment(value: 'transferencia', label: Text('Transferencia')),
-                  ],
-                  selected: {_formaPago},
-                  onSelectionChanged: (v) => setState(() => _formaPago = v.single),
-                ),
-                if (_formaPago == 'transferencia')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: TextField(
-                      key: const Key('referencia_mayoreo'),
-                      controller: _referencia,
-                      decoration: const InputDecoration(
-                        labelText: 'Referencia (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
+                const Text('Pago en efectivo.', key: Key('pago_mayoreo')),
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),

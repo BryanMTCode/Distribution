@@ -104,6 +104,11 @@ class LoteSalida(BaseModel):
     duplicadas: int
     rechazadas: int
     resultados: list[ResultadoSobreSalida]
+    # Cuánto va mal el reloj del teléfono contra el del servidor, en segundos: lo
+    # que el servidor dice al recibir menos lo que el teléfono dijo al mandar
+    # (positivo, el teléfono va atrasado; negativo, adelantado). El teléfono lo usa para avisar que su hora está mal, porque con ella
+    # se decide de qué día es cada venta (ADR 0002 §157). Nulo sin `enviado_en`.
+    desfase_reloj_seg: int | None = None
 
 
 @router.post("/push", response_model=LoteSalida)
@@ -207,6 +212,11 @@ async def push(
             )
             for r in resultado.resultados
         ],
+        desfase_reloj_seg=(
+            None
+            if contexto.enviado_en is None
+            else int((contexto.recibido_en - contexto.enviado_en).total_seconds())
+        ),
     )
 
 

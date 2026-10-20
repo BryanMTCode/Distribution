@@ -210,7 +210,8 @@ class _Renglon extends StatelessWidget {
         style: TextStyle(fontSize: 12, color: colores.outline),
       ),
       trailing: Text(
-        producto.existenciaBase.texto,
+        // «12», no «12.000»: las milésimas solo cuando las hay (ADR 0002 §157).
+        producto.existenciaBase.textoCorto,
         style: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.bold,
@@ -224,7 +225,7 @@ class _Renglon extends StatelessWidget {
     );
   }
 
-  /// «2 CAJA y 5.000 PZA» cuando hay una presentación mayor que la base.
+  /// «2 CAJA y 5 PZA» cuando hay una presentación mayor que la base.
   ///
   /// TODO EN ENTEROS, y no es purismo: `Cantidad` cuenta en milésimas y `Factor`
   /// en diezmilésimas, así que dividir los dos como doubles para «saber cuántas
@@ -260,11 +261,12 @@ class _Renglon extends StatelessWidget {
     return partes.join(' y ');
   }
 
-  /// Milésimas enteras a texto de tres decimales, sin pasar por un double.
+  /// Milésimas enteras a texto, sin pasar por un double y sin ceros de sobra:
+  /// «5», «2.5».
   String _enMilesimas(int milesimos) {
     final enteros = milesimos ~/ 1000;
     final resto = (milesimos % 1000).toString().padLeft(3, '0');
-    return '$enteros.$resto';
+    return cantidadLegible('$enteros.$resto');
   }
 }
 

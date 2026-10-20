@@ -2019,6 +2019,57 @@
         }
       }
     },
+    "/v1/cortes/{liquidacion_id}/descartar": {
+      "post": {
+        "tags": [
+          "cortes"
+        ],
+        "summary": "Descartar",
+        "description": "Descarta un corte que se abrió y no se cerró (ADR 0002 §157): «me aparecen\ndos abiertos cuando solo di click a los nombres». Queda como anulado, igual\nque al eliminarlo desde Operaciones, y su carga vuelve a «Sin cortar». Uno\ncerrado no se descarta aquí: se anula en el dashboard, con su motivo.",
+        "operationId": "descartar_v1_cortes__liquidacion_id__descartar_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "liquidacion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Liquidacion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Descartar V1 Cortes  Liquidacion Id  Descartar Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/cierres/cortes": {
       "get": {
         "tags": [
@@ -5370,6 +5421,51 @@
         ],
         "title": "CortePorCerrar"
       },
+      "CorteSinLiquidacion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "fecha_operativa": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha Operativa"
+          },
+          "vendedor": {
+            "type": "string",
+            "title": "Vendedor"
+          },
+          "efectivo_declarado": {
+            "type": "string",
+            "title": "Efectivo Declarado",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "efectivo_recibido": {
+            "type": "string",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'",
+            "title": "Efectivo Recibido",
+            "nullable": true
+          },
+          "nota": {
+            "type": "string",
+            "title": "Nota",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "fecha_operativa",
+          "vendedor",
+          "efectivo_declarado",
+          "efectivo_recibido",
+          "nota"
+        ],
+        "title": "CorteSinLiquidacion",
+        "description": "El corte que mandó el vendedor y se cerró sin liquidación: no había carga\nabierta de ese día que cortar (ADR 0002 §157). Queda como constancia de lo\nque entregó, y la lista lo enseña en su día."
+      },
       "Cortes": {
         "properties": {
           "por_cortar": {
@@ -5385,6 +5481,14 @@
             },
             "type": "array",
             "title": "Cortes"
+          },
+          "sin_liquidacion": {
+            "items": {
+              "$ref": "#/components/schemas/CorteSinLiquidacion"
+            },
+            "type": "array",
+            "title": "Sin Liquidacion",
+            "default": []
           }
         },
         "type": "object",
@@ -6606,6 +6710,11 @@
             },
             "type": "array",
             "title": "Resultados"
+          },
+          "desfase_reloj_seg": {
+            "type": "integer",
+            "title": "Desfase Reloj Seg",
+            "nullable": true
           }
         },
         "type": "object",
@@ -8870,6 +8979,18 @@
             "type": "string",
             "title": "Vendido Anio",
             "description": "Importe con 2 decimales, serializado como string: '250.00'"
+          },
+          "mayoreo_mes": {
+            "type": "string",
+            "title": "Mayoreo Mes",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'",
+            "default": "0.00"
+          },
+          "mayoreo_anio": {
+            "type": "string",
+            "title": "Mayoreo Anio",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'",
+            "default": "0.00"
           }
         },
         "type": "object",
@@ -10010,6 +10131,12 @@
             "format": "date-time",
             "title": "Calculado En",
             "nullable": true
+          },
+          "mayoreo": {
+            "type": "string",
+            "title": "Mayoreo",
+            "description": "Importe con 2 decimales, serializado como string: '250.00'",
+            "default": "0.00"
           }
         },
         "type": "object",

@@ -212,6 +212,10 @@ class _EstadoEmpresa extends ConsumerState<PantallaEmpresa> {
                   key: const Key('empresa_vendido_mes'),
                   cifra: pesos(r.vendidoMes, conCentavos: false),
                   etiqueta: 'vendido este mes',
+                  // La ruta y el mayoreo de la oficina (ADR 0002 §157).
+                  detalle: r.mayoreoMes.esCero
+                      ? null
+                      : 'incluye ${pesos(r.mayoreoMes, conCentavos: false)} de mayoreo',
                   onTap: _ir(
                     veVendedores,
                     () => const PantallaVendedores(periodoInicial: PeriodoElegido('mes')),
@@ -221,6 +225,9 @@ class _EstadoEmpresa extends ConsumerState<PantallaEmpresa> {
                   key: const Key('empresa_vendido_anio'),
                   cifra: pesos(r.vendidoAnio, conCentavos: false),
                   etiqueta: 'vendido este año',
+                  detalle: r.mayoreoAnio.esCero
+                      ? null
+                      : 'incluye ${pesos(r.mayoreoAnio, conCentavos: false)} de mayoreo',
                   onTap: _ir(
                     veVendedores,
                     () => PantallaVendedores(

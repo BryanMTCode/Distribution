@@ -297,6 +297,12 @@ class Sincronizador {
         );
       }
 
+      try {
+        _aplicador.guardarDesfaseDeReloj(respuesta.desfaseRelojSeg);
+      } catch (_) {
+        // Es un aviso para la pantalla; nunca detiene la sincronización.
+      }
+
       final confirmables = <String>[];
       for (final resultado in respuesta.resultados) {
         if (resultado.quedoDelOtroLado) {

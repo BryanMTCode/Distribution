@@ -23,6 +23,7 @@ from sqlalchemy import text
 
 from tests.conftest import PASSWORD_VENDEDOR, solo_texto
 from tests.conftest import csrf_del_panel as _csrf
+from tests.test_panel_liquidacion import sembrar_dia_de_trabajo
 
 pytestmark = pytest.mark.asyncio
 
@@ -362,6 +363,39 @@ async def test_efectividad_cuenta_lo_que_tocaba_y_nadie_visito(cliente, sesion, 
     assert "1 de 7 visitas del plan hechas" in plano
     assert "6 tocaban y nadie fue" in plano
     assert "Abarrotes Olvidado" in plano  # en «los que más se saltan»
+
+
+async def test_la_venta_cancelada_no_cuenta_como_visita_del_plan(cliente, sesion, semilla):
+    """La tienda con una venta cancelada queda por visitar, como en la lista del
+    teléfono (ADR 0002 §156): 7 días del plan, uno con no-drop y otro con una
+    venta cancelada, son 1 hecha y 6 que nadie hizo."""
+    hoy = date.today()
+    cliente_id = await _cliente(sesion, semilla, "Le cancelaron")
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes_frecuencia (cliente_id, dia_semana, desde) "
+            "SELECT :c, d, :desde FROM generate_series(0, 6) AS d"
+        ),
+        {"c": cliente_id, "desde": hoy - timedelta(days=7)},
+    )
+    await sesion.commit()
+    # Primero el día de trabajo: trae el teléfono del vendedor que usa el no-drop.
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    await _no_drop(sesion, semilla, cliente_id, hoy - timedelta(days=2))
+    await sesion.execute(
+        text("UPDATE ventas SET cliente_id = :c, fecha_operativa = :f, estado = 'cancelada' "
+             " WHERE id = :v"),
+        {"c": cliente_id, "f": hoy - timedelta(days=3), "v": dia["venta"]},
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    r = await cliente.get(
+        f"/panel/efectividad?desde={(hoy - timedelta(days=10)).isoformat()}&hasta={hoy.isoformat()}"
+    )
+    plano = solo_texto(r)
+    assert "1 de 7 visitas del plan hechas" in plano
+    assert "6 tocaban y nadie fue" in plano
 
 
 async def test_el_plan_no_cuenta_antes_de_existir(cliente, sesion, semilla):

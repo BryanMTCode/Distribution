@@ -105,10 +105,13 @@ async def test_el_tablero_cuenta_el_periodo_elegido(cliente, sesion, semilla):
 
     hoy = solo_texto(await cliente.get("/panel"))
     assert "ventas recibidas hoy" in hoy
-    assert "$2,250.00 en total" in hoy
+    # Todo en efectivo (§154): el importe va en la tarjeta del efectivo, una vez.
+    assert "$2,250.00 efectivo a entregar hoy" in hoy
+    assert "en total" not in hoy
 
     ayer = solo_texto(await cliente.get("/panel?periodo=ayer"))
     assert "ventas recibidas · ayer" in ayer
+    # La de ayer no se pagó en efectivo: entonces el total sí se dice aparte.
     assert "$999.00 en total" in ayer
     assert "efectivo cobrado · ayer" in ayer
 

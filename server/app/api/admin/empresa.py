@@ -64,12 +64,26 @@ SELECT
      JOIN almacenes a ON a.id = e.almacen_id
     WHERE a.tipo IN ('bodega', 'camion') AND e.cantidad < 0) AS existencias_negativas,
   -- Dinero. Todo es de contado (ADR 0002 §81): no hay cartera que contar.
+  -- Lo vendido por la empresa: la ruta y el mayoreo de la oficina, que va en su
+  -- propia tabla (ADR 0002 §157). Cuánto es de mayoreo se dice aparte.
   (SELECT COALESCE(sum(total), 0) FROM ventas
     WHERE estado = 'confirmada'
-      AND fecha_operativa >= date_trunc('month', CURRENT_DATE)) AS vendido_mes,
+      AND fecha_operativa >= date_trunc('month', CURRENT_DATE))
+  + (SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo
+      WHERE estado = 'confirmada' AND fecha >= date_trunc('month', CURRENT_DATE))
+    AS vendido_mes,
   (SELECT COALESCE(sum(total), 0) FROM ventas
     WHERE estado = 'confirmada'
-      AND fecha_operativa >= date_trunc('year', CURRENT_DATE)) AS vendido_anio
+      AND fecha_operativa >= date_trunc('year', CURRENT_DATE))
+  + (SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo
+      WHERE estado = 'confirmada' AND fecha >= date_trunc('year', CURRENT_DATE))
+    AS vendido_anio,
+  (SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo
+    WHERE estado = 'confirmada' AND fecha >= date_trunc('month', CURRENT_DATE))
+    AS mayoreo_mes,
+  (SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo
+    WHERE estado = 'confirmada' AND fecha >= date_trunc('year', CURRENT_DATE))
+    AS mayoreo_anio
 """
 
 

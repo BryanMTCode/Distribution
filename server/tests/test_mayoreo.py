@@ -105,7 +105,7 @@ async def test_la_venta_sale_de_la_bodega_al_precio_que_se_decidio(
                 {"producto_id": str(bodega_surtida["producto"]), "unidad": "PZA",
                  "bultos": "6", "precio": "11.5"},
             ],
-            "forma_pago": "transferencia", "referencia_pago": "SPEI 123",
+            "forma_pago": "efectivo",
         },
         headers=cab,
     )
@@ -120,7 +120,7 @@ async def test_la_venta_sale_de_la_bodega_al_precio_que_se_decidio(
     assert partidas == [
         ("10.000", "240.000", "250.00", "270.00"), ("6.000", "6.000", "11.50", "12.00")
     ]
-    assert "*Total: $2,569.00* (transferencia)" in venta["ticket"]
+    assert "*Total: $2,569.00* (efectivo)" in venta["ticket"]
     assert await _existencia(sesion, semilla, bodega_surtida["producto"]) == Decimal("234.000")
     asiento = (
         await sesion.execute(
@@ -161,6 +161,27 @@ async def test_no_se_vende_lo_que_no_hay_ni_a_un_cliente_de_ruta(
     r = await cliente.post("/v1/mayoreo", json=pedido, headers=cab)
     assert r.status_code == 422 and "no es cliente de mayoreo" in r.json()["detail"]
     assert (await sesion.execute(text("SELECT count(*) FROM ventas_mayoreo"))).scalar_one() == 0
+
+
+async def test_el_mayoreo_es_solo_en_efectivo(cliente, sesion, semilla, bodega_surtida):
+    """«En mayoreo va solo efectivo» (ADR 0002 §157): la transferencia no entra,
+    venga de una app anterior o de quien arme la petición a mano."""
+    cab = await _cab(cliente)
+    nuevo = await _cliente(cliente, cab)
+    r = await cliente.post(
+        "/v1/mayoreo",
+        json={
+            "cliente_id": nuevo["id"], "almacen_id": str(semilla["bodega"]),
+            "renglones": [{"producto_id": str(bodega_surtida["producto"]), "unidad": "CAJA",
+                           "bultos": "1", "precio": "250"}],
+            "forma_pago": "transferencia", "referencia_pago": "SPEI 123",
+        },
+        headers=cab,
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "El mayoreo es solo en efectivo."
+    assert (await sesion.execute(text("SELECT count(*) FROM ventas_mayoreo"))).scalar_one() == 0
+    assert await _existencia(sesion, semilla, bodega_surtida["producto"]) == Decimal("480.000")
 
 
 async def test_cancelar_devuelve_la_mercancia(cliente, sesion, semilla, bodega_surtida):
@@ -277,3 +298,38 @@ async def test_el_mayoreo_va_aparte_de_la_suma_de_objetivos(
     plano = solo_texto(await cliente.get("/panel/objetivos?periodo=hoy"))
     assert "Toda la empresa la suma de todos $1,000.00 $0.00" in plano
     assert "Aparte, $1,000.00 de mayoreo en el periodo" in plano
+
+
+async def test_el_mayoreo_entra_en_lo_vendido_de_la_empresa_y_aparte_en_el_tablero(
+    cliente, sesion, semilla, bodega_surtida
+):
+    """El mayoreo va en su propia tabla y no salía en ningún total (ADR 0002 §157).
+    La empresa lo suma en lo vendido del mes y del año, y dice cuánto es; el
+    tablero del día lo dice aparte: su total es la ruta, la que entregan los
+    vendedores."""
+    cab = await _cab(cliente)
+    nuevo = await _cliente(cliente, cab)
+    r = await cliente.post(
+        "/v1/mayoreo",
+        json={
+            "cliente_id": nuevo["id"], "almacen_id": str(semilla["bodega"]),
+            "renglones": [{"producto_id": str(bodega_surtida["producto"]), "unidad": "CAJA",
+                           "bultos": "2", "precio": "250"}],
+        },
+        headers=cab,
+    )
+    assert r.status_code == 201, r.text
+
+    empresa = (await cliente.get("/v1/tablero/empresa", headers=cab)).json()
+    assert (empresa["vendido_mes"], empresa["mayoreo_mes"]) == ("500.00", "500.00")
+    assert (empresa["vendido_anio"], empresa["mayoreo_anio"]) == ("500.00", "500.00")
+
+    venta = (await cliente.get("/v1/tablero", headers=cab)).json()["venta"]
+    assert (venta["total"], venta["mayoreo"]) == ("0.00", "500.00")
+
+    from tests.test_plan_visita import _entrar
+
+    await _entrar(cliente)
+    panel = (await cliente.get("/panel")).text
+    assert "$500.00 de mayoreo, aparte" in panel
+    assert "incluye $500.00 de mayoreo" in panel

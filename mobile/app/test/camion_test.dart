@@ -34,9 +34,11 @@ void main() {
     await entrarCon(tester, pinCorrecto);
     await abrirCamion(tester);
 
-    expect(textoQueContiene('192.000'), findsOneWidget,
+    // «192», no «192.000» (ADR 0002 §157).
+    expect(find.text('192'), findsOneWidget,
         reason: 'lo que queda es lo que el vendedor va a contar en la caja');
-    expect(textoQueContiene('240.000'), findsNothing,
+    expect(textoQueContiene('.000'), findsNothing);
+    expect(find.text('240'), findsNothing,
         reason: 'lo cargado ya no es lo que trae: confundirlos es prometer '
             'mercancía que no está');
   });
@@ -79,7 +81,7 @@ void main() {
     await entrarCon(tester, pinCorrecto);
     await abrirCamion(tester);
 
-    expect(textoQueContiene('-3.000'), findsOneWidget);
+    expect(find.text('-3'), findsOneWidget);
     expect(find.byKey(const Key('resumen_negativos')), findsOneWidget);
   });
 
@@ -301,7 +303,7 @@ void main() {
 
     // El vendedor revisa su camión en la mañana: 240 piezas, 10 cajas.
     await abrirCamion(tester);
-    expect(textoQueContiene('240.000'), findsOneWidget);
+    expect(find.text('240'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
@@ -309,9 +311,9 @@ void main() {
 
     // Y a media ruta lo vuelve a abrir: 2 cajas son 48 piezas, quedan 192.
     await abrirCamion(tester);
-    expect(textoQueContiene('192.000'), findsOneWidget,
+    expect(find.text('192'), findsOneWidget,
         reason: 'la venta ya descontó la base local; la pantalla tiene que verlo');
-    expect(textoQueContiene('240.000'), findsNothing,
+    expect(find.text('240'), findsNothing,
         reason: 'lo de la mañana ya no está en el camión');
   });
 

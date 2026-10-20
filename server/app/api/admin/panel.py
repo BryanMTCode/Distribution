@@ -206,6 +206,11 @@ async def tablero(
                     WHERE fecha_operativa BETWEEN :desde AND :hasta
                       AND estado = 'confirmada' AND tipo = 'contado'
                       AND forma_pago = 'efectivo') AS efectivo_hoy,
+                  -- El mayoreo de la oficina va aparte (ADR 0002 §157): no es
+                  -- venta de ruta ni efectivo que entregue un vendedor.
+                  (SELECT COALESCE(sum(total), 0) FROM ventas_mayoreo
+                    WHERE fecha BETWEEN :desde AND :hasta
+                      AND estado = 'confirmada') AS mayoreo_hoy,
                   (SELECT count(*) FROM productos WHERE activo) AS productos,
                   (SELECT count(*) FROM clientes WHERE estatus <> 'inactivo') AS clientes,
                   (SELECT count(*) FROM clientes WHERE estatus = 'prospecto')
@@ -224,7 +229,10 @@ async def tablero(
 
     indicadores = dict(fila)
     indicadores["importe_hoy"] = dinero(fila["importe_hoy"])
+    # Todo en efectivo (§154): el total solo se dice aparte si no es el efectivo.
+    indicadores["total_igual_al_efectivo"] = fila["importe_hoy"] == fila["efectivo_hoy"]
     indicadores["efectivo_hoy"] = dinero(fila["efectivo_hoy"])
+    indicadores["mayoreo_hoy"] = dinero(fila["mayoreo_hoy"]) if fila["mayoreo_hoy"] else None
     indicadores["importe_por_confirmar"] = dinero(fila["importe_por_confirmar"])
 
     return render(
