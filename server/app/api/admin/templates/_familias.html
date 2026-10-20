@@ -1,0 +1,28 @@
+{#
+  Las familias de una tabla donde se captura, cada una plegable (ADR 0002 §147).
+
+  «En todas las listas del dashboard quiero que puedan ser desplegables o no, por
+  ejemplo en ajustes de inventario.» Inventario y Productos ya lo hacían (§92); las
+  tablas donde se escribe —Ajustar inventario, Mover mercancía, agregar a una
+  entrada o una salida— traían todo el catálogo en una sola tabla.
+
+  Cada familia es un `<details>` con su propia tabla, como en Inventario: se pliega
+  y se despliega sin JavaScript, y lo que se escribió en una familia plegada se
+  manda igual al guardar. «Plegar todas» no puede ser un enlace, como en
+  Inventario: recargaría la página y se perdería lo escrito. Son dos botones que
+  pliegan ahí mismo, con el ayudante de `base.html`; sin JavaScript no aparecen, y
+  cada familia se sigue plegando sola.
+#}
+{% macro botones_plegar() %}
+<p class="plegar-todas">
+  <button type="button" class="boton-chico" data-familias="plegar" hidden>Plegar todas</button>
+  <button type="button" class="boton-chico" data-familias="desplegar" hidden>Desplegar todas</button>
+</p>
+{% endmacro %}
+
+{% macro familia(g, indice) %}
+<details class="familia" id="familia_{{ indice }}" open>
+  <summary>{{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span></summary>
+  {{ caller() }}
+</details>
+{% endmacro %}

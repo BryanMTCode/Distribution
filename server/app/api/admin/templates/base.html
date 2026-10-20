@@ -11,7 +11,9 @@
 
   Todo es HTML renderizado en el servidor con formularios normales. Funciona sin
   JavaScript, en cualquier navegador, y no hay nada que se pueda romper al
-  actualizar una dependencia. HTMX entra el día que una pantalla concreta lo
+  actualizar una dependencia. Lo único escrito en JavaScript es el ayudante de
+  «Plegar todas» de las tablas donde se captura (ADR 0002 §147), aquí abajo: diez
+  líneas propias, y sin él esos botones simplemente no aparecen. HTMX entra el día que una pantalla concreta lo
   necesite —búsqueda mientras se escribe, por ejemplo— y entonces se versiona el
   archivo en el repositorio, no se apunta a un CDN.
 
@@ -331,5 +333,18 @@
   {% block contenido %}{% endblock %}
 </main>
 {% if actor %}</div>{% endif %}
+<script>
+  /* «Plegar todas» y «Desplegar todas» de una tabla donde se captura (§147):
+     pliegan las familias de su formulario ahí mismo, sin recargar, para no
+     perder lo escrito. Vienen escondidos; sin JavaScript no aparecen. */
+  document.querySelectorAll("[data-familias]").forEach(function (boton) {
+    boton.hidden = false;
+    boton.addEventListener("click", function () {
+      var abrir = boton.dataset.familias === "desplegar";
+      (boton.closest("form") || document).querySelectorAll("details.familia")
+        .forEach(function (d) { d.open = abrir; });
+    });
+  });
+</script>
 </body>
 </html>

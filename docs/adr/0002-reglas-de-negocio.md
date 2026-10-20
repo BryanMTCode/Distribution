@@ -6495,3 +6495,22 @@ una entrada, no quiero que haya una por cada artículo».
 - Lo de antes se queda como estaba: cada ajuste viejo sigue siendo su propia
   operación.
 
+## 147. Las familias de las tablas donde se captura, plegables
+
+**Decisión (octubre 2026).** «En todas las listas del dashboard quiero que puedan
+ser desplegables o no, por ejemplo en ajustes de inventario.»
+
+- **Ya lo hacían** Inventario y Productos (§92): cada familia, un `<details>`,
+  con «Plegar todas» como enlace.
+- **Ahora también** las tablas donde se escribe, que traían todo el catálogo en
+  una sola tabla: Ajustar inventario (§142), Mover mercancía (§135) y agregar a
+  una entrada o una salida (§140). Cada familia es un `<details>` abierto, con su
+  tabla de columnas fijas para que se alineen, y se pliega con un clic en su
+  nombre. Lo escrito en una familia plegada se guarda igual: los renglones
+  siguen dentro del formulario.
+- **«Plegar todas» y «Desplegar todas»**, cuando hay más de una familia, son
+  botones y no un enlace: un enlace recargaría la página y se perdería lo
+  escrito. Los mueve un ayudante de diez líneas en `base.html`, lo único del
+  panel en JavaScript; sin él, los botones no aparecen y cada familia se sigue
+  plegando sola.
+

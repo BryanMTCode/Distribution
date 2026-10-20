@@ -947,6 +947,17 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+41",
             ),
             Punto(
+                "panel_familias_en_captura", "Plegar las familias al capturar",
+                "Almacén → Inventario → «Ajustar inventario»: escribe lo que hay de un "
+                "artículo, toca el nombre de su familia, luego «Plegar todas» y «Desplegar "
+                "todas». Guarda el conteo. Haz lo mismo en «Mover mercancía» y al agregar "
+                "artículos a una entrada o una salida.",
+                "Cada familia se cierra y se abre con su nombre; los dos botones pliegan y "
+                "despliegan todas sin recargar. Lo que escribiste sigue ahí y se guarda "
+                "aunque su familia esté plegada (ADR 0002 §147).",
+                desde="+48",
+            ),
+            Punto(
                 "panel_una_sola_operacion", "Una captura, una operación",
                 "Ajustar inventario: cuenta tres artículos de un camión → «Guardar el "
                 "conteo». Luego Mover mercancía con dos artículos. Abre Operaciones → "

@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{% from "_familias.html" import botones_plegar, familia %}
+{% macro columnas_sacar() %}
+  <colgroup><col style="width:44%"><col style="width:16%"><col style="width:14%"><col style="width:26%"></colgroup>
+{% endmacro %}
 {% block titulo %}{{ salida.folio }}{% endblock %}
 {% block contenido %}
 <p class="sutil"><a href="/panel/salidas">← Salidas</a></p>
@@ -75,8 +79,9 @@
 {% if grupos %}
 <form method="post" action="/panel/salidas/{{ salida.id }}/renglones" id="forma_varios">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="tabla-marco">
-  <table id="tabla_bodega">
+  {% if grupos|length > 1 %}{{ botones_plegar() }}{% endif %}
+  <table class="columnas-fijas" id="tabla_bodega" style="background:transparent">
+    {{ columnas_sacar() }}
     <thead>
       <tr>
         <th>Artículo</th>
@@ -85,9 +90,12 @@
         <th class="numero">{% if cuenta %}Contaste{% else %}Sale{% endif %}</th>
       </tr>
     </thead>
-    <tbody>
+  </table>
     {% for g in grupos %}
-      <tr class="fila-familia"><td colspan="4"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+    {% call familia(g, loop.index) %}
+    <table>
+    {{ columnas_sacar() }}
+    <tbody>
       {% for s in g.filas %}
       <tr id="salida_{{ s.sku }}">
         <td>
@@ -114,10 +122,10 @@
         </td>
       </tr>
       {% endfor %}
-    {% endfor %}
     </tbody>
-  </table>
-  </div>
+    </table>
+    {% endcall %}
+    {% endfor %}
   <button type="submit" id="boton_agregar_varios" style="margin-top:12px">
     {% if cuenta %}Capturar el conteo{% else %}Agregar a la salida{% endif %}
   </button>

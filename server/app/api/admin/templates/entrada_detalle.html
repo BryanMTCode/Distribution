@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{% from "_familias.html" import botones_plegar, familia %}
+{% macro columnas_recibir() %}
+  <colgroup><col style="width:32%"><col style="width:13%"><col style="width:12%"><col style="width:25%"><col style="width:18%"></colgroup>
+{% endmacro %}
 {% block titulo %}{{ entrada.folio }}{% endblock %}
 {% block contenido %}
 <p class="sutil"><a href="/panel/entradas">← Entradas</a></p>
@@ -82,8 +86,9 @@
 {% if grupos %}
 <form method="post" action="/panel/entradas/{{ entrada.id }}/renglones" id="forma_varios">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="tabla-marco">
-  <table id="tabla_catalogo">
+  {% if grupos|length > 1 %}{{ botones_plegar() }}{% endif %}
+  <table class="columnas-fijas" id="tabla_catalogo" style="background:transparent">
+    {{ columnas_recibir() }}
     <thead>
       <tr>
         <th>Artículo</th>
@@ -93,9 +98,12 @@
         <th class="numero">Costo por bulto{% if exige_costo %} *{% endif %}</th>
       </tr>
     </thead>
-    <tbody>
+  </table>
     {% for g in grupos %}
-      <tr class="fila-familia"><td colspan="5"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+    {% call familia(g, loop.index) %}
+    <table>
+    {{ columnas_recibir() }}
+    <tbody>
       {% for s in g.filas %}
       <tr id="recibir_{{ s.sku }}">
         <td>
@@ -130,10 +138,10 @@
         </td>
       </tr>
       {% endfor %}
-    {% endfor %}
     </tbody>
-  </table>
-  </div>
+    </table>
+    {% endcall %}
+    {% endfor %}
   <button type="submit" id="boton_agregar_varios" style="margin-top:12px">
     Agregar a la entrada
   </button>

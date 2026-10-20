@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{% from "_familias.html" import botones_plegar, familia %}
+{% macro columnas_mover() %}
+  <colgroup><col style="width:50%"><col style="width:20%"><col style="width:30%"></colgroup>
+{% endmacro %}
 {% block titulo %}Mover mercancía{% endblock %}
 {% block contenido %}
 <h1>Mover mercancía</h1>
@@ -48,8 +52,9 @@
   <input type="hidden" name="sentido" value="{{ sentido }}">
   <input type="hidden" name="camion" value="{{ camion.id }}">
   <input type="hidden" name="bodega" value="{{ bodega.id }}">
-  <div class="tabla-marco">
-  <table id="tabla_mover">
+  {% if grupos|length > 1 %}{{ botones_plegar() }}{% endif %}
+  <table class="columnas-fijas" id="tabla_mover" style="background:transparent">
+    {{ columnas_mover() }}
     <thead>
       <tr>
         <th>Artículo</th>
@@ -57,9 +62,12 @@
         <th class="numero">Mover</th>
       </tr>
     </thead>
-    <tbody>
+  </table>
     {% for g in grupos %}
-      <tr class="fila-familia"><td colspan="3"><strong>{{ g.familia }}</strong> <span class="sutil">· {{ g.filas|length }}</span></td></tr>
+    {% call familia(g, loop.index) %}
+    <table>
+    {{ columnas_mover() }}
+    <tbody>
       {% for f in g.filas %}
       {% set elegida = capturado.get('unidad_' ~ f.producto_id, f.por_omision) %}
       <tr id="mover_{{ f.sku }}">
@@ -87,10 +95,10 @@
         </td>
       </tr>
       {% endfor %}
-    {% endfor %}
     </tbody>
-  </table>
-  </div>
+    </table>
+    {% endcall %}
+    {% endfor %}
   <div class="campo" style="margin-top:12px; max-width:560px">
     <label for="nota">Nota (opcional)</label>
     <input type="text" id="nota" name="nota" value="{{ nota }}" style="width:100%"

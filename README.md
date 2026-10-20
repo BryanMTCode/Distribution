@@ -133,6 +133,7 @@ la bodega sube cuando alguien la cuenta.
 | **Qué versión de la app trae cada vendedor**: el teléfono la dice también al bajar, y Teléfonos marca la que va atrás (§144) | ✅ 3 pruebas del servidor, 2 de Dart |
 | **El aviso de los ajustes de la oficina, solo ese día y diciendo qué cambió**: artículo y «+24 PZA» en «Mi camión»; al día siguiente ya no sale (§145) | ✅ 2 pruebas de Dart, 3 de widget |
 | **Una captura, una operación**: el conteo, mover mercancía y el Excel de camiones salen en Operaciones como un renglón con un folio, y se eliminan enteros (§146) | ✅ 4 pruebas del servidor |
+| **Las familias de las tablas donde se captura, plegables**: ajustar inventario, mover mercancía, entradas y salidas; «Plegar todas» sin perder lo escrito (§147) | ✅ 3 pruebas del servidor; probado en Chromium |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
