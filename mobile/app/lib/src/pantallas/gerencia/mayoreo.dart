@@ -31,7 +31,8 @@ import '../confirmar.dart';
 class PantallaMayoreo extends ConsumerStatefulWidget {
   const PantallaMayoreo({super.key, this.conBarra = true});
 
-  /// Sin barra cuando va dentro de la pestaña Almacén, que ya pone la suya.
+  /// Sin barra cuando va dentro de otra pantalla que ya pone la suya. En la barra
+  /// de abajo es su propia pestaña, con la suya (ADR 0002 §152).
   final bool conBarra;
 
   @override

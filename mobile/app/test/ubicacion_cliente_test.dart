@@ -113,8 +113,10 @@ void main() {
         ],
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('nav_clientes')));
+      // Los clientes, desde Empresa (ADR 0002 §152).
+      await tester.tap(find.byKey(const Key('nav_empresa')));
       await tester.pumpAndSettle();
+      await tocar(tester, const Key('empresa_clientes'));
       await tester.tap(find.byKey(const Key('cliente_oficina_CLI-1')));
       await tester.pumpAndSettle();
       expect(
@@ -178,6 +180,16 @@ class _ServidorDeClientes implements Transporte {
       }));
     }
     if (ruta == '/v1/oficina/clientes/cl1') return RespuestaHttp(200, jsonEncode(_ficha()));
+    if (ruta == '/v1/tablero/empresa') {
+      return RespuestaHttp(200, jsonEncode({
+        'clientes_activos': 1, 'prospectos': 0, 'clientes_inactivos': 0,
+        'clientes_nuevos_mes': 0, 'vendedores': 1, 'vendedores_con_camion': 1,
+        'usuarios_oficina': 1, 'rutas': 1, 'telefonos': 1, 'productos': 1,
+        'productos_sin_precio': 0, 'bodegas': 1, 'camiones': 1,
+        'piezas_en_bodegas': '0.000', 'piezas_en_camiones': '0.000',
+        'existencias_negativas': 0, 'vendido_mes': '0.00', 'vendido_anio': '0.00',
+      }));
+    }
     return const RespuestaHttp(503, '{"detail":"no importa aquí"}');
   }
 

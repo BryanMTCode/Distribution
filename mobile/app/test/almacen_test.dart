@@ -82,7 +82,7 @@ class _Gerencia extends ControladorSesion {
 
 const _todo = [
   'tablero.ver', 'inventario.ver', 'inventario.ajustar', 'inventario.cargar',
-  'inventario.liquidar',
+  'inventario.liquidar', 'mayoreo.vender',
 ];
 
 Future<_ServidorDeAlmacen> _montar(
@@ -114,8 +114,8 @@ Future<void> _irA(WidgetTester tester, String pestana) async {
 
 void main() {
   group('la pestaña', () {
-    testWidgets('con todos los permisos: existencias, cargas y corte; ni entradas ni '
-        'traspasos (ADR 0002 §134)', (tester) async {
+    testWidgets('con todos los permisos: existencias, cargas y corte; ni mayoreo, ni '
+        'entradas ni traspasos (ADR 0002 §134, §152)', (tester) async {
       await _montar(tester);
       expect(find.byKey(const Key('pantalla_almacen')), findsOneWidget);
       for (final k in ['pestana_existencias', 'pestana_cargas', 'pestana_cortes']) {
@@ -123,6 +123,9 @@ void main() {
       }
       expect(find.byKey(const Key('pestana_entradas')), findsNothing);
       expect(find.byKey(const Key('pestana_traspasos')), findsNothing);
+      // Mayoreo es una venta: tiene su propia pestaña abajo (ADR 0002 §152).
+      expect(find.byKey(const Key('pestana_mayoreo')), findsNothing);
+      expect(find.byKey(const Key('nav_mayoreo')), findsOneWidget);
       // El corte y la carga del vendedor van cada uno en su pestaña (ADR 0002 §82).
       expect(find.byKey(const Key('pestana_cierres')), findsNothing);
     });

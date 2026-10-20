@@ -138,6 +138,7 @@ la bodega sube cuando alguien la cuenta.
 | **Las cargas y los cortes de la app de la oficina, un día a la vez**: ‹ › y calendario, abre en hoy o en mañana, cada una con su estatus en color; «Por fecha» salía vacío porque la carga es de mañana (§149) | ✅ 1 prueba del servidor, 1 de Dart, 5 de widget |
 | **El vendedor imprime el ticket de su solicitud de carga**, como el del corte (§150) | ✅ 1 de widget |
 | **La carga y el corte son del día en que se hacen**: la de la noche del lunes queda el lunes («para vender el martes…»), el corte de las 11 p. m. es de ese día, y los cortes van como las cargas, con los camiones «Sin cortar» dentro de su día (§151) | ✅ 2 pruebas del servidor, 3 de Dart, 4 de widget |
+| **La barra del gerente**: Clientes se abre desde Empresa (con botones si el resumen no llega) y Mayoreo sale de Almacén a su propia pestaña; Almacén se queda con existencias, cargas y corte (§152) | ✅ 3 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -161,7 +162,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1524 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **682 de Dart** y **360 de widget**, todas en verde.
+**1526 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **685 de Dart** y **361 de widget**, todas en verde.
 
 ## Stack
 

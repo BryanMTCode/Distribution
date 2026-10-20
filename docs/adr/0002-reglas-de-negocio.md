@@ -6635,3 +6635,29 @@ a las 11 p. m. y la carga a esa hora, entonces es del mismo día.»
   uno sin cortar es ese corte.
 - Un día con solo cargas canceladas dice «No hay cargas de este día»: la
   cancelada va aparte (§95).
+
+## 152. La barra del gerente: Clientes desde Empresa, Mayoreo aparte
+
+**Decisión (octubre 2026).** «No veo necesario lo de Clientes abajo si se puede
+entrar ahí desde Empresa, lo cual me gusta.» Y de Almacén: «siento que hay cosas
+que no deberían estar juntas allí… el inventario sí me gusta, que se vean los
+almacenes y los camiones, eso déjalo, igual las cargas y los cortes; lo de
+mayoreo sácalo».
+
+- **La barra de abajo queda:** Tablero · Empresa · Vendedores · Almacén ·
+  Mayoreo, cada una con su permiso, como antes.
+- **Clientes sale de la barra.** Se entra desde Empresa, tocando «clientes
+  activos», con la misma pantalla de rutas, días y fichas.
+- **Si el resumen de Empresa no llega** —sin señal a media consulta, o un usuario
+  sin `tablero.ver`—, Empresa pone botones para abrir Clientes, Vendedores,
+  Inventario y Artículos: las listas no dependen de las cifras, y quitar la
+  pestaña no deja a nadie sin entrar.
+- **Almacén se queda con Existencias** (bodegas y camiones), **Cargas** y
+  **Corte del día**.
+- **Mayoreo sale de Almacén** a su propia pestaña abajo (solo con
+  `mayoreo.vender`): es una venta a un cliente, no un movimiento del almacén.
+- En Empresa, «piezas en bodega» y «piezas en camiones» abren las existencias
+  solo a quien tiene `inventario.ver`, que es lo que esa pantalla pide.
+- De paso: el aviso de la carga con la bodega vacía mandaba a «Almacén →
+  Entradas», que ya no existe en la app (§134). Ahora dice dónde está en el
+  dashboard: Almacén → Entradas y salidas → Entradas.

@@ -30,9 +30,15 @@ Map<String, Object?> _periodo(String clave, String desde, String hasta) => {
 class _ServidorDeOficina implements Transporte {
   final List<(String, Map<String, String>?)> pedidas = [];
 
+  /// Sin el resumen de la empresa: sin señal a media consulta, o sin permiso.
+  bool sinResumenDeEmpresa = false;
+
   @override
   Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
     pedidas.add((ruta, parametros));
+    if (sinResumenDeEmpresa && ruta == '/v1/tablero/empresa') {
+      return const RespuestaHttp(503, '{"detail":"sin resumen"}');
+    }
     final clave = parametros?['periodo'] ?? 'hoy';
     final (desde, hasta) = switch (clave) {
       'semana' => ('2026-09-21', '2026-09-24'),
@@ -309,6 +315,13 @@ Map<String, Object?> _listaDeClientes(Map<String, String>? p) {
   };
 }
 
+/// Los clientes se abren desde Empresa (ADR 0002 §152).
+Future<void> _abrirClientes(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('nav_empresa')));
+  await tester.pumpAndSettle();
+  await tocar(tester, const Key('empresa_clientes'));
+}
+
 class _Gerencia extends ControladorSesion {
   _Gerencia(this.permisos);
 
@@ -343,21 +356,38 @@ Future<_ServidorDeOficina> _montar(
 
 void main() {
   group('la barra del portal', () {
-    testWidgets('la oficina ve Tablero, Empresa, Vendedores, Clientes y Almacén',
-        (tester) async {
+    testWidgets('la oficina ve Tablero, Empresa, Vendedores y Almacén; Clientes ya no va '
+        'abajo (ADR 0002 §152)', (tester) async {
       await _montar(tester);
-      for (final k in ['nav_tablero', 'nav_empresa', 'boton_vendedores', 'nav_clientes',
-          'nav_almacen']) {
+      for (final k in ['nav_tablero', 'nav_empresa', 'boton_vendedores', 'nav_almacen']) {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
+      // «No veo necesario lo de Clientes abajo si se puede entrar desde Empresa.»
+      expect(find.byKey(const Key('nav_clientes')), findsNothing);
+      // Sin `mayoreo.vender`, sin Mayoreo.
+      expect(find.byKey(const Key('nav_mayoreo')), findsNothing);
     });
 
     testWidgets('sin esos permisos, esas pestañas no salen', (tester) async {
       await _montar(tester, permisos: const ['tablero.ver']);
       expect(find.byKey(const Key('nav_tablero')), findsOneWidget);
       expect(find.byKey(const Key('boton_vendedores')), findsNothing);
-      expect(find.byKey(const Key('nav_clientes')), findsNothing);
       expect(find.byKey(const Key('nav_almacen')), findsNothing);
+    });
+
+    testWidgets('si el resumen de la empresa no llega, los clientes se abren igual',
+        (tester) async {
+      final servidor = await _montar(tester);
+      servidor.sinResumenDeEmpresa = true;
+      await tester.tap(find.byKey(const Key('nav_empresa')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('empresa_clientes')), findsNothing);
+      // Sin `inventario.ver`, el inventario no sale.
+      expect(find.byKey(const Key('empresa_ir_inventario')), findsNothing);
+      await tester.tap(find.byKey(const Key('empresa_ir_clientes')));
+      await tester.pumpAndSettle();
+      expect(servidor.pedidas.last.$1, '/v1/oficina/clientes');
+      expect(find.byKey(const Key('resumen_ruta_R04')), findsOneWidget);
     });
 
     testWidgets('abrir la app no consulta las pestañas que no se han abierto',
@@ -626,8 +656,7 @@ void main() {
       final servidor = await _montar(tester);
       // En el ancho del teléfono de la empresa (Hyundai HYLine Pro, 360).
       tester.view.physicalSize = const Size(360, 760);
-      await tester.tap(find.byKey(const Key('nav_clientes')));
-      await tester.pumpAndSettle();
+      await _abrirClientes(tester);
 
       // No todas en general: las rutas, con sus tiendas de cada día.
       expect(servidor.pedidas.last.$2, {'filtro': 'todos', 'agrupar': '1'});
@@ -672,8 +701,7 @@ void main() {
     testWidgets('la lista no habla de deudas, y filtra los que no tienen ubicación',
         (tester) async {
       final servidor = await _montar(tester);
-      await tester.tap(find.byKey(const Key('nav_clientes')));
-      await tester.pumpAndSettle();
+      await _abrirClientes(tester);
       await tester.tap(find.byKey(const Key('resumen_ruta_R04')));
       await tester.pumpAndSettle();
 
@@ -693,8 +721,7 @@ void main() {
 
     testWidgets('su ficha: ubicación y compras con su forma de pago', (tester) async {
       await _montar(tester);
-      await tester.tap(find.byKey(const Key('nav_clientes')));
-      await tester.pumpAndSettle();
+      await _abrirClientes(tester);
       await tester.tap(find.byKey(const Key('resumen_ruta_R04')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('cliente_oficina_CLI-1')));

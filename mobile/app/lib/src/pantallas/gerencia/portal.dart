@@ -6,11 +6,14 @@
 /// el menú del panel:
 ///
 ///   · **Tablero**: un día (completo) o un periodo (por vendedor y por día).
-///   · **Empresa**: cuántos clientes, vendedores, artículos; la cartera.
+///   · **Empresa**: cuántos clientes, vendedores, artículos; cada cifra abre su
+///     lista. Los clientes se ven desde aquí (ADR 0002 §152): «no veo necesario
+///     lo de Clientes abajo si se puede entrar ahí desde Empresa».
 ///   · **Vendedores**: cada uno, su camión y todo lo que hizo.
-///   · **Clientes**: quién debe y desde cuándo, qué compra, su crédito.
-///   · **Almacén**: existencias, entradas de mercancía, traspasos entre
-///     bodegas, cargas del camión y corte del día.
+///   · **Almacén**: existencias de bodegas y camiones, cargas y corte del día.
+///   · **Mayoreo**: las ventas de la oficina a sus clientes de mayoreo. Estuvo
+///     dentro de Almacén y salió (§152): es una venta, no un movimiento del
+///     almacén.
 ///
 /// Cada pestaña aparece solo si el usuario tiene su permiso. La UI oculta; el
 /// servidor prohíbe de todos modos.
@@ -19,10 +22,11 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../estado/oficina_extra.dart';
 import '../../estado/vendedores.dart';
 import 'almacen.dart';
-import 'clientes_oficina.dart';
 import 'empresa.dart';
+import 'mayoreo.dart';
 import 'panel.dart';
 import 'periodo.dart';
 import 'vendedores.dart';
@@ -59,27 +63,28 @@ class _EstadoPortal extends ConsumerState<PortalDeOficina> {
         'Empresa',
         const PantallaEmpresa(),
       ),
-      if (ref.watch(puedeVerVendedoresProvider)) ...[
+      if (ref.watch(puedeVerVendedoresProvider))
         (
           const Key('boton_vendedores'),
           Icons.groups_outlined,
           'Vendedores',
           const PantallaVendedores(),
         ),
-        (
-          const Key('nav_clientes'),
-          Icons.storefront_outlined,
-          'Clientes',
-          const PantallaClientesDeOficina(),
-        ),
-      ],
-      // Todo lo que mueve mercancía: ver, recibir, traspasar, cargar, cortar.
+      // Lo que mueve mercancía: ver, cargar, cortar.
       if (ref.watch(muestraAlmacenProvider))
         (
           const Key('nav_almacen'),
           Icons.warehouse_outlined,
           'Almacén',
           const PantallaAlmacen(),
+        ),
+      // Una venta, no un movimiento del almacén (ADR 0002 §105, §152).
+      if (ref.watch(puedeVenderMayoreoProvider))
+        (
+          const Key('nav_mayoreo'),
+          Icons.point_of_sale_outlined,
+          'Mayoreo',
+          const PantallaMayoreo(),
         ),
     ];
     final elegida = ref.watch(pestanaDeOficinaProvider).clamp(0, pestanas.length - 1);

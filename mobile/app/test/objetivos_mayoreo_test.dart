@@ -167,6 +167,8 @@ void main() {
   testWidgets('sin el permiso, la pestaña de mayoreo no aparece', (tester) async {
     await _montar(tester, _Servidor(), rol: 'gerente',
         permisos: const ['tablero.ver', 'inventario.cargar']);
+    expect(find.byKey(const Key('nav_almacen')), findsOneWidget);
+    expect(find.byKey(const Key('nav_mayoreo')), findsNothing);
     await tester.tap(find.byKey(const Key('nav_almacen')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('pestana_mayoreo')), findsNothing);
@@ -175,13 +177,10 @@ void main() {
   testWidgets('mayoreo: una venta al precio que se decide, con su ticket', (tester) async {
     final servidor = _Servidor();
     await _montar(tester, servidor);
-    await tester.tap(find.byKey(const Key('nav_almacen')));
+    // Su propia pestaña abajo: es una venta, no un movimiento del almacén (§152).
+    await tester.tap(find.byKey(const Key('nav_mayoreo')));
     await tester.pumpAndSettle();
-    // La última pestaña del almacén: en un teléfono angosto hay que deslizar.
-    await tester.ensureVisible(find.byKey(const Key('pestana_mayoreo')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('pestana_mayoreo')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('pantalla_mayoreo')), findsOneWidget);
     expect(find.byKey(const Key('mayoreo_vacio')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('boton_nueva_venta_mayoreo')));

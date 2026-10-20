@@ -790,8 +790,8 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                       padding: EdgeInsets.symmetric(vertical: 8),
                       child: Text(
                         'La bodega no tiene existencias registradas, así que no hay '
-                        'qué subir. Primero da entrada a la mercancía: Almacén → '
-                        'Entradas.',
+                        'qué subir. Primero da entrada a la mercancía en el dashboard: '
+                        'Almacén → Entradas y salidas → Entradas.',
                         key: Key('aviso_bodega_vacia'),
                       ),
                     ),

@@ -10,6 +10,10 @@
 ///   · **Corte del día**: los cortes de los vendedores —que se cierran solos,
 ///     ADR 0002 §133— y el corte contando el camión.
 ///
+/// Mayoreo estuvo aquí y salió a su propia pestaña (§152): «en la parte de
+/// Almacén siento que hay cosas que no deberían estar juntas… lo de mayoreo
+/// sácalo». Es una venta, no un movimiento del almacén.
+///
 /// Entradas y Traspasos estuvieron aquí y se quitaron (§134): «de la app quitaré
 /// lo de entrada y traspasos». Se hacen en el panel.
 ///
@@ -26,21 +30,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
-import '../../estado/oficina_extra.dart';
 import '../../estado/vendedores.dart';
 import '../familias.dart';
 import 'cargas.dart';
 import 'comunes.dart';
 import 'cortes.dart';
-import 'mayoreo.dart';
 
 /// Si la pestaña Almacén aparece en la barra.
 final muestraAlmacenProvider = Provider<bool>(
   (ref) =>
       ref.watch(puedeVerAlmacenProvider) ||
       ref.watch(puedeCargarProvider) ||
-      ref.watch(puedeCortarProvider) ||
-      ref.watch(puedeVenderMayoreoProvider),
+      ref.watch(puedeCortarProvider),
 );
 
 class PantallaAlmacen extends ConsumerWidget {
@@ -62,10 +63,6 @@ class PantallaAlmacen extends ConsumerWidget {
         (const Key('pestana_cargas'), 'Cargas', (b) => PantallaCargas(conBarra: b)),
       if (ref.watch(puedeCortarProvider))
         (const Key('pestana_cortes'), 'Corte del día', (b) => PantallaCortes(conBarra: b)),
-      // Las ventas de la oficina a sus clientes de mayoreo: salen de la bodega
-      // (ADR 0002 §105).
-      if (ref.watch(puedeVenderMayoreoProvider))
-        (const Key('pestana_mayoreo'), 'Mayoreo', (b) => PantallaMayoreo(conBarra: b)),
     ];
     if (partes.isEmpty) return const SizedBox.shrink();
     if (partes.length == 1) return partes.single.$3(true);

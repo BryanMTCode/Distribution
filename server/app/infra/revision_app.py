@@ -96,7 +96,8 @@ SECCIONES: tuple[Seccion, ...] = (
                 "En la pantalla de entrada, «Entrar como Gerencia» con tu código y "
                 "contraseña, con señal.",
                 "Abre el portal de la oficina con la barra de abajo: Tablero, Empresa, "
-                "Vendedores, Clientes y Almacén (según tus permisos).",
+                "Vendedores, Almacén y Mayoreo (según tus permisos). Los clientes, desde "
+                "Empresa.",
             ),
         ),
     ),
@@ -440,7 +441,7 @@ SECCIONES: tuple[Seccion, ...] = (
             Punto(
                 "empresa", "Empresa",
                 "Pestaña Empresa; toca cada cifra.",
-                "Cada cifra abre su lista (clientes, vendedores, artículos…).",
+                "Cada cifra abre su lista (clientes, vendedores, artículos, inventario…).",
             ),
             Punto(
                 "vendedores", "Vendedores y su camión",
@@ -460,14 +461,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+38",
             ),
             Punto(
-                "clientes_oficina", "Clientes",
-                "Pestaña Clientes: busca uno y ábrelo.",
-                "Su ficha y lo que compra.",
+                "clientes_oficina", "Clientes, desde Empresa",
+                "Pestaña Empresa → toca «clientes activos»; busca uno y ábrelo.",
+                "Ya no hay pestaña Clientes abajo: se entra desde Empresa, con su ficha y "
+                "lo que compra (ADR 0002 §152).",
+                desde="+50",
             ),
             Punto(
                 "clientes_por_ruta", "Clientes por ruta y día",
-                "Pestaña Clientes: toca una ruta; luego un día (Lun…Sáb) y «Todas las "
-                "rutas».",
+                "Empresa → «clientes activos»: toca una ruta; luego un día (Lun…Sáb) y "
+                "«Todas las rutas».",
                 "Abre con las rutas y cuántas tiendas tiene cada día, no con todas. Al "
                 "elegir una ruta salen sus tiendas agrupadas por día, en el orden del "
                 "recorrido; con un día, ese día de cada ruta.",
@@ -476,8 +479,15 @@ SECCIONES: tuple[Seccion, ...] = (
         ),
     ),
     Seccion(
-        "almacen", "Oficina: Almacén", "Entrando como Gerencia o admin",
+        "almacen", "Oficina: Almacén y Mayoreo", "Entrando como Gerencia o admin",
         (
+            Punto(
+                "barra_sin_clientes", "La barra: Mayoreo aparte, Clientes desde Empresa",
+                "Mira la barra de abajo.",
+                "Tablero, Empresa, Vendedores, Almacén y Mayoreo. Ya no hay pestaña "
+                "Clientes: se abre desde Empresa (ADR 0002 §152).",
+                desde="+50",
+            ),
             Punto(
                 "existencias", "Existencias",
                 "Almacén → Existencias.",
@@ -485,11 +495,12 @@ SECCIONES: tuple[Seccion, ...] = (
                 "artículo.",
             ),
             Punto(
-                "sin_entradas_ni_traspasos", "Sin Entradas ni Traspasos",
+                "sin_entradas_ni_traspasos", "Sin Entradas ni Traspasos ni Mayoreo",
                 "Abre Almacén y mira las pestañas.",
-                "Existencias, Cargas, Corte del día y Mayoreo; Entradas y Traspasos ya no "
-                "están en la app: se hacen en el panel (ADR 0002 §134).",
-                desde="+44",
+                "Existencias, Cargas y Corte del día. Entradas y Traspasos ya no están en "
+                "la app: se hacen en el panel (ADR 0002 §134); Mayoreo tiene su propia "
+                "pestaña abajo (§152).",
+                desde="+50",
             ),
             Punto(
                 "cargas_un_dia", "Las cargas de un día, con su estatus",
@@ -550,7 +561,7 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "mayoreo", "Venta de mayoreo",
-                "Almacén → Mayoreo → nueva venta: un cliente de mayoreo, artículos al "
+                "Pestaña Mayoreo → nueva venta: un cliente de mayoreo, artículos al "
                 "precio que decidas. Después, cancela una de prueba.",
                 "Sale de la bodega con su folio MY- y su ticket; la cancelada devuelve la "
                 "mercancía. En el panel sale en Ventas → Mayoreo.",
