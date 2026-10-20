@@ -442,6 +442,81 @@ async def tiendas_de_rutas(*, solo_resumen: bool = False, confirmado: bool = Fal
     return 0
 
 
+async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
+    """Pone las coordenadas del Excel LOCALES_MAZATLAN_2 en las tiendas de las rutas
+    1101–1107 que no tengan ubicación (ADR 0002 §148).
+
+    Qué hace está en `app/infra/ubicaciones_de_tiendas.py`. `--resumen` solo dice
+    lo que haría; `--confirmado` no pregunta.
+    """
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import quien_registra
+    from app.infra.ubicaciones_de_tiendas import (
+        PALABRA,
+        HojaInvalida,
+        aplicar,
+        leer_renglones,
+        planear,
+    )
+
+    try:
+        renglones = leer_renglones()
+    except HojaInvalida as e:
+        print(f"ERROR en el archivo: {e}")
+        return 1
+
+    async with CrearSesion() as sesion:
+        plan = await planear(sesion, renglones)
+        print(f"UBICACIONES DE LAS TIENDAS (LOCALES_MAZATLAN_2): {len(renglones):,} "
+              "tiendas, de lunes a sábado\n")
+        for ruta, cuenta in plan.por_ruta().items():
+            print(f"  {ruta}: {cuenta['con_tienda'] + cuenta['sin_tienda']} en el Excel → "
+                  f"{cuenta['ubicar']} se ubican"
+                  + (f", {cuenta['sin_tienda']} sin tienda en la base"
+                     if cuenta["sin_tienda"] else ""))
+        print(f"\nSe ubican: {len(plan.por_ubicar):,}. Ya estaban: {plan.ya_estaban:,}.")
+        for t, numero in plan.numeros:
+            print(f"Se corrige el número que Excel volvió fecha: {t} ({t.calle}) "
+                  f"{t.numero} → {numero}")
+        for aviso in plan.repetidas_en_la_base:
+            print(f"OJO, repetida en la base: {aviso}")
+        for aviso in plan.en_otra_ruta:
+            print(f"OJO: {aviso}")
+        for aviso in plan.en_otro_dia:
+            print(f"OJO, otro día: {aviso}")
+        for aviso in plan.con_otra_ubicacion:
+            print(f"Ya tiene otra ubicación, no se toca: {aviso}")
+        for r in plan.sin_coordenadas:
+            print(f"Sin coordenadas en el Excel: {r} — {r.correccion or 'vienen vacías'}")
+        if plan.sin_tienda:
+            print(f"\nNo están en la base, no se dan de alta ({len(plan.sin_tienda)}):")
+            for r in plan.sin_tienda:
+                print(f"  {r}")
+        if plan.sin_renglon:
+            print(f"\nTiendas de estas rutas que no vienen en el Excel: siguen sin "
+                  f"ubicación hasta que su vendedor la capture ({len(plan.sin_renglon)}):")
+            for t in plan.sin_renglon:
+                print(f"  {t} ({t.domicilio}), ruta {t.ruta or 'sin ruta'}")
+        print()
+        if solo_resumen:
+            return 0
+        if not plan.por_ubicar and not plan.numeros:
+            print("Ya estaban todas. No se cambió nada.")
+            return 0
+        if not confirmado and input(
+            f"Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        resultado = await aplicar(sesion, renglones, quien=await quien_registra(sesion))
+
+    print(f"Listo. {resultado.ubicadas:,} tienda(s) ubicada(s)"
+          + (f" y {resultado.numeros} número(s) corregido(s)" if resultado.numeros else "")
+          + ".")
+    print("Cada teléfono recibe la ubicación de sus tiendas en su próxima sincronización.")
+    return 0
+
+
 async def compra_zuko(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
     """Da de alta los siete ZUKO de la factura del 16/10 en la familia de Maruchan
     y los recibe en la bodega como compra (ADR 0002 §125).
@@ -689,6 +764,7 @@ def main() -> int:
         "base-en-blanco": base_en_blanco,
         "camiones-al-sabado": camiones_al_sabado,
         "tiendas-de-rutas": tiendas_de_rutas,
+        "ubicar-tiendas": ubicar_tiendas,
         "compra-zuko": compra_zuko,
         "mapa-mazatlan": mapa_mazatlan,
         "empezar-a-operar": empezar_a_operar,
@@ -702,7 +778,8 @@ def main() -> int:
     if comando == "empezar-a-operar":
         return asyncio.run(empezar_a_operar(sys.argv[2:]))
     if comando in (
-        "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "compra-zuko"
+        "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "ubicar-tiendas",
+        "compra-zuko",
     ) and opciones <= {
         "--resumen", "--confirmado"
     }:

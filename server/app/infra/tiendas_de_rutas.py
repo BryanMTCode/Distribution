@@ -265,6 +265,15 @@ async def planear(sesion, tiendas: list[Tienda]) -> Plan:
     return plan
 
 
+async def rutas_del_sistema(sesion) -> dict[str, uuid.UUID]:
+    """El número de cada ruta → la ruta del sistema que le toca, con la misma
+    regla que la carga (por su número o por su vendedor). Las que todavía no
+    existen o tienen dos candidatas no salen. Lo usa `ubicaciones_de_tiendas`."""
+    plan = Plan()
+    await _buscar_rutas(sesion, plan)
+    return {n: r.id for n, r in plan.rutas.items() if not r.nueva and r.id is not None}
+
+
 async def _buscar_rutas(sesion, plan: Plan) -> None:
     rutas = (
         await sesion.execute(

@@ -6514,3 +6514,32 @@ ser desplegables o no, por ejemplo en ajustes de inventario.»
   panel en JavaScript; sin él, los botones no aparecen y cada familia se sigue
   plegando sola.
 
+## 148. Las coordenadas de las tiendas, del Excel LOCALES_MAZATLAN_2
+
+**Decisión (octubre 2026).** «En este archivo vienen dos hojas con la ruta 1101 y
+las demás rutas, con las columnas establecimiento, domicilio y latitud y
+longitud; quiero que uses este archivo para agregar estos datos a las tiendas de
+mi base de datos.» Las 1,834 tiendas de §120 estaban sin coordenadas.
+
+- **El archivo, a limpio** (`db/semillas/ubicaciones_tiendas_2026-10-20.csv`):
+  solo de lunes a sábado (las tres del día 7 quedan fuera); la hoja «Ruta 1101»
+  entera es de la 1101 —lunes a miércoles de las que dicen 1101, jueves a sábado
+  de las que dicen 1108—; las dos longitudes sin el signo menos se corrigen; la
+  latitud de 26.27 de ABARROTES NAI se queda sin coordenadas en vez de adivinar.
+- **Cada renglón encuentra su tienda en la base**, dentro de su ruta —encontrada
+  como en §120, por su número o por su vendedor—: por nombre y domicilio, luego
+  nombre y día, luego nombre, luego domicilio y día; y al final nombre y
+  domicilio en otra ruta, que se ubica sin moverla. Sin acentos ni signos. Con los
+  datos de hoy: 1,808 renglones con tienda, 27 sin ella.
+- **Se ubica la que no tiene ubicación**, con origen «manual» y por el mismo
+  camino que el panel (`fijar_ubicacion`): constancia en la auditoría y delta del
+  cliente al teléfono de su ruta. La que ya tiene una no se toca: la capturó
+  alguien parado en la tienda.
+- **Los números que Excel volvió fecha** en los Excel de §120 (46025 era «1-3»;
+  914660, «4404-4») se corrigen con el domicilio de este Excel: solo si el número
+  de la tienda es puro dígito de cinco o más y el nuevo trae guion.
+- **Las 27 que no están en la base no se dan de alta**: el comando las lista.
+  Darlas de alta es otra decisión —su código, su lugar en la ruta—.
+- El comando es `ubicar-tiendas`, con `--resumen` y la palabra `UBICAR`, como los
+  de §99 y §120.
+
