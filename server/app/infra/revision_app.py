@@ -127,6 +127,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+50",
             ),
             Punto(
+                "cancelada_vuelve", "La venta cancelada devuelve la tienda",
+                "Cancela la venta de prueba de una tienda (en «Mi día» o desde el "
+                "dashboard, y sincroniza).",
+                "La tienda vuelve a la lista roja con su número, como si no se le hubiera "
+                "vendido, y vuelve a contar en «Visitados N de M» (ADR 0002 §156).",
+                desde="+50",
+            ),
+            Punto(
                 "buscar_tienda", "Buscar una tienda",
                 "Escribe parte del nombre o del código en el buscador de arriba.",
                 "Encuentra la tienda aunque hoy no le toque.",

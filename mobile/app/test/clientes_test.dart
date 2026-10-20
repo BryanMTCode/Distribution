@@ -231,13 +231,16 @@ void main() {
       sembrarCliente(base, id: 'c1', nombre: 'Ya compró', secuencia: 1);
       sembrarCliente(base, id: 'c2', nombre: 'Falta', secuencia: 2);
       sembrarCliente(base, id: 'c3', nombre: 'Le cancelaron', secuencia: 3);
+      // La que solo tiene una venta cancelada: como si no se le hubiera vendido.
       base.db.execute(
         "INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, subtotal, "
         "total, fecha_dispositivo, fecha_operativa, creado_en) "
         "VALUES ('v1', 1, 'VEND01-000001', 'c1', 'contado', 100, 100, "
         "'2026-09-24T07:00:00.000Z', '2026-09-24', '2026-09-24T07:00:00.000Z')",
       );
-      // Una venta cancelada no es una venta: cuenta como visita, sin el verde.
+      // «Si se cancela una venta de cierto vendedor y cierta tienda, que vuelva a
+      // aparecer en la lista con el número, como si aún no se le vendiera nada»
+      // (ADR 0002 §156).
       base.db.execute(
         "INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, subtotal, "
         "total, fecha_dispositivo, fecha_operativa, estado, creado_en) "
@@ -253,8 +256,8 @@ void main() {
     // La que falta sigue con su número, en el color de la marca.
     expect(find.byKey(const Key('visitado_c2')), findsNothing);
     expect(find.text('2'), findsOneWidget);
-    expect(find.byKey(const Key('vendida_c3')), findsNothing);
-    expect(find.byKey(const Key('sin_venta_c3')), findsOneWidget);
+    expect(find.byKey(const Key('visitado_c3')), findsNothing);
+    expect(find.text('3'), findsOneWidget);
   });
 
   testWidgets('sin plan en ningún cliente, la lista es la de siempre', (tester) async {

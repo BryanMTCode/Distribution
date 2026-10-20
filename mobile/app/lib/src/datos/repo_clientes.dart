@@ -66,7 +66,8 @@ class ClienteEnRuta {
 
   /// Si hoy ya hay un papel suyo en este teléfono: venta, no-drop o devolución.
   /// Es la misma definición de «visita» que usa Efectividad en el servidor para
-  /// contar lo que tocaba y nadie hizo.
+  /// contar lo que tocaba y nadie hizo, salvo la venta cancelada: esa no cuenta,
+  /// y la tienda vuelve a la lista por visitar (ADR 0002 §156).
   final bool visitadoHoy;
 
   /// Si hoy ya le vendió: una venta confirmada de hoy. En la lista va de otro
@@ -107,8 +108,12 @@ class RepoClientes {
              c.ubicacion_origen,
              c.es_local,
              c.plan_visita,
+             -- La venta cancelada no cuenta: la tienda vuelve a quedar por
+             -- visitar, con su número, como si no se le hubiera vendido
+             -- (ADR 0002 §156).
              (EXISTS (SELECT 1 FROM ventas v
-                       WHERE v.cliente_id = c.id AND v.fecha_operativa = ?4)
+                       WHERE v.cliente_id = c.id AND v.fecha_operativa = ?4
+                         AND v.estado <> 'cancelada')
               OR EXISTS (SELECT 1 FROM no_drops n
                           WHERE n.cliente_id = c.id AND n.fecha_operativa = ?4)
               OR EXISTS (SELECT 1 FROM mermas m

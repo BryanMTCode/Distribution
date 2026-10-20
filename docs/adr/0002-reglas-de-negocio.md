@@ -6743,3 +6743,22 @@ mandé».
   guardados (§ del ticket), así que las ventas de antes salen sin logo.
 - El corte, la solicitud y la carga son papeles de la casa y siguen sin
   encabezado.
+
+## 156. La venta cancelada devuelve la tienda a la lista, con su número
+
+**Decisión (octubre 2026).** «Si se cancela una venta de cierto vendedor y cierta
+tienda, entonces que vuelva a aparecer en la lista con el número, como si aún no
+se le vendiera nada.»
+
+- **En el teléfono del vendedor**, una tienda cuenta como visitada hoy si tiene
+  un papel suyo: una venta, un no-drop o una devolución. La venta cancelada ya
+  no cuenta. Si la cancelación es lo único que tiene, la tienda vuelve:
+  · roja con su número (§153);
+  · a contar como pendiente en «Visitados N de M»;
+  · al color de «le toca hoy» en el mapa.
+  Da igual quién la canceló: la cancelación de la oficina llega al teléfono al
+  sincronizar y la marca igual.
+- Si además tiene un no-drop o una devolución, sigue como visitada sin venta
+  (gris).
+- **En «Su ruta» del gerente** ya era así: el servidor solo cuenta las ventas
+  confirmadas.
