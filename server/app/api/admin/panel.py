@@ -572,7 +572,7 @@ EXPLICACION_MOTIVOS = {
     "precio_desactualizado": "Vendió con un precio que ya cambió",
     "sin_lista_de_precios": "No trae lista de precios",
     "fuera_de_geocerca": "Lejos del domicilio registrado",
-    "sin_ubicacion": "Sin GPS al vender",
+    "sin_ubicacion": "Sin GPS",
     "reloj_desfasado": "El reloj del equipo está desfasado",
 }
 

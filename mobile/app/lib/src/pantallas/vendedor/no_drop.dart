@@ -13,16 +13,18 @@
 /// cuántas del cliente.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// EXIGE GPS, Y NO HAY VUELTA
+/// SIN GPS TAMBIÉN SE REGISTRA (ADR 0002 §158)
 /// ─────────────────────────────────────────────────────────────────────────
-/// Es el único documento del sistema que no se puede registrar sin ubicación, y
-/// el único que el servidor rechaza por eso. La razón es que **no hay hecho que
-/// preservar**: lo único que afirma es "estuve ahí y no compró", y sin
-/// coordenadas es indistinguible de "no fui".
+/// Hasta la +51 era el único documento que no se podía guardar sin ubicación:
+/// sin coordenadas, "estuve ahí y no compró" no se distingue de "no fui". Pero
+/// el vendedor trabaja sin señal y muchas veces bajo techo, donde el GPS no lee,
+/// y con el botón apagado no podía cerrar al cliente: la tienda se le quedaba
+/// pendiente en la lista.
 ///
-/// Por eso la pantalla pide el GPS al abrir y no muestra el botón hasta tenerlo.
-/// Lo que sí hace es explicar en lenguaje accionable qué falló —permiso, GPS
-/// apagado, satélite sin respuesta— porque cada uno se resuelve distinto.
+/// Ahora la pantalla pide el GPS al abrir y, si llega, la visita va con él; si
+/// no, se registra igual y la oficina la ve marcada «Sin GPS». Sigue explicando
+/// en lenguaje accionable qué falló —permiso, GPS apagado, satélite sin
+/// respuesta— por si el vendedor lo puede arreglar en el momento.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
 /// EL MOTIVO ES CATÁLOGO CERRADO
@@ -67,10 +69,13 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
   void initState() {
     super.initState();
     // Se pide al abrir: el satélite tarda, y pedirlo al tocar "registrar" dejaría
-    // al vendedor esperando con el cliente enfrente.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => ref.read(ubicacionProvider.notifier).leer(),
-    );
+    // al vendedor esperando con el cliente enfrente. Antes se olvida la lectura
+    // de la tienda anterior: si el GPS no lee aquí, esta visita va sin GPS, no
+    // con el punto de otra.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final gps = ref.read(ubicacionProvider.notifier)..empezarDeCero();
+      gps.leer();
+    });
   }
 
   @override
@@ -306,11 +311,9 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
           const SizedBox(height: 24),
           FilledButton(
             key: const Key('registrar_no_drop'),
-            // Sin ubicación el botón no se habilita: el servidor lo rechazaría y
-            // el vendedor se quedaría sin saber por qué. Mejor decirlo antes.
-            onPressed: estado is NoDropEnCurso || !tieneUbicacion
-                ? null
-                : () => _registrar(motivos),
+            // Con GPS o sin él (ADR 0002 §158): el vendedor tiene que poder
+            // cerrar al cliente aunque el satélite no lea.
+            onPressed: estado is NoDropEnCurso ? null : () => _registrar(motivos),
             child: estado is NoDropEnCurso
                 ? const SizedBox(
                     height: 20,
@@ -322,8 +325,12 @@ class _EstadoNoDropPantalla extends ConsumerState<PantallaNoDrop> {
           if (!tieneUbicacion) ...[
             const SizedBox(height: 8),
             Text(
-              'Sin ubicación esta visita no se distingue de una que nunca se '
-              'hizo, y por eso no se puede guardar.',
+              ubicacion.leyendo
+                  ? 'Si el GPS no llega, regístrala igual: se guarda sin '
+                      'ubicación y la oficina la ve marcada «Sin GPS».'
+                  : 'Sin GPS también se guarda: la oficina la ve marcada '
+                      '«Sin GPS».',
+              key: const Key('aviso_sin_gps_no_drop'),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -450,6 +457,14 @@ class _NoDropGuardadoVista extends StatelessWidget {
               'si nunca hubieras venido.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (noDrop.ubicacion == null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Se guardó sin GPS: la oficina la ve marcada «Sin GPS».',
+                key: const Key('guardado_sin_gps'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (noDrop.reprogramadaPara != null) ...[
               const SizedBox(height: 12),
               Text(

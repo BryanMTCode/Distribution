@@ -99,6 +99,61 @@ void main() {
     expect(fila['delta'], isNull);
   });
 
+  test('UNA BASE VIEJA DEJA DE EXIGIR GPS EN EL NO-DROP (§158)', () {
+    // SQLite no deja quitar un NOT NULL con un ALTER: la tabla se rehace. Se
+    // finge la vieja con el esquema de hoy y las dos columnas obligatorias, como
+    // estaban hasta la +51, y con un no-drop de antes que no se puede perder.
+    aplicarEsquemaLocal(db);
+    final hoy = RegExp(r'CREATE TABLE IF NOT EXISTS no_drops \([\s\S]*?\n\);')
+        .firstMatch(esquemaLocal)!
+        .group(0)!;
+    final vieja = hoy
+        .replaceFirst(RegExp(r'lat( +)REAL,'), r'lat REAL NOT NULL,')
+        .replaceFirst(RegExp(r'lng( +)REAL,'), r'lng REAL NOT NULL,');
+    expect(vieja, isNot(equals(hoy)));
+    db.execute('DROP TABLE no_drops');
+    db.execute(vieja);
+    db.execute(
+      "INSERT INTO clientes (id, nombre_comercial) VALUES ('cli-1', 'La Esquina')",
+    );
+    db.execute(
+      "INSERT INTO motivos_no_drop (codigo, nombre, categoria, requiere_nota) "
+      "VALUES ('CERRADO', 'Cerrado', 'cliente', 0)",
+    );
+    db.execute(
+      "INSERT INTO no_drops (id, folio_consecutivo, cliente_id, motivo_codigo, lat, "
+      "lng, fecha_dispositivo, fecha_operativa) "
+      "VALUES ('nd-1', 1, 'cli-1', 'CERRADO', 23.2, -106.4, 'x', '2026-10-19')",
+    );
+    bool exige(String columna) => db
+        .select('PRAGMA table_info(no_drops)')
+        .any((f) => f['name'] == columna && f['notnull'] == 1);
+    expect(exige('lat'), isTrue);
+
+    aplicarEsquemaLocal(db);
+
+    expect(exige('lat'), isFalse, reason: 'sin GPS el vendedor no cerraría al cliente');
+    expect(exige('lng'), isFalse);
+    final fila = db.select('SELECT * FROM no_drops').single;
+    expect(fila['id'], equals('nd-1'), reason: 'no se pierde la fila');
+    expect(fila['lat'], equals(23.2));
+    expect(fila['ubicacion_origen'], equals('gps'));
+    expect(
+      db.select("SELECT name FROM sqlite_master WHERE name LIKE 'no_drops%'"),
+      hasLength(1),
+      reason: 'no queda la tabla de paso',
+    );
+    expect(db.select('PRAGMA foreign_keys').single.values.first, equals(1));
+
+    // Y ya se puede registrar sin ubicación.
+    db.execute(
+      "INSERT INTO no_drops (id, folio_consecutivo, cliente_id, motivo_codigo, "
+      "fecha_dispositivo, fecha_operativa) "
+      "VALUES ('nd-2', 2, 'cli-1', 'CERRADO', 'x', '2026-10-20')",
+    );
+    expect(db.select('SELECT * FROM no_drops'), hasLength(2));
+  });
+
   test('aplicarlo dos veces no truena', () {
     // Es lo que pasa en cada arranque de la app.
     aplicarEsquemaLocal(db);

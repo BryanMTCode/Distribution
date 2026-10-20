@@ -25,9 +25,9 @@ Cuatro cosas que se rompen con consecuencias de campo:
 3. **La falta de existencia se marca, no se rechaza** (§0.1). Si el camión dice 2
    y se rompieron 3, el que está mal es el conteo: rechazar la merma convierte la
    pérdida en faltante del vendedor, que es justo lo que el documento evita.
-4. **El no-drop sin GPS sí se rechaza**, y es la única excepción del sistema a
-   «marcar, no rechazar»: sin el sello de ubicación no queda ningún hecho que
-   preservar, y guardarlo metería una visita no verificable a cada reporte.
+4. **El no-drop sin GPS entra marcado**, como la venta sin GPS (ADR 0002 §158):
+   en la calle el GPS no siempre lee, y el vendedor tiene que poder cerrar al
+   cliente. La oficina lo ve en revisión con «Sin GPS».
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from app.infra.sync.manejadores import (
     MOTIVO_MOTIVO_INACTIVO,
     MOTIVO_NO_DROP_SIN_NOTA,
     MOTIVO_SIN_EXISTENCIA_PARA_MERMA,
+    MOTIVO_SIN_GEOSELLO,
     Contexto,
     ErrorDeManejador,
     obtener_manejador,
@@ -577,23 +578,45 @@ async def test_el_no_drop_con_su_nota_entra_limpio(sesion, semilla, escenario):
 
 
 # ---------------------------------------------------------------------------
-# La única excepción: el no-drop sin GPS
+# El no-drop sin GPS: entra marcado (ADR 0002 §158)
 # ---------------------------------------------------------------------------
 
 
-async def test_el_no_drop_sin_ubicacion_se_rechaza(sesion, semilla, escenario):
-    """Sin coordenadas, el documento no afirma nada verificable.
+async def test_el_no_drop_sin_ubicacion_entra_marcado(sesion, semilla, escenario):
+    """«Quiero que cuando no les compran puedan cerrar al cliente sin GPS.»
 
-    Es la única excepción a «marcar, no rechazar» de todo el sistema, y no pierde
-    el dato: el rechazo manda el sobre completo a cuarentena.
+    Antes era la única excepción a «marcar, no rechazar»; ahora entra como la
+    venta sin GPS, y la oficina lo ve en revisión. Una coordenada sola no sirve:
+    se guarda sin ninguna de las dos.
     """
     datos = _no_drop(escenario)
     datos.pop("lat")
+    datos.pop("lng")
+    datos.pop("ubicacion_precision_m", None)
+    no_drop_id = await _aplicar(sesion, escenario, semilla, "no_drop.crear", datos)
+    await sesion.commit()
 
-    with pytest.raises(ErrorDeManejador) as error:
-        await _aplicar(sesion, escenario, semilla, "no_drop.crear", datos)
-    assert error.value.codigo is CodigoError.CONFLICTO_DE_DATOS
-    assert "visita" in str(error.value).lower()
+    fila = (
+        await sesion.execute(
+            text("SELECT lat, lng, ubicacion, requiere_revision, revision_motivos "
+                 "  FROM no_drops WHERE id = :n"),
+            {"n": no_drop_id},
+        )
+    ).mappings().one()
+    assert (fila["lat"], fila["lng"], fila["ubicacion"]) == (None, None, None)
+    assert fila["requiere_revision"] is True
+    assert MOTIVO_SIN_GEOSELLO in fila["revision_motivos"]
+
+    # Con una sola coordenada, igual: sin ubicación y marcado.
+    media = _no_drop(escenario)
+    media["folio_consecutivo"] = 2
+    media.pop("lng")
+    otro = await _aplicar(sesion, escenario, semilla, "no_drop.crear", media)
+    await sesion.commit()
+    lat = (
+        await sesion.execute(text("SELECT lat FROM no_drops WHERE id = :n"), {"n": otro})
+    ).scalar_one()
+    assert lat is None
 
 
 async def test_el_no_drop_guarda_su_geosello(sesion, semilla, escenario):

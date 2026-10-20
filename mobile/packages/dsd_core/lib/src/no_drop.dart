@@ -26,16 +26,15 @@
 /// excusa en blanco.
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// EXIGE UBICACIÓN, Y ESO ES DELIBERADO
+/// SIN GPS TAMBIÉN SE REGISTRA (ADR 0002 §158)
 /// ─────────────────────────────────────────────────────────────────────────
-/// `no_drops.lat` y `lng` son NOT NULL en el esquema local. La razón está escrita
-/// ahí: **un no-drop sin GPS es indistinguible de una visita que nunca se hizo.**
-/// Es el único documento del sistema que exige ubicación, porque es el único cuyo
-/// valor entero depende de haber estado ahí.
+/// Antes era el único documento que exigía ubicación: sin ella, «estuve ahí y no
+/// compró» no se distingue de «no fui». Pero el vendedor trabaja sin señal y
+/// muchas veces bajo techo —dentro del mercado—, donde el GPS no lee, y exigirlo
+/// lo dejaba sin poder cerrar al cliente: la tienda seguía pendiente en su lista.
 ///
-/// Cuando el satélite no aparece, el camino no es registrarlo sin ubicación: es
-/// ajustar el punto a mano (`ubicacion_origen = 'manual'`), igual que en el alta
-/// de cliente. Queda marcado como ajustado y la oficina puede juzgarlo.
+/// Ahora se registra igual, como la venta: va con la ubicación si la hay, y sin
+/// ella el servidor lo marca «Sin GPS» para que la oficina lo vea en revisión.
 library;
 
 import 'package:sqlite3/sqlite3.dart';
@@ -75,7 +74,8 @@ enum MotivoNoNoDrop {
   /// Este motivo exige nota y llegó vacía.
   faltaNota('falta_nota'),
 
-  /// Sin ubicación no se distingue de una visita que nunca se hizo.
+  /// Ya no se usa: desde la +52 el no-drop sin GPS se registra igual (ADR 0002
+  /// §158). Se queda para no romper a quien todavía lo nombre.
   faltaUbicacion('falta_ubicacion'),
 
   sinRangoDeFolios('sin_rango_de_folios'),
@@ -122,7 +122,9 @@ class NoDropGuardado {
   final String clienteId;
   final String motivoCodigo;
   final String? nota;
-  final Ubicacion ubicacion;
+
+  /// Nula si el GPS no leyó: se registró igual (ADR 0002 §158).
+  final Ubicacion? ubicacion;
   final String fechaDispositivo;
   final String fechaOperativa;
   final int foliosRestantes;
@@ -204,14 +206,9 @@ class RegistroDeNoDrop {
       );
     }
 
-    // La ubicación es obligatoria y el esquema lo impone. Se valida aquí para dar
-    // un mensaje que el vendedor pueda accionar en vez de un error de NOT NULL.
-    if (ubicacion == null) {
-      throw const NoDropRechazado(
-        MotivoNoNoDrop.faltaUbicacion,
-        'sin ubicación no se distingue de una visita que nunca se hizo',
-      );
-    }
+    // Sin GPS también se registra (ADR 0002 §158): en la calle el GPS no siempre
+    // lee —bajo techo, dentro del mercado— y el vendedor tiene que poder cerrar
+    // al cliente. El servidor lo marca «Sin GPS» para que la oficina lo vea.
 
     final rango = _folios.leer('no_drop');
     if (rango == null) {
@@ -268,7 +265,7 @@ class RegistroDeNoDrop {
             'fecha_dispositivo': momento,
             'fecha_operativa': fechaOperativa,
             if (reprogramadaPara != null) 'reprogramada_para': reprogramadaPara,
-            ...ubicacion.aPayload(),
+            ...?ubicacion?.aPayload(),
           },
         ),
       ],
@@ -294,10 +291,10 @@ class RegistroDeNoDrop {
             clienteId,
             motivoCodigo,
             limpia.isEmpty ? null : limpia,
-            ubicacion.lat,
-            ubicacion.lng,
-            ubicacion.precisionMetros,
-            ubicacion.origen.codigo,
+            ubicacion?.lat,
+            ubicacion?.lng,
+            ubicacion?.precisionMetros,
+            ubicacion?.origen.codigo ?? 'gps',
             momento,
             fechaOperativa,
             reprogramadaPara,

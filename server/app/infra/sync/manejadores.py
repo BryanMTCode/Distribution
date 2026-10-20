@@ -1022,9 +1022,8 @@ async def crear_no_drop(
     diferencia entre un día de 20 visitas con 12 ventas y uno de 12 visitas con 12
     ventas, que desde la oficina son indistinguibles sin esto.
 
-    Es el único documento del sistema que **rechaza** por falta de ubicación en vez
-    de marcarla, y la razón está escrita donde se hace la validación: sin el sello
-    de GPS no queda ningún hecho que preservar.
+    Sin ubicación entra igual, marcado `sin_ubicacion` (ADR 0002 §158): en la
+    calle el GPS no siempre lee, y el vendedor tiene que poder cerrar al cliente.
     """
     ya = await sesion.execute(
         text("SELECT 1 FROM no_drops WHERE id = :id"), {"id": entidad_id}
@@ -1072,24 +1071,15 @@ async def crear_no_drop(
     nota = _texto(datos, "nota")
 
     if lat is None or lng is None:
-        # LA ÚNICA EXCEPCIÓN A «MARCAR, NO RECHAZAR» (§0.1).
+        # Marcar, no rechazar (§0.1), como la venta sin GPS (ADR 0002 §158).
         #
-        # En todo lo demás el servidor acepta y marca, porque el hecho físico ya
-        # ocurrió y negarlo no lo deshace. Un no-drop sin ubicación es distinto:
-        # NO HAY HECHO QUE PRESERVAR. Lo único que afirma el documento es "estuve
-        # ahí y no compró", y sin coordenadas es indistinguible de "no fui".
-        # Guardarlo marcado metería una visita no verificable a cada reporte de
-        # efectividad; `no_drops.lat` es NOT NULL en las dos bases por esto.
-        #
-        # Y no se pierde: el rechazo manda el SOBRE COMPLETO a cuarentena, donde
-        # la oficina lo ve con su payload intacto y decide. El dispositivo ni lo
-        # produce —el registro local exige `Ubicacion`— así que llegar aquí sin
-        # ella significa un cliente viejo o alterado, justo lo que la cuarentena
-        # existe para atrapar.
-        raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS,
-            "un no-drop sin ubicación no se distingue de una visita que no se hizo",
-        )
+        # Antes era la única excepción: sin coordenadas, «estuve ahí y no compró»
+        # no se distingue de «no fui». Pero en la calle el GPS no siempre lee
+        # —bajo techo, dentro del mercado— y rechazarlo dejaba al vendedor sin
+        # poder cerrar al cliente: la tienda seguía pendiente en su lista. Entra,
+        # y la oficina ve en revisión que vino sin GPS.
+        lat = lng = None
+        motivos.append(MOTIVO_SIN_GEOSELLO)
 
     if motivo["requiere_nota"] and not nota:
         # Se marca y entra: el dato de que el cliente no compró vale aunque la

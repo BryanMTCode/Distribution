@@ -77,7 +77,7 @@ la bodega sube cuando alguien la cuenta.
 | **Inventario y libro mayor** por almacén, con su saldo corriente | ✅ 13 pruebas |
 | Transmisión Bluetooth (solo el socket: los bytes ya están) | ⛔ espera la impresora física |
 | **Mermas y devoluciones** — el signo que evita que el faltante sea del vendedor | ✅ 44 pruebas + 32 de ingesta |
-| **No-drops con geosello** — la única excepción a «marcar, no rechazar» | ✅ 19 pruebas de widget |
+| **No-drops con geosello o sin él** — sin GPS también se cierra al cliente, y la oficina lo ve «sin GPS» (§158) | ✅ 24 pruebas de widget |
 | Los catálogos de motivos llegan al teléfono (y se pueden desactivar) | ✅ en el contrato de deltas |
 | **Transferencias por confirmar** — la oficina las busca en el banco para cuadrar el dinero; la que no llegó, con motivo | ✅ 9 pruebas |
 | **Cierre del vendedor** (§82) — corte a ciegas y solicitud de carga sin señal, el gerente acepta (cierra el corte y confirma la carga de mañana), tickets por WhatsApp | ✅ 18 pruebas + 16 de Dart y 4 de widget |
@@ -144,6 +144,7 @@ la bodega sube cuando alguien la cuenta.
 | **El ticket con el logo, el domicilio del local y el RFC**: el parche en blanco y negro con `GS v 0`, que el margen de la EC-MP200 no rompe; también en la página de prueba (§155) | ✅ 6 de Dart |
 | **La venta cancelada devuelve la tienda a la lista**, roja con su número, como si no se le hubiera vendido (§156) | ✅ 1 de widget |
 | **Los arreglos de la revisión** (§157): carga «para hoy», corte de madrugada, Efectividad sin canceladas, «Sin cortar» como su corte, Mayoreo solo en efectivo y en los totales, aviso de la hora del teléfono, cantidades sin «.000», todo por día sin «esta semana», tocar un camión no abre su corte (y se puede descartar), y en Cortes solo lo que ya toca cortar | ✅ 7 pruebas del servidor, 9 de Dart, 5 de widget |
+| **«No me compró» sin GPS** (§158): se registra marcado, el teléfono viejo deja de exigirlo al arrancar, y el punto de la tienda anterior ya no se cuela | ✅ 2 pruebas del servidor, 2 de Dart, 3 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -167,7 +168,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1535 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **700 de Dart** y **369 de widget**, todas en verde.
+**1536 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **701 de Dart** y **371 de widget**, todas en verde.
 
 ## Stack
 

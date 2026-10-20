@@ -461,25 +461,28 @@ void main() {
       expect(folios.leer('no_drop')!.consumidoHasta, equals(1));
     });
 
-    test('SIN UBICACIÓN NO SE REGISTRA', () {
-      // Es el único documento que la exige, y la razón está en el esquema: sin
-      // ella es indistinguible de una visita que nunca se hizo.
-      expect(
-        () => registroDeNoDrop().registrar(
-          clienteId: 'cli-1',
-          motivoCodigo: 'CERRADO',
-          ubicacion: null,
-        ),
-        throwsA(
-          isA<NoDropRechazado>().having(
-            (e) => e.motivo,
-            'motivo',
-            MotivoNoNoDrop.faltaUbicacion,
-          ),
-        ),
+    test('sin GPS también se registra, sin ubicación en el sobre (ADR 0002 §158)', () {
+      // En la calle el GPS no siempre lee —bajo techo, dentro del mercado— y el
+      // vendedor tiene que poder cerrar al cliente. El servidor lo marca «Sin GPS».
+      final n = registroDeNoDrop().registrar(
+        clienteId: 'cli-1',
+        motivoCodigo: 'CERRADO',
+        ubicacion: null,
       );
-      expect(db.select('SELECT * FROM no_drops'), isEmpty);
-      expect(folios.leer('no_drop')!.consumidoHasta, equals(0));
+
+      expect(n.ubicacion, isNull);
+      final fila = db.select('SELECT * FROM no_drops').single;
+      expect(fila['cliente_id'], equals('cli-1'));
+      expect(fila['lat'], isNull);
+      expect(fila['lng'], isNull);
+      expect(fila['ubicacion_precision_m'], isNull);
+      expect(folios.leer('no_drop')!.consumidoHasta, equals(1));
+
+      final datos = ((outbox.siguienteLote().single.payload['operaciones']! as List)
+              .single as Map)['datos']! as Map;
+      expect(datos.containsKey('lat'), isFalse);
+      expect(datos.containsKey('lng'), isFalse);
+      expect(datos['motivo_codigo'], equals('CERRADO'));
     });
 
     test('«ven mañana»: la visita se reprograma en el sobre y en la base', () {

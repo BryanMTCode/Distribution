@@ -986,7 +986,11 @@ conteo está mal.
 La pantalla muestra lo que el camión dice que trae —sirve para notar un dedazo— y
 deja capturar más.
 
-### La única excepción a «marcar, no rechazar» de todo el sistema
+### La excepción que hubo a «marcar, no rechazar» (superada por el §158)
+
+> **Desde la +52 ya no es así:** el no-drop sin GPS se registra y el servidor lo
+> marca `sin_ubicacion`, como la venta. Lo que sigue es por qué se había decidido
+> lo contrario; el §158 dice por qué se cambió.
 
 El §0.1 dice que el servidor acepta y marca, porque el hecho físico ya ocurrió y
 negarlo no lo deshace. Un no-drop sin ubicación es el único caso distinto: **no hay
@@ -6827,3 +6831,48 @@ todas. En mayoreo va solo efectivo.» Mientras tanto llegaron:
     Cargas.
 
 (versionCode 51)
+
+## 158. El no-drop sin GPS: el vendedor cierra al cliente igual
+
+**Decisión (octubre 2026).** «Quiero que cuando no les compran puedan cerrar al
+cliente sin GPS; recuerda que van a trabajar offline, o sea que checa eso en
+general.»
+
+Hasta la +51, «No me compró» era el único documento que no se podía guardar sin
+ubicación (la sección «La excepción que hubo a "marcar, no rechazar"»): sin
+coordenadas, «estuve ahí y no compró» no se distingue de «no fui». Pero el
+vendedor trabaja sin señal y muchas veces bajo techo —dentro del mercado—, donde
+el GPS no lee. Con el botón apagado no podía cerrar al cliente, y la tienda se le
+quedaba pendiente en la lista todo el día.
+
+- **El teléfono lo guarda sin ubicación.**
+  · La pantalla sigue pidiendo el GPS al abrir y, si llega, la visita va con él.
+  · Si no llega, «Registrar la visita» sigue habilitado y abajo dice «Sin GPS
+    también se guarda: la oficina la ve marcada "Sin GPS"».
+  · El sobre viaja sin `lat` ni `lng`.
+- **El servidor lo marca, no lo rechaza** (§0.1), como la venta sin GPS:
+  · `sin_ubicacion` en `revision_motivos`;
+  · `lat` y `lng` quedan nulos, las dos o ninguna: con una sola coordenada se
+    guarda sin ninguna (migración 0059, que también quita el `NOT NULL`).
+- **La oficina lo ve.**
+  · En los movimientos del vendedor y en Operaciones la visita dice «sin GPS».
+  · En el mapa del día no se dibuja: no tiene dónde.
+- **El teléfono que ya estaba instalado.** SQLite no deja quitar un `NOT NULL`
+  con un `ALTER`: al arrancar la +52 la tabla `no_drops` se rehace con los mismos
+  renglones —la nueva, copiar, borrar la vieja, renombrar—, una sola vez y dentro
+  de un savepoint.
+- **El punto de la tienda anterior ya no se cuela.** Al abrir «No me compró» o el
+  alta de tienda se olvida la lectura de antes. Antes, si el GPS no leía en esta
+  tienda, la pantalla decía «Ubicación lista» con el punto de la anterior, y la
+  visita (o la tienda nueva) se sellaba donde no era.
+
+**Lo demás ya funcionaba sin señal y sin GPS**, y se revisó:
+· la venta: espera el GPS 4 segundos y, si no llega, entra marcada;
+· el alta de tienda: se guarda sin coordenadas, o con las escritas a mano (§107);
+· la merma, la devolución y el cambio físico: no piden ubicación;
+· el corte y la solicitud de carga: se hacen sin señal y viajan por la cola;
+· el ticket: se imprime por Bluetooth, sin red;
+· el mapa: va dentro de la app (§130);
+· la entrada: con el PIN, sin red.
+
+(versionCode 52)

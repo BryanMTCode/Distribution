@@ -49,10 +49,12 @@ class _EstadoAlta extends ConsumerState<PantallaAltaCliente> {
   void initState() {
     super.initState();
     // Se pide el GPS al abrir: mientras el vendedor teclea el nombre, el
-    // satélite va fijando. Pedirlo al guardar lo haría esperar.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => ref.read(ubicacionProvider.notifier).leer(),
-    );
+    // satélite va fijando. Pedirlo al guardar lo haría esperar. Antes se olvida
+    // el punto de la tienda anterior, para que no se quede si el GPS no lee.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final gps = ref.read(ubicacionProvider.notifier)..empezarDeCero();
+      gps.leer();
+    });
   }
 
   @override

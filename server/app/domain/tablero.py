@@ -418,6 +418,8 @@ SELECT 'no_drop', n.lat, n.lng, NULL,
   JOIN usuarios u ON u.id = n.vendedor_id
   JOIN motivos_no_drop m ON m.codigo = n.motivo_codigo
  WHERE n.fecha_operativa = :fecha
+   -- El que vino sin GPS (ADR 0002 §158) no tiene dónde dibujarse.
+   AND n.lat IS NOT NULL AND n.lng IS NOT NULL
  ORDER BY momento
  LIMIT :limite
 """

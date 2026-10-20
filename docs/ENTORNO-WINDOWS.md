@@ -286,12 +286,12 @@ sin cliente la oficina no puede revisarla contra su venta. El signo es el contra
 la mercancía **entra** al camión y regresa a la bodega en la liquidación.
 
 **El no-drop** —la visita que no terminó en venta— está en el mismo menú, en «No me
-compró». Es el único documento del sistema que **exige GPS**, y el botón no se
-habilita sin lectura: sin coordenadas, «estuve ahí y no compró» es indistinguible de
-«no fui», y una visita no verificable en el reporte de efectividad es peor que
-ninguna. Si el satélite no aparece, la pantalla te dice qué falló y dónde se arregla
-—el permiso en los ajustes, el GPS apagado prendiéndolo, bajo techo saliendo a la
-calle— y hay un botón para volver a leer sin salir.
+compró». Desde la +52 **se registra aunque el GPS no lea** (ADR 0002 §158): bajo
+techo y sin señal el vendedor tiene que poder cerrar al cliente, y el servidor la
+marca «Sin GPS» para que la oficina la vea. Si el satélite no aparece, la pantalla te
+dice qué falló y dónde se arregla —el permiso en los ajustes, el GPS apagado
+prendiéndolo, bajo techo saliendo a la calle— y hay un botón para volver a leer sin
+salir.
 
 Algunos motivos **exigen explicación** (`requiere_nota` en el catálogo): «no le
 interesa el producto» sin decir por qué no sirve para nada. El motivo trae además su

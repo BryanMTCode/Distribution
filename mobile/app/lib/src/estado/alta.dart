@@ -75,6 +75,16 @@ class ControladorUbicacion extends Notifier<EstadoUbicacion> {
   @override
   EstadoUbicacion build() => const EstadoUbicacion();
 
+  /// Olvida la lectura de antes: el punto de otra tienda no sirve aquí.
+  ///
+  /// Lo llaman el alta y el no-drop al abrir, antes de leer. Sin esto, si el GPS
+  /// no respondía —bajo techo, dentro del mercado— la pantalla decía «Ubicación
+  /// lista» con el punto de la tienda anterior, y el documento se sellaba ahí.
+  void empezarDeCero() {
+    _original = null;
+    state = const EstadoUbicacion();
+  }
+
   Future<void> leer() async {
     state = state.copiarCon(leyendo: true);
     final lectura = await ref.read(servicioUbicacionProvider).leer();

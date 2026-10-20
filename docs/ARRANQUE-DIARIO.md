@@ -699,8 +699,8 @@ make movil         # 556 de Dart + 252 de widget
 
 # 2. Aplicación móvil en el teléfono
 
-Las pruebas que valen son en hardware. El emulador no tiene **GPS real** ni **Bluetooth**, y el no-drop
-exige ubicación: en emulador no se puede validar la pantalla que más importa de la Fase 6.
+Las pruebas que valen son en hardware. El emulador no tiene **GPS real** ni **Bluetooth**: en emulador no
+se puede validar cómo se ve el no-drop con y sin lectura de GPS, ni la impresora.
 
 ## 2.1 El puente USB: pasar el teléfono de Windows a Ubuntu
 
@@ -875,15 +875,16 @@ Vive ahí y no dentro de la visita a un cliente porque **la caja se revienta ent
 Tiene que ser desde el cliente: sin él, la oficina no puede revisarla contra su venta. Valida que el
 signo es el **contrario** — la mercancía **entra** al camión, la existencia **sube**.
 
-### No-drop con GPS — mismo menú, «No me compró»
+### No-drop, con GPS o sin él — mismo menú, «No me compró»
 
-**Es el único documento del sistema que exige ubicación.** Sin coordenadas, «estuve ahí y no compró» es
-indistinguible de «no fui».
+**Desde la +52 se registra aunque el GPS no lea** (ADR 0002 §158): el vendedor tiene que poder cerrar al
+cliente bajo techo y sin señal. El servidor lo marca «Sin GPS» para que la oficina lo vea.
 
 1. **La validación central:** entra con el **GPS apagado**. El botón **«Registrar la visita» debe estar
-   deshabilitado**, y la pantalla debe decir en qué se arregla: permiso, GPS apagado, o bajo techo.
-   Prueba los tres estados: niega el permiso, apaga la ubicación, y métete donde no haya señal.
-2. Prende el GPS, toca **«Leer GPS»** y espera el `±N m`. Ahí el botón se habilita.
+   habilitado**, abajo debe decir que se guarda sin GPS, y el recuadro del GPS debe decir en qué se
+   arregla: permiso, GPS apagado, o bajo techo. Regístrala: sale «Se guardó sin GPS». Al sincronizar,
+   en el panel la visita dice «sin GPS».
+2. En otra tienda, prende el GPS, toca **«Leer GPS»** y espera el `±N m`: esa visita va con ubicación.
 3. Escoge **«No traigo lo que pidió»**: exige nota. Intenta guardar sin escribirla — **no debe pasar**.
    Y debe avisar que **«lo podemos arreglar nosotros»** (categoría *producto*).
 4. Escoge **«Cerrado»**: no exige nota, y **no** debe decir que es nuestra culpa.

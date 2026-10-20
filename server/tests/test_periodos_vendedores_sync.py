@@ -215,6 +215,34 @@ async def test_la_linea_de_tiempo_junta_lo_que_estaba_en_ocho_pantallas(
 
 
 @pytest.mark.asyncio
+async def test_la_visita_sin_gps_se_ve_marcada(cliente, sesion, semilla):
+    """La visita sin venta registrada sin GPS (ADR 0002 §158) dice «sin GPS», en
+    los movimientos del vendedor y en Operaciones."""
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO no_drops (id, dispositivo_id, folio_consecutivo, cliente_id,
+                                  vendedor_id, motivo_codigo, fecha_dispositivo,
+                                  fecha_operativa, requiere_revision, revision_motivos)
+            VALUES (gen_random_uuid(), :d, 1, :c, :u, 'DUENO_AUSENTE', now(),
+                    CURRENT_DATE, true, ARRAY['sin_ubicacion'])
+            """
+        ),
+        {"d": dia["dispositivo"], "c": dia["cliente"], "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+
+    await _entrar(cliente)
+    texto = solo_texto(await cliente.get(f"/panel/vendedores/{semilla['vendedor']}"))
+    assert "Visita sin venta" in texto and "sin GPS" in texto
+    operaciones = solo_texto(
+        await cliente.get("/panel/operaciones?periodo=hoy&tipo=no_venta")
+    )
+    assert "sin GPS" in operaciones
+
+
+@pytest.mark.asyncio
 async def test_la_lista_de_vendedores_resume_el_periodo(cliente, sesion, semilla):
     await sembrar_dia_de_trabajo(sesion, semilla)
     await _entrar(cliente)

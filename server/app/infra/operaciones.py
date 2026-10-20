@@ -169,7 +169,9 @@ WITH ops AS (
     SELECT n.fecha_dispositivo, n.fecha_operativa, 'no_venta', n.id,
            n.folio_consecutivo::text, n.vendedor_id, c.nombre_comercial,
            COALESCE(md.nombre, n.motivo_codigo)
-             || COALESCE(' · ' || NULLIF(btrim(n.nota), ''), ''),
+             || COALESCE(' · ' || NULLIF(btrim(n.nota), ''), '')
+             -- La que se registró sin GPS (ADR 0002 §158).
+             || CASE WHEN n.lat IS NULL THEN ' · sin GPS' ELSE '' END,
            NULL, 'confirmada', '/panel/clientes/' || n.cliente_id
       FROM no_drops n
       LEFT JOIN clientes c ON c.id = n.cliente_id

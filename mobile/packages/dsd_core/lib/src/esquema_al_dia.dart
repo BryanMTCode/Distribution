@@ -109,6 +109,47 @@ void aplicarEsquemaLocal(Database db) {
       db.execute(alter);
     }
   }
+  _noDropSinGpsObligatorio(db);
+}
+
+/// El no-drop sin GPS (ADR 0002 §158): en un teléfono que ya estaba instalado,
+/// `no_drops.lat` y `lng` traen `NOT NULL`, y SQLite no deja quitarlo con un
+/// `ALTER`. Se rehace la tabla con el esquema de hoy y los mismos renglones, en el
+/// orden que recomienda SQLite —la nueva, copiar, borrar la vieja, renombrar—, y
+/// solo una vez: después la columna ya no es obligatoria.
+///
+/// Con las llaves foráneas apagadas mientras se copia, también como lo recomienda
+/// SQLite: un no-drop de hace meses que apunte a un motivo que ya no está en el
+/// catálogo haría fallar la copia, y el teléfono no arrancaría.
+void _noDropSinGpsObligatorio(Database db) {
+  final lat = db.select('PRAGMA table_info(no_drops)').where((f) => f['name'] == 'lat');
+  if (lat.isEmpty || lat.single['notnull'] != 1) return;
+
+  final crear = RegExp(r'CREATE TABLE IF NOT EXISTS no_drops \([\s\S]*?\n\);')
+      .firstMatch(esquemaLocal)!
+      .group(0)!
+      .replaceFirst('no_drops (', 'no_drops_sin_gps_obligatorio (');
+  final columnas = [
+    for (final f in db.select('PRAGMA table_info(no_drops)')) f['name'] as String,
+  ].join(', ');
+  final llaves = db.select('PRAGMA foreign_keys').single.values.first;
+  db.execute('PRAGMA foreign_keys = OFF');
+  db.execute('SAVEPOINT no_drop_sin_gps');
+  try {
+    db.execute(crear);
+    db.execute(
+      'INSERT INTO no_drops_sin_gps_obligatorio ($columnas) SELECT $columnas FROM no_drops',
+    );
+    db.execute('DROP TABLE no_drops');
+    db.execute('ALTER TABLE no_drops_sin_gps_obligatorio RENAME TO no_drops');
+    db.execute('RELEASE no_drop_sin_gps');
+  } catch (_) {
+    db.execute('ROLLBACK TO no_drop_sin_gps');
+    db.execute('RELEASE no_drop_sin_gps');
+    rethrow;
+  } finally {
+    db.execute('PRAGMA foreign_keys = ${llaves == 1 ? 'ON' : 'OFF'}');
+  }
 }
 
 bool _tieneColumna(Database db, String tabla, String columna) {

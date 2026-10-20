@@ -469,10 +469,11 @@ CREATE TABLE IF NOT EXISTS no_drops (
     cliente_id              TEXT NOT NULL REFERENCES clientes(id),
     motivo_codigo           TEXT NOT NULL REFERENCES motivos_no_drop(codigo),
     nota                    TEXT,
-    -- Obligatorio: un no-drop sin GPS es indistinguible de una visita que
-    -- nunca se hizo.
-    lat                     REAL NOT NULL,
-    lng                     REAL NOT NULL,
+    -- Sin GPS también se registra (ADR 0002 §158): en la calle el GPS no siempre
+    -- lee, y el vendedor tiene que poder cerrar al cliente. El servidor lo marca
+    -- «Sin GPS» para que la oficina lo vea. Las dos van juntas o ninguna.
+    lat                     REAL,
+    lng                     REAL,
     ubicacion_precision_m   REAL,
     ubicacion_origen        TEXT NOT NULL DEFAULT 'gps',
     fecha_dispositivo       TEXT NOT NULL,

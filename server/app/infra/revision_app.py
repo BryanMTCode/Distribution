@@ -280,6 +280,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+33",
             ),
             Punto(
+                "no_me_compro_sin_gps", "«No me compró» sin GPS",
+                "Apaga la ubicación del teléfono y pon el modo avión. En una tienda, menú ⋮ "
+                "→ «No me compró»: escoge el motivo y «Registrar la visita».",
+                "Se registra igual («Se guardó sin GPS») y la tienda sale de pendientes. "
+                "Al sincronizar, en el panel la visita dice «sin GPS» en los movimientos "
+                "del vendedor y en Operaciones (ADR 0002 §158).",
+                desde="+52",
+            ),
+            Punto(
                 "devolucion_cliente", "La tienda devuelve mercancía",
                 "En una tienda, menú ⋮ → «Me devolvió mercancía»: producto, motivo y "
                 "cuántas.",

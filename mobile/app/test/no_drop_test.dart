@@ -2,10 +2,11 @@
 ///
 /// Lo que defienden estas pruebas, y que no se ve probando solo el dominio:
 ///
-/// · Que **sin GPS no se pueda guardar**, y que la pantalla lo diga antes de que
-///   el vendedor toque el botón. Es el único documento del sistema que el
-///   servidor rechaza por falta de ubicación: sin coordenadas, "estuve ahí y no
-///   compró" es indistinguible de "no fui".
+/// · Que **sin GPS también se pueda cerrar al cliente** (ADR 0002 §158): en la
+///   calle el GPS no siempre lee, y con el botón apagado la tienda se quedaba
+///   pendiente en la lista. Se guarda sin ubicación y la pantalla dice que la
+///   oficina la verá marcada «Sin GPS». Y que no se cuele el punto de la tienda
+///   anterior cuando el GPS no lee en esta.
 /// · Que cada falla del GPS se explique **en lenguaje accionable**. El permiso se
 ///   da en los ajustes, el GPS apagado se prende y el satélite que no responde se
 ///   arregla saliendo del techado: un "no se pudo obtener la ubicación" no lleva a
@@ -39,6 +40,7 @@ final gpsBueno = GpsObtenido(
 Future<BaseLocal> irAlNoDrop(
   WidgetTester tester, {
   LecturaGps gps = const GpsSinLectura('el satélite no respondió a tiempo'),
+  List<LecturaGps>? lecturas,
   bool conMotivos = true,
   bool conFolios = true,
   int foliosHasta = 500,
@@ -62,7 +64,7 @@ Future<BaseLocal> irAlNoDrop(
     },
     extras: [
       servicioUbicacionProvider
-          .overrideWithValue(ServicioUbicacionFalso.siempre(gps)),
+          .overrideWithValue(ServicioUbicacionFalso(lecturas ?? [gps])),
     ],
   );
   await entrarCon(tester, pinCorrecto);
@@ -172,18 +174,59 @@ void main() {
     });
   });
 
-  group('sin GPS no hay visita', () {
-    testWidgets('el botón no se habilita y se explica por qué', (tester) async {
+  group('sin GPS también se cierra al cliente (ADR 0002 §158)', () {
+    testWidgets('el botón sigue habilitado y se dice que va marcado', (tester) async {
       await irAlNoDrop(tester);
 
       final boton = tester.widget<FilledButton>(
         find.byKey(const Key('registrar_no_drop')),
       );
-      expect(boton.onPressed, isNull);
-      expect(
-        find.textContaining('no se distingue de una que nunca se hizo'),
-        findsOneWidget,
+      expect(boton.onPressed, isNotNull);
+      expect(find.byKey(const Key('aviso_sin_gps_no_drop')), findsOneWidget);
+      expect(find.textContaining('marcada «Sin GPS»'), findsOneWidget);
+    });
+
+    testWidgets('la visita queda registrada sin ubicación y encolada', (tester) async {
+      final base = await irAlNoDrop(tester);
+      final db = BaseLocalDePrueba(base);
+
+      await escoger(tester, const Key('motivo_de_no_drop'), 'Cerrado');
+      await tocar(tester, const Key('registrar_no_drop'));
+
+      expect(db.contar('no_drops'), 1);
+      final fila = db.unaFila('SELECT * FROM no_drops');
+      expect(fila['cliente_id'], 'cliente-1');
+      expect(fila['lat'], isNull);
+      expect(fila['lng'], isNull);
+      final sobre = db.unaFila(
+        "SELECT estado, payload FROM outbox WHERE tipo = 'no_drop.crear'",
       );
+      expect(sobre['estado'], 'pendiente');
+      expect(sobre['payload'] as String, isNot(contains('"lat"')));
+      expect(find.byKey(const Key('guardado_sin_gps')), findsOneWidget);
+    });
+
+    testWidgets('el punto de la tienda anterior no se queda', (tester) async {
+      // La primera vez el GPS lee; la segunda, bajo techo, no. Antes la pantalla
+      // decía «Ubicación lista» con el punto de la primera, y la visita se
+      // sellaba donde no fue.
+      final base = await irAlNoDrop(
+        tester,
+        lecturas: [gpsBueno, const GpsSinLectura('el satélite no respondió')],
+      );
+      final db = BaseLocalDePrueba(base);
+      expect(find.textContaining('Ubicación lista'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tocar(tester, const Key('menu_de_visita'));
+      await tester.tap(find.text('No me compró'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Ubicación lista'), findsNothing);
+      await escoger(tester, const Key('motivo_de_no_drop'), 'Cerrado');
+      await tocar(tester, const Key('registrar_no_drop'));
+      expect(db.unaFila('SELECT lat FROM no_drops')['lat'], isNull);
     });
 
     testWidgets('el permiso negado se dice donde se resuelve', (tester) async {

@@ -86,7 +86,9 @@ WITH movimientos AS (
     SELECT n.fecha_dispositivo, n.fecha_operativa, 'no_venta', n.folio_consecutivo::text,
            c.nombre_comercial,
            'Visita sin venta · ' || COALESCE(md.nombre, n.motivo_codigo)
-             || COALESCE(' · ' || NULLIF(btrim(n.nota), ''), ''),
+             || COALESCE(' · ' || NULLIF(btrim(n.nota), ''), '')
+             -- La que se registró sin GPS (ADR 0002 §158).
+             || CASE WHEN n.lat IS NULL THEN ' · sin GPS' ELSE '' END,
            NULL, NULL, n.requiere_revision, '/panel/clientes/' || n.cliente_id, n.id::text
       FROM no_drops n
       LEFT JOIN clientes c ON c.id = n.cliente_id

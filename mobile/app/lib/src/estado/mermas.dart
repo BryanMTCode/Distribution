@@ -252,9 +252,10 @@ class NoDropFallido extends EstadoNoDrop {
         MotivoNoNoDrop.faltaNota =>
           'Este motivo necesita que escribas qué pasó: sin explicación el dato '
               'no sirve para nada.',
+        // Ya no sale: desde la +52 la visita sin GPS se registra igual (ADR
+        // 0002 §158).
         MotivoNoNoDrop.faltaUbicacion =>
-          'Falta la ubicación. Sin ella, esta visita no se distingue de una que '
-              'nunca se hizo: espera el GPS o ajusta el punto a mano.',
+          'Falta la ubicación. Vuelve a leer el GPS.',
         MotivoNoNoDrop.sinRangoDeFolios =>
           'Este equipo no tiene folios de visita. Sincroniza para que el '
               'servidor le asigne un rango.',
