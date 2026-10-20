@@ -129,3 +129,38 @@ async def test_la_app_las_pide_por_periodo(cliente, semilla, tres_dias):  # noqa
 
     todo = (await cliente.get("/v1/cargas", params={"periodo": "todo"}, headers=cab)).json()
     assert [c["folio"] for c in todo] == ["CA-000103", "CA-000102", "CA-000101", "CA-000100"]
+
+
+async def test_la_app_las_pide_por_el_dia_en_que_se_hicieron(cliente, sesion, semilla):
+    """«Si la hice el lunes en la noche, tiene que quedar el lunes, no el martes»
+    (ADR 0002 §151): la carga de la noche es para vender mañana —esa sigue siendo
+    su fecha, la de sus ventas y su corte—, pero se hizo hoy, y la app la ve hoy."""
+    lunes = date.today() - timedelta(days=1)
+    martes = date.today()
+    await _carga(sesion, semilla, folio="CA-000200", dia=martes, estado="confirmada",
+                 piezas=48)
+    # Se hizo el lunes (al mediodía en UTC: el lunes también en Mazatlán).
+    await sesion.execute(
+        text("UPDATE cargas SET creado_en = CAST(:t AS timestamptz) WHERE folio = 'CA-000200'"),
+        {"t": f"{lunes.isoformat()} 18:00:00+00"},
+    )
+    await sesion.commit()
+    cab = await _cab(cliente)
+
+    del_lunes = (
+        await cliente.get("/v1/cargas", params={"hechas_el": lunes.isoformat()}, headers=cab)
+    ).json()
+    assert [(c["folio"], c["hecha_el"], c["fecha_operativa"]) for c in del_lunes] == [
+        ("CA-000200", lunes.isoformat(), martes.isoformat())
+    ]
+    del_martes = (
+        await cliente.get("/v1/cargas", params={"hechas_el": martes.isoformat()}, headers=cab)
+    ).json()
+    assert del_martes == []
+    # Las abiertas y el detalle también lo dicen.
+    abiertas = (await cliente.get("/v1/cargas", headers=cab)).json()
+    assert abiertas[0]["hecha_el"] == lunes.isoformat()
+    detalle = (await cliente.get(f"/v1/cargas/{del_lunes[0]['id']}", headers=cab)).json()
+    assert (detalle["hecha_el"], detalle["fecha_operativa"]) == (
+        lunes.isoformat(), martes.isoformat()
+    )

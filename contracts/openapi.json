@@ -1341,7 +1341,7 @@
           "cargas"
         ],
         "summary": "Abiertas",
-        "description": "Las que siguen vivas: en captura, o cargadas y sin liquidar.\n\nLas de días pasados también, mientras no se liquiden: son justo las que\nbloquean la carga de hoy, y quien la intenta tiene que poder verlas.\n\nCon `periodo` —el mismo del tablero: `hoy`, `semana`, `todo`… o `rango` con\n`desde` y `hasta`— son en cambio **las de esas fechas**, en cualquier estado\n(las canceladas, la app las pone aparte): «para ver qué cargas se hicieron»\n(ADR 0002 §102).",
+        "description": "Las que siguen vivas: en captura, o cargadas y sin liquidar.\n\nLas de días pasados también, mientras no se liquiden: son justo las que\nbloquean la carga de hoy, y quien la intenta tiene que poder verlas.\n\nCon `periodo` —el mismo del tablero: `hoy`, `semana`, `todo`… o `rango` con\n`desde` y `hasta`— son en cambio **las de esas fechas**, en cualquier estado\n(las canceladas, la app las pone aparte): «para ver qué cargas se hicieron»\n(ADR 0002 §102).\n\nCon `hechas_el`, las que se hicieron ese día, en cualquier estado: la app las\nve día por día por el día en que se hicieron (ADR 0002 §151).",
         "operationId": "abiertas_v1_cargas_get",
         "security": [
           {
@@ -1377,6 +1377,23 @@
               "type": "string",
               "default": "",
               "title": "Hasta"
+            }
+          },
+          {
+            "name": "hechas_el",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hechas El"
             }
           }
         ],
@@ -1732,7 +1749,7 @@
           "cortes"
         ],
         "summary": "Lista",
-        "description": "Lo que falta cortar —de cualquier día: es trabajo pendiente— y los cortes.\nCon `dia`, los cortes de ese día; sin él, los últimos cien (ADR 0002 §149).",
+        "description": "Lo que falta cortar —de cualquier día: es trabajo pendiente— y los cortes.\nCon `dia`, los cortes que se hicieron ese día; sin él, los últimos cien\n(ADR 0002 §149, §151).",
         "operationId": "lista_v1_cortes_get",
         "security": [
           {
@@ -4442,6 +4459,11 @@
             "format": "date",
             "title": "Fecha Operativa"
           },
+          "hecha_el": {
+            "type": "string",
+            "format": "date",
+            "title": "Hecha El"
+          },
           "vendedor": {
             "type": "string",
             "title": "Vendedor"
@@ -4497,6 +4519,7 @@
           "folio",
           "estado",
           "fecha_operativa",
+          "hecha_el",
           "vendedor",
           "camion",
           "bodega",
@@ -4578,6 +4601,11 @@
             "format": "date",
             "title": "Fecha Operativa"
           },
+          "hecha_el": {
+            "type": "string",
+            "format": "date",
+            "title": "Hecha El"
+          },
           "vendedor": {
             "type": "string",
             "title": "Vendedor"
@@ -4602,6 +4630,7 @@
           "folio",
           "estado",
           "fecha_operativa",
+          "hecha_el",
           "vendedor",
           "camion",
           "renglones",
@@ -5645,6 +5674,11 @@
             "format": "date",
             "title": "Fecha Operativa"
           },
+          "hecho_el": {
+            "type": "string",
+            "format": "date",
+            "title": "Hecho El"
+          },
           "vendedor": {
             "type": "string",
             "title": "Vendedor"
@@ -5691,6 +5725,7 @@
           "folio",
           "estado",
           "fecha_operativa",
+          "hecho_el",
           "vendedor",
           "carga",
           "efectivo_esperado",

@@ -402,23 +402,20 @@ void main() {
       await _montarGerente(tester, servidor, compartidor);
       await abrirPestana(tester, const Key('pestana_cargas'));
 
-      // Por día (§149): hoy, la del corte; la aceptada es de mañana.
+      // Por día (§149), el día en que se hizo (§151): la aceptada se hizo hoy,
+      // para vender mañana; la de hoy se hizo ayer.
       expect(find.byKey(const Key('dia_de_cargas_2026-09-24')), findsOneWidget);
-      expect(find.byKey(const Key('carga_CG-000012')), findsOneWidget);
-      expect(find.byKey(const Key('carga_CG-000013')), findsNothing);
-      await tester.tap(find.byKey(const Key('sin_cerrar_2026-09-25')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('dia_de_cargas_2026-09-25')), findsOneWidget);
+      expect(servidor.cargasPedidas.last, {'hechas_el': '2026-09-24'});
+      expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
+      expect(find.byKey(const Key('carga_CG-000012')), findsNothing);
+      expect(textoQueContiene('para vender el viernes 25 de septiembre'), findsOneWidget);
       // La aceptada no se repite en «Resueltas esta semana»: va en su carga.
       expect(find.byKey(const Key('carga_pedida_reciente_$_aceptada')), findsNothing);
-      expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
       expect(find.text('Carga CG-000013'), findsNothing);
       expect(textoQueContiene('la pidió el vendedor'), findsOneWidget);
       // La rechazada no tiene carga: esa sí queda arriba.
       expect(find.byKey(const Key('carga_pedida_reciente_$_rechazada')), findsOneWidget);
       expect(textoQueContiene('Rechazada: No hay atún'), findsOneWidget);
-      // La que se hizo a mano no trae ticket (es la de hoy, en su día).
-      expect(find.byKey(const Key('ticket_carga_CG-000012')), findsNothing);
 
       await tester.ensureVisible(find.byKey(const Key('ticket_carga_CG-000013')));
       await tester.tap(find.byKey(const Key('ticket_carga_CG-000013')));
@@ -429,6 +426,17 @@ void main() {
       await tester.tap(find.byKey(const Key('boton_compartir_ticket')));
       await tester.pumpAndSettle();
       expect(compartidor.compartidos.single, t);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // La de ayer sigue viva: a la mano, y lleva a su día.
+      await tester.ensureVisible(find.byKey(const Key('sin_cerrar_2026-09-23')));
+      await tester.tap(find.byKey(const Key('sin_cerrar_2026-09-23')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('dia_de_cargas_2026-09-23')), findsOneWidget);
+      expect(find.byKey(const Key('carga_CG-000012')), findsOneWidget);
+      // La que se hizo a mano no trae ticket.
+      expect(find.byKey(const Key('ticket_carga_CG-000012')), findsNothing);
     });
 
     testWidgets('en «Corte del día» el corte cerrado sale una vez, en su día',
@@ -451,11 +459,12 @@ void main() {
         textoQueContiene(r'Lo mandó el vendedor · Entregó $2,100.00 de $2,250.00'),
         findsOneWidget,
       );
-      // Por día (§149): hoy, los dos de hoy, cada uno con su estatus; el de
-      // ayer, un día atrás.
+      // Por día (§149), el día en que se hizo (§151): hoy, los dos de hoy, cada
+      // uno con su estatus, y el camión que falta por cortar; el de ayer, un
+      // día atrás.
       final lista = find.byType(Scrollable).last;
       expect(find.byKey(const Key('dia_de_cortes_2026-09-24')), findsOneWidget);
-      expect(textoQueContiene('2 corte(s) · 2 cerrados'), findsOneWidget);
+      expect(textoQueContiene('2 corte(s) · 2 cerrados · 1 sin cortar'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byKey(const Key('estado_corte_LQ-000004')),
@@ -464,6 +473,16 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const Key('corte_LQ-000002')), findsNothing);
+      // La carga de anoche se vende mañana, pero lo que falta se ve hoy.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('estado_por_cortar_CG-000013')),
+          matching: find.text('Sin cortar'),
+        ),
+        findsOneWidget,
+      );
+      expect(textoQueContiene('para vender el viernes 25 de septiembre'), findsOneWidget);
+      expect(find.byKey(const Key('por_cortar_CG-000009')), findsNothing);
       // Hoy es el último día: mañana no tiene cortes.
       final siguiente = tester.widget<IconButton>(
           find.byKey(const Key('boton_dia_siguiente_cortes')));
@@ -479,8 +498,20 @@ void main() {
       expect(find.byKey(const Key('dia_de_cortes_2026-09-23')), findsOneWidget);
       expect(textoQueContiene('1 corte(s) · 1 cerrado'), findsOneWidget);
       expect(find.byKey(const Key('corte_LQ-000004')), findsNothing);
+      expect(find.byKey(const Key('por_cortar_CG-000013')), findsNothing);
       // Y se pidió al servidor ese día.
       expect(servidor.cortesPedidos.last, {'dia': '2026-09-23'});
+
+      // El que nadie cortó hace dos días está a la mano y lleva a su día.
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('sin_cortar_2026-09-22')), -200, scrollable: lista);
+      await tester.tap(find.byKey(const Key('sin_cortar_2026-09-22')));
+      await tester.pumpAndSettle();
+      expect(servidor.cortesPedidos.last, {'dia': '2026-09-22'});
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('por_cortar_CG-000009')), 200, scrollable: lista);
+      expect(textoQueContiene('Hace 2 día(s) sin cortar'), findsOneWidget);
+      expect(textoQueContiene('1 sin cortar'), findsOneWidget);
     });
 
     testWidgets('cargas y cortes por día caben en el Hyundai HYLine Pro (360 de ancho)',
@@ -497,23 +528,29 @@ void main() {
           )
           .first;
       await tester.scrollUntilVisible(
-        find.byKey(const Key('carga_CG-000012')), 200, scrollable: lista,
+        find.byKey(const Key('carga_CG-000013')), 200, scrollable: lista,
       );
       expect(tester.takeException(), isNull);
-      // El día de mañana, con su etiqueta, también cabe (§149).
+      // El día de ayer, con su etiqueta, también cabe (§149).
       await tester.scrollUntilVisible(
-        find.byKey(const Key('boton_dia_siguiente_cargas')), -200, scrollable: lista,
+        find.byKey(const Key('boton_dia_anterior_cargas')), -200, scrollable: lista,
       );
-      await tester.tap(find.byKey(const Key('boton_dia_siguiente_cargas')));
+      await tester.tap(find.byKey(const Key('boton_dia_anterior_cargas')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.byKey(const Key('carga_CG-000013')), 200, scrollable: lista,
+        find.byKey(const Key('carga_CG-000012')), 200, scrollable: lista,
       );
       expect(tester.takeException(), isNull);
       await tester.tap(find.byKey(const Key('pestana_cortes')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('seccion_cortes_vendedores')), findsOneWidget);
+      // Lo que falta por cortar, con su etiqueta, también cabe (§151).
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('por_cortar_CG-000013')), 200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }
@@ -559,6 +596,9 @@ class _ServidorDeCierres implements Transporte {
 
   /// Con qué parámetros se pidieron los cortes: el día (§149).
   final List<Map<String, String>> cortesPedidos = [];
+
+  /// Y las cargas: el día en que se hicieron (§151).
+  final List<Map<String, String>> cargasPedidas = [];
   bool _corteCerrado = false;
 
   static const _vendedor = {
@@ -632,27 +672,45 @@ class _ServidorDeCierres implements Transporte {
         ],
       }));
     }
+    if (ruta == '/v1/cargas') cargasPedidas.add(parametros ?? const {});
     if (conListas && ruta == '/v1/cargas') {
-      Map<String, Object?> carga(String folio, String dia, String estado) => {
-            'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': dia,
-            'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'renglones': 1,
-            'piezas': '240.000',
+      // Las dos se hicieron la víspera del día en que se venden (§82, §151).
+      Map<String, Object?> carga(String folio, String hecha, String vende, String estado) => {
+            'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': vende,
+            'hecha_el': hecha, 'vendedor': 'Juan Pérez', 'camion': 'Camión 01',
+            'renglones': 1, 'piezas': '240.000',
           };
+      final todas = [
+        carga('CG-000013', '2026-09-24', '2026-09-25', 'confirmada'),
+        carga('CG-000012', '2026-09-23', '2026-09-24', 'en_ruta'),
+      ];
+      final dia = parametros?['hechas_el'];
       return RespuestaHttp(200, jsonEncode([
-        carga('CG-000013', '2026-09-25', 'confirmada'),
-        carga('CG-000012', '2026-09-24', 'en_ruta'),
+        for (final c in todas)
+          if (dia == null || c['hecha_el'] == dia) c,
       ]));
     }
     if (ruta == '/v1/cortes') cortesPedidos.add(parametros ?? const {});
     if (conListas && ruta == '/v1/cortes') {
       Map<String, Object?> corte(String id, String folio, String dia, String vendedor) => {
             'id': id, 'folio': folio, 'estado': 'cerrada', 'fecha_operativa': dia,
+            'hecho_el': dia,
             'vendedor': vendedor, 'carga': 'CG-000012', 'efectivo_esperado': '2250.00',
             'efectivo_entregado': '2100.00', 'diferencia_efectivo': '0.00',
             'faltantes': 0, 'cerrada_en': null,
           };
+      Map<String, Object?> porCortar(String folio, String fecha, int dias) => {
+            'carga_id': 'c-$folio', 'folio': folio, 'fecha_operativa': fecha,
+            'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'dias': dias,
+            'ventas': 0, 'importe': '0.00',
+          };
       return RespuestaHttp(200, jsonEncode({
-        'por_cortar': <Object?>[],
+        'por_cortar': [
+          // Una de hace dos días que nadie cortó, y la de anoche, que se
+          // vende mañana: esa se ve hoy (§151).
+          porCortar('CG-000009', '2026-09-22', 2),
+          porCortar('CG-000013', '2026-09-25', -1),
+        ],
         'cortes': [
           if (_corteCerrado) corte('l4', 'LQ-000004', '2026-09-24', 'Juan Pérez'),
           corte('l3', 'LQ-000003', '2026-09-24', 'Ana López'),

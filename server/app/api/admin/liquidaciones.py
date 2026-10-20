@@ -210,14 +210,23 @@ async def cargas_por_cortar(sesion) -> list:
 
 
 async def cortes_recientes(sesion, dia: date | None = None) -> list:
-    """Los cortes abiertos y cerrados, los más nuevos primero. Con `dia`, los de
-    ese día: la app los ve día por día (ADR 0002 §149)."""
+    """Los cortes abiertos y cerrados, los más nuevos primero. Con `dia`, los
+    que se hicieron ese día: la app los ve día por día (ADR 0002 §149, §151).
+
+    `hecho_el` es el día en que se hizo el corte, no el de su carga: «si hago el
+    corte a las 11 de la noche, es de ese día». El que mandó el vendedor lleva el
+    día de su teléfono —aunque el gerente lo cierre a la mañana siguiente—; el
+    que abrió la oficina, el día en que lo abrió. `fecha_operativa` sigue siendo
+    la de la carga: con ella se cuentan sus ventas.
+    """
     return list(
         (
             await sesion.execute(
             text(
                 """
+                SELECT * FROM (
                 SELECT l.id, l.folio, l.estado, l.fecha_operativa,
+                       COALESCE(k.fecha_operativa, l.creado_en::date) AS hecho_el,
                        l.efectivo_esperado, l.efectivo_entregado,
                        l.diferencia_efectivo, l.cerrada_en, l.sync_completa,
                        u.nombre AS vendedor, u.codigo AS vendedor_codigo,
@@ -230,10 +239,16 @@ async def cortes_recientes(sesion, dia: date | None = None) -> list:
                         SELECT count(*) AS faltantes FROM liquidacion_detalle
                          WHERE liquidacion_id = l.id AND diferencia <> 0
                   ) d ON true
+                  LEFT JOIN LATERAL (
+                        SELECT fecha_operativa FROM cortes_vendedor
+                         WHERE liquidacion_id = l.id
+                         ORDER BY recibido_en DESC LIMIT 1
+                  ) k ON true
                  -- Los anulados están en Operaciones → Eliminadas (§126).
                  WHERE l.estado <> 'anulada'
-                   AND (CAST(:dia AS date) IS NULL OR l.fecha_operativa = :dia)
-                 ORDER BY l.fecha_operativa DESC, l.folio DESC
+                ) x
+                 WHERE CAST(:dia AS date) IS NULL OR x.hecho_el = :dia
+                 ORDER BY x.hecho_el DESC, x.folio DESC
                  LIMIT 100
                 """
             ),

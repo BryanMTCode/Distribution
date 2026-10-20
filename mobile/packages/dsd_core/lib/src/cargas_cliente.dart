@@ -80,13 +80,16 @@ class ResumenDeCarga {
     required this.camion,
     required this.renglones,
     required this.piezas,
-  });
+    String? hechaEl,
+  }) : hechaEl = hechaEl ?? fecha;
 
   factory ResumenDeCarga.deJson(Map<String, Object?> j) => ResumenDeCarga(
         id: j['id']! as String,
         folio: j['folio']! as String,
         estado: j['estado']! as String,
         fecha: j['fecha_operativa']! as String,
+        // Un servidor anterior no lo manda: entonces, el día de la carga.
+        hechaEl: j['hecha_el'] as String?,
         vendedor: j['vendedor']! as String,
         camion: j['camion']! as String,
         renglones: (j['renglones']! as num).toInt(),
@@ -96,7 +99,13 @@ class ResumenDeCarga {
   final String id;
   final String folio;
   final String estado;
+
+  /// El día en que se vende: el de sus ventas y su corte (ADR 0002 §82).
   final String fecha;
+
+  /// El día en que se hizo, que es en el que la app la enseña: la de la noche
+  /// del lunes es del lunes aunque se venda el martes (ADR 0002 §151).
+  final String hechaEl;
   final String vendedor;
   final String camion;
   final int renglones;
@@ -190,13 +199,15 @@ class DetalleDeCarga {
     required this.surtido,
     required this.bloqueos,
     this.mensaje,
-  });
+    String? hechaEl,
+  }) : hechaEl = hechaEl ?? fecha;
 
   factory DetalleDeCarga.deJson(Map<String, Object?> j) => DetalleDeCarga(
         id: j['id']! as String,
         folio: j['folio']! as String,
         estado: j['estado']! as String,
         fecha: j['fecha_operativa']! as String,
+        hechaEl: j['hecha_el'] as String?,
         vendedor: j['vendedor']! as String,
         camion: j['camion']! as String,
         bodega: j['bodega']! as String,
@@ -211,6 +222,9 @@ class DetalleDeCarga {
   final String folio;
   final String estado;
   final String fecha;
+
+  /// El día en que se hizo (ver `ResumenDeCarga.hechaEl`).
+  final String hechaEl;
   final String vendedor;
   final String camion;
   final String bodega;
@@ -270,6 +284,16 @@ class ClienteCargas {
       } else
         'periodo': periodo,
     });
+    _revisar(r);
+    return _lista(jsonDecode(r.cuerpo), ResumenDeCarga.deJson);
+  }
+
+  /// Las que se hicieron ese día (`YYYY-MM-DD`), en cualquier estado: la app las
+  /// ve por el día en que se hicieron, no por el día en que se venden (ADR 0002
+  /// §151). Un servidor anterior no conoce `hechas_el` y contesta las abiertas;
+  /// la pantalla se queda con las de ese día.
+  Future<List<ResumenDeCarga>> hechasEl(String dia) async {
+    final r = await _transporte.obtener('/v1/cargas', parametros: {'hechas_el': dia});
     _revisar(r);
     return _lista(jsonDecode(r.cuerpo), ResumenDeCarga.deJson);
   }

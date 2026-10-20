@@ -6582,6 +6582,9 @@ por día y me pueda mover por días, y que aparezca el estatus de cada carga.» 
   los últimos cien de siempre.
 - El selector es el mismo de «Mi día» del vendedor, y lo comparten las dos
   pantallas.
+- **Enmienda (§151):** las dos listas van por el día en que se **hizo** cada
+  cosa, no por el día en que se vende; y los cortes van como las cargas, con lo
+  que falta cortar dentro de su día.
 
 ## 150. El vendedor imprime el ticket de su solicitud de carga
 
@@ -6593,3 +6596,42 @@ imprimir el ticket»), también cuando ya dice «CARGA ACEPTADA» con su folio. 
 imprimir dos tickets seguidos, el aviso del primero se quita de golpe para que
 el del segundo salga enseguida.
 
+
+## 151. La carga y el corte son del día en que se hacen
+
+**Decisión (octubre 2026, primer día de operación).** «No aparecen los del lunes
+en los cortes, que tengan una vista parecida a la de las cargas.» «Las cargas, si
+la hice el lunes en la noche, entonces tienen que quedar el lunes, no el
+martes.» «Todo lo que se haga el día, ese día es para ese día: si hago el corte
+a las 11 p. m. y la carga a esa hora, entonces es del mismo día.»
+
+- **Qué pasaba.** Las dos listas de la app de la oficina (§149) iban por la
+  `fecha_operativa`, que en la carga es el día en que se **vende** —se hace la
+  víspera con la fecha de mañana (§82)— y en el corte es la de su carga. La carga
+  de la noche del lunes salía el martes, y su corte también.
+- **La `fecha_operativa` no cambia.** Sigue siendo el día en que se vende: con
+  ella se cuentan las ventas, las mermas y el efectivo del corte, y una carga al
+  día por vendedor (`uq_carga_vendedor_dia`). Lo que cambia es **en qué día se
+  enseña** cada cosa.
+- **La carga, el día en que se hizo**: `hecha_el` es `creado_en` en la hora de
+  Mazatlán. `GET /v1/cargas?hechas_el=AAAA-MM-DD` trae las que se hicieron ese
+  día, en cualquier estado; el renglón y el detalle traen `hecha_el`. En la app el
+  renglón dice «para vender el martes 20 de octubre» cuando se vende otro día, y
+  el detalle «se hizo el lunes 19 de octubre · para vender el martes 20…». Hacia
+  adelante no se pasa de hoy. Abre en hoy, o —si hoy no se ha hecho ninguna que
+  siga viva— en el último día con una viva: a las seis de la mañana lo que se
+  atiende son las de anoche. Al crear una carga, la lista vuelve a hoy.
+- **El corte, el día en que se hizo**: `hecho_el` es el día del teléfono del
+  vendedor cuando lo mandó él (`cortes_vendedor.fecha_operativa`), aunque el
+  gerente lo cierre a la mañana siguiente; el que abrió la oficina, el día en que
+  lo abrió. `GET /v1/cortes?dia=` filtra por `hecho_el`.
+- **Cortes como las cargas.** El día va arriba, como en Cargas, y cada día trae
+  sus camiones: los cortes que se hicieron ese día y los que **faltan por
+  cortar**, con la etiqueta «Sin cortar» y su resumen («2 corte(s) · 2 cerrados ·
+  1 sin cortar»). El que falta va en el día en que se vende su carga; si ese día
+  no ha llegado —la de la noche es para mañana—, en hoy: es trabajo pendiente y
+  no se esconde. Los de otros días salen como «También sin cortar», y tocar uno
+  lleva a su día. La sección aparte «Cortar contando el camión» desaparece: tocar
+  uno sin cortar es ese corte.
+- Un día con solo cargas canceladas dice «No hay cargas de este día»: la
+  cancelada va aparte (§95).

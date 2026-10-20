@@ -86,7 +86,11 @@ class CargaResumen(BaseModel):
     id: uuid.UUID
     folio: str
     estado: str
+    # El día en que se vende: el de sus ventas y su corte (§82).
     fecha_operativa: date
+    # El día en que se hizo, en Mazatlán: el de la noche del lunes es del lunes
+    # aunque se venda el martes (ADR 0002 §151).
+    hecha_el: date
     vendedor: str
     camion: str
     renglones: int
@@ -127,6 +131,7 @@ class Carga(BaseModel):
     folio: str
     estado: str
     fecha_operativa: date
+    hecha_el: date
     vendedor: str
     camion: str
     bodega: str
@@ -177,6 +182,22 @@ async def opciones(actor: ActorDep, sesion: SesionDep) -> Opciones:
     )
 
 
+# El renglón de la lista, igual en las tres consultas.
+_RESUMEN = """
+    SELECT c.id, c.folio, c.estado, c.fecha_operativa, c.creado_en::date AS hecha_el,
+           u.nombre AS vendedor, a.nombre AS camion,
+           COALESCE(d.renglones, 0) AS renglones,
+           COALESCE(d.piezas, 0) AS piezas
+      FROM cargas c
+      JOIN usuarios u ON u.id = c.vendedor_id
+      JOIN almacenes a ON a.id = c.almacen_destino_id
+      LEFT JOIN LATERAL (
+            SELECT count(*) AS renglones, sum(cantidad) AS piezas
+              FROM carga_detalle WHERE carga_id = c.id
+      ) d ON true
+"""
+
+
 @router.get("", response_model=list[CargaResumen])
 async def abiertas(
     actor: ActorDep,
@@ -184,6 +205,7 @@ async def abiertas(
     periodo: str = "",
     desde: str = "",
     hasta: str = "",
+    hechas_el: date | None = None,
 ) -> list[CargaResumen]:
     """Las que siguen vivas: en captura, o cargadas y sin liquidar.
 
@@ -194,31 +216,27 @@ async def abiertas(
     `desde` y `hasta`— son en cambio **las de esas fechas**, en cualquier estado
     (las canceladas, la app las pone aparte): «para ver qué cargas se hicieron»
     (ADR 0002 §102).
+
+    Con `hechas_el`, las que se hicieron ese día, en cualquier estado: la app las
+    ve día por día por el día en que se hicieron (ADR 0002 §151).
     """
     actor.exigir(PERMISO)
+    if hechas_el is not None:
+        filas = (
+            await sesion.execute(
+                text(_RESUMEN + " WHERE c.creado_en::date = :d "
+                                " ORDER BY c.creado_en DESC, c.folio DESC LIMIT 500"),
+                {"d": hechas_el},
+            )
+        ).mappings().all()
+        return [CargaResumen(**dict(f)) for f in filas]
     if periodo or desde:
         elegido = await periodo_pedido(sesion, periodo or "rango", desde, hasta or desde)
         return await _cargas_de(sesion, elegido.inicio, elegido.fin)
     filas = (
         await sesion.execute(
-            text(
-                """
-                SELECT c.id, c.folio, c.estado, c.fecha_operativa,
-                       u.nombre AS vendedor, a.nombre AS camion,
-                       COALESCE(d.renglones, 0) AS renglones,
-                       COALESCE(d.piezas, 0) AS piezas
-                  FROM cargas c
-                  JOIN usuarios u ON u.id = c.vendedor_id
-                  JOIN almacenes a ON a.id = c.almacen_destino_id
-                  LEFT JOIN LATERAL (
-                        SELECT count(*) AS renglones, sum(cantidad) AS piezas
-                          FROM carga_detalle WHERE carga_id = c.id
-                  ) d ON true
-                 WHERE c.estado IN ('borrador', 'confirmada', 'en_ruta')
-                 ORDER BY c.fecha_operativa DESC, c.folio DESC
-                 LIMIT 100
-                """
-            )
+            text(_RESUMEN + " WHERE c.estado IN ('borrador', 'confirmada', 'en_ruta') "
+                            " ORDER BY c.fecha_operativa DESC, c.folio DESC LIMIT 100")
         )
     ).mappings().all()
     return [CargaResumen(**dict(f)) for f in filas]
@@ -227,24 +245,8 @@ async def abiertas(
 async def _cargas_de(sesion, desde: date, hasta: date) -> list[CargaResumen]:
     filas = (
         await sesion.execute(
-            text(
-                """
-                SELECT c.id, c.folio, c.estado, c.fecha_operativa,
-                       u.nombre AS vendedor, a.nombre AS camion,
-                       COALESCE(d.renglones, 0) AS renglones,
-                       COALESCE(d.piezas, 0) AS piezas
-                  FROM cargas c
-                  JOIN usuarios u ON u.id = c.vendedor_id
-                  JOIN almacenes a ON a.id = c.almacen_destino_id
-                  LEFT JOIN LATERAL (
-                        SELECT count(*) AS renglones, sum(cantidad) AS piezas
-                          FROM carga_detalle WHERE carga_id = c.id
-                  ) d ON true
-                 WHERE c.fecha_operativa BETWEEN :desde AND :hasta
-                 ORDER BY c.fecha_operativa DESC, c.folio DESC
-                 LIMIT 500
-                """
-            ),
+            text(_RESUMEN + " WHERE c.fecha_operativa BETWEEN :desde AND :hasta "
+                            " ORDER BY c.fecha_operativa DESC, c.folio DESC LIMIT 500"),
             {"desde": desde, "hasta": hasta},
         )
     ).mappings().all()
@@ -262,6 +264,7 @@ async def _carga(sesion, carga_id: uuid.UUID, *, mensaje: str | None = None) -> 
         await sesion.execute(
             text(
                 "SELECT c.id, c.folio, c.estado, c.fecha_operativa, c.vendedor_id, "
+                "       c.creado_en::date AS hecha_el, "
                 "       c.almacen_origen_id, u.nombre AS vendedor, "
                 "       a.nombre AS camion, o.nombre AS bodega "
                 "  FROM cargas c "
@@ -311,6 +314,7 @@ async def _carga(sesion, carga_id: uuid.UUID, *, mensaje: str | None = None) -> 
         folio=carga["folio"],
         estado=carga["estado"],
         fecha_operativa=carga["fecha_operativa"],
+        hecha_el=carga["hecha_el"],
         vendedor=carga["vendedor"],
         camion=carga["camion"],
         bodega=carga["bodega"],

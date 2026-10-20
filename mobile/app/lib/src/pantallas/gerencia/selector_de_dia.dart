@@ -105,6 +105,11 @@ class SelectorDeDia extends StatelessWidget {
   }
 }
 
+/// « · para vender el martes 20 de octubre» cuando la carga se vende otro día
+/// del que se ve —lo normal: se hace la víspera (ADR 0002 §82, §151)—.
+String paraVender(String fecha, {required String dia}) =>
+    fecha == dia ? '' : ' · para vender el ${diaEnPalabras(fecha)}';
+
 /// Una etiqueta de color con el estatus: se lee de reojo.
 class EtiquetaDeEstatus extends StatelessWidget {
   const EtiquetaDeEstatus({

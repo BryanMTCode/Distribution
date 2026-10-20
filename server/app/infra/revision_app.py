@@ -493,13 +493,14 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "cargas_un_dia", "Las cargas de un día, con su estatus",
-                "Almacén → Cargas: muévete con ‹ ›, el calendario y «Ver las de hoy». "
-                "Acepta una carga que pidió un vendedor y ve a mañana.",
-                "Un día a la vez: abre en hoy, o en mañana si hoy ya no queda ninguna "
-                "abierta. Cada carga dice su estatus en color —Capturando, En el camión, "
-                "En el corte, Liquidada— y arriba «N carga(s) · piezas · …». «También sin "
-                "cerrar» lleva al día de la que quedó viva (ADR 0002 §149).",
-                desde="+49",
+                "Almacén → Cargas: acepta en la noche una carga que pidió un vendedor. "
+                "Muévete con ‹ ›, el calendario y «Ver las de hoy».",
+                "Va en el día en que se hizo, no en el que se vende: la de la noche del "
+                "lunes queda el lunes y dice «para vender el martes…». Cada carga dice su "
+                "estatus en color —Capturando, En el camión, En el corte, Liquidada— y "
+                "arriba «N carga(s) · piezas · …». «También sin cerrar» lleva al día de la "
+                "que quedó viva (ADR 0002 §149, §151).",
+                desde="+50",
             ),
             Punto(
                 "aceptar_carga", "Aceptar o rechazar la carga que pidió un vendedor",
@@ -537,14 +538,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+44",
             ),
             Punto(
-                "cortes_por_dia", "Cortes por día, con su estatus",
-                "Almacén → Corte del día, después de cerrar el corte de un vendedor. Baja "
-                "hasta «Cortes» y muévete con ‹ › o el calendario.",
-                "Un día a la vez, de hoy hacia atrás («2 corte(s) · 2 cerrados»), cada uno "
-                "con su estatus —Abierto, Cuadrado, Con diferencia, Cerrado—. El que "
-                "cerraste sale una sola vez, con «Lo mandó el vendedor · Entregó …» "
-                "(ADR 0002 §149).",
-                desde="+49",
+                "cortes_por_dia", "Cortes por día, como las cargas",
+                "Almacén → Corte del día, después de cerrar en la noche el corte de un "
+                "vendedor. Muévete con ‹ › o el calendario.",
+                "Un día a la vez, como Cargas: el corte va en el día en que se hizo (el de "
+                "las 11 p. m. es de ese día), con su estatus —Abierto, Cuadrado, Con "
+                "diferencia, Cerrado—, y los camiones que faltan dicen «Sin cortar» "
+                "(«2 corte(s) · 2 cerrados · 1 sin cortar»). El que cerraste sale una sola "
+                "vez, con «Lo mandó el vendedor · Entregó …» (ADR 0002 §149, §151).",
+                desde="+50",
             ),
             Punto(
                 "mayoreo", "Venta de mayoreo",

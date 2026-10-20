@@ -74,6 +74,27 @@ void main() {
       expect(t.pedidas[1].$2, isEmpty);
     });
 
+    test('cada corte dice el día en que se hizo (ADR 0002 §151)', () async {
+      final fila = {
+        'id': 'lq1', 'folio': 'LQ-000001', 'estado': 'cerrada',
+        'fecha_operativa': '2026-10-20', 'vendedor': 'Juan', 'carga': 'CG-1',
+        'efectivo_esperado': '0.00', 'efectivo_entregado': '0.00',
+        'diferencia_efectivo': '0.00', 'faltantes': 0, 'cerrada_en': null,
+      };
+      final l = await ClienteCortes(_Transporte(200, {
+        'por_cortar': <Object?>[],
+        'cortes': [
+          {...fila, 'hecho_el': '2026-10-19'},
+          // Un servidor anterior no lo manda: es el de la carga.
+          {...fila, 'id': 'lq2', 'folio': 'LQ-000002'},
+        ],
+      })).lista(dia: '2026-10-19');
+      expect([for (final c in l.cortes) (c.hechoEl, c.fecha)], [
+        ('2026-10-19', '2026-10-20'),
+        ('2026-10-20', '2026-10-20'),
+      ]);
+    });
+
     test('un 409 trae el texto del servidor; un 403 es permiso', () async {
       expect(
         () => ClienteCortes(_Transporte(409, {'detail': 'No se puede cerrar: x'})).cerrar('lq1'),

@@ -4,10 +4,19 @@
 /// se cuenta, se queda con lo que calcula el sistema, y el gerente solo los
 /// cierra (`SeccionCortesDeVendedores`, ADR 0002 §82).
 ///
-/// Abajo, el corte contando el camión, para cuando la oficina quiere contar la
-/// mercancía ella misma. Se hace con el camión enfrente: quien cuenta está en el
-/// patio con el teléfono en la mano. Las reglas las pone el servidor y son las
-/// del panel:
+/// Abajo, los cortes **de un día**, y se pasa de día en día, como las cargas
+/// (ADR 0002 §149, §151): «que tengan una vista parecida a la de las cargas».
+/// Cada día trae sus camiones: los que se cortaron ese día —el corte es del día
+/// en que se hizo: «si hago el corte a las 11 de la noche, es de ese día»— y los
+/// que faltan por cortar, con la etiqueta «Sin cortar». El que falta va en el
+/// día en que se vende su carga, y si ese día no ha llegado —la carga de la
+/// noche es para mañana—, en hoy: es trabajo pendiente y no se esconde. Los que
+/// quedaron sin cortar de otros días salen como «También sin cortar».
+///
+/// Tocar uno sin cortar es el corte contando el camión, para cuando la oficina
+/// quiere contar la mercancía ella misma. Se hace con el camión enfrente: quien
+/// cuenta está en el patio con el teléfono en la mano. Las reglas las pone el
+/// servidor y son las del panel:
 ///
 ///   · Se cuenta lo que se QUEDA arriba del camión. El campo vacío vale cero: lo
 ///     que no se anotó es lo que no está.
@@ -17,10 +26,9 @@
 ///   · Al cerrar, el camión queda en lo contado, el faltante se carga a la cuenta
 ///     del vendedor y su teléfono recibe el ajuste.
 ///
-/// Al final, los cortes **de un día**, y se pasa de día en día (ADR 0002 §149):
-/// «también los cortes, que aparezcan por día». Cada uno sale una sola vez (§124):
-/// el que cerró el gerente desde el corte del vendedor dice en su renglón lo que
-/// éste entregó, y cada uno dice su estatus.
+/// Cada corte sale una sola vez (§124): el que cerró el gerente desde el corte
+/// del vendedor dice en su renglón lo que éste entregó, y cada uno dice su
+/// estatus.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -83,7 +91,7 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   ListaDeCortes? _lista;
   String? _error;
 
-  /// El día cuyos cortes se ven; nulo es hoy.
+  /// El día cuyos cortes se ven, por el día en que se hicieron; nulo es hoy.
   String? _dia;
 
   /// Para tirar la respuesta de un día que ya no es el que se ve.
@@ -172,13 +180,17 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   @override
   Widget build(BuildContext context) {
     final l = _lista;
-    final estilo = Theme.of(context).textTheme;
     final hoy = diaOperativoDe(ref.watch(relojProvider)());
     final dia = _dia ?? hoy;
     // Del servidor ya vienen los del día; por si acaso, solo esos.
     final delDia = [
       for (final c in l?.cortes ?? const <CorteEnLista>[])
-        if (c.fecha == dia) c,
+        if (c.hechoEl == dia) c,
+    ];
+    final porCortar = l?.porCortar ?? const <CargaPorCortar>[];
+    final sinCortar = [
+      for (final c in porCortar)
+        if (diaParaCortar(c.fecha, hoy: hoy) == dia) c,
     ];
     final cuerpo = RefreshIndicator(
       onRefresh: () async {
@@ -197,43 +209,6 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
             yaListados: {for (final c in l?.cortes ?? const <CorteEnLista>[]) c.folio},
           ),
           const Divider(height: 32),
-          if (_error != null) _Aviso(_error!, esError: true),
-          if (l == null && _error == null)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          if (l != null) ...[
-            Text('Cortar contando el camión', style: estilo.titleMedium),
-            const Text('Solo si quieres contar la mercancía tú mismo. Si el vendedor '
-                'ya mandó su corte, ciérralo arriba.'),
-            if (l.porCortar.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Todos los camiones están cortados.'),
-              ),
-            for (final c in l.porCortar)
-              Card(
-                child: ListTile(
-                  key: Key('por_cortar_${c.folio}'),
-                  leading: Icon(
-                    Icons.fact_check_outlined,
-                    color: c.dias > 0 ? Theme.of(context).colorScheme.error : null,
-                  ),
-                  title: Text('${c.vendedor} · ${c.camion}'),
-                  subtitle: Text(
-                    '${diaEnPalabras(c.fecha)} · carga ${c.folio}\n'
-                    '${c.ventas} venta(s) · ${pesos(c.importe)}'
-                    '${c.dias > 0 ? '\nHace ${c.dias} día(s) sin cortar' : ''}',
-                  ),
-                  isThreeLine: true,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _abrirDetalle((cl) => cl.abrir(c.cargaId)),
-                ),
-              ),
-            const SizedBox(height: 16),
-            Text('Cortes', style: estilo.titleMedium),
-          ],
           // El día, aunque esté cargando: es con lo que uno se mueve.
           SelectorDeDia(
             dia: dia,
@@ -245,8 +220,16 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
             alIr: _irA,
             alCalendario: () => _elegirEnCalendario(dia, hoy),
           ),
+          // Los que faltan de otros días: tocar uno lleva a su día.
+          _OtrosDiasSinCortar(dia: dia, hoy: hoy, porCortar: porCortar, alIr: _irA),
+          if (_error != null) _Aviso(_error!, esError: true),
+          if (l == null && _error == null)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
           if (l != null) ...[
-            if (delDia.isEmpty)
+            if (delDia.isEmpty && sinCortar.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
@@ -258,9 +241,19 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
                 child: Text(
-                  _resumen(delDia),
+                  _resumen(delDia, sinCortar: sinCortar.length),
                   key: Key('dia_de_cortes_$dia'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            // Lo que falta va primero: es lo que se atiende.
+            for (final c in sinCortar) _renglonSinCortar(c, dia),
+            if (sinCortar.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Toca uno sin cortar para cortarlo contando el camión tú mismo. Si el '
+                  'vendedor ya mandó su corte, ciérralo arriba.',
                 ),
               ),
             for (final c in delDia) _renglon(c),
@@ -275,6 +268,37 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
       body: cuerpo,
     );
   }
+
+  Widget _renglonSinCortar(CargaPorCortar c, String dia) => Card(
+        child: ListTile(
+          key: Key('por_cortar_${c.folio}'),
+          leading: Icon(
+            Icons.fact_check_outlined,
+            color: c.dias > 0 ? Theme.of(context).colorScheme.error : null,
+          ),
+          title: Text('${c.vendedor} · ${c.camion}'),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Carga ${c.folio}${paraVender(c.fecha, dia: dia)}\n'
+                '${c.ventas} venta(s) · ${pesos(c.importe)}'
+                '${c.dias > 0 ? '\nHace ${c.dias} día(s) sin cortar' : ''}',
+              ),
+              const SizedBox(height: 6),
+              EtiquetaDeEstatus(
+                key: Key('estado_por_cortar_${c.folio}'),
+                texto: 'Sin cortar',
+                fondo: Colors.orange.shade100,
+                letra: Colors.orange.shade900,
+              ),
+            ],
+          ),
+          isThreeLine: true,
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _abrirDetalle((cl) => cl.abrir(c.cargaId)),
+        ),
+      );
 
   Widget _renglon(CorteEnLista c) {
     final delVendedor = _delVendedor[c.folio];
@@ -335,15 +359,64 @@ class _EtiquetaDeCorte extends StatelessWidget {
   }
 }
 
-/// «3 corte(s) · 2 cerrados · 1 abierto»: el día de reojo.
-String _resumen(List<CorteEnLista> cortes) {
+/// «3 corte(s) · 2 cerrados · 1 sin cerrar · 1 sin cortar»: el día de reojo.
+String _resumen(List<CorteEnLista> cortes, {required int sinCortar}) {
   final cerrados = cortes.where((c) => c.estado == 'cerrada').length;
   final porCerrar = cortes.length - cerrados;
   return [
-    '${cortes.length} corte(s)',
+    if (cortes.isNotEmpty) '${cortes.length} corte(s)',
     if (cerrados > 0) '$cerrados ${cerrados == 1 ? 'cerrado' : 'cerrados'}',
     if (porCerrar > 0) '$porCerrar sin cerrar',
+    if (sinCortar > 0) '$sinCortar sin cortar',
   ].join(' · ');
+}
+
+/// El día en que se ve una carga que falta cortar: el día en que se vende, y si
+/// no ha llegado —la de la noche es para mañana—, hoy (ADR 0002 §151).
+String diaParaCortar(String fecha, {required String hoy}) =>
+    fecha.compareTo(hoy) > 0 ? hoy : fecha;
+
+/// «También sin cortar: martes 20 (1)»: los que faltan de otros días.
+class _OtrosDiasSinCortar extends StatelessWidget {
+  const _OtrosDiasSinCortar({
+    required this.dia,
+    required this.hoy,
+    required this.porCortar,
+    required this.alIr,
+  });
+
+  final String dia;
+  final String hoy;
+  final List<CargaPorCortar> porCortar;
+  final void Function(String) alIr;
+
+  @override
+  Widget build(BuildContext context) {
+    final porDia = <String, int>{};
+    for (final c in porCortar) {
+      final d = diaParaCortar(c.fecha, hoy: hoy);
+      if (d != dia) porDia[d] = (porDia[d] ?? 0) + 1;
+    }
+    if (porDia.isEmpty) return const SizedBox.shrink();
+    final dias = porDia.keys.toList()..sort();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text('También sin cortar:'),
+          for (final d in dias)
+            ActionChip(
+              key: Key('sin_cortar_$d'),
+              label: Text('${diaEnPalabras(d)} (${porDia[d]})'),
+              onPressed: () => alIr(d),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

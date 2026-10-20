@@ -27,6 +27,11 @@
 /// hoy y la carga es de mañana (§82): la que se acepta en la tarde no salía en
 /// ninguno. Cada carga sale una sola vez (§124): la que salió de una solicitud
 /// aceptada lo dice en su renglón y trae el ticket.
+///
+/// El día de la lista es **el día en que se hizo** la carga (§151): «si la hice
+/// el lunes en la noche, tiene que quedar el lunes, no el martes». La carga se
+/// sigue vendiendo al día siguiente —con esa fecha se cuentan sus ventas y su
+/// corte—, y su renglón lo dice: «para vender el martes 20 de octubre».
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -56,9 +61,10 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
   List<ResumenDeCarga>? _cargas;
   String? _error;
 
-  /// El día que se ve. Nulo hasta la primera consulta, que lo decide: hoy, o
-  /// mañana si hoy ya no queda ninguna abierta y para mañana sí —en la tarde,
-  /// con las de hoy ya liquidadas, lo que se atiende son las de mañana—.
+  /// El día que se ve, por el día en que se hicieron. Nulo hasta la primera
+  /// consulta, que lo decide: hoy, o —si hoy no se ha hecho ninguna que siga
+  /// viva— el último día con una viva: a las seis de la mañana lo que se atiende
+  /// son las que se hicieron anoche.
   String? _dia;
 
   /// Las que siguen vivas de cualquier día: dicen qué otros días tienen cargas
@@ -102,19 +108,20 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
       final abiertas = await cliente.abiertas();
       var dia = _dia;
       if (dia == null) {
-        final manana = diaSiguiente(hoy);
-        final quedanHoy = abiertas.any((c) => c.fecha == hoy);
-        dia = !quedanHoy && abiertas.any((c) => c.fecha == manana) ? manana : hoy;
+        final antes = [
+          for (final c in abiertas)
+            if (c.hechaEl.compareTo(hoy) < 0) c.hechaEl,
+        ]..sort();
+        final hayDeHoy = abiertas.any((c) => c.hechaEl == hoy);
+        dia = hayDeHoy || antes.isEmpty ? hoy : antes.last;
       }
-      // Un día es un rango de un día: el servidor no lo recorta a hoy, y así
-      // sale también mañana.
-      final delDia = await cliente.delPeriodo(desde: dia, hasta: dia);
+      final delDia = await cliente.hechasEl(dia);
       // Si mientras tanto se cambió de día, esta respuesta ya no es la que se ve.
       if (!mounted || consulta != _consulta) return;
       setState(() {
         _dia = dia;
         _abiertas = abiertas;
-        _cargas = [for (final c in delDia) if (c.fecha == dia) c];
+        _cargas = [for (final c in delDia) if (c.hechaEl == dia) c];
         _error = null;
       });
     } on Object catch (e) {
@@ -137,9 +144,7 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
       context,
       dia: dia,
       hoy: diaOperativoDe(ref.read(relojProvider)()),
-      ayuda: '¿De qué día son las cargas?',
-      // La carga se abre para mañana.
-      diasAdelante: 30,
+      ayuda: '¿Qué día se hicieron las cargas?',
     );
     if (elegido == null || !mounted) return;
     _irA(elegido);
@@ -179,6 +184,8 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
     try {
       final carga = await cliente.abrir(vendedorId: elegido.$1, bodegaId: elegido.$2);
       if (!mounted) return;
+      // La nueva se hizo hoy: al volver, la lista enseña hoy.
+      _dia = null;
       await _abrirDetalle(carga.id);
     } on Object catch (e) {
       if (!mounted) return;
@@ -236,6 +243,8 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
                 hoy: diaOperativoDe(ref.watch(relojProvider)()),
                 sufijo: 'cargas',
                 textoDeHoy: 'Ver las de hoy',
+                // Una carga no se hace en un día que no ha llegado.
+                ultimoDia: diaOperativoDe(ref.watch(relojProvider)()),
                 alIr: _irA,
                 alCalendario: () => _elegirEnCalendario(_dia!),
               ),
@@ -254,7 +263,8 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
               ),
             if (cargas != null && _dia != null) ...[
               _ResumenDelDia(dia: _dia!, cargas: cargas),
-              if (cargas.isEmpty)
+              // Las canceladas van aparte y no cuentan (§95).
+              if (cargas.every((c) => estaCancelado(c.estado)))
                 const Padding(
                   padding: EdgeInsets.all(24),
                   child: Text(
@@ -294,7 +304,8 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
             Text(
               '${c.folio} · ${c.renglones} producto(s), '
               '${cantidadLegible(c.piezas)} piezas'
-              '${pedida == null ? '' : ' · la pidió el vendedor'}',
+              '${pedida == null ? '' : ' · la pidió el vendedor'}'
+              '${paraVender(c.fecha, dia: c.hechaEl)}',
             ),
             const SizedBox(height: 6),
             EtiquetaDeEstadoDeCarga(estado: c.estado, key: Key('estado_carga_${c.folio}')),
@@ -378,7 +389,7 @@ class _OtrosDiasSinCerrar extends StatelessWidget {
   Widget build(BuildContext context) {
     final porDia = <String, int>{};
     for (final c in abiertas) {
-      if (c.fecha != dia) porDia[c.fecha] = (porDia[c.fecha] ?? 0) + 1;
+      if (c.hechaEl != dia) porDia[c.hechaEl] = (porDia[c.hechaEl] ?? 0) + 1;
     }
     if (porDia.isEmpty) return const SizedBox.shrink();
     final dias = porDia.keys.toList()..sort();
@@ -713,7 +724,11 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                   '${carga.vendedor} · ${carga.camion}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text('Sale de ${carga.bodega} · ${diaEnPalabras(carga.fecha)}'),
+                Text(
+                  'Sale de ${carga.bodega} · se hizo el ${diaEnPalabras(carga.hechaEl)}'
+                  '${paraVender(carga.fecha, dia: carga.hechaEl)}',
+                  key: const Key('dia_de_la_carga'),
+                ),
                 const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,

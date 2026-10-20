@@ -15,6 +15,7 @@ QUÉ DEFIENDEN ESTAS PRUEBAS
 from __future__ import annotations
 
 import uuid
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -269,6 +270,49 @@ async def test_los_cortes_de_un_dia(cliente, sesion, semilla):
     assert vacio["cortes"] == []
     # Sin día, los de siempre.
     assert len((await cliente.get("/v1/cortes", headers=cab)).json()["cortes"]) == 1
+
+
+async def test_el_corte_es_del_dia_en_que_se_hizo(cliente, sesion, semilla):
+    """«Si hago el corte a las 11 de la noche, es de ese día» (ADR 0002 §151).
+
+    La carga es para mañana, pero el corte se hizo hoy: sale hoy, y su
+    `fecha_operativa` sigue siendo la de la carga. El que mandó el vendedor lleva
+    el día de su teléfono, aunque la oficina lo cierre después."""
+    hoy = date.today()
+    manana = hoy + timedelta(days=1)
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    await sesion.execute(
+        text("UPDATE cargas SET fecha_operativa = :d WHERE id = :c"),
+        {"d": manana, "c": dia["carga"]},
+    )
+    await sesion.commit()
+    await _reportar_cola(sesion, dia["dispositivo"], 0)
+    cab = await _cab(cliente)
+    corte = await _abrir(cliente, cab, dia)
+
+    de_hoy = (await cliente.get("/v1/cortes", params={"dia": str(hoy)}, headers=cab)).json()
+    assert [(c["id"], c["hecho_el"], c["fecha_operativa"]) for c in de_hoy["cortes"]] == [
+        (corte["id"], str(hoy), str(manana))
+    ]
+    de_manana = (
+        await cliente.get("/v1/cortes", params={"dia": str(manana)}, headers=cab)
+    ).json()
+    assert de_manana["cortes"] == []
+
+    # El del vendedor: lo hizo ayer en su teléfono.
+    ayer = hoy - timedelta(days=1)
+    await sesion.execute(
+        text(
+            "INSERT INTO cortes_vendedor (id, vendedor_id, carga_id, fecha_operativa, "
+            "                             efectivo_declarado, estado, liquidacion_id) "
+            "VALUES (:k, :v, :c, :d, 0, 'cerrado', :l)"
+        ),
+        {"k": uuid.uuid4(), "v": semilla["vendedor"], "c": dia["carga"], "d": ayer,
+         "l": corte["id"]},
+    )
+    await sesion.commit()
+    de_ayer = (await cliente.get("/v1/cortes", params={"dia": str(ayer)}, headers=cab)).json()
+    assert [(c["id"], c["hecho_el"]) for c in de_ayer["cortes"]] == [(corte["id"], str(ayer))]
 
 
 async def test_un_corte_que_no_existe_es_404(cliente, semilla):

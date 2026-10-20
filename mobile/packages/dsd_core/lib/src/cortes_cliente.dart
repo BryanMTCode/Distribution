@@ -63,13 +63,16 @@ class CorteEnLista {
     required this.vendedor,
     required this.diferenciaEfectivo,
     required this.faltantes,
-  });
+    String? hechoEl,
+  }) : hechoEl = hechoEl ?? fecha;
 
   factory CorteEnLista.deJson(Map<String, Object?> j) => CorteEnLista(
         id: j['id']! as String,
         folio: j['folio']! as String,
         estado: j['estado']! as String,
         fecha: j['fecha_operativa']! as String,
+        // Un servidor anterior no lo manda: entonces, el día de la carga.
+        hechoEl: j['hecho_el'] as String?,
         vendedor: j['vendedor']! as String,
         diferenciaEfectivo: Dinero.deTexto(j['diferencia_efectivo']! as String),
         faltantes: (j['faltantes']! as num).toInt(),
@@ -78,7 +81,13 @@ class CorteEnLista {
   final String id;
   final String folio;
   final String estado;
+
+  /// El día de la carga: con él se cuentan las ventas del corte.
   final String fecha;
+
+  /// El día en que se hizo el corte, que es en el que la app lo enseña: el de
+  /// las 11 de la noche es de ese día (ADR 0002 §151).
+  final String hechoEl;
   final String vendedor;
   final Dinero diferenciaEfectivo;
 

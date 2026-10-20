@@ -12,12 +12,14 @@ class _Transporte implements Transporte {
   final int codigo;
   final Object? cuerpo;
   final List<(String, Map<String, Object?>?)> pedidas = [];
+  final List<Map<String, String>?> parametros = [];
 
   RespuestaHttp get _r => RespuestaHttp(codigo, jsonEncode(cuerpo));
 
   @override
   Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
     pedidas.add((ruta, null));
+    this.parametros.add(parametros);
     return _r;
   }
 
@@ -76,6 +78,31 @@ void main() {
     expect(c.surtido.single.presentaciones.map((p) => p.unidad), ['CAJA', 'PZA']);
     expect(c.bloqueos, hasLength(1));
     expect(c.mensaje, startsWith('Se agregaron'));
+  });
+
+  test('las del día en que se hicieron: «la del lunes en la noche es del lunes» '
+      '(ADR 0002 §151)', () async {
+    final t = _Transporte(200, [
+      {
+        'id': 'c1', 'folio': 'CG-000008', 'estado': 'confirmada',
+        'fecha_operativa': '2026-10-20', 'hecha_el': '2026-10-19',
+        'vendedor': 'Juan', 'camion': 'Camión 01', 'renglones': 1, 'piezas': '96.000',
+      },
+    ]);
+    final cargas = await ClienteCargas(t).hechasEl('2026-10-19');
+    expect(t.pedidas.single.$1, '/v1/cargas');
+    expect(t.parametros.single, {'hechas_el': '2026-10-19'});
+    expect((cargas.single.hechaEl, cargas.single.fecha), ('2026-10-19', '2026-10-20'));
+  });
+
+  test('un servidor anterior no manda hecha_el: es el día de la carga', () async {
+    final c = await ClienteCargas(_Transporte(200, _detalle)).ver('c1');
+    expect(c.hechaEl, c.fecha);
+    final r = ResumenDeCarga.deJson({
+      'id': 'c1', 'folio': 'CG-1', 'estado': 'borrador', 'fecha_operativa': '2026-10-07',
+      'vendedor': 'Juan', 'camion': 'C1', 'renglones': 0, 'piezas': '0',
+    });
+    expect(r.hechaEl, '2026-10-07');
   });
 
   test('agregar manda la cantidad como texto, tal cual se tecleó', () async {

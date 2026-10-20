@@ -57,6 +57,7 @@ router = APIRouter(prefix="/cortes", tags=["cortes"])
 class CargaPorCortar(BaseModel):
     carga_id: uuid.UUID
     folio: str
+    # El día en que se vende: el de sus ventas. El corte se le debe ese día.
     fecha_operativa: date
     vendedor: str
     camion: str
@@ -71,7 +72,11 @@ class CorteEnLista(BaseModel):
     id: uuid.UUID
     folio: str
     estado: str
+    # El de la carga: con él se cuentan las ventas del corte.
     fecha_operativa: date
+    # El día en que se hizo el corte, que es en el que la app lo enseña: el de
+    # las 11 de la noche es de ese día (ADR 0002 §151).
+    hecho_el: date
     vendedor: str
     carga: str
     efectivo_esperado: Dinero
@@ -169,7 +174,8 @@ class PeticionCerrar(BaseModel):
 @router.get("", response_model=Cortes)
 async def lista(actor: ActorDep, sesion: SesionDep, dia: date | None = None) -> Cortes:
     """Lo que falta cortar —de cualquier día: es trabajo pendiente— y los cortes.
-    Con `dia`, los cortes de ese día; sin él, los últimos cien (ADR 0002 §149)."""
+    Con `dia`, los cortes que se hicieron ese día; sin él, los últimos cien
+    (ADR 0002 §149, §151)."""
     actor.exigir(PERMISO)
     return Cortes(
         por_cortar=[
