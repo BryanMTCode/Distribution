@@ -16,6 +16,8 @@
   {# Las canceladas, aparte: no se mezclan con las que cuentan (ADR 0002 §95). #}
   <button type="submit" name="ver" value="canceladas" id="ver_canceladas"
           class="{% if not viendo_canceladas %}secundario{% endif %}">Canceladas ({{ cuantas_canceladas }})</button>
+  {# Lo que cancelaron o agregaron los vendedores desde el teléfono (§162). #}
+  <a href="/panel/ventas/cambios" class="boton-chico" id="ver_cambios_vendedores">Cambios de los vendedores</a>
 </form>
 
 {% if filas %}

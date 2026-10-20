@@ -724,6 +724,61 @@ async def _insertar_partida(
 # Lo que se anota si el teléfono no manda motivo. La app lo exige; esto es para un
 # teléfono viejo o alterado, y la cancelación entra igual.
 MOTIVO_DE_CANCELACION_SIN_TEXTO = "Cancelada por el vendedor desde la app, sin motivo."
+MOTIVO_DE_AGREGADO_SIN_TEXTO = "Agregado por el vendedor desde la app, sin motivo."
+
+# Las marcas de revisión de lo que el vendedor cambia desde el teléfono (§162).
+# La oficina las ve en la venta y en «Cambios de los vendedores»: cancelar o
+# agregar es legítimo, y también es por donde se escaparía un cobro.
+MOTIVO_CANCELADA_POR_VENDEDOR = "cancelada_por_vendedor"
+MOTIVO_AGREGADA_POR_VENDEDOR = "agregada_por_vendedor"
+
+
+async def _rastro_del_telefono(
+    sesion: AsyncSession, datos: dict[str, Any], cliente_id: uuid.UUID
+) -> dict[str, Any]:
+    """Lo que el teléfono sabe del momento del cambio, para el historial (§162).
+
+    Su hora, si el ticket ya se había impreso y cuántas copias —cancelar o
+    agregar después de entregar el papel es lo que más hay que mirar—, y dónde
+    estaba, con la distancia a la tienda.
+    """
+    lat, lng = _decimal(datos, "lat"), _decimal(datos, "lng")
+    distancia = None
+    if lat is not None and lng is not None:
+        distancia = (
+            await sesion.execute(
+                text(
+                    "SELECT round(ST_Distance("
+                    "  ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,"
+                    "  ST_SetSRID(ST_MakePoint(c.lng, c.lat), 4326)::geography)) "
+                    "  FROM clientes c WHERE c.id = :c AND c.lat IS NOT NULL"
+                ),
+                {"lat": float(lat), "lng": float(lng), "c": cliente_id},
+            )
+        ).scalar_one_or_none()
+    impreso = datos.get("ticket_impreso")
+    return {
+        "desde": "app",
+        "fecha_dispositivo": _texto(datos, "fecha_dispositivo"),
+        "ticket_impreso": impreso if isinstance(impreso, bool) else None,
+        "reimpresiones": _entero(datos, "reimpresiones"),
+        "lat": str(lat) if lat is not None else None,
+        "lng": str(lng) if lng is not None else None,
+        "distancia_cliente_m": int(distancia) if distancia is not None else None,
+    }
+
+
+async def _marcar_venta(sesion: AsyncSession, venta_id: uuid.UUID, motivos: list[str]) -> None:
+    """Suma motivos de revisión a la venta, sin perder los que ya traía."""
+    await sesion.execute(
+        text(
+            "UPDATE ventas SET requiere_revision = true, "
+            "       revision_motivos = ARRAY(SELECT DISTINCT unnest("
+            "           revision_motivos || CAST(:m AS text[])) ORDER BY 1) "
+            " WHERE id = :v"
+        ),
+        {"m": motivos, "v": venta_id},
+    )
 
 
 @manejador_de("venta.cancelar")
@@ -769,8 +824,152 @@ async def cancelar_venta_del_vendedor(
 
     motivo = (_texto(datos, "motivo") or "").strip() or MOTIVO_DE_CANCELACION_SIN_TEXTO
     await panel_ventas.cancelar_venta(
-        sesion, cabecera, motivo=motivo, reingresa=True, quien=ctx.usuario_id
+        sesion,
+        cabecera,
+        motivo=motivo,
+        reingresa=True,
+        quien=ctx.usuario_id,
+        rastro=await _rastro_del_telefono(sesion, datos, cabecera["cliente_id"]),
     )
+    await _marcar_venta(sesion, entidad_id, [MOTIVO_CANCELADA_POR_VENDEDOR])
+    await sesion.flush()
+
+
+@manejador_de("venta.agregar")
+async def agregar_a_venta(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """El vendedor le agrega a su venta lo que le faltó (ADR 0002 §162).
+
+    `entidad_id` es la venta. **Solo agrega**: renglones nuevos, cada uno validado
+    como los de `venta.crear` —la aritmética se rechaza, el precio desactualizado
+    se marca—, y lo agregado SALE DEL CAMIÓN. Nunca baja ni quita: bajar
+    devolvería mercancía al camión sin que nadie la viera, y ése es el hueco por
+    donde se escaparía un cobro. Para bajar, se cancela y se vuelve a hacer.
+
+    Mismos bloqueos que cancelar: de otro vendedor, cancelada o del día ya
+    liquidado se rechaza y queda en cuarentena para la oficina. La venta queda
+    marcada para revisión y el cambio va al historial, con su rastro.
+    """
+    from dataclasses import replace
+
+    # Aquí y no arriba: el panel importa de la capa de sincronización.
+    from app.api.admin import ventas as panel_ventas
+
+    cabecera = await panel_ventas._cabecera(sesion, entidad_id, para_escribir=True)
+    if cabecera is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, f"la venta a modificar no existe: {entidad_id}"
+        )
+    if cabecera["vendedor_id"] != ctx.usuario_id:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "la venta a modificar es de otro vendedor"
+        )
+    if cabecera["estado"] != "confirmada":
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "la venta ya está cancelada: no se le agrega nada"
+        )
+    if cabecera["tipo"] != "contado":
+        # De antes del solo contado (§81): su cartera no se movería con el total.
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "una venta a crédito no se modifica desde el teléfono"
+        )
+    bloqueos = await panel_ventas._bloqueos(sesion, cabecera)
+    if bloqueos:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "no se puede modificar desde el teléfono: " + " ".join(bloqueos),
+        )
+
+    partidas = datos.get("partidas")
+    if not isinstance(partidas, list) or not partidas:
+        raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "no hay nada que agregar")
+
+    antes = (
+        await sesion.execute(
+            text(
+                "SELECT COALESCE(max(linea), 0) AS ultima, count(*) AS renglones "
+                "  FROM venta_partidas WHERE venta_id = :v"
+            ),
+            {"v": entidad_id},
+        )
+    ).mappings().one()
+
+    motivos: list[str] = [MOTIVO_AGREGADA_POR_VENDEDOR]
+    salidas: list[tuple[uuid.UUID, Decimal]] = []
+    agregado = Decimal("0")
+    agregadas: list[dict[str, Any]] = []
+    for numero, cruda in enumerate(partidas, start=1):
+        if not isinstance(cruda, dict):
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "partida mal formada")
+        cantidad = _decimal_obligatorio(cruda, "cantidad")
+        if cantidad <= 0:
+            # Solo se agrega. Una cantidad negativa sería bajar la venta por la
+            # puerta de atrás.
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO, "a una venta solo se le agrega: cantidad no positiva"
+            )
+        # El renglón va al final de lo que el SERVIDOR tiene: la oficina pudo
+        # haber corregido la venta mientras el teléfono estaba sin señal.
+        renglon = {**cruda, "linea": antes["ultima"] + numero}
+        salidas.append(
+            await _insertar_partida(
+                sesion, ctx, entidad_id, renglon, motivos, cabecera["lista_precios_id"]
+            )
+        )
+        importe = _decimal_obligatorio(cruda, "importe")
+        agregado += importe
+        agregadas.append(
+            {
+                "producto_id": str(_uuid_obligatorio(cruda, "producto_id")),
+                "unidad": _texto(cruda, "unidad_codigo"),
+                "cantidad": str(cantidad),
+                "importe": str(importe),
+            }
+        )
+
+    fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    # Del camión de la venta, no del que el vendedor traiga hoy.
+    await _sacar_del_camion(
+        sesion,
+        replace(ctx, almacen_id=cabecera["almacen_id"]),
+        entidad_id,
+        fecha_dispositivo,
+        salidas,
+        motivos,
+    )
+
+    # Este UPDATE publica el delta al teléfono (cambió el total): trae las
+    # partidas con los mismos id que mandó, así que no mueve nada en su camión.
+    await sesion.execute(
+        text(
+            "UPDATE ventas SET subtotal = subtotal + :a, total = total + :a WHERE id = :v"
+        ),
+        {"a": agregado, "v": entidad_id},
+    )
+    await _marcar_venta(sesion, entidad_id, motivos)
+
+    motivo = (_texto(datos, "motivo") or "").strip() or MOTIVO_DE_AGREGADO_SIN_TEXTO
+    await panel_ventas._auditar(
+        sesion,
+        entidad_id,
+        accion="agregar",
+        quien=ctx.usuario_id,
+        motivo=motivo,
+        antes={
+            "total": str(cabecera["total"]),
+            "renglones": int(antes["renglones"]),
+            "folio_local": cabecera["folio_local"],
+        },
+        despues={
+            "total": str(Decimal(cabecera["total"]) + agregado),
+            "agregado": str(agregado),
+            "agregadas": agregadas,
+            **await _rastro_del_telefono(sesion, datos, cabecera["cliente_id"]),
+        },
+        ahora=ctx.recibido_en,
+    )
+    await panel_ventas._recalcular(sesion, cabecera["fecha_operativa"])
     await sesion.flush()
 
 

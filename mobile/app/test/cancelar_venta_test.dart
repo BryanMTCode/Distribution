@@ -92,6 +92,7 @@ void main() {
     await irAMiDia(tester);
 
     expect(find.byKey(const Key('cancelar_VEND01-000001')), findsNothing);
+    expect(find.byKey(const Key('agregar_VEND01-000001')), findsNothing);
     expect(find.byKey(const Key('cancelar_tras_corte_VEND01-000001')), findsOneWidget);
     expect(find.byKey(const Key('reimprimir_VEND01-000001')), findsOneWidget);
   });

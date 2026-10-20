@@ -6960,3 +6960,56 @@ tanto su camión y su efectivo decían otra cosa.
   partidas.
 
 (versionCode 53)
+
+## 162. El vendedor le agrega a su venta lo que le faltó, y queda la pista
+
+**Decisión (octubre 2026).** «Ten en cuenta que en su mayoría trabajarán
+offline. También quiero que puedan modificar la venta: si les faltó poner uno
+de un artículo, que lo agreguen y puedan imprimir el nuevo ticket. Solo quiero
+que quede pista de los cambios que se hagan. Pero hay que tener cuidado con el
+inventario, para que no puedan aprovecharse de cancelar ventas ni
+modificarlas.»
+
+- **Modificar es solo agregar.** En «Mi día», «Agregar artículos» abre la venta
+  con lo que ya lleva (que no se toca) y el catálogo con los precios de la lista
+  con que se vendió. Se sube con «+», con un motivo, y se confirma. **No se
+  puede bajar ni quitar.** Bajar «regresaría» mercancía al camión sin que nadie
+  la viera: el cliente se la llevó, el vendedor cobró, y el sistema cree que
+  sigue arriba. Para bajar, se cancela (§161) y se vuelve a hacer, o la corrige
+  la oficina.
+- **Lo agregado sale del camión.** Se revisa contra lo que trae, sin señal; no
+  deja agregar más.
+- **Sin señal, por la cola** (`venta.agregar`, detrás de su `venta.crear`). El
+  servidor valida cada renglón como en `venta.crear` (la aritmética se rechaza,
+  el precio desactualizado se marca), lo saca del camión y sube el total. Una
+  cantidad que no es positiva se rechaza. Tiene los mismos bloqueos que la
+  cancelación: cancelada, de otro vendedor o del día ya liquidado va a
+  cuarentena. Una venta a crédito de antes del §81 no se modifica desde el
+  teléfono.
+- **El ticket nuevo** sale como original de la venta modificada:
+  «MODIFICADA · Sustituye al ticket anterior», con lo de antes y lo agregado.
+  El aviso de «Mi día» lo ofrece con «Imprimir» y dice que se recoja el de
+  antes. Las copias siguientes salen de ese papel nuevo.
+- **La pista**, de cancelar y de agregar desde el teléfono:
+  · el historial guarda quién, cuándo (la hora del teléfono y la del
+    servidor), qué se agregó, el total antes y después y el motivo;
+  · guarda también **si el ticket ya se había impreso** y cuántas copias, y
+    **dónde estaba** el vendedor, a cuántos metros de la tienda (o «sin GPS»);
+  · la venta queda marcada para revisión («La canceló el vendedor», «El
+    vendedor le agregó artículos»);
+  · en el dashboard, la venta muestra su «Historial de cambios»;
+  · «Ventas → Cambios de los vendedores» lista todo, primero lo que se cambió
+    con el ticket ya impreso, porque el cliente se quedó con un papel que ya no
+    dice lo mismo;
+  · el Tablero lo cuenta en Pendientes.
+- **Por qué no se aprovechan.** Agregar solo puede subir lo que el vendedor
+  debe. Cancelar devuelve la mercancía al camión, y si de verdad se entregó, el
+  camión no cuadra cuando vuelve a la bodega (lo que no llega se queda en
+  tránsito con su nombre). Además la cancelación queda en la pista con el
+  ticket impreso y el lugar, y solo se puede el día de trabajo y antes del
+  corte.
+- **Arreglo de «Mi día»:** los renglones de una venta se identificaban por
+  producto, y una venta con dos renglones del mismo artículo —cajas y piezas, o
+  lo agregado— repetía la llave.
+
+(versionCode 53)

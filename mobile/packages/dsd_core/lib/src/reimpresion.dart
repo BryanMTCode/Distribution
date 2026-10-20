@@ -12,6 +12,8 @@
 /// · **La oficina la corrigió:** el original guardado dice otras cantidades. Se
 ///   arma como quedó, con «CORREGIDA POR LA OFICINA», y como copia si ya había
 ///   salido una.
+/// · **El vendedor la modificó (§162):** sale armada de nuevo, como original de la
+///   venta modificada, con «MODIFICADA · Sustituye al ticket anterior».
 /// · **La cancelada no se reimprime:** un papel de una venta que ya no existe es
 ///   un cobro que no se debe.
 ///
@@ -84,6 +86,9 @@ class ReimpresionDeVentas {
     final impresa = (v['impreso'] as int? ?? 0) == 1;
     final copia = impresa ? (v['reimpresiones'] as int? ?? 0) + 1 : 0;
     final corregida = v['nota_oficina'] != null;
+    // Al modificarla (§162) el teléfono olvida el ticket de antes: el siguiente
+    // sale armado de nuevo, como original de la venta modificada, y lo dice.
+    final modificada = (v['modificaciones'] as int? ?? 0) > 0;
     final guardado = v['ticket_escpos'];
 
     if (impresa && !corregida && guardado is List<int>) {
@@ -107,6 +112,7 @@ class ReimpresionDeVentas {
       columnas: columnas,
       tabla: tabla,
       corregida: corregida,
+      modificada: modificada,
     );
     return TicketParaReimprimir(
       bytes: copia == 0

@@ -70,6 +70,165 @@ _CENTAVO = Decimal("0.01")
 
 
 # ---------------------------------------------------------------------------
+# La pista de los cambios (ADR 0002 §162)
+# ---------------------------------------------------------------------------
+
+_ACCIONES = {
+    "cancelar": "Canceló la venta",
+    "corregir": "Corrigió cantidades",
+    "agregar": "Agregó artículos",
+}
+
+
+def describir_cambio(
+    accion: str, antes: dict | None, despues: dict | None, nombres: dict[str, str]
+) -> tuple[str, bool]:
+    """Un renglón del historial en palabras, y si hay que mirarlo con cuidado.
+
+    Lo que más hay que mirar es lo que el vendedor cambió desde el teléfono
+    DESPUÉS de entregar el ticket: el cliente se quedó con un papel que ya no
+    dice lo mismo que el sistema.
+    """
+    antes, despues = antes or {}, despues or {}
+    partes = [_ACCIONES.get(accion, accion)]
+    if accion == "agregar":
+        agregadas = [
+            f"{_cantidad(a.get('cantidad'))} {a.get('unidad') or ''} "
+            f"{nombres.get(a.get('producto_id'), 'producto')}".strip()
+            for a in despues.get("agregadas") or []
+        ]
+        if agregadas:
+            partes[0] += ": " + ", ".join(agregadas)
+    if antes.get("total") is not None and despues.get("total") is not None:
+        partes.append(f"total {dinero(antes['total'])} → {dinero(despues['total'])}")
+    desde_app = despues.get("desde") == "app"
+    if desde_app:
+        partes.append("desde el teléfono")
+        impreso = despues.get("ticket_impreso")
+        if impreso:
+            copias = despues.get("reimpresiones") or 0
+            partes.append(
+                "con el ticket ya impreso"
+                + (f" ({copias} copia{'s' if copias != 1 else ''})" if copias else "")
+            )
+        elif impreso is False:
+            partes.append("sin haber impreso el ticket")
+        distancia = despues.get("distancia_cliente_m")
+        if distancia is not None:
+            partes.append(f"a {distancia} m de la tienda")
+        elif despues.get("lat") is None:
+            partes.append("sin GPS")
+    return " · ".join(partes), bool(desde_app and despues.get("ticket_impreso"))
+
+
+def _cantidad(texto) -> str:
+    try:
+        valor = Decimal(str(texto))
+    except Exception:  # noqa: BLE001 — un dato viejo raro no tumba la pantalla
+        return str(texto or "")
+    return f"{valor.normalize():f}"
+
+
+async def _nombres_de_productos(sesion, filas) -> dict[str, str]:
+    ids = {
+        a.get("producto_id")
+        for f in filas
+        for a in ((f["datos_despues"] or {}).get("agregadas") or [])
+        if a.get("producto_id")
+    }
+    if not ids:
+        return {}
+    return {
+        str(r["id"]): r["nombre"]
+        for r in (
+            await sesion.execute(
+                text("SELECT id, nombre FROM productos WHERE id::text = ANY(:ids)"),
+                {"ids": list(ids)},
+            )
+        ).mappings()
+    }
+
+
+async def _historial(sesion, venta_id: uuid.UUID) -> list[dict]:
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT a.accion, a.motivo, a.datos_antes, a.datos_despues,
+                       a.ocurrido_en, u.nombre AS quien
+                  FROM auditoria a
+                  LEFT JOIN usuarios u ON u.id = a.usuario_id
+                 WHERE a.entidad = 'venta' AND a.entidad_id = :v
+                 ORDER BY a.ocurrido_en, a.id
+                """
+            ),
+            {"v": venta_id},
+        )
+    ).mappings().all()
+    nombres = await _nombres_de_productos(sesion, filas)
+    historial = []
+    for f in filas:
+        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"], nombres)
+        historial.append(
+            {"cuando": f["ocurrido_en"], "quien": f["quien"], "que": que,
+             "motivo": f["motivo"], "alerta": alerta}
+        )
+    return historial
+
+
+@router.get("/cambios", response_class=HTMLResponse)
+async def cambios_de_los_vendedores(
+    peticion: Request, actor: ActorWeb, sesion: SesionDep, dias: int = 7
+) -> HTMLResponse:
+    """Lo que los vendedores cancelaron o agregaron desde el teléfono (§162).
+
+    Es la pista que pidió la dirección: cancelar o agregar es legítimo —el
+    vendedor se equivoca—, y también es por donde se escaparía un cobro. Primero
+    las que se cambiaron con el ticket ya impreso.
+    """
+    actor.exigir("ventas.ver_todas")
+    dias = min(max(dias, 1), 90)
+    filas = (
+        await sesion.execute(
+            text(
+                """
+                SELECT a.accion, a.motivo, a.datos_antes, a.datos_despues,
+                       a.ocurrido_en, v.id AS venta_id, v.folio_local, v.estado,
+                       v.total, c.nombre_comercial AS cliente, u.nombre AS vendedor
+                  FROM auditoria a
+                  JOIN ventas v ON v.id = a.entidad_id
+                  JOIN clientes c ON c.id = v.cliente_id
+                  JOIN usuarios u ON u.id = v.vendedor_id
+                 WHERE a.entidad = 'venta'
+                   AND a.accion IN ('cancelar', 'agregar')
+                   AND a.usuario_id = v.vendedor_id
+                   AND a.ocurrido_en >= now() - make_interval(days => :dias)
+                 ORDER BY a.ocurrido_en DESC
+                 LIMIT 300
+                """
+            ),
+            {"dias": dias},
+        )
+    ).mappings().all()
+    nombres = await _nombres_de_productos(sesion, filas)
+    cambios = []
+    for f in filas:
+        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"], nombres)
+        cambios.append({**f, "que": que, "alerta": alerta})
+    return render(
+        peticion,
+        "ventas_cambios.html",
+        {
+            "cambios": cambios,
+            "dias": dias,
+            "con_ticket": sum(1 for c in cambios if c["alerta"]),
+        },
+        actor=actor,
+        seccion="Ventas",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Detalle
 # ---------------------------------------------------------------------------
 
@@ -116,6 +275,7 @@ async def detalle(
             "v": cabecera,
             "partidas": partidas,
             "bloqueos": bloqueos,
+            "historial": await _historial(sesion, venta_id),
             # Los formularios aparecen solo cuando de verdad se puede guardar. Un
             # botón que se puede tocar y luego explica que no se podía es peor que
             # un botón ausente con su razón al lado — y en esta pantalla el botón
@@ -197,13 +357,21 @@ async def cancelar(
 
 
 async def cancelar_venta(
-    sesion, cabecera, *, motivo: str, reingresa: bool, quien: uuid.UUID
+    sesion,
+    cabecera,
+    *,
+    motivo: str,
+    reingresa: bool,
+    quien: uuid.UUID,
+    rastro: dict | None = None,
 ) -> None:
     """Lo que escribe cancelar una venta. No valida ni hace commit.
 
-    Lo usan esta pantalla y Operaciones (ADR 0002 §119): las dos cancelan igual
-    —el mismo documento, la misma devolución al camión, el mismo delta al
-    teléfono—, y cada una decide antes qué la bloquea.
+    Lo usan esta pantalla, Operaciones (ADR 0002 §119) y el teléfono del vendedor
+    (§161): los tres cancelan igual —el mismo documento, la misma devolución al
+    camión, el mismo delta al teléfono—, y cada uno decide antes qué la bloquea.
+    [rastro] es lo que el teléfono sabe de ese momento —su hora, si el ticket ya
+    se había impreso, dónde estaba— y va al historial.
     """
     venta_id = cabecera["id"]
     ahora = datetime.now(UTC)
@@ -275,7 +443,7 @@ async def cancelar_venta(
             "total": str(cabecera["total"]),
             "folio_local": cabecera["folio_local"],
         },
-        despues={"estado": "cancelada", "reingresa_stock": reingresa},
+        despues={"estado": "cancelada", "reingresa_stock": reingresa, **(rastro or {})},
         ahora=ahora,
     )
     await _recalcular(sesion, cabecera["fecha_operativa"])

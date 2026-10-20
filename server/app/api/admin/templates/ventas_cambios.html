@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Cambios de los vendedores{% endblock %}
+{% block contenido %}
+<h1>Cambios de los vendedores</h1>
+<p class="subtitulo">
+  Lo que los vendedores cancelaron o agregaron desde el teléfono en los últimos
+  {{ dias }} días. Cambiar una venta es legítimo —el vendedor se equivoca—, y también
+  es por donde se escaparía un cobro: <strong>lo que se cambió con el ticket ya
+  impreso</strong> es lo primero que hay que mirar, porque el cliente se quedó con un
+  papel que ya no dice lo mismo. · <a href="/panel/ventas">volver a ventas</a>
+</p>
+
+<form class="barra" method="get" action="/panel/ventas/cambios">
+  {% for d in (1, 7, 30) %}
+  <button type="submit" name="dias" value="{{ d }}"
+          class="{% if dias != d %}secundario{% endif %}">{{ 'Hoy' if d == 1 else d ~ ' días' }}</button>
+  {% endfor %}
+</form>
+
+{% if con_ticket %}
+<div class="aviso-caja error" id="cambios_con_ticket">
+  {{ con_ticket }} cambio{{ 's' if con_ticket != 1 }} con el ticket ya impreso.
+</div>
+{% endif %}
+
+{% if cambios %}
+<div class="tabla-marco">
+  <table id="tabla_cambios_vendedores">
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Vendedor</th>
+        <th>Venta</th>
+        <th>Cliente</th>
+        <th>Qué</th>
+        <th>Motivo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cambios %}
+      <tr{% if c.alerta %} class="fila-alerta"{% endif %}>
+        <td class="sutil">{{ c.ocurrido_en.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ c.vendedor }}</td>
+        <td><a href="/panel/ventas/{{ c.venta_id }}" class="mono">{{ c.folio_local }}</a>
+          {% if c.estado == 'cancelada' %}<div class="sutil">cancelada</div>{% endif %}</td>
+        <td>{{ c.cliente }}</td>
+        <td>{{ c.que }}</td>
+        <td>{% if c.motivo %}«{{ c.motivo }}»{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="vacio" id="sin_cambios">Ningún vendedor canceló ni agregó nada en este periodo.</p>
+{% endif %}
+{% endblock %}

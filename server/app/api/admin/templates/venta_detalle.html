@@ -124,6 +124,26 @@
   </table>
 </div>
 
+{# La pista de los cambios (ADR 0002 §162): quién, cuándo, qué y por qué. #}
+{% if historial %}
+<h2 id="historial">Historial de cambios</h2>
+<div class="tabla-marco">
+  <table id="tabla_historial">
+    <thead><tr><th>Cuándo</th><th>Quién</th><th>Qué</th><th>Motivo</th></tr></thead>
+    <tbody>
+      {% for h in historial %}
+      <tr{% if h.alerta %} class="fila-alerta"{% endif %}>
+        <td class="sutil">{{ h.cuando.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ h.quien or '—' }}</td>
+        <td>{{ h.que }}</td>
+        <td>{% if h.motivo %}«{{ h.motivo }}»{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% if bloqueos %}
 <div class="aviso-caja error" id="bloqueos_venta">
   <strong>Esta venta no se puede cambiar:</strong>

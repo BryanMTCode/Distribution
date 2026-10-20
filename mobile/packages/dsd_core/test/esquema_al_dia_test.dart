@@ -154,7 +154,28 @@ void main() {
     expect(db.select('SELECT * FROM no_drops'), hasLength(2));
   });
 
-  test('aplicarlo dos veces no truena', () {
+  test('UNA BASE VIEJA RECIBE ventas.modificaciones (§162)', () {
+    // Agregar a una venta la escribe; sin ella, el primer «Agregar artículos»
+    // después de actualizar reventaría con el cliente enfrente.
+    aplicarEsquemaLocal(db);
+    db.execute('ALTER TABLE ventas DROP COLUMN modificaciones');
+    db.execute(
+      "INSERT INTO clientes (id, nombre_comercial) VALUES ('cli-1', 'La Esquina')",
+    );
+    db.execute(
+      "INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, total, "
+      "fecha_dispositivo, fecha_operativa, creado_en) "
+      "VALUES ('v-1', 1, 'VEND01-000001', 'cli-1', 592.0, 'x', '2026-10-05', 'x')",
+    );
+
+    aplicarEsquemaLocal(db);
+
+    final fila = db.select('SELECT * FROM ventas').single;
+    expect(fila['modificaciones'], 0);
+    expect(fila['total'], 592.0, reason: 'no se pierde la venta');
+  });
+
+    test('aplicarlo dos veces no truena', () {
     // Es lo que pasa en cada arranque de la app.
     aplicarEsquemaLocal(db);
     expect(() => aplicarEsquemaLocal(db), returnsNormally);

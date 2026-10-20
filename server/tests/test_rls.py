@@ -1132,3 +1132,30 @@ async def test_el_vendedor_cancela_su_venta_con_el_rol_restringido(
             {"a": semilla["camion"], "p": venta_del_dia["producto"]},
         )
     ).scalar_one() == 600
+
+
+async def test_el_vendedor_agrega_a_su_venta_con_el_rol_restringido(
+    alcance, sesion, semilla, venta_del_dia  # noqa: F811
+):
+    """§162: lo que el vendedor le agrega a su venta entra con el rol de producción."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.infra.sync.manejadores import obtener_manejador
+    from tests.test_operaciones import _contexto
+    from tests.test_venta_agregada_por_vendedor import _datos
+
+    conexion = await alcance("vendedor", semilla["vendedor"], rutas=[semilla["ruta"]])
+    s = AsyncSession(bind=conexion)
+    await obtener_manejador("venta.agregar")(
+        s, _contexto(semilla, venta_del_dia), venta_del_dia["venta"], _datos(venta_del_dia)
+    )
+    await s.flush()
+    await conexion.commit()
+    await s.close()
+
+    await sesion.rollback()
+    assert (
+        await sesion.execute(
+            text("SELECT total FROM ventas WHERE id = :v"), {"v": venta_del_dia["venta"]}
+        )
+    ).scalar_one() == 6300

@@ -151,6 +151,8 @@
     tbody tr:hover td { background: #fcfafa; }
     tr.elegido td { background: var(--acento-suave); }
     tr.elegido td:first-child { box-shadow: inset 3px 0 0 var(--acento); }
+    /* Un cambio del vendedor con el ticket ya impreso (ADR 0002 §162). */
+    tr.fila-alerta td:first-child { box-shadow: inset 3px 0 0 var(--alerta); }
     /* El detalle largo de un renglón, en dos líneas; completo al pasar el ratón. */
     .dos-lineas {
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;

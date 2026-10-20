@@ -415,6 +415,18 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+52",
             ),
             Punto(
+                "agregar_a_venta", "Agregarle a una venta lo que le faltó",
+                "Con el modo avión, en «Mi día» toca una venta → «Agregar artículos» → «+» "
+                "a un artículo → «Se me olvidó agregarlo» → «Agregar a la venta» → "
+                "«Agregar». En el aviso, «Imprimir». Intenta también agregar más de lo que "
+                "trae el camión.",
+                "El total sube, el camión baja lo agregado y el ticket nuevo dice "
+                "«MODIFICADA · Sustituye al ticket anterior» con lo de antes y lo nuevo. No "
+                "deja pasar de lo que trae el camión, ni bajar o quitar lo que ya llevaba "
+                "(ADR 0002 §162).",
+                desde="+53",
+            ),
+            Punto(
                 "cancelar_venta_vendedor", "Cancelar una venta desde «Mi día»",
                 "Con el modo avión, en «Mi día» toca una venta → «Cancelar la venta» → "
                 "escoge «Me equivoqué de cliente» → «Cancelar la venta». Luego mira «Mi "
@@ -807,6 +819,17 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Operación de rutas → Ventas: «Todas», «Por revisar» y las canceladas.",
                 "Cada venta con su folio, vendedor, cliente y total; las canceladas van "
                 "aparte.",
+            ),
+            Punto(
+                "panel_cambios_vendedores", "La pista de lo que cambian los vendedores",
+                "Después de cancelar una venta y agregarle a otra desde el teléfono (y "
+                "sincronizar): Ventas → «Cambios de los vendedores», y abre cada venta.",
+                "Cada cambio con quién, cuándo, qué se agregó, el total antes y después, el "
+                "motivo, si el ticket ya se había impreso y a cuántos metros de la tienda. "
+                "Los que se hicieron con el ticket impreso van marcados. La venta dice "
+                "«Historial de cambios» y queda por revisar, y el Tablero lo cuenta en "
+                "Pendientes (ADR 0002 §162).",
+                desde="+53",
             ),
             Punto(
                 "panel_cancelar_venta", "Cancelar o corregir una venta",

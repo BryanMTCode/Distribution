@@ -573,6 +573,9 @@ EXPLICACION_MOTIVOS = {
     "sin_lista_de_precios": "No trae lista de precios",
     "fuera_de_geocerca": "Lejos del domicilio registrado",
     "sin_ubicacion": "Sin GPS",
+    # Lo que el vendedor cambió desde el teléfono (ADR 0002 §162).
+    "cancelada_por_vendedor": "La canceló el vendedor",
+    "agregada_por_vendedor": "El vendedor le agregó artículos",
     "reloj_desfasado": "El reloj del equipo está desfasado",
 }
 

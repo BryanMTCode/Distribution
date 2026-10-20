@@ -94,6 +94,12 @@ const _columnasQueLlegaronDespues = <(String, String, String)>[
     'delta',
     'ALTER TABLE ajustes_camion_aplicados ADD COLUMN delta REAL',
   ),
+  // Lo que el vendedor le agregó a su venta (ADR 0002 §162).
+  (
+    'ventas',
+    'modificaciones',
+    'ALTER TABLE ventas ADD COLUMN modificaciones INTEGER NOT NULL DEFAULT 0',
+  ),
 ];
 
 /// Aplica el esquema y las columnas que llegaron después.

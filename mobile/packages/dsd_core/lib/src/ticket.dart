@@ -96,7 +96,7 @@ class DatosDeLaVisita {
 ///
 /// [copia] es el número de reimpresión: 0 es el original, 1 en adelante son
 /// copias. [corregida] es para la que la oficina corrigió, que se reimprime como
-/// quedó (ADR 0002 §159). El contenido es **el mismo** —los mismos importes, el mismo folio—;
+/// quedó (ADR 0002 §159), y [modificada] para la que el vendedor modificó (§162). El contenido es **el mismo** —los mismos importes, el mismo folio—;
 /// lo único que cambia es el aviso de copia, para que nadie presente una
 /// reimpresión como si fuera el original.
 ///
@@ -112,11 +112,12 @@ List<int> ticketDeVenta(
   TablaDeCodigos tabla = TablaDeCodigos.pc437,
   int copia = 0,
   bool corregida = false,
+  bool modificada = false,
 }) {
   final t = ConstructorEscPos(columnas: columnas, tabla: tabla)..inicializar();
 
   _encabezado(t, negocio, copia: copia);
-  _datosDeLaVenta(t, venta, visita, corregida: corregida);
+  _datosDeLaVenta(t, venta, visita, corregida: corregida, modificada: modificada);
   _partidas(t, venta);
   _totales(t, venta);
   _pie(t, venta, negocio);
@@ -181,6 +182,7 @@ void _datosDeLaVenta(
   VentaGuardada venta,
   DatosDeLaVisita visita, {
   bool corregida = false,
+  bool modificada = false,
 }) {
   // El folio en tamaño doble: es lo que el cliente dicta por teléfono cuando
   // algo se aclara, y lo que la oficina busca.
@@ -195,6 +197,15 @@ void _datosDeLaVenta(
   // La que la oficina corrigió se reimprime como quedó (ADR 0002 §159): el
   // papel lo dice, para que no se confunda con el que firmó el cliente.
   if (corregida) t.linea('CORREGIDA POR LA OFICINA');
+  // La que el vendedor modificó (§162): el cliente se queda con el papel nuevo y
+  // tiene que poder distinguirlo del que le dieron antes.
+  if (modificada) {
+    t
+      ..negrita(true)
+      ..linea('MODIFICADA')
+      ..negrita(false)
+      ..parrafo('Sustituye al ticket anterior');
+  }
   t
     ..alinear(Alineacion.izquierda)
     ..separador();

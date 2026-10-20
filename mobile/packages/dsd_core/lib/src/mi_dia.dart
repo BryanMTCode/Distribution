@@ -56,6 +56,7 @@ class VentaDeMiDia {
     required this.formaDePago,
     required this.sincronizada,
     this.partidas = const [],
+    this.modificaciones = 0,
   });
 
   /// Lo que se vendió, en el orden del ticket. Se despliega al tocar la venta:
@@ -72,6 +73,9 @@ class VentaDeMiDia {
   /// Si ya salió del teléfono. Se muestra porque una venta sin sincronizar es
   /// dinero que la oficina todavía no sabe que existe.
   final bool sincronizada;
+
+  /// Cuántas veces el vendedor le agregó artículos (ADR 0002 §162).
+  final int modificaciones;
 }
 
 /// Una venta del día que la OFICINA canceló o corrigió.
@@ -175,6 +179,7 @@ class RepoMiDia {
         .select(
           '''
           SELECT v.id, v.folio_local, v.total, v.forma_pago, v.sincronizada,
+                 v.modificaciones,
                  COALESCE(c.nombre_comercial, 'Cliente nuevo') AS cliente
             FROM ventas v
             LEFT JOIN clientes c ON c.id = v.cliente_id
@@ -192,6 +197,7 @@ class RepoMiDia {
             formaDePago: FormaDePago.deCodigo(f['forma_pago'] as String?),
             sincronizada: (f['sincronizada'] as int? ?? 0) == 1,
             partidas: _partidasDe(f['id'] as String),
+            modificaciones: f['modificaciones'] as int? ?? 0,
           ),
         )
         .toList();

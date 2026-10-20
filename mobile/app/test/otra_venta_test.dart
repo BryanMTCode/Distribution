@@ -11,12 +11,16 @@ import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/datos/servicio_ubicacion.dart';
 import 'package:dsd_app/src/estado/alta.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'ayudas.dart';
 
 /// Entra y le cobra dos cajas de sopa al cliente 1.
-Future<BaseLocal> cobrarDosCajas(WidgetTester tester) async {
+Future<BaseLocal> cobrarDosCajas(
+  WidgetTester tester, {
+  List<Override> extras = const [],
+}) async {
   final base = await montarApp(
     tester,
     credencial: credencialDelServidor(),
@@ -28,6 +32,7 @@ Future<BaseLocal> cobrarDosCajas(WidgetTester tester) async {
       servicioUbicacionProvider.overrideWithValue(
         ServicioUbicacionFalso.siempre(const GpsSinLectura()),
       ),
+      ...extras,
     ],
   );
   await entrarCon(tester, pinCorrecto);

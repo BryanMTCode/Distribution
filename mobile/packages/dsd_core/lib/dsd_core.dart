@@ -10,7 +10,7 @@ export 'src/aplicador_deltas.dart';
 export 'src/auth_cliente.dart';
 export 'src/borrador.dart';
 export 'src/canonico.dart';
-export 'src/cancelar_venta.dart';
+export 'src/cambiar_venta.dart';
 export 'src/cierre_del_dia.dart';
 export 'src/cierres_cliente.dart';
 export 'src/compras_sin_senal.dart';

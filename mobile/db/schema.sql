@@ -385,6 +385,9 @@ CREATE TABLE IF NOT EXISTS ventas (
     -- Payload ESC/POS conservado para reimprimir sin recalcular. Una
     -- reimpresión debe salir IDÉNTICA al original, marcada como COPIA.
     ticket_escpos           BLOB,
+    -- Cuántas veces el vendedor le agregó artículos desde el teléfono (ADR 0002
+    -- §162). Con una o más, el ticket dice «MODIFICADA».
+    modificaciones          INTEGER NOT NULL DEFAULT 0,
     sincronizada            INTEGER NOT NULL DEFAULT 0,
     -- Por qué la oficina canceló o corrigió esta venta. Viaja en el delta de la
     -- venta para que el vendedor lo LEA: que su venta cambie sin decirle por qué

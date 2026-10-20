@@ -19,8 +19,9 @@
 /// también sin señal; si ya se había impreso, como «COPIA n».
 ///
 /// Y **cancelar** (ADR 0002 §161), por si el vendedor se equivocó: con su motivo,
-/// sin señal, y la mercancía vuelve al camión ahí mismo. Después del corte de ese
-/// día ya no: ésa la cancela la oficina.
+/// sin señal, y la mercancía vuelve al camión ahí mismo. O **agregarle** lo que le
+/// faltó (§162) e imprimir el ticket nuevo; solo agregar, nunca bajar. Después del
+/// corte de ese día, ni una ni otra: la cambia la oficina.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -28,10 +29,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../datos/impresora.dart';
+import '../../datos/servicio_ubicacion.dart';
+import '../../estado/alta.dart' show servicioUbicacionProvider;
 import '../../estado/carrito.dart';
 import '../../estado/impresora.dart';
 import '../../estado/mi_dia.dart';
 import '../../estado/sesion.dart';
+import 'agregar_a_venta.dart';
 import 'cierre_del_dia.dart';
 
 class PantallaMiDia extends ConsumerStatefulWidget {
@@ -105,18 +109,23 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
       builder: (_) => _DialogoCancelarVenta(venta: venta),
     );
     if (motivo == null || !mounted) return;
+    final ubicacion = await _dondeEstoy();
+    if (!mounted) return;
 
     try {
-      ref.read(cancelacionDeVentaProvider).cancelar(venta.id, motivo: motivo);
-    } on CancelacionRechazada catch (e) {
+      ref
+          .read(cancelacionDeVentaProvider)
+          .cancelar(venta.id, motivo: motivo, ubicacion: ubicacion);
+    } on CambioRechazado catch (e) {
       _avisar(switch (e.motivo) {
-        MotivoNoCancelacion.faltaMotivo => 'Escribe por qué la cancelas.',
-        MotivoNoCancelacion.diaCortado => 'Ya hiciste el corte de ese día: para '
+        MotivoNoSeToca.faltaMotivo => 'Escribe por qué la cancelas.',
+        MotivoNoSeToca.diaCortado => 'Ya hiciste el corte de ese día: para '
             'cancelarla, pídeselo a la oficina.',
-        MotivoNoCancelacion.otroDia => 'Es de un día que ya pasó: para cancelarla, '
+        MotivoNoSeToca.otroDia => 'Es de un día que ya pasó: para cancelarla, '
             'pídeselo a la oficina.',
-        MotivoNoCancelacion.yaCancelada => 'Esa venta ya estaba cancelada.',
-        MotivoNoCancelacion.noExiste => 'Esa venta ya no está en el teléfono.',
+        MotivoNoSeToca.yaCancelada => 'Esa venta ya estaba cancelada.',
+        MotivoNoSeToca.noExiste => 'Esa venta ya no está en el teléfono.',
+        MotivoNoSeToca.sinRenglones || MotivoNoSeToca.sinExistencia => 'No se pudo cancelar.',
       });
       return;
     } on Object catch (e) {
@@ -131,6 +140,45 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
     ref.read(revisionDelCamionProvider.notifier).state++;
     _avisar('Venta ${venta.folio} cancelada. La mercancía volvió a tu camión. '
         'Si le dejaste el ticket, recógelo.');
+  }
+
+  /// Dónde está el vendedor, para la pista del cambio (§162). Corto, como al
+  /// cobrar: sin GPS se guarda igual.
+  Future<Ubicacion?> _dondeEstoy() async {
+    try {
+      final lectura = await ref
+          .read(servicioUbicacionProvider)
+          .leer(tiempoLimite: const Duration(seconds: 4));
+      return lectura is GpsObtenido ? lectura.ubicacion : null;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Le agrega a [venta] lo que le faltó (ADR 0002 §162) y ofrece el ticket nuevo.
+  Future<void> _agregar(VentaDeMiDia venta) async {
+    final total = await Navigator.of(context).push<Dinero>(
+      MaterialPageRoute(builder: (_) => PantallaAgregarAVenta(venta: venta)),
+    );
+    if (total == null || !mounted) return;
+    ref.invalidate(resumenColaProvider);
+    ref.read(revisionDelCamionProvider.notifier).state++;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Text(
+            'Venta ${venta.folio} modificada: total \$${total.texto}. Imprime el '
+            'ticket nuevo y recoge el de antes.',
+          ),
+          action: SnackBarAction(
+            key: const Key('imprimir_modificada'),
+            label: 'Imprimir',
+            onPressed: () => _reimprimir(venta),
+          ),
+        ),
+      );
   }
 
   void _avisar(String mensaje) => ScaffoldMessenger.of(context)
@@ -434,7 +482,9 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                 ),
                 title: Text(venta.cliente),
                 subtitle: Text(
-                  '${venta.folio} · ${venta.formaDePago.etiqueta.toLowerCase()}',
+                  '${venta.folio} · ${venta.formaDePago.etiqueta.toLowerCase()}'
+                  // Le agregó artículos desde aquí (§162).
+                  '${venta.modificaciones > 0 ? ' · modificada' : ''}',
                 ),
                 trailing: Text(
                   '\$${venta.total.texto}',
@@ -451,9 +501,11 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                       alignment: Alignment.centerLeft,
                       child: Text('Sin renglones guardados.'),
                     ),
-                  for (final p in venta.partidas)
+                  // Por renglón y no por producto: el mismo artículo puede ir en
+                  // dos renglones —cajas y piezas, o lo que se agregó (§162)—.
+                  for (final (i, p) in venta.partidas.indexed)
                     Padding(
-                      key: Key('partida_${venta.folio}_${p.producto}'),
+                      key: Key('partida_${venta.folio}_${i + 1}'),
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
@@ -489,6 +541,13 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                         ),
                         if (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id) == null)
                           TextButton.icon(
+                            key: Key('agregar_${venta.folio}'),
+                            onPressed: _imprimiendo != null ? null : () => _agregar(venta),
+                            icon: const Icon(Icons.add_shopping_cart, size: 18),
+                            label: const Text('Agregar artículos'),
+                          ),
+                        if (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id) == null)
+                          TextButton.icon(
                             key: Key('cancelar_${venta.folio}'),
                             onPressed: _imprimiendo != null ? null : () => _cancelar(venta),
                             style: TextButton.styleFrom(foregroundColor: colores.error),
@@ -500,12 +559,12 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                   ),
                   // Por qué ya no se cancela desde aquí, si es el caso (§161).
                   if (switch (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id)) {
-                    MotivoNoCancelacion.diaCortado =>
-                      'Ya hiciste el corte de este día: para cancelarla, pídeselo a '
-                          'la oficina.',
-                    MotivoNoCancelacion.otroDia =>
-                      'Es de un día que ya pasó: para cancelarla, pídeselo a la '
-                          'oficina.',
+                    MotivoNoSeToca.diaCortado =>
+                      'Ya hiciste el corte de este día: para cancelarla o agregarle '
+                          'algo, pídeselo a la oficina.',
+                    MotivoNoSeToca.otroDia =>
+                      'Es de un día que ya pasó: para cancelarla o agregarle algo, '
+                          'pídeselo a la oficina.',
                     _ => null,
                   }
                       case final porQue?)
@@ -611,7 +670,7 @@ class _EstadoDialogoCancelarVenta extends State<_DialogoCancelarVenta> {
   }
 
   bool get _alcanza =>
-      _motivo.text.trim().length >= largoMinimoDelMotivoDeCancelacion;
+      _motivo.text.trim().length >= largoMinimoDelMotivo;
 
   @override
   Widget build(BuildContext context) {

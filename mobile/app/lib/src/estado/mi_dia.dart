@@ -16,6 +16,16 @@ final reimpresionDeVentasProvider = Provider<ReimpresionDeVentas>(
   (ref) => ReimpresionDeVentas(ref.watch(baseLocalProvider).db),
 );
 
+/// El vendedor le agrega a su venta lo que le faltó, sin señal (ADR 0002 §162).
+final agregadoAVentaProvider = Provider<AgregadoAVenta>(
+  (ref) => AgregadoAVenta(
+    db: ref.watch(baseLocalProvider).db,
+    outbox: ref.watch(outboxProvider),
+    nuevoUuid: ref.watch(nuevoUuidProvider),
+    ahora: ref.watch(relojProvider),
+  ),
+);
+
 /// El vendedor cancela su venta desde «Mi día», sin señal (ADR 0002 §161).
 final cancelacionDeVentaProvider = Provider<CancelacionDeVenta>(
   (ref) => CancelacionDeVenta(
