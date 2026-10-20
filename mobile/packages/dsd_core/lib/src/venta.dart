@@ -540,34 +540,40 @@ class CierreDeVenta {
   ///
   /// La primera impresión marca `impreso`; las siguientes cuentan como
   /// reimpresión, y el ticket se conserva para que salga **idéntico**.
-  void marcarImpresa(String ventaId, {required List<int> ticket}) {
-    _db.execute('BEGIN IMMEDIATE');
-    try {
-      final previa = _db.select(
-        'SELECT impreso FROM ventas WHERE id = ?',
-        [ventaId],
-      );
-      if (previa.isEmpty) {
-        throw ArgumentError('no existe la venta $ventaId');
-      }
-      final yaImpresa = (previa.single['impreso'] as int) == 1;
-
-      _db.execute(
-        yaImpresa
-            ? 'UPDATE ventas SET reimpresiones = reimpresiones + 1 WHERE id = ?'
-            : 'UPDATE ventas SET impreso = 1, ticket_escpos = ?2 WHERE id = ?1',
-        yaImpresa ? [ventaId] : [ventaId, Uint8List.fromList(ticket)],
-      );
-      _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
-    }
-  }
+  void marcarImpresa(String ventaId, {required List<int> ticket}) =>
+      marcarVentaImpresa(_db, ventaId, ticket: ticket);
 
   /// SQLite guarda dinero como REAL. La conversión cruza el límite del dominio
   /// una sola vez y aquí, igual que al leer (ver `repo_clientes.dart`).
   static num _aReal(Dinero d) => d.centavos / 100;
+}
+
+/// La marca de impresión de una venta, para el ticket recién cobrado y para la
+/// reimpresión desde «Mi día» (ADR 0002 §159): la primera marca `impreso` y
+/// guarda el original; las siguientes cuentan como reimpresión.
+void marcarVentaImpresa(Database db, String ventaId, {required List<int> ticket}) {
+  db.execute('BEGIN IMMEDIATE');
+  try {
+    final previa = db.select(
+      'SELECT impreso FROM ventas WHERE id = ?',
+      [ventaId],
+    );
+    if (previa.isEmpty) {
+      throw ArgumentError('no existe la venta $ventaId');
+    }
+    final yaImpresa = (previa.single['impreso'] as int) == 1;
+
+    db.execute(
+      yaImpresa
+          ? 'UPDATE ventas SET reimpresiones = reimpresiones + 1 WHERE id = ?'
+          : 'UPDATE ventas SET impreso = 1, ticket_escpos = ?2 WHERE id = ?1',
+      yaImpresa ? [ventaId] : [ventaId, Uint8List.fromList(ticket)],
+    );
+    db.execute('COMMIT');
+  } catch (_) {
+    db.execute('ROLLBACK');
+    rethrow;
+  }
 }
 
 class _Partida {

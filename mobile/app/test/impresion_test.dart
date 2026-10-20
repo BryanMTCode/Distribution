@@ -181,6 +181,72 @@ void main() {
     });
   });
 
+  group('reimprimir desde «Mi día» (ADR 0002 §159)', () {
+    /// Termina la visita, abre «Mi día» y despliega la venta.
+    Future<void> irAMiDia(WidgetTester tester) async {
+      await tocar(tester, const Key('boton_terminar_visita'));
+      await tocar(tester, const Key('boton_mi_dia'));
+      await tocar(tester, const Key('venta_VEND01-000001'));
+    }
+
+    testWidgets('la que ya se imprimió sale como copia, con los mismos bytes',
+        (tester) async {
+      final (base, impresora) = await cobrar(tester, carpeta: temporal);
+      await tocarConProgreso(tester, const Key('boton_imprimir'));
+      await irAMiDia(tester);
+
+      await tocarConProgreso(tester, const Key('reimprimir_VEND01-000001'));
+
+      expect(impresora.enviados, hasLength(2));
+      final original = impresora.enviados[0];
+      final copia = impresora.enviados[1];
+      expect(copia.sublist(copia.length - original.length), equals(original));
+      expect(decodificar(copia).texto, contains('COPIA 1'));
+      expect(textoQueContiene('salió la copia 1 de VEND01-000001'), findsOneWidget);
+      expect(
+        BaseLocalDePrueba(base)
+            .unaFila('SELECT reimpresiones FROM ventas')['reimpresiones'],
+        equals(1),
+      );
+    });
+
+    testWidgets('la que nunca se imprimió sale como original y queda impresa',
+        (tester) async {
+      // La impresora no tenía papel al cobrar, o el vendedor no la pidió.
+      final (base, impresora) = await cobrar(tester, carpeta: temporal);
+      await irAMiDia(tester);
+
+      await tocarConProgreso(tester, const Key('reimprimir_VEND01-000001'));
+
+      expect(impresora.enviados, hasLength(1));
+      final texto = decodificar(impresora.enviados.single).texto;
+      expect(texto, contains('2 CAJA x 296.00'));
+      expect(texto, contains('Abarrotes Doña Mary'));
+      expect(texto, isNot(contains('COPIA')));
+      expect(textoQueContiene('salió el ticket de VEND01-000001'), findsOneWidget);
+      final venta = BaseLocalDePrueba(base)
+          .unaFila('SELECT impreso, reimpresiones, ticket_escpos FROM ventas');
+      expect(venta['impreso'], equals(1));
+      expect(venta['reimpresiones'], equals(0));
+      expect(venta['ticket_escpos'], isNotNull);
+    });
+
+    testWidgets('sin papel se dice qué hacer, y no se anota', (tester) async {
+      final (base, _) = await cobrar(
+        tester,
+        falla: const ImpresoraSinPapel(),
+        carpeta: temporal,
+      );
+      await irAMiDia(tester);
+
+      await tocarConProgreso(tester, const Key('reimprimir_VEND01-000001'));
+
+      expect(textoQueContiene('no tiene papel'), findsOneWidget);
+      expect(BaseLocalDePrueba(base).unaFila('SELECT impreso FROM ventas')['impreso'],
+          equals(0));
+    });
+  });
+
   group('cuando la impresora falla', () {
     testWidgets('sin papel se dice qué hacer, y la venta sigue guardada',
         (tester) async {

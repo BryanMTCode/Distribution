@@ -49,6 +49,7 @@ class PartidaDeMiDia {
 /// Una venta del día, para la lista.
 class VentaDeMiDia {
   const VentaDeMiDia({
+    required this.id,
     required this.folio,
     required this.cliente,
     required this.total,
@@ -61,6 +62,8 @@ class VentaDeMiDia {
   /// es lo que el vendedor necesita para contestar «¿qué me dejaste el martes?».
   final List<PartidaDeMiDia> partidas;
 
+  /// Para reimprimir su ticket (ADR 0002 §159).
+  final String id;
   final String folio;
   final String cliente;
   final Dinero total;
@@ -182,6 +185,7 @@ class RepoMiDia {
         )
         .map(
           (f) => VentaDeMiDia(
+            id: f['id'] as String,
             folio: f['folio_local'] as String,
             cliente: f['cliente'] as String,
             total: _dinero(f['total']),

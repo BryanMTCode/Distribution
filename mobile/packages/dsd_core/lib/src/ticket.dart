@@ -95,7 +95,8 @@ class DatosDeLaVisita {
 /// Arma el ticket de una venta.
 ///
 /// [copia] es el número de reimpresión: 0 es el original, 1 en adelante son
-/// copias. El contenido es **el mismo** —los mismos importes, el mismo folio—;
+/// copias. [corregida] es para la que la oficina corrigió, que se reimprime como
+/// quedó (ADR 0002 §159). El contenido es **el mismo** —los mismos importes, el mismo folio—;
 /// lo único que cambia es el aviso de copia, para que nadie presente una
 /// reimpresión como si fuera el original.
 ///
@@ -110,11 +111,12 @@ List<int> ticketDeVenta(
   int columnas = columnas58mm,
   TablaDeCodigos tabla = TablaDeCodigos.pc437,
   int copia = 0,
+  bool corregida = false,
 }) {
   final t = ConstructorEscPos(columnas: columnas, tabla: tabla)..inicializar();
 
   _encabezado(t, negocio, copia: copia);
-  _datosDeLaVenta(t, venta, visita);
+  _datosDeLaVenta(t, venta, visita, corregida: corregida);
   _partidas(t, venta);
   _totales(t, venta);
   _pie(t, venta, negocio);
@@ -177,8 +179,9 @@ void _encabezado(ConstructorEscPos t, DatosDelNegocio negocio, {required int cop
 void _datosDeLaVenta(
   ConstructorEscPos t,
   VentaGuardada venta,
-  DatosDeLaVisita visita,
-) {
+  DatosDeLaVisita visita, {
+  bool corregida = false,
+}) {
   // El folio en tamaño doble: es lo que el cliente dicta por teléfono cuando
   // algo se aclara, y lo que la oficina busca.
   t
@@ -188,7 +191,11 @@ void _datosDeLaVenta(
     ..linea(venta.folioLocal)
     ..tamano()
     ..negrita(false)
-    ..linea('REMISION DE VENTA')
+    ..linea('REMISION DE VENTA');
+  // La que la oficina corrigió se reimprime como quedó (ADR 0002 §159): el
+  // papel lo dice, para que no se confunda con el que firmó el cliente.
+  if (corregida) t.linea('CORREGIDA POR LA OFICINA');
+  t
     ..alinear(Alineacion.izquierda)
     ..separador();
 

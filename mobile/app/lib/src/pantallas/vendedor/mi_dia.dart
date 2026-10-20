@@ -13,13 +13,21 @@
 ///
 /// Lee de SQLite, así que funciona sin señal — que es cuando hace falta: a media
 /// ruta, decidiendo si alcanza el cambio, y en el patio antes de entrar a cuadrar.
+///
+/// Cada venta se puede **reimprimir** desde aquí (ADR 0002 §159): el cliente
+/// perdió su ticket, o la impresora no tenía papel al cobrar. Sale de la base,
+/// también sin señal; si ya se había impreso, como «COPIA n».
 library;
 
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../datos/impresora.dart';
+import '../../estado/carrito.dart';
+import '../../estado/impresora.dart';
 import '../../estado/mi_dia.dart';
+import '../../estado/sesion.dart';
 import 'cierre_del_dia.dart';
 
 class PantallaMiDia extends ConsumerStatefulWidget {
@@ -37,6 +45,58 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
   /// El día que se está revisando. Nulo es hoy. Vive en la pantalla: al salir y
   /// volver a entrar, «Mi día» abre otra vez en hoy, que es lo que se espera.
   String? _elegido;
+
+  /// La venta cuyo ticket se está mandando a la impresora, para no mandarlo dos
+  /// veces con dos toques.
+  String? _imprimiendo;
+
+  /// Vuelve a imprimir el ticket de [venta] (ADR 0002 §159).
+  ///
+  /// Lo que sale lo decide `ReimpresionDeVentas`: el original guardado con
+  /// «COPIA n», o el original si nunca salió. Se anota DESPUÉS de imprimir con
+  /// éxito, igual que al cobrar: marcar antes dejaría copias que nunca salieron.
+  Future<void> _reimprimir(VentaDeMiDia venta) async {
+    final sesion = ref.read(sesionProvider);
+    final vendedor = sesion is SesionAbierta ? sesion.credencial.nombre : 'Vendedor';
+    final reimpresion = ref.read(reimpresionDeVentasProvider);
+    final ticket = reimpresion.ticketDe(
+      venta.id,
+      negocio: ref.read(negocioProvider),
+      nombreVendedor: vendedor,
+      columnas: ref.read(columnasDelPapelProvider),
+    );
+    if (ticket == null) {
+      _avisar('Esta venta ya no se puede imprimir: la oficina la canceló.');
+      return;
+    }
+
+    setState(() => _imprimiendo = venta.id);
+    final resultado = await ref.read(impresoraProvider).imprimir(ticket.bytes);
+    if (!mounted) return;
+    setState(() => _imprimiendo = null);
+
+    if (resultado is ImpresionHecha) {
+      try {
+        reimpresion.anotarImpresa(venta.id, ticket);
+      } on Object {
+        // El papel ya salió; no perder eso por no poder anotar la marca.
+      }
+    }
+    _avisar(switch (resultado) {
+      ImpresionHecha() => ticket.esCopia
+          ? 'Listo: salió la copia ${ticket.copia} de ${venta.folio}.'
+          : 'Listo: salió el ticket de ${venta.folio}.',
+      ImpresoraSinPapel() => 'La impresora no tiene papel. Pon papel y vuelve a intentar.',
+      ImpresoraDesconectada() => 'La impresora no está conectada. Revisa que esté encendida.',
+      ImpresoraNoConfigurada() => 'Este equipo no tiene impresora configurada: elígela en el '
+          'menú de «Mi ruta» → «Impresora».',
+      ImpresionFallida(:final detalle) => 'No se pudo imprimir: $detalle',
+    });
+  }
+
+  void _avisar(String mensaje) => ScaffoldMessenger.of(context)
+    ..removeCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(mensaje)));
 
   String _mover(String dia, int dias) =>
       diaOperativoDe(DateTime.parse(dia).add(Duration(days: dias, hours: 12)));
@@ -318,9 +378,9 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
             )
           else
             for (final venta in dia.ventas)
-              // Al tocarla se despliega lo que se le vendió: lo que el vendedor
-              // necesita para contestar «¿qué me dejaste el martes?» sin
-              // reimprimir el ticket.
+              // Al tocarla se despliega lo que se le vendió —lo que el vendedor
+              // necesita para contestar «¿qué me dejaste el martes?»— y el botón
+              // para reimprimir su ticket (ADR 0002 §159).
               ExpansionTile(
                 key: Key('venta_${venta.folio}'),
                 dense: true,
@@ -368,6 +428,21 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                         ],
                       ),
                     ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: Key('reimprimir_${venta.folio}'),
+                      onPressed: _imprimiendo != null ? null : () => _reimprimir(venta),
+                      icon: _imprimiendo == venta.id
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.print_outlined, size: 18),
+                      label: const Text('Reimprimir el ticket'),
+                    ),
+                  ),
                 ],
               ),
         ],

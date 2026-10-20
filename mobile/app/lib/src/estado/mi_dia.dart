@@ -10,6 +10,11 @@ final repoMiDiaProvider = Provider<RepoMiDia>(
   (ref) => RepoMiDia(ref.watch(baseLocalProvider).db),
 );
 
+/// Reimprimir el ticket de una venta desde «Mi día» (ADR 0002 §159).
+final reimpresionDeVentasProvider = Provider<ReimpresionDeVentas>(
+  (ref) => ReimpresionDeVentas(ref.watch(baseLocalProvider).db),
+);
+
 /// El día operativo tal como lo estampan los documentos.
 ///
 /// Con `diaOperativoDe`, la MISMA función que estampa la venta, el cobro, la

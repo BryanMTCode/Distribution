@@ -39,6 +39,7 @@ export 'src/plan_visita.dart';
 export 'src/oficina_clientes_cliente.dart';
 export 'src/outbox.dart';
 export 'src/precio.dart';
+export 'src/reimpresion.dart';
 export 'src/sincronizador.dart';
 export 'src/sobre.dart';
 export 'src/sync_cliente.dart';

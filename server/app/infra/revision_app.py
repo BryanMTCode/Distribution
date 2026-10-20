@@ -396,6 +396,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "con «Ver hoy».",
             ),
             Punto(
+                "reimprimir_desde_mi_dia", "Reimprimir el ticket desde «Mi día»",
+                "Con la impresora elegida, en «Mi día» toca una venta y «Reimprimir el "
+                "ticket». Hazlo también con una venta que no imprimiste al cobrar, y con "
+                "el modo avión.",
+                "La que ya se había impreso sale con «COPIA 1» arriba (y la siguiente, "
+                "«COPIA 2»), igual a la del cliente; la que no, sale como original. "
+                "Funciona sin señal (ADR 0002 §159).",
+                desde="+52",
+            ),
+            Punto(
                 "impresora_real", "Elegir la impresora y probarla",
                 "Prende la impresora y emparéjala en Ajustes del teléfono → Bluetooth "
                 "(clave 0000 o 1234). En la app: «Mi ruta» → menú (⋮) → «Impresora» → "

@@ -6876,3 +6876,32 @@ quedaba pendiente en la lista todo el día.
 · la entrada: con el PIN, sin red.
 
 (versionCode 52)
+
+## 159. El vendedor reimprime el ticket de una venta desde «Mi día»
+
+**Decisión (octubre 2026).** «Quiero que desde las ventas en Mi día los
+vendedores puedan reimprimir los tickets de la venta.»
+
+Hasta ahora la copia solo se podía pedir en la pantalla de la venta recién
+cobrada. Si el cliente perdía su ticket o la impresora no tenía papel al cobrar,
+ya no había de dónde sacarlo.
+
+- **Dónde.** En «Mi día», al tocar una venta se despliega lo que se le vendió y,
+  abajo, «Reimprimir el ticket». Sirve para hoy y para los días anteriores, y
+  sale de SQLite, sin señal.
+- **Qué sale**, con la misma regla que la copia al cobrar:
+  · **Ya se había impreso:** los bytes del original guardados en
+    `ventas.ticket_escpos`, con «COPIA n» encima. Aunque el catálogo haya
+    cambiado, el papel dice lo mismo que el que recibió el cliente. Cada copia
+    suma en `reimpresiones`.
+  · **Nunca se imprimió:** se arma desde la base, idéntico al que habría salido
+    al cobrar, y sale como ORIGINAL. Desde ahí queda guardado.
+  · **La oficina la corrigió:** el original guardado dice otras cantidades. Se
+    arma como quedó, con «CORREGIDA POR LA OFICINA», y como copia si ya había
+    salido una.
+  · **La cancelada** no está en la lista y no se reimprime: un papel de una
+    venta que ya no existe es un cobro que no se debe.
+- **Se anota después de imprimir con éxito**, como al cobrar. Sin papel, la app
+  dice qué hacer y no marca nada.
+
+(versionCode 52)
