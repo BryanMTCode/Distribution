@@ -310,9 +310,12 @@ class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga>
         builder: (_) => PantallaTicketCompartible(
           titulo: 'Solicitud de carga',
           texto: registro.ticketDe(solicitud),
+          // «Que los vendedores puedan imprimir el ticket de la solicitud de
+          // carga» (ADR 0002 §150), como el del corte.
+          imprimible: true,
           aviso: 'Tu solicitud quedó guardada. Se manda a la oficina al '
               'sincronizar; cuando la acepten, aquí mismo vas a ver el folio de '
-              'tu carga.',
+              'tu carga. Imprímela o mándala por WhatsApp.',
           etiquetaSiguiente: 'Sincronizar ahora',
           iconoSiguiente: Icons.sync,
           siguiente: sync.sincronizar,
@@ -567,8 +570,9 @@ class TarjetaDelCierre extends ConsumerWidget {
                     onPressed: () => abrir(PantallaTicketCompartible(
                       titulo: solicitud.aceptada ? 'Carga aceptada' : 'Solicitud de carga',
                       texto: registro.ticketDe(solicitud),
+                      imprimible: true,
                     )),
-                    child: const Text('Ver ticket'),
+                    child: const Text('Ver o imprimir el ticket'),
                   ),
                   if (!solicitud.aceptada)
                     TextButton(

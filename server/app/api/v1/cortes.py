@@ -167,7 +167,9 @@ class PeticionCerrar(BaseModel):
 # Rutas
 # ---------------------------------------------------------------------------
 @router.get("", response_model=Cortes)
-async def lista(actor: ActorDep, sesion: SesionDep) -> Cortes:
+async def lista(actor: ActorDep, sesion: SesionDep, dia: date | None = None) -> Cortes:
+    """Lo que falta cortar —de cualquier día: es trabajo pendiente— y los cortes.
+    Con `dia`, los cortes de ese día; sin él, los últimos cien (ADR 0002 §149)."""
     actor.exigir(PERMISO)
     return Cortes(
         por_cortar=[
@@ -178,7 +180,7 @@ async def lista(actor: ActorDep, sesion: SesionDep) -> Cortes:
         ],
         cortes=[
             CorteEnLista(**{k: c[k] for k in CorteEnLista.model_fields})
-            for c in await cortes_recientes(sesion)
+            for c in await cortes_recientes(sesion, dia)
         ],
     )
 

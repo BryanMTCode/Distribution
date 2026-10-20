@@ -4,8 +4,9 @@
 /// Lo usan el vendedor (su corte y su solicitud de carga) y el gerente (la carga
 /// que acaba de aceptar). El texto sale de `dsd_core` —el mismo para los dos—
 /// y se comparte como texto: WhatsApp lo pinta con sus negritas, y cualquier
-/// otra aplicación lo recibe igual de legible. El del corte también se imprime
-/// en la impresora del camión, con ese mismo texto.
+/// otra aplicación lo recibe igual de legible. Los del vendedor —el corte y la
+/// solicitud de carga— también se imprimen en la impresora del camión, con ese
+/// mismo texto.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -41,7 +42,8 @@ class PantallaTicketCompartible extends ConsumerWidget {
   final String? etiquetaSiguiente;
   final IconData iconoSiguiente;
 
-  /// Si ofrece imprimirlo en la impresora del camión: el corte del vendedor.
+  /// Si ofrece imprimirlo en la impresora del camión: el corte del vendedor y
+  /// su solicitud de carga (ADR 0002 §150).
   final bool imprimible;
 
   Future<void> _imprimir(BuildContext context, WidgetRef ref) async {
@@ -57,8 +59,10 @@ class PantallaTicketCompartible extends ConsumerWidget {
           'menú de «Mi ruta» → «Impresora».',
       ImpresionFallida(:final detalle) => 'No se pudo imprimir: $detalle',
     };
+    // El aviso anterior se quita de golpe, sin animarlo: imprimir el corte y luego
+    // la solicitud deja ver el segundo aviso enseguida.
     ScaffoldMessenger.of(context)
-      ..clearSnackBars()
+      ..removeCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(mensaje)));
   }
 

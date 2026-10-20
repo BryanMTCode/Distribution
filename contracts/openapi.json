@@ -1732,7 +1732,32 @@
           "cortes"
         ],
         "summary": "Lista",
+        "description": "Lo que falta cortar —de cualquier día: es trabajo pendiente— y los cortes.\nCon `dia`, los cortes de ese día; sin él, los últimos cien (ADR 0002 §149).",
         "operationId": "lista_v1_cortes_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dia",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dia"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1743,13 +1768,18 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       },
       "post": {
         "tags": [
@@ -1758,15 +1788,20 @@
         "summary": "Abrir",
         "description": "Abre el corte de una carga; si ya estaba abierto, devuelve ése.",
         "operationId": "abrir_v1_cortes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PeticionAbrir"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1789,12 +1824,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/v1/cortes/{liquidacion_id}": {

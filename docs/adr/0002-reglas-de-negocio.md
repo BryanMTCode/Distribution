@@ -6553,3 +6553,43 @@ mi base de datos.» Las 1,834 tiendas de §120 estaban sin coordenadas.
 - El comando es `ubicar-tiendas`, con `--resumen` y la palabra `UBICAR`, como los
   de §99 y §120.
 
+## 149. Las cargas y los cortes de la app de la oficina, un día a la vez
+
+**Decisión (octubre 2026).** «En la app de administrador las cargas aparecen
+siempre abiertas, y por fecha nunca aparece nada; quiero que aparezcan siempre
+por día y me pueda mover por días, y que aparezca el estatus de cada carga.» Y:
+«también los cortes, que aparezcan por día».
+
+- **Por qué «Por fecha» salía vacío.** Todos sus periodos —hoy, la semana, el
+  mes, todo— terminan hoy, y la carga se hace la víspera con la fecha de mañana
+  (§82): la que se aceptaba en la tarde no caía en ninguno hasta el día
+  siguiente.
+- **Cargas: un día a la vez**, en vez de «Abiertas» y «Por fecha». Arriba el día
+  —«Hoy, jueves 24 de septiembre», «Mañana, …», «Ayer, …»— con ‹ › para moverse,
+  el calendario y «Ver las de hoy». Un día se pide como un rango de un día, que el
+  servidor no recorta a hoy: así sale también mañana. Abre en hoy, o en mañana si
+  hoy ya no queda ninguna abierta y para mañana sí —en la tarde, con las de hoy
+  liquidadas, lo que se atiende es lo de mañana—.
+- **El estatus de cada carga**, como etiqueta de color: Capturando, En el camión,
+  En el corte, Liquidada; la cancelada va aparte, plegada (§95). Arriba, el día
+  de reojo: «3 carga(s) · 720 piezas · 2 en el camión · 1 capturando». Y
+  «También sin cerrar», con los otros días que tienen cargas vivas —son las que
+  estorban para cargar—: tocar uno lleva a ese día.
+- **Cortes: igual.** Lo que falta cortar sigue arriba, sea del día que sea: es
+  trabajo pendiente. Abajo, los cortes de un día, de hoy hacia atrás —un día que
+  no ha llegado no tiene cortes—, cada uno con su estatus: Abierto, Cuadrado o
+  Con diferencia (falta cerrar), Cerrado. `GET /v1/cortes` acepta `dia`; sin él,
+  los últimos cien de siempre.
+- El selector es el mismo de «Mi día» del vendedor, y lo comparten las dos
+  pantallas.
+
+## 150. El vendedor imprime el ticket de su solicitud de carga
+
+**Decisión (octubre 2026).** «También quiero que los vendedores puedan imprimir el
+ticket de la solicitud de carga.» El ticket de la solicitud —el que ya se
+compartía por WhatsApp (§82)— se imprime en la impresora del camión (§139) como
+el del corte, con el mismo texto: al pedirla y después desde «Mi día» («Ver o
+imprimir el ticket»), también cuando ya dice «CARGA ACEPTADA» con su folio. Al
+imprimir dos tickets seguidos, el aviso del primero se quita de golpe para que
+el del segundo salga enseguida.
+

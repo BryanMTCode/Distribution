@@ -48,6 +48,8 @@ void main() {
     expect(diaEnPalabras('2026-10-07'), 'miércoles 7 de octubre');
     expect(encabezadoDelDia('2026-10-07', hoy: '2026-10-07'), 'Hoy, miércoles 7 de octubre');
     expect(encabezadoDelDia('2026-10-06', hoy: '2026-10-07'), 'Ayer, martes 6 de octubre');
+    expect(encabezadoDelDia('2026-10-08', hoy: '2026-10-07'), 'Mañana, jueves 8 de octubre');
+    expect(encabezadoDelDia('2026-11-01', hoy: '2026-10-31'), 'Mañana, domingo 1 de noviembre');
     expect(encabezadoDelDia('2026-10-01', hoy: '2026-10-07'), 'Jueves 1 de octubre');
     // El primero de mes: «ayer» es el último del mes anterior.
     expect(encabezadoDelDia('2026-09-30', hoy: '2026-10-01'), 'Ayer, miércoles 30 de septiembre');

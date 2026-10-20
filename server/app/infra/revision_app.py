@@ -386,6 +386,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 "qué va —pedida, ACEPTADA o rechazada con su motivo—.",
             ),
             Punto(
+                "imprimir_solicitud_de_carga", "Imprimir la solicitud de carga",
+                "Con la impresora elegida, pide la carga de mañana y toca «Imprimir» en "
+                "su ticket. Después, en «Mi día», «Ver o imprimir el ticket».",
+                "Sale en papel el mismo ticket —«SOLICITUD DE CARGA», o «CARGA ACEPTADA» "
+                "con su folio cuando la oficina la acepta— (ADR 0002 §150).",
+                desde="+49",
+            ),
+            Punto(
                 "carga_aceptada_llega", "La carga aceptada llega al camión",
                 "Después de que la oficina acepte la carga, sincroniza.",
                 "«Mi camión» muestra la carga sumada a lo que traía.",
@@ -484,10 +492,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+44",
             ),
             Punto(
-                "cargas_por_fecha", "Cargas por fecha",
-                "Almacén → Cargas → «Por fecha».",
-                "Las cargas de cada día, con lo que se subió.",
-                desde="+33",
+                "cargas_un_dia", "Las cargas de un día, con su estatus",
+                "Almacén → Cargas: muévete con ‹ ›, el calendario y «Ver las de hoy». "
+                "Acepta una carga que pidió un vendedor y ve a mañana.",
+                "Un día a la vez: abre en hoy, o en mañana si hoy ya no queda ninguna "
+                "abierta. Cada carga dice su estatus en color —Capturando, En el camión, "
+                "En el corte, Liquidada— y arriba «N carga(s) · piezas · …». «También sin "
+                "cerrar» lleva al día de la que quedó viva (ADR 0002 §149).",
+                desde="+49",
             ),
             Punto(
                 "aceptar_carga", "Aceptar o rechazar la carga que pidió un vendedor",
@@ -502,12 +514,11 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "cargas_por_dia", "Cargas por día, sin repetirse",
-                "Almacén → Cargas, después de aceptar una que pidió un vendedor. Mira "
-                "«Abiertas» y luego «Por fecha».",
-                "Las cargas van agrupadas por día («Viernes 25 de septiembre · 2 carga(s) "
-                "· 480 piezas»). La aceptada sale una sola vez, en su día, con «la pidió "
-                "el vendedor» y el botón del ticket; ya no se repite en «Resueltas esta "
-                "semana», donde solo quedan las rechazadas.",
+                "Almacén → Cargas, después de aceptar una que pidió un vendedor: ve a su "
+                "día (mañana).",
+                "La aceptada sale una sola vez, en su día, con «la pidió el vendedor» y "
+                "el botón del ticket; ya no se repite en «Resueltas esta semana», donde "
+                "solo quedan las rechazadas.",
                 desde="+41",
             ),
             Punto(
@@ -526,13 +537,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+44",
             ),
             Punto(
-                "cortes_por_dia", "Cortes por día, sin repetirse",
+                "cortes_por_dia", "Cortes por día, con su estatus",
                 "Almacén → Corte del día, después de cerrar el corte de un vendedor. Baja "
-                "hasta «Cortes por día».",
-                "Cada día con su encabezado y cuántos cortes hubo. El que cerraste sale "
-                "una sola vez, en su día, con «Lo mandó el vendedor · Entregó …»; ya no "
-                "se repite en «Cerrados esta semana».",
-                desde="+41",
+                "hasta «Cortes» y muévete con ‹ › o el calendario.",
+                "Un día a la vez, de hoy hacia atrás («2 corte(s) · 2 cerrados»), cada uno "
+                "con su estatus —Abierto, Cuadrado, Con diferencia, Cerrado—. El que "
+                "cerraste sale una sola vez, con «Lo mandó el vendedor · Entregó …» "
+                "(ADR 0002 §149).",
+                desde="+49",
             ),
             Punto(
                 "mayoreo", "Venta de mayoreo",

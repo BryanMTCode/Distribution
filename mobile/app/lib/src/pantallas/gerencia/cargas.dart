@@ -20,9 +20,13 @@
 /// Arriba van las cargas que pidieron los vendedores al terminar su día, para
 /// aceptarlas o rechazarlas (`SeccionCargasPedidas`, ADR 0002 §82).
 ///
-/// Abajo, las cargas por día —las abiertas o las de un periodo—, cada una una
-/// sola vez (ADR 0002 §124): la que salió de una solicitud aceptada lo dice en
-/// su renglón y trae el ticket, en vez de repetirse en «Resueltas esta semana».
+/// Abajo, las cargas **de un día**, y se pasa de día en día (ADR 0002 §149): «las
+/// cargas aparecen siempre abiertas, y por fecha nunca aparece nada; quiero que
+/// aparezcan siempre por día y me pueda mover por días, y que aparezca el
+/// estatus de cada carga». «Por fecha» salía vacío porque sus periodos terminan
+/// hoy y la carga es de mañana (§82): la que se acepta en la tarde no salía en
+/// ninguno. Cada carga sale una sola vez (§124): la que salió de una solicitud
+/// aceptada lo dice en su renglón y trae el ticket.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -34,7 +38,7 @@ import '../../estado/sesion.dart';
 import '../canceladas.dart';
 import '../ticket_compartible.dart';
 import 'cierres.dart';
-import 'periodo.dart';
+import 'selector_de_dia.dart';
 
 /// La lista de cargas abiertas, y el botón para abrir una nueva.
 class PantallaCargas extends ConsumerStatefulWidget {
@@ -48,13 +52,21 @@ class PantallaCargas extends ConsumerStatefulWidget {
 }
 
 class _EstadoCargas extends ConsumerState<PantallaCargas> {
+  /// Las cargas del día que se ve, en cualquier estado.
   List<ResumenDeCarga>? _cargas;
   String? _error;
 
-  /// «Por fecha»: las cargas de un día o un periodo, en cualquier estado, «para
-  /// ver qué cargas se hicieron» (ADR 0002 §102).
-  bool _porFecha = false;
-  PeriodoElegido _periodo = const PeriodoElegido('hoy');
+  /// El día que se ve. Nulo hasta la primera consulta, que lo decide: hoy, o
+  /// mañana si hoy ya no queda ninguna abierta y para mañana sí —en la tarde,
+  /// con las de hoy ya liquidadas, lo que se atiende son las de mañana—.
+  String? _dia;
+
+  /// Las que siguen vivas de cualquier día: dicen qué otros días tienen cargas
+  /// sin cerrar, que son las que estorban para cargar (§82).
+  List<ResumenDeCarga> _abiertas = const [];
+
+  /// Para tirar la respuesta de un día que ya no es el que se ve.
+  int _consulta = 0;
 
   /// Al deslizar para recargar, la sección de las cargas pedidas se vuelve a leer.
   int _vuelta = 0;
@@ -84,26 +96,53 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
       setState(() => _error = 'No hay sesión en línea. Sal y vuelve a entrar con señal.');
       return;
     }
-    final porFecha = _porFecha;
-    final periodo = _periodo;
+    final consulta = ++_consulta;
+    final hoy = diaOperativoDe(ref.read(relojProvider)());
     try {
-      final cargas = porFecha
-          ? await cliente.delPeriodo(
-              periodo: periodo.clave,
-              desde: periodo.desde,
-              hasta: periodo.hasta,
-            )
-          : await cliente.abiertas();
-      // Si mientras tanto se cambió de vista, esta respuesta ya no es la que se ve.
-      if (!mounted || porFecha != _porFecha || periodo != _periodo) return;
+      final abiertas = await cliente.abiertas();
+      var dia = _dia;
+      if (dia == null) {
+        final manana = diaSiguiente(hoy);
+        final quedanHoy = abiertas.any((c) => c.fecha == hoy);
+        dia = !quedanHoy && abiertas.any((c) => c.fecha == manana) ? manana : hoy;
+      }
+      // Un día es un rango de un día: el servidor no lo recorta a hoy, y así
+      // sale también mañana.
+      final delDia = await cliente.delPeriodo(desde: dia, hasta: dia);
+      // Si mientras tanto se cambió de día, esta respuesta ya no es la que se ve.
+      if (!mounted || consulta != _consulta) return;
       setState(() {
-        _cargas = cargas;
+        _dia = dia;
+        _abiertas = abiertas;
+        _cargas = [for (final c in delDia) if (c.fecha == dia) c];
         _error = null;
       });
     } on Object catch (e) {
-      if (!mounted) return;
+      if (!mounted || consulta != _consulta) return;
       setState(() => _error = explicarErrorDeCarga(e));
     }
+  }
+
+  void _irA(String dia) {
+    setState(() {
+      _dia = dia;
+      _cargas = null;
+      _error = null;
+    });
+    _cargar();
+  }
+
+  Future<void> _elegirEnCalendario(String dia) async {
+    final elegido = await elegirDiaEnCalendario(
+      context,
+      dia: dia,
+      hoy: diaOperativoDe(ref.read(relojProvider)()),
+      ayuda: '¿De qué día son las cargas?',
+      // La carga se abre para mañana.
+      diasAdelante: 30,
+    );
+    if (elegido == null || !mounted) return;
+    _irA(elegido);
   }
 
   Future<void> _abrirDetalle(String id) async {
@@ -191,80 +230,42 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
               yaListados: {for (final c in cargas ?? const <ResumenDeCarga>[]) c.folio},
             ),
             const Divider(height: 32),
-            SegmentedButton<bool>(
-              key: const Key('vista_de_cargas'),
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  label: Text('Abiertas', key: Key('cargas_abiertas')),
-                  icon: Icon(Icons.local_shipping_outlined),
-                ),
-                ButtonSegment(
-                  value: true,
-                  label: Text('Por fecha', key: Key('cargas_por_fecha')),
-                  icon: Icon(Icons.event),
-                ),
-              ],
-              selected: {_porFecha},
-              onSelectionChanged: (v) {
-                setState(() {
-                  _porFecha = v.single;
-                  _cargas = null;
-                  _error = null;
-                });
-                _cargar();
-              },
-            ),
-            const SizedBox(height: 12),
-            if (_porFecha) ...[
-              SelectorDePeriodo(
-                periodos: periodosDeSiempre,
-                elegido: _periodo,
-                hoy: ref.watch(relojProvider)(),
-                conUnDia: true,
-                onElegir: (p) {
-                  setState(() {
-                    _periodo = p;
-                    _cargas = null;
-                    _error = null;
-                  });
-                  _cargar();
-                },
+            if (_dia != null) ...[
+              SelectorDeDia(
+                dia: _dia!,
+                hoy: diaOperativoDe(ref.watch(relojProvider)()),
+                sufijo: 'cargas',
+                textoDeHoy: 'Ver las de hoy',
+                alIr: _irA,
+                alCalendario: () => _elegirEnCalendario(_dia!),
               ),
-              const SizedBox(height: 8),
-            ] else
-              Text('Cargas abiertas, por día', style: Theme.of(context).textTheme.titleMedium),
+              // Las que siguen sin cerrar de otros días: tocar una lleva a su día.
+              _OtrosDiasSinCerrar(
+                dia: _dia!,
+                abiertas: _abiertas,
+                alIr: _irA,
+              ),
+            ],
             if (_error != null) _Aviso(texto: _error!, esError: true),
             if (cargas == null && _error == null)
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
               ),
-            if (cargas != null && cargas.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _porFecha
-                      ? 'No se hizo ninguna carga en esas fechas.'
-                      : 'No hay cargas abiertas. Toca «Nueva carga» para subirle '
-                          'mercancía a un camión.',
-                  key: const Key('cargas_vacio'),
-                  textAlign: TextAlign.center,
+            if (cargas != null && _dia != null) ...[
+              _ResumenDelDia(dia: _dia!, cargas: cargas),
+              if (cargas.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'No hay cargas de este día. Muévete con las flechas, o toca «Nueva '
+                    'carga» para subirle mercancía a un camión.',
+                    key: Key('cargas_vacio'),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            // Un encabezado por día, en las abiertas y en las de un periodo: qué
-            // se cargó ese día y cuánto (ADR 0002 §124).
-            for (final (dia, del) in _porDia(cargas ?? const [])) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 4),
-                child: Text(
-                  '${_mayuscula(diaEnPalabras(dia))} · ${del.length} carga(s) · '
-                  '${_piezas(del)} piezas',
-                  key: Key('dia_de_cargas_$dia'),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              for (final c in del) _renglon(c),
+              for (final c in cargas)
+                if (!estaCancelado(c.estado)) _renglon(c),
             ],
             // Las canceladas, aparte y plegadas (ADR 0002 §95).
             SeccionDeCanceladas(
@@ -285,14 +286,19 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
     return Card(
       child: ListTile(
         key: Key('carga_${c.folio}'),
-        leading: Icon(
-          c.estado == 'borrador' ? Icons.edit_note : Icons.local_shipping_outlined,
-        ),
+        leading: Icon(_icono(c.estado)),
         title: Text('${c.vendedor} · ${c.camion}'),
-        subtitle: Text(
-          '${c.folio} · ${diaEnPalabras(c.fecha)} · ${_estado(c.estado)}\n'
-          '${c.renglones} producto(s), ${cantidadLegible(c.piezas)} piezas'
-          '${pedida == null ? '' : ' · la pidió el vendedor'}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${c.folio} · ${c.renglones} producto(s), '
+              '${cantidadLegible(c.piezas)} piezas'
+              '${pedida == null ? '' : ' · la pidió el vendedor'}',
+            ),
+            const SizedBox(height: 6),
+            EtiquetaDeEstadoDeCarga(estado: c.estado, key: Key('estado_carga_${c.folio}')),
+          ],
         ),
         isThreeLine: true,
         // La que salió de una solicitud trae su ticket para volver a compartirlo;
@@ -316,31 +322,125 @@ class _EstadoCargas extends ConsumerState<PantallaCargas> {
   }
 }
 
-/// Las cargas vivas por día, del más reciente al más viejo, en el orden en que
-/// llegan. Las canceladas no van aquí: van aparte (ADR 0002 §95).
-List<(String, List<ResumenDeCarga>)> _porDia(List<ResumenDeCarga> cargas) {
-  final dias = <String, List<ResumenDeCarga>>{};
-  for (final c in cargas) {
-    if (estaCancelado(c.estado)) continue;
-    dias.putIfAbsent(c.fecha, () => []).add(c);
-  }
-  return [for (final e in dias.entries) (e.key, e.value)];
-}
-
 String _piezas(List<ResumenDeCarga> cargas) => cargas
     .fold(Cantidad.cero, (suma, c) => suma + Cantidad.deTexto(c.piezas))
     .textoCorto;
 
-String _mayuscula(String texto) =>
-    texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
+IconData _icono(String estado) => switch (estado) {
+      'borrador' => Icons.edit_note,
+      'liquidada' => Icons.task_alt,
+      _ => Icons.local_shipping_outlined,
+    };
 
-String _estado(String estado) => switch (estado) {
-      'borrador' => 'capturando',
-      'confirmada' => 'en el camión',
-      'en_ruta' => 'en el corte',
-      'cancelada' => 'cancelada',
+/// Cómo va una carga, dicho como en la bodega (ADR 0002 §149).
+String etiquetaDeEstadoDeCarga(String estado) => switch (estado) {
+      'borrador' => 'Capturando',
+      'confirmada' => 'En el camión',
+      'en_ruta' => 'En el corte',
+      'liquidada' => 'Liquidada',
+      'cancelada' => 'Cancelada',
       _ => estado,
     };
+
+/// El estatus de la carga, como etiqueta de color: se lee de reojo.
+class EtiquetaDeEstadoDeCarga extends StatelessWidget {
+  const EtiquetaDeEstadoDeCarga({super.key, required this.estado});
+
+  final String estado;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final (fondo, letra) = switch (estado) {
+      'borrador' => (Colors.orange.shade100, Colors.orange.shade900),
+      'confirmada' => (colores.primaryContainer, colores.onPrimaryContainer),
+      'en_ruta' => (Colors.indigo.shade100, Colors.indigo.shade900),
+      'liquidada' => (Colors.green.shade100, Colors.green.shade900),
+      _ => (colores.surfaceContainerHighest, colores.onSurfaceVariant),
+    };
+    return EtiquetaDeEstatus(texto: etiquetaDeEstadoDeCarga(estado), fondo: fondo, letra: letra);
+  }
+}
+
+/// «También sin cerrar: martes 23 (1)»: las vivas de otros días.
+class _OtrosDiasSinCerrar extends StatelessWidget {
+  const _OtrosDiasSinCerrar({
+    required this.dia,
+    required this.abiertas,
+    required this.alIr,
+  });
+
+  final String dia;
+  final List<ResumenDeCarga> abiertas;
+  final void Function(String) alIr;
+
+  @override
+  Widget build(BuildContext context) {
+    final porDia = <String, int>{};
+    for (final c in abiertas) {
+      if (c.fecha != dia) porDia[c.fecha] = (porDia[c.fecha] ?? 0) + 1;
+    }
+    if (porDia.isEmpty) return const SizedBox.shrink();
+    final dias = porDia.keys.toList()..sort();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text('También sin cerrar:'),
+          for (final d in dias)
+            ActionChip(
+              key: Key('sin_cerrar_$d'),
+              label: Text('${diaEnPalabras(d)} (${porDia[d]})'),
+              onPressed: () => alIr(d),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// «3 carga(s) · 720 piezas · 2 en el camión · 1 capturando»: el día de reojo.
+/// La cancelada no cuenta: va aparte (ADR 0002 §95).
+class _ResumenDelDia extends StatelessWidget {
+  const _ResumenDelDia({required this.dia, required this.cargas});
+
+  final String dia;
+  final List<ResumenDeCarga> cargas;
+
+  @override
+  Widget build(BuildContext context) {
+    final vivas = [for (final c in cargas) if (!estaCancelado(c.estado)) c];
+    if (vivas.isEmpty) return const SizedBox.shrink();
+    final porEstado = <String, int>{};
+    for (final c in vivas) {
+      porEstado[c.estado] = (porEstado[c.estado] ?? 0) + 1;
+    }
+    String cuantas(String estado, int n) {
+      final etiqueta = etiquetaDeEstadoDeCarga(estado).toLowerCase();
+      return '$n ${n > 1 && estado == 'liquidada' ? 'liquidadas' : etiqueta}';
+    }
+
+    final estados = [
+      for (final e in const ['borrador', 'confirmada', 'en_ruta', 'liquidada'])
+        if (porEstado[e] != null) cuantas(e, porEstado[e]!),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Text(
+        [
+          '${vivas.length} carga(s)',
+          '${_piezas(vivas)} piezas',
+          ...estados,
+        ].join(' · '),
+        key: Key('dia_de_cargas_$dia'),
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
 
 /// A quién y de qué bodega. El camión no se elige: es el del vendedor.
 class _NuevaCarga extends StatefulWidget {
@@ -613,9 +713,14 @@ class _EstadoDetalle extends ConsumerState<PantallaDetalleDeCarga> {
                   '${carga.vendedor} · ${carga.camion}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text(
-                  'Sale de ${carga.bodega} · ${diaEnPalabras(carga.fecha)} · '
-                  '${_estado(carga.estado)}',
+                Text('Sale de ${carga.bodega} · ${diaEnPalabras(carga.fecha)}'),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: EtiquetaDeEstadoDeCarga(
+                    estado: carga.estado,
+                    key: const Key('estado_de_la_carga'),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (_error != null) _Aviso(texto: _error!, esError: true),

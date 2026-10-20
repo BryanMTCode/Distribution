@@ -16,11 +16,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'ayudas.dart';
 
 /// Un servidor de cargas de mentira, con lo justo para recorrer el flujo.
+/// El renglón de la lista de una carga.
+Map<String, Object?> _resumen(String folio, String dia, String estado, String piezas) => {
+      'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': dia,
+      'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'renglones': 1, 'piezas': piezas,
+    };
+
 class _ServidorDeCargas implements Transporte {
-  _ServidorDeCargas({this.bloqueos = const [], bool yaConfirmada = false})
-      : _estado = yaConfirmada ? 'confirmada' : 'borrador';
+  _ServidorDeCargas({
+    this.bloqueos = const [],
+    bool yaConfirmada = false,
+    this.vivas = const [],
+  }) : _estado = yaConfirmada ? 'confirmada' : 'borrador';
 
   final List<String> bloqueos;
+
+  /// Cargas vivas de otros días, además de la que se abre en la prueba.
+  final List<Map<String, Object?>> vivas;
   final List<(String, Map<String, Object?>)> posts = [];
 
   /// Lo que se pidió por fecha (ADR 0002 §102).
@@ -73,30 +85,33 @@ class _ServidorDeCargas implements Transporte {
         'hoy': '2026-09-24',
       }));
     }
+    final todas = [
+      _resumen('CG-000006', '2026-09-23', 'liquidada', '120.000'),
+      _resumen('CG-000005', '2026-09-23', 'liquidada', '80.000'),
+      _resumen('CG-000004', '2026-09-22', 'cancelada', '10.000'),
+      _resumen('CG-000003', '2026-09-21', 'liquidada', '40.000'),
+      ...vivas,
+      if (_abierta)
+        {
+          'id': 'c1', 'folio': 'CG-000007', 'estado': _estado,
+          'fecha_operativa': '2026-09-24', 'vendedor': 'Juan Pérez',
+          'camion': 'Camión 01', 'renglones': _renglones.length, 'piezas': '0.000',
+        },
+    ];
+    // Un día: un rango de un día, como lo contesta el servidor.
     if (ruta == '/v1/cargas' && parametros != null && parametros.isNotEmpty) {
       porFecha.add(parametros);
-      Map<String, Object?> carga(String folio, String dia, String estado, String piezas) => {
-            'id': folio, 'folio': folio, 'estado': estado, 'fecha_operativa': dia,
-            'vendedor': 'Juan Pérez', 'camion': 'Camión 01', 'renglones': 1,
-            'piezas': piezas,
-          };
       return RespuestaHttp(200, jsonEncode([
-        carga('CG-000006', '2026-09-23', 'liquidada', '120.000'),
-        carga('CG-000005', '2026-09-23', 'liquidada', '80.000'),
-        carga('CG-000004', '2026-09-22', 'cancelada', '10.000'),
-        carga('CG-000003', '2026-09-21', 'liquidada', '40.000'),
+        for (final c in todas)
+          if (c['fecha_operativa'] == parametros['desde']) c,
       ]));
     }
+    // Sin parámetros: las vivas de cualquier día.
     if (ruta == '/v1/cargas') {
-      return RespuestaHttp(200, jsonEncode(_abierta
-          ? [
-              {
-                'id': 'c1', 'folio': 'CG-000007', 'estado': _estado,
-                'fecha_operativa': '2026-09-24', 'vendedor': 'Juan Pérez',
-                'camion': 'Camión 01', 'renglones': _renglones.length, 'piezas': '0.000',
-              },
-            ]
-          : <Object?>[]));
+      return RespuestaHttp(200, jsonEncode([
+        for (final c in todas)
+          if (const ['borrador', 'confirmada', 'en_ruta'].contains(c['estado'])) c,
+      ]));
     }
     if (ruta == '/v1/cargas/c1') return RespuestaHttp(200, jsonEncode(_detalle));
     // El tablero de fondo: no importa aquí.
@@ -176,35 +191,76 @@ Future<void> _abrirCarga(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('por fecha: las cargas de un periodo, por día (ADR 0002 §102)',
+  testWidgets('las cargas van por día, se pasa de día en día y cada una dice cómo va (§149)',
       (tester) async {
-    final servidor = _ServidorDeCargas();
+    // «Quiero que aparezcan siempre por día y me pueda mover por días, y que
+    // aparezca el estatus de cada carga.»
+    final servidor = _ServidorDeCargas(vivas: [
+      _resumen('CG-000008', '2026-09-24', 'confirmada', '240.000'),
+      _resumen('CG-000002', '2026-09-20', 'en_ruta', '60.000'),
+    ]);
     await _montar(tester, servidor);
     await tester.tap(find.byKey(const Key('nav_almacen')));
     await tester.pumpAndSettle();
-    expect(servidor.porFecha, isEmpty, reason: 'de entrada, las abiertas');
 
-    await tester.tap(find.byKey(const Key('cargas_por_fecha')));
-    await tester.pumpAndSettle();
-    expect(servidor.porFecha.last, {'periodo': 'hoy'});
-    await tester.tap(find.byKey(const Key('periodo_semana')));
-    await tester.pumpAndSettle();
-    expect(servidor.porFecha.last, {'periodo': 'semana'});
+    // De entrada, hoy: un día es un rango de un día.
+    expect(servidor.porFecha.last,
+        {'periodo': 'rango', 'desde': '2026-09-24', 'hasta': '2026-09-24'});
+    expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
+    expect(textoQueContiene('1 carga(s) · 240 piezas · 1 en el camión'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('estado_carga_CG-000008')),
+        matching: find.text('En el camión'),
+      ),
+      findsOneWidget,
+    );
+    // La que sigue viva de otro día, a la mano: es la que estorba para cargar.
+    expect(find.byKey(const Key('sin_cerrar_2026-09-20')), findsOneWidget);
 
-    // Un encabezado por día, con lo que se cargó; la cancelada no suma.
-    expect(find.byKey(const Key('dia_de_cargas_2026-09-23')), findsOneWidget);
-    expect(textoQueContiene('2 carga(s) · 200 piezas'), findsOneWidget);
-    expect(find.byKey(const Key('dia_de_cargas_2026-09-22')), findsNothing);
-    expect(find.byKey(const Key('dia_de_cargas_2026-09-21')), findsOneWidget);
-    final dia23 = tester.getTopLeft(find.byKey(const Key('dia_de_cargas_2026-09-23'))).dy;
-    final carga6 = tester.getTopLeft(find.byKey(const Key('carga_CG-000006'))).dy;
-    final dia21 = tester.getTopLeft(find.byKey(const Key('dia_de_cargas_2026-09-21'))).dy;
-    expect(dia23 < carga6 && carga6 < dia21, isTrue);
-
-    // Y de vuelta a las abiertas.
-    await tester.tap(find.byKey(const Key('cargas_abiertas')));
+    // Un día atrás: las dos liquidadas; la cancelada no cuenta y va aparte.
+    await tester.tap(find.byKey(const Key('boton_dia_anterior_cargas')));
     await tester.pumpAndSettle();
+    expect(servidor.porFecha.last['desde'], '2026-09-23');
+    expect(find.text('Ayer, miércoles 23 de septiembre'), findsOneWidget);
+    expect(textoQueContiene('2 carga(s) · 200 piezas · 2 liquidadas'), findsOneWidget);
+    expect(find.text('Liquidada'), findsNWidgets(2));
+    expect(find.byKey(const Key('carga_CG-000008')), findsNothing);
+
+    // Y hacia adelante, hasta mañana, que es para cuando se carga.
+    await tester.tap(find.byKey(const Key('boton_dia_siguiente_cargas')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('boton_dia_siguiente_cargas')));
+    await tester.pumpAndSettle();
+    expect(servidor.porFecha.last['desde'], '2026-09-25');
+    expect(find.text('Mañana, viernes 25 de septiembre'), findsOneWidget);
     expect(find.byKey(const Key('cargas_vacio')), findsOneWidget);
+
+    // La de otro día sin cerrar lleva a su día.
+    await tester.tap(find.byKey(const Key('sin_cerrar_2026-09-20')));
+    await tester.pumpAndSettle();
+    expect(servidor.porFecha.last['desde'], '2026-09-20');
+    expect(find.text('En el corte'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('boton_cargas_de_hoy')));
+    await tester.pumpAndSettle();
+    expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
+    expect(find.byKey(const Key('boton_cargas_de_hoy')), findsNothing);
+  });
+
+  testWidgets('abre en mañana si hoy ya no queda ninguna abierta y mañana sí', (tester) async {
+    // En la tarde, con las de hoy liquidadas, lo que se atiende es lo de mañana.
+    final servidor = _ServidorDeCargas(vivas: [
+      _resumen('CG-000009', '2026-09-25', 'borrador', '0.000'),
+    ]);
+    await _montar(tester, servidor);
+    await tester.tap(find.byKey(const Key('nav_almacen')));
+    await tester.pumpAndSettle();
+
+    expect(servidor.porFecha.single['desde'], '2026-09-25');
+    expect(find.text('Mañana, viernes 25 de septiembre'), findsOneWidget);
+    expect(find.text('Capturando'), findsOneWidget);
+    expect(find.byKey(const Key('sin_cerrar_2026-09-25')), findsNothing);
   });
 
   testWidgets('sin el permiso de cargar, el botón ni aparece', (tester) async {

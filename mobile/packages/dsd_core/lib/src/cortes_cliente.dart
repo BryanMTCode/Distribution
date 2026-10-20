@@ -231,8 +231,10 @@ class ClienteCortes {
 
   final Transporte _transporte;
 
-  Future<ListaDeCortes> lista() async {
-    final r = await _transporte.obtener('/v1/cortes');
+  /// Lo que falta cortar y los cortes. Con `dia` (`YYYY-MM-DD`), los cortes de
+  /// ese día: la app los ve día por día (ADR 0002 §149).
+  Future<ListaDeCortes> lista({String? dia}) async {
+    final r = await _transporte.obtener('/v1/cortes', parametros: {if (dia != null) 'dia': dia});
     _revisar(r);
     return ListaDeCortes.deJson((jsonDecode(r.cuerpo) as Map).cast());
   }

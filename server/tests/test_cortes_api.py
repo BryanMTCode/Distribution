@@ -247,6 +247,30 @@ async def test_cerrar_dos_veces_no_ajusta_dos_veces(cliente, sesion, semilla):
     assert lista["cortes"][0]["estado"] == "cerrada"
 
 
+async def test_los_cortes_de_un_dia(cliente, sesion, semilla):
+    """La app los ve día por día (ADR 0002 §149): con `dia`, los de ese día; lo
+    que falta cortar sale igual, sea del día que sea."""
+    dia = await sembrar_dia_de_trabajo(sesion, semilla)
+    await _reportar_cola(sesion, dia["dispositivo"], 0)
+    cab = await _cab(cliente)
+    corte = await _abrir(cliente, cab, dia)
+    fecha = (
+        await sesion.execute(
+            text("SELECT fecha_operativa FROM cargas WHERE id = :c"), {"c": dia["carga"]}
+        )
+    ).scalar_one()
+
+    del_dia = (await cliente.get("/v1/cortes", params={"dia": str(fecha)}, headers=cab)).json()
+    assert [c["id"] for c in del_dia["cortes"]] == [corte["id"]]
+    assert del_dia["cortes"][0]["estado"] == "abierta"
+
+    otro = str(fecha.replace(day=1) if fecha.day != 1 else fecha.replace(day=2))
+    vacio = (await cliente.get("/v1/cortes", params={"dia": otro}, headers=cab)).json()
+    assert vacio["cortes"] == []
+    # Sin día, los de siempre.
+    assert len((await cliente.get("/v1/cortes", headers=cab)).json()["cortes"]) == 1
+
+
 async def test_un_corte_que_no_existe_es_404(cliente, semilla):
     cab = await _cab(cliente)
     assert (await cliente.get(f"/v1/cortes/{uuid.uuid4()}", headers=cab)).status_code == 404

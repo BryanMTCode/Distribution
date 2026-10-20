@@ -89,7 +89,7 @@ propia huella y su propia aceptación en el teléfono.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import quote
@@ -209,8 +209,9 @@ async def cargas_por_cortar(sesion) -> list:
     )
 
 
-async def cortes_recientes(sesion) -> list:
-    """Los cortes abiertos y cerrados, los más nuevos primero."""
+async def cortes_recientes(sesion, dia: date | None = None) -> list:
+    """Los cortes abiertos y cerrados, los más nuevos primero. Con `dia`, los de
+    ese día: la app los ve día por día (ADR 0002 §149)."""
     return list(
         (
             await sesion.execute(
@@ -231,10 +232,12 @@ async def cortes_recientes(sesion) -> list:
                   ) d ON true
                  -- Los anulados están en Operaciones → Eliminadas (§126).
                  WHERE l.estado <> 'anulada'
+                   AND (CAST(:dia AS date) IS NULL OR l.fecha_operativa = :dia)
                  ORDER BY l.fecha_operativa DESC, l.folio DESC
                  LIMIT 100
                 """
-            )
+            ),
+            {"dia": dia},
         )
         ).mappings().all()
     )

@@ -65,12 +65,14 @@ String diaEnPalabras(String diaOperativo) {
   return '${_diasDeLaSemana[d.weekday - 1]} ${d.day} de ${_meses[d.month - 1]}';
 }
 
-/// «Hoy, martes 7 de octubre» o «Ayer, lunes 6 de octubre»; cualquier otro día,
+/// «Hoy, martes 7 de octubre», «Ayer, lunes 6 de octubre» o «Mañana, miércoles 8
+/// de octubre» —la carga es para mañana (ADR 0002 §82)—; cualquier otro día,
 /// solo la fecha. Con mayúscula, para encabezado.
 String encabezadoDelDia(String diaOperativo, {required String hoy}) {
   final fecha = diaEnPalabras(diaOperativo);
   final ayer = diaOperativoDe(DateTime.parse(hoy).subtract(const Duration(hours: 12)));
   if (diaOperativo == hoy) return 'Hoy, $fecha';
   if (diaOperativo == ayer) return 'Ayer, $fecha';
+  if (diaOperativo == diaSiguiente(hoy)) return 'Mañana, $fecha';
   return fecha[0].toUpperCase() + fecha.substring(1);
 }

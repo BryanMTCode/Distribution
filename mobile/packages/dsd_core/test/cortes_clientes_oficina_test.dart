@@ -65,6 +65,15 @@ void main() {
       expect(t.pedidas[1].$2, {'confirmo_sincronizado': true});
     });
 
+    test('los cortes de un día se piden con su fecha (ADR 0002 §149)', () async {
+      final t = _Transporte(200, {'por_cortar': <Object?>[], 'cortes': <Object?>[]});
+      await ClienteCortes(t).lista(dia: '2026-10-07');
+      await ClienteCortes(t).lista();
+      expect(t.pedidas[0].$1, '/v1/cortes');
+      expect(t.pedidas[0].$2, {'dia': '2026-10-07'});
+      expect(t.pedidas[1].$2, isEmpty);
+    });
+
     test('un 409 trae el texto del servidor; un 403 es permiso', () async {
       expect(
         () => ClienteCortes(_Transporte(409, {'detail': 'No se puede cerrar: x'})).cerrar('lq1'),

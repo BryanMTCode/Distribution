@@ -17,9 +17,10 @@
 ///   · Al cerrar, el camión queda en lo contado, el faltante se carga a la cuenta
 ///     del vendedor y su teléfono recibe el ajuste.
 ///
-/// Al final, los cortes por día, cada uno una sola vez (ADR 0002 §124): el que
-/// cerró el gerente desde el corte del vendedor dice en su renglón lo que éste
-/// entregó, en vez de repetirse en «Cerrados esta semana».
+/// Al final, los cortes **de un día**, y se pasa de día en día (ADR 0002 §149):
+/// «también los cortes, que aparezcan por día». Cada uno sale una sola vez (§124):
+/// el que cerró el gerente desde el corte del vendedor dice en su renglón lo que
+/// éste entregó, y cada uno dice su estatus.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -31,6 +32,7 @@ import '../../estado/sincronizacion.dart';
 import '../../estado/vendedores.dart';
 import 'cierres.dart';
 import 'comunes.dart';
+import 'selector_de_dia.dart';
 
 ClienteCortes? _cliente(WidgetRef ref) {
   final t = ref.read(transporteProvider);
@@ -81,6 +83,12 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   ListaDeCortes? _lista;
   String? _error;
 
+  /// El día cuyos cortes se ven; nulo es hoy.
+  String? _dia;
+
+  /// Para tirar la respuesta de un día que ya no es el que se ve.
+  int _consulta = 0;
+
   /// Al deslizar para recargar, la sección de los vendedores se vuelve a leer.
   int _vuelta = 0;
 
@@ -108,17 +116,39 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
       setState(() => _error = 'No hay sesión en línea. Sal y vuelve a entrar con señal.');
       return;
     }
+    final consulta = ++_consulta;
+    final dia = _dia ?? diaOperativoDe(ref.read(relojProvider)());
     try {
-      final l = await cliente.lista();
-      if (!mounted) return;
+      final l = await cliente.lista(dia: dia);
+      if (!mounted || consulta != _consulta) return;
       setState(() {
         _lista = l;
         _error = null;
       });
     } on Object catch (e) {
-      if (!mounted) return;
+      if (!mounted || consulta != _consulta) return;
       setState(() => _error = explicarErrorDeOficina(e));
     }
+  }
+
+  void _irA(String dia) {
+    setState(() {
+      _dia = dia;
+      _lista = null;
+      _error = null;
+    });
+    _cargar();
+  }
+
+  Future<void> _elegirEnCalendario(String dia, String hoy) async {
+    final elegido = await elegirDiaEnCalendario(
+      context,
+      dia: dia,
+      hoy: hoy,
+      ayuda: '¿De qué día son los cortes?',
+    );
+    if (elegido == null || !mounted) return;
+    _irA(elegido);
   }
 
   Future<void> _abrirDetalle(Future<CorteDelDia> Function(ClienteCortes) cual) async {
@@ -143,6 +173,13 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
   Widget build(BuildContext context) {
     final l = _lista;
     final estilo = Theme.of(context).textTheme;
+    final hoy = diaOperativoDe(ref.watch(relojProvider)());
+    final dia = _dia ?? hoy;
+    // Del servidor ya vienen los del día; por si acaso, solo esos.
+    final delDia = [
+      for (final c in l?.cortes ?? const <CorteEnLista>[])
+        if (c.fecha == dia) c,
+    ];
     final cuerpo = RefreshIndicator(
       onRefresh: () async {
         setState(() => _vuelta++);
@@ -195,24 +232,38 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
                 ),
               ),
             const SizedBox(height: 16),
-            Text('Cortes por día', style: estilo.titleMedium),
-            if (l.cortes.isEmpty)
+            Text('Cortes', style: estilo.titleMedium),
+          ],
+          // El día, aunque esté cargando: es con lo que uno se mueve.
+          SelectorDeDia(
+            dia: dia,
+            hoy: hoy,
+            sufijo: 'cortes',
+            textoDeHoy: 'Ver los de hoy',
+            // Un día que no ha llegado no tiene cortes.
+            ultimoDia: hoy,
+            alIr: _irA,
+            alCalendario: () => _elegirEnCalendario(dia, hoy),
+          ),
+          if (l != null) ...[
+            if (delDia.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Todavía no hay cortes.'),
-              ),
-            // Un encabezado por día con cuántos cortes hubo (ADR 0002 §124).
-            for (final (dia, del) in _porDia(l.cortes)) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 4),
                 child: Text(
-                  '${_mayuscula(diaEnPalabras(dia))} · ${del.length} corte(s)',
+                  'No hay cortes de este día. Muévete con las flechas.',
+                  key: Key('cortes_vacio'),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Text(
+                  _resumen(delDia),
                   key: Key('dia_de_cortes_$dia'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              for (final c in del) _renglon(c),
-            ],
+            for (final c in delDia) _renglon(c),
           ],
         ],
       ),
@@ -233,32 +284,67 @@ class _EstadoCortes extends ConsumerState<PantallaCortes> {
       leading: Icon(
         c.estado == 'cerrada' ? Icons.lock_outline : Icons.edit_note,
       ),
-      title: Text('${c.vendedor} · ${diaEnPalabras(c.fecha)}'),
-      subtitle: Text(
-        '${c.folio} · ${c.estado == 'cerrada' ? 'cerrado' : 'abierto'}'
-        '${c.faltantes > 0 ? ' · ${c.faltantes} producto(s) con diferencia' : ''}'
-        '${c.diferenciaEfectivo.centavos != 0 ? ' · efectivo ${pesos(c.diferenciaEfectivo)}' : ''}'
-        // El que mandó el vendedor desde su teléfono: lo que entregó.
-        '${delVendedor == null ? '' : '\nLo mandó el vendedor · ${efectivoEnPalabras(delVendedor)}'}',
+      title: Text(c.vendedor),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${c.folio}'
+            '${c.faltantes > 0 ? ' · ${c.faltantes} producto(s) con diferencia' : ''}'
+            '${c.diferenciaEfectivo.centavos != 0 ? ' · efectivo ${pesos(c.diferenciaEfectivo)}' : ''}'
+            // El que mandó el vendedor desde su teléfono: lo que entregó.
+            '${delVendedor == null ? '' : '\nLo mandó el vendedor · ${efectivoEnPalabras(delVendedor)}'}',
+          ),
+          const SizedBox(height: 6),
+          _EtiquetaDeCorte(estado: c.estado, key: Key('estado_corte_${c.folio}')),
+        ],
       ),
-      isThreeLine: delVendedor != null,
+      isThreeLine: true,
       trailing: const Icon(Icons.chevron_right),
       onTap: () => _abrirDetalle((cl) => cl.ver(c.id)),
     );
   }
 }
 
-/// Los cortes por día, del más reciente al más viejo, en el orden en que llegan.
-List<(String, List<CorteEnLista>)> _porDia(List<CorteEnLista> cortes) {
-  final dias = <String, List<CorteEnLista>>{};
-  for (final c in cortes) {
-    dias.putIfAbsent(c.fecha, () => []).add(c);
+/// Cómo va un corte (ADR 0002 §149): abierto mientras se cuenta; cuadrado o con
+/// diferencia después del arqueo, esperando que lo cierren; cerrado.
+String etiquetaDeEstadoDeCorte(String estado) => switch (estado) {
+      'abierta' => 'Abierto',
+      'cuadrada' => 'Cuadrado, falta cerrar',
+      'con_diferencia' => 'Con diferencia, falta cerrar',
+      'cerrada' => 'Cerrado',
+      _ => estado,
+    };
+
+class _EtiquetaDeCorte extends StatelessWidget {
+  const _EtiquetaDeCorte({super.key, required this.estado});
+
+  final String estado;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final (fondo, letra) = switch (estado) {
+      'abierta' => (Colors.orange.shade100, Colors.orange.shade900),
+      'cuadrada' => (colores.primaryContainer, colores.onPrimaryContainer),
+      'con_diferencia' => (colores.errorContainer, colores.onErrorContainer),
+      'cerrada' => (Colors.green.shade100, Colors.green.shade900),
+      _ => (colores.surfaceContainerHighest, colores.onSurfaceVariant),
+    };
+    return EtiquetaDeEstatus(texto: etiquetaDeEstadoDeCorte(estado), fondo: fondo, letra: letra);
   }
-  return [for (final e in dias.entries) (e.key, e.value)];
 }
 
-String _mayuscula(String texto) =>
-    texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
+/// «3 corte(s) · 2 cerrados · 1 abierto»: el día de reojo.
+String _resumen(List<CorteEnLista> cortes) {
+  final cerrados = cortes.where((c) => c.estado == 'cerrada').length;
+  final porCerrar = cortes.length - cerrados;
+  return [
+    '${cortes.length} corte(s)',
+    if (cerrados > 0) '$cerrados ${cerrados == 1 ? 'cerrado' : 'cerrados'}',
+    if (porCerrar > 0) '$porCerrar sin cerrar',
+  ].join(' · ');
+}
 
 // ---------------------------------------------------------------------------
 // Un corte: contar, arqueo, cerrar

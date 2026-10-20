@@ -128,6 +128,20 @@ void main() {
       await verYTocar(tester, const Key('boton_enviar_solicitud'));
 
       final carga = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
+      // La solicitud también se imprime (ADR 0002 §150), con el mismo texto.
+      await tocarConProgreso(tester, const Key('boton_imprimir_ticket'));
+      await tester.pumpAndSettle();
+      final solicitudImpresa =
+          decodificar(impresora.enviados.last).lineas.map((l) => l.texto).toList();
+      expect(impresora.enviados, hasLength(2));
+      expect(solicitudImpresa, contains('SOLICITUD DE CARGA'));
+      expect(solicitudImpresa.join(' '), contains('Sopa de fideo 70 g'));
+      expect(textoQueContiene('el ticket salió en la impresora'), findsOneWidget);
+      // El aviso nació en la zona real (la impresora simulada escribe a disco):
+      // su reloj no lo mueve la prueba, y sonaría ya terminada. Se quita aquí.
+      ScaffoldMessenger.of(tester.element(find.byKey(const Key('texto_ticket'))))
+          .removeCurrentSnackBar();
+      await tester.pumpAndSettle();
       expect(carga, contains('*SOLICITUD DE CARGA*'));
       expect(carga, contains('• Sopa de fideo 70 g: 10 CAJA'));
 
@@ -197,6 +211,8 @@ void main() {
       final t = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
       expect(t, contains('*CARGA ACEPTADA*'));
       expect(t, contains('Carga CG-000031'));
+      // Desde Mi día también se imprime.
+      expect(find.byKey(const Key('boton_imprimir_ticket')), findsOneWidget);
     });
   });
 
@@ -386,12 +402,13 @@ void main() {
       await _montarGerente(tester, servidor, compartidor);
       await abrirPestana(tester, const Key('pestana_cargas'));
 
-      // Por día, del más nuevo al más viejo.
-      final dia25 = find.byKey(const Key('dia_de_cargas_2026-09-25'));
-      final dia24 = find.byKey(const Key('dia_de_cargas_2026-09-24'));
-      expect(dia25, findsOneWidget);
-      expect(dia24, findsOneWidget);
-      expect(tester.getTopLeft(dia25).dy, lessThan(tester.getTopLeft(dia24).dy));
+      // Por día (§149): hoy, la del corte; la aceptada es de mañana.
+      expect(find.byKey(const Key('dia_de_cargas_2026-09-24')), findsOneWidget);
+      expect(find.byKey(const Key('carga_CG-000012')), findsOneWidget);
+      expect(find.byKey(const Key('carga_CG-000013')), findsNothing);
+      await tester.tap(find.byKey(const Key('sin_cerrar_2026-09-25')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('dia_de_cargas_2026-09-25')), findsOneWidget);
       // La aceptada no se repite en «Resueltas esta semana»: va en su carga.
       expect(find.byKey(const Key('carga_pedida_reciente_$_aceptada')), findsNothing);
       expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
@@ -400,7 +417,7 @@ void main() {
       // La rechazada no tiene carga: esa sí queda arriba.
       expect(find.byKey(const Key('carga_pedida_reciente_$_rechazada')), findsOneWidget);
       expect(textoQueContiene('Rechazada: No hay atún'), findsOneWidget);
-      // La que se hizo a mano no trae ticket.
+      // La que se hizo a mano no trae ticket (es la de hoy, en su día).
       expect(find.byKey(const Key('ticket_carga_CG-000012')), findsNothing);
 
       await tester.ensureVisible(find.byKey(const Key('ticket_carga_CG-000013')));
@@ -434,12 +451,36 @@ void main() {
         textoQueContiene(r'Lo mandó el vendedor · Entregó $2,100.00 de $2,250.00'),
         findsOneWidget,
       );
-      // Por día, del más nuevo al más viejo.
-      final dia24 = find.byKey(const Key('dia_de_cortes_2026-09-24'));
-      final dia23 = find.byKey(const Key('dia_de_cortes_2026-09-23'));
-      await tester.scrollUntilVisible(dia23, 200, scrollable: find.byType(Scrollable).last);
-      expect(tester.getTopLeft(dia24).dy, lessThan(tester.getTopLeft(dia23).dy));
-      expect(textoQueContiene('2 corte(s)'), findsOneWidget);
+      // Por día (§149): hoy, los dos de hoy, cada uno con su estatus; el de
+      // ayer, un día atrás.
+      final lista = find.byType(Scrollable).last;
+      expect(find.byKey(const Key('dia_de_cortes_2026-09-24')), findsOneWidget);
+      expect(textoQueContiene('2 corte(s) · 2 cerrados'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('estado_corte_LQ-000004')),
+          matching: find.text('Cerrado'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('corte_LQ-000002')), findsNothing);
+      // Hoy es el último día: mañana no tiene cortes.
+      final siguiente = tester.widget<IconButton>(
+          find.byKey(const Key('boton_dia_siguiente_cortes')));
+      expect(siguiente.onPressed, isNull);
+
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('boton_dia_anterior_cortes')), -200, scrollable: lista);
+      await tester.tap(find.byKey(const Key('boton_dia_anterior_cortes')));
+      await tester.pumpAndSettle();
+      expect(find.text('Ayer, miércoles 23 de septiembre'), findsOneWidget);
+      await tester.scrollUntilVisible(
+          find.byKey(const Key('corte_LQ-000002')), 200, scrollable: lista);
+      expect(find.byKey(const Key('dia_de_cortes_2026-09-23')), findsOneWidget);
+      expect(textoQueContiene('1 corte(s) · 1 cerrado'), findsOneWidget);
+      expect(find.byKey(const Key('corte_LQ-000004')), findsNothing);
+      // Y se pidió al servidor ese día.
+      expect(servidor.cortesPedidos.last, {'dia': '2026-09-23'});
     });
 
     testWidgets('cargas y cortes por día caben en el Hyundai HYLine Pro (360 de ancho)',
@@ -449,7 +490,26 @@ void main() {
       tester.view.physicalSize = const Size(360, 760);
       await abrirPestana(tester, const Key('pestana_cargas'));
       expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('carga_CG-000013')), findsOneWidget);
+      final lista = find
+          .descendant(
+            of: find.byKey(const Key('pantalla_cargas')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('carga_CG-000012')), 200, scrollable: lista,
+      );
+      expect(tester.takeException(), isNull);
+      // El día de mañana, con su etiqueta, también cabe (§149).
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('boton_dia_siguiente_cargas')), -200, scrollable: lista,
+      );
+      await tester.tap(find.byKey(const Key('boton_dia_siguiente_cargas')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('carga_CG-000013')), 200, scrollable: lista,
+      );
+      expect(tester.takeException(), isNull);
       await tester.tap(find.byKey(const Key('pestana_cortes')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -496,6 +556,9 @@ class _ServidorDeCierres implements Transporte {
   /// semana: una carga aceptada y una rechazada (ADR 0002 §124).
   final bool conListas;
   final List<(String, Map<String, Object?>)> posts = [];
+
+  /// Con qué parámetros se pidieron los cortes: el día (§149).
+  final List<Map<String, String>> cortesPedidos = [];
   bool _corteCerrado = false;
 
   static const _vendedor = {
@@ -580,6 +643,7 @@ class _ServidorDeCierres implements Transporte {
         carga('CG-000012', '2026-09-24', 'en_ruta'),
       ]));
     }
+    if (ruta == '/v1/cortes') cortesPedidos.add(parametros ?? const {});
     if (conListas && ruta == '/v1/cortes') {
       Map<String, Object?> corte(String id, String folio, String dia, String vendedor) => {
             'id': id, 'folio': folio, 'estado': 'cerrada', 'fecha_operativa': dia,
