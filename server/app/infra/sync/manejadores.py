@@ -724,13 +724,13 @@ async def _insertar_partida(
 # Lo que se anota si el teléfono no manda motivo. La app lo exige; esto es para un
 # teléfono viejo o alterado, y la cancelación entra igual.
 MOTIVO_DE_CANCELACION_SIN_TEXTO = "Cancelada por el vendedor desde la app, sin motivo."
-MOTIVO_DE_AGREGADO_SIN_TEXTO = "Agregado por el vendedor desde la app, sin motivo."
+MOTIVO_DE_MODIFICACION_SIN_TEXTO = "Modificada por el vendedor desde la app, sin motivo."
 
 # Las marcas de revisión de lo que el vendedor cambia desde el teléfono (§162).
 # La oficina las ve en la venta y en «Cambios de los vendedores»: cancelar o
-# agregar es legítimo, y también es por donde se escaparía un cobro.
+# modificar es legítimo, y también es por donde se escaparía un cobro.
 MOTIVO_CANCELADA_POR_VENDEDOR = "cancelada_por_vendedor"
-MOTIVO_AGREGADA_POR_VENDEDOR = "agregada_por_vendedor"
+MOTIVO_MODIFICADA_POR_VENDEDOR = "modificada_por_vendedor"
 
 
 async def _rastro_del_telefono(
@@ -739,7 +739,7 @@ async def _rastro_del_telefono(
     """Lo que el teléfono sabe del momento del cambio, para el historial (§162).
 
     Su hora, si el ticket ya se había impreso y cuántas copias —cancelar o
-    agregar después de entregar el papel es lo que más hay que mirar—, y dónde
+    modificar después de entregar el papel es lo que más hay que mirar—, y dónde
     estaba, con la distancia a la tienda.
     """
     lat, lng = _decimal(datos, "lat"), _decimal(datos, "lng")
@@ -835,17 +835,26 @@ async def cancelar_venta_del_vendedor(
     await sesion.flush()
 
 
-@manejador_de("venta.agregar")
-async def agregar_a_venta(
+@manejador_de("venta.modificar")
+async def modificar_venta(
     sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
 ) -> None:
-    """El vendedor le agrega a su venta lo que le faltó (ADR 0002 §162).
+    """El vendedor modifica su venta: sube, baja o quita artículos (ADR 0002 §162).
 
-    `entidad_id` es la venta. **Solo agrega**: renglones nuevos, cada uno validado
-    como los de `venta.crear` —la aritmética se rechaza, el precio desactualizado
-    se marca—, y lo agregado SALE DEL CAMIÓN. Nunca baja ni quita: bajar
-    devolvería mercancía al camión sin que nadie la viera, y ése es el hueco por
-    donde se escaparía un cobro. Para bajar, se cancela y se vuelve a hacer.
+    `entidad_id` es la MODIFICACIÓN —una venta se puede modificar más de una vez,
+    y el teléfono no encola dos operaciones del mismo tipo sobre la misma
+    entidad—; la venta viene en `venta_id`. `partidas` es la venta COMO DEBE
+    QUEDAR:
+
+    · un renglón que ya estaba (mismo `id`) solo cambia de cantidad: el producto,
+      la unidad y el precio son los de la venta, y la aritmética se revisa;
+    · uno nuevo se valida como los de `venta.crear` —la aritmética se rechaza, el
+      precio desactualizado se marca—;
+    · el que no viene, se quita.
+
+    El camión se ajusta por producto: lo que sube sale del camión y lo que baja o
+    se quita vuelve, con su movimiento en el libro mayor (como cuando la oficina
+    corrige). Quitarlo todo no es modificar: es cancelar, con su propio documento.
 
     Mismos bloqueos que cancelar: de otro vendedor, cancelada o del día ya
     liquidado se rechaza y queda en cuarentena para la oficina. La venta queda
@@ -856,6 +865,8 @@ async def agregar_a_venta(
     # Aquí y no arriba: el panel importa de la capa de sincronización.
     from app.api.admin import ventas as panel_ventas
 
+    modificacion_id = entidad_id
+    entidad_id = _uuid_obligatorio(datos, "venta_id")
     cabecera = await panel_ventas._cabecera(sesion, entidad_id, para_escribir=True)
     if cabecera is None:
         raise ErrorDeManejador(
@@ -867,12 +878,7 @@ async def agregar_a_venta(
         )
     if cabecera["estado"] != "confirmada":
         raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, "la venta ya está cancelada: no se le agrega nada"
-        )
-    if cabecera["tipo"] != "contado":
-        # De antes del solo contado (§81): su cartera no se movería con el total.
-        raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, "una venta a crédito no se modifica desde el teléfono"
+            CodigoError.CONFLICTO_DE_DATOS, "la venta ya está cancelada: no se modifica"
         )
     bloqueos = await panel_ventas._bloqueos(sesion, cabecera)
     if bloqueos:
@@ -881,90 +887,186 @@ async def agregar_a_venta(
             "no se puede modificar desde el teléfono: " + " ".join(bloqueos),
         )
 
-    partidas = datos.get("partidas")
-    if not isinstance(partidas, list) or not partidas:
-        raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "no hay nada que agregar")
+    nuevas = datos.get("partidas")
+    if not isinstance(nuevas, list) or not nuevas:
+        raise ErrorDeManejador(
+            CodigoError.PAYLOAD_INVALIDO,
+            "una venta sin renglones no es una modificación: se cancela",
+        )
 
-    antes = (
+    actuales = (
         await sesion.execute(
             text(
-                "SELECT COALESCE(max(linea), 0) AS ultima, count(*) AS renglones "
-                "  FROM venta_partidas WHERE venta_id = :v"
+                "SELECT vp.id, vp.linea, vp.producto_id, vp.unidad_codigo, "
+                "       vp.factor_unidad, vp.cantidad, vp.cantidad_base, "
+                "       vp.precio_unitario, vp.importe, p.nombre "
+                "  FROM venta_partidas vp JOIN productos p ON p.id = vp.producto_id "
+                " WHERE vp.venta_id = :v ORDER BY vp.linea"
             ),
             {"v": entidad_id},
         )
-    ).mappings().one()
+    ).mappings().all()
+    por_id = {p["id"]: p for p in actuales}
 
-    motivos: list[str] = [MOTIVO_AGREGADA_POR_VENDEDOR]
-    salidas: list[tuple[uuid.UUID, Decimal]] = []
-    agregado = Decimal("0")
-    agregadas: list[dict[str, Any]] = []
-    for numero, cruda in enumerate(partidas, start=1):
+    def renglon(p, cantidad) -> dict[str, Any]:
+        return {"producto_id": str(p["producto_id"]), "producto": p["nombre"],
+                "unidad": p["unidad_codigo"], "cantidad": str(cantidad)}
+
+    base_antes: dict[uuid.UUID, Decimal] = {}
+    for p in actuales:
+        base_antes[p["producto_id"]] = base_antes.get(p["producto_id"], Decimal(0)) + Decimal(
+            p["cantidad_base"]
+        )
+    base_despues: dict[uuid.UUID, Decimal] = {}
+    cambios: list[dict[str, Any]] = []
+    vistas: set[uuid.UUID] = set()
+    por_insertar: list[dict[str, Any]] = []
+    suma = Decimal(0)
+
+    # ------------------------------------------------------------------
+    # Las partidas PRIMERO, el encabezado DESPUÉS: el disparador que publica la
+    # venta al teléfono lee las partidas al actualizar `ventas`.
+    # ------------------------------------------------------------------
+    for cruda in nuevas:
         if not isinstance(cruda, dict):
             raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "partida mal formada")
         cantidad = _decimal_obligatorio(cruda, "cantidad")
         if cantidad <= 0:
-            # Solo se agrega. Una cantidad negativa sería bajar la venta por la
-            # puerta de atrás.
             raise ErrorDeManejador(
-                CodigoError.PAYLOAD_INVALIDO, "a una venta solo se le agrega: cantidad no positiva"
+                CodigoError.PAYLOAD_INVALIDO,
+                "un renglón en cero no viene: se quita; una cantidad negativa no existe",
             )
-        # El renglón va al final de lo que el SERVIDOR tiene: la oficina pudo
-        # haber corregido la venta mientras el teléfono estaba sin señal.
-        renglon = {**cruda, "linea": antes["ultima"] + numero}
-        salidas.append(
-            await _insertar_partida(
-                sesion, ctx, entidad_id, renglon, motivos, cabecera["lista_precios_id"]
+        partida_id = _uuid_opcional(cruda, "id")
+        existente = por_id.get(partida_id) if partida_id is not None else None
+        if existente is None:
+            por_insertar.append(cruda)
+            continue
+        if partida_id in vistas:
+            raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, "un renglón viene dos veces")
+        vistas.add(partida_id)
+
+        # Solo cambia la cantidad: cambiarle el producto o el precio a un renglón
+        # ya cobrado sería otra venta escrita encima de ésta.
+        precio = Decimal(existente["precio_unitario"])
+        precio_declarado = _decimal(cruda, "precio_unitario")
+        if (
+            _uuid_obligatorio(cruda, "producto_id") != existente["producto_id"]
+            or _texto(cruda, "unidad_codigo") != existente["unidad_codigo"]
+            or (precio_declarado is not None and precio_declarado != precio)
+        ):
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO,
+                "un renglón de la venta solo cambia de cantidad, no de producto ni de precio",
             )
+        importe = importe_de_linea(cantidad, precio)
+        base = cantidad_base(cantidad, Decimal(existente["factor_unidad"]))
+        declarado = _decimal(cruda, "importe")
+        if declarado is not None and declarado != importe:
+            raise ErrorDeManejador(
+                CodigoError.PAYLOAD_INVALIDO,
+                f"el importe {declarado} de la línea no cuadra: se esperaba {importe}",
+            )
+        if cantidad != Decimal(existente["cantidad"]):
+            await sesion.execute(
+                text(
+                    "UPDATE venta_partidas SET cantidad = :c, cantidad_base = :b, "
+                    "       importe = :i WHERE id = :id"
+                ),
+                {"c": cantidad, "b": base, "i": importe, "id": partida_id},
+            )
+            cambios.append(
+                {**renglon(existente, cantidad), "antes": str(existente["cantidad"])}
+            )
+        producto = existente["producto_id"]
+        base_despues[producto] = base_despues.get(producto, Decimal(0)) + base
+        suma += importe
+
+    for p in actuales:
+        if p["id"] not in vistas:
+            await sesion.execute(text("DELETE FROM venta_partidas WHERE id = :id"), {"id": p["id"]})
+            cambios.append({**renglon(p, 0), "antes": str(p["cantidad"]), "quitado": True})
+
+    motivos: list[str] = [MOTIVO_MODIFICADA_POR_VENDEDOR]
+    siguiente = max((p["linea"] for p in actuales), default=0) + 1
+    nombres = {}
+    for cruda in por_insertar:
+        producto, base = await _insertar_partida(
+            sesion, ctx, entidad_id, {**cruda, "linea": siguiente},
+            motivos, cabecera["lista_precios_id"],
         )
-        importe = _decimal_obligatorio(cruda, "importe")
-        agregado += importe
-        agregadas.append(
+        siguiente += 1
+        base_despues[producto] = base_despues.get(producto, Decimal(0)) + base
+        suma += _decimal_obligatorio(cruda, "importe")
+        if producto not in nombres:
+            nombres[producto] = (
+                await sesion.execute(
+                    text("SELECT nombre FROM productos WHERE id = :p"), {"p": producto}
+                )
+            ).scalar_one()
+        cambios.append(
             {
-                "producto_id": str(_uuid_obligatorio(cruda, "producto_id")),
+                "producto_id": str(producto),
+                "producto": nombres[producto],
                 "unidad": _texto(cruda, "unidad_codigo"),
-                "cantidad": str(cantidad),
-                "importe": str(importe),
+                "cantidad": str(_decimal_obligatorio(cruda, "cantidad")),
+                "antes": None,
+                "agregado": True,
             }
         )
 
+    if not cambios:
+        # Nada cambió: un sobre repetido o vacío no deja pista de algo que no pasó.
+        return
+
+    # El camión, por producto: lo que sube sale, lo que baja o se quita vuelve.
     fecha_dispositivo = _instante_obligatorio(datos, "fecha_dispositivo")
+    salen: list[tuple[uuid.UUID, Decimal]] = []
+    for producto in {*base_antes, *base_despues}:
+        diferencia = base_despues.get(producto, Decimal(0)) - base_antes.get(producto, Decimal(0))
+        if diferencia > 0:
+            salen.append((producto, diferencia))
+        elif diferencia < 0:
+            await panel_ventas._devolver_al_camion(
+                sesion,
+                almacen=cabecera["almacen_id"],
+                producto=producto,
+                cantidad=-diferencia,
+                documento_tipo="venta_modificada",
+                documento_id=entidad_id,
+                quien=ctx.usuario_id,
+                ahora=ctx.recibido_en,
+            )
     # Del camión de la venta, no del que el vendedor traiga hoy.
     await _sacar_del_camion(
-        sesion,
-        replace(ctx, almacen_id=cabecera["almacen_id"]),
-        entidad_id,
-        fecha_dispositivo,
-        salidas,
-        motivos,
+        sesion, replace(ctx, almacen_id=cabecera["almacen_id"]), entidad_id,
+        fecha_dispositivo, salen, motivos,
     )
 
+    total = suma - Decimal(cabecera["descuento"]) + Decimal(cabecera["impuestos"])
     # Este UPDATE publica el delta al teléfono (cambió el total): trae las
     # partidas con los mismos id que mandó, así que no mueve nada en su camión.
     await sesion.execute(
-        text(
-            "UPDATE ventas SET subtotal = subtotal + :a, total = total + :a WHERE id = :v"
-        ),
-        {"a": agregado, "v": entidad_id},
+        text("UPDATE ventas SET subtotal = :s, total = :t WHERE id = :v"),
+        {"s": suma, "t": total, "v": entidad_id},
     )
     await _marcar_venta(sesion, entidad_id, motivos)
 
-    motivo = (_texto(datos, "motivo") or "").strip() or MOTIVO_DE_AGREGADO_SIN_TEXTO
+    motivo = (_texto(datos, "motivo") or "").strip() or MOTIVO_DE_MODIFICACION_SIN_TEXTO
     await panel_ventas._auditar(
         sesion,
         entidad_id,
-        accion="agregar",
+        accion="modificar",
         quien=ctx.usuario_id,
         motivo=motivo,
         antes={
             "total": str(cabecera["total"]),
-            "renglones": int(antes["renglones"]),
             "folio_local": cabecera["folio_local"],
+            "renglones": [renglon(p, p["cantidad"]) for p in actuales],
         },
         despues={
-            "total": str(Decimal(cabecera["total"]) + agregado),
-            "agregado": str(agregado),
-            "agregadas": agregadas,
+            "total": str(total),
+            "cambios": cambios,
+            "modificacion_id": str(modificacion_id),
             **await _rastro_del_telefono(sesion, datos, cabecera["cliente_id"]),
         },
         ahora=ctx.recibido_en,

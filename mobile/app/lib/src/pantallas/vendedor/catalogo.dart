@@ -61,7 +61,7 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo>
       if (rechazo == null) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text(mensajeDeRechazoDelCarrito(rechazo))));
+        ..showSnackBar(SnackBar(content: Text(_mensajeDeRechazo(rechazo))));
     });
 
     return Scaffold(
@@ -248,9 +248,7 @@ class _ListaPorFamilia extends StatelessWidget {
       );
 }
 
-/// Por qué el carrito no aceptó un toque, en palabras. Lo usa también «Agregar a
-/// la venta» (ADR 0002 §162).
-String mensajeDeRechazoDelCarrito(ResultadoCarrito rechazo) => switch (rechazo.motivo) {
+String _mensajeDeRechazo(ResultadoCarrito rechazo) => switch (rechazo.motivo) {
       MotivoRechazo.sinExistencia => _sinExistencia(rechazo.desglose),
       MotivoRechazo.noVaEnLaCarga => 'Ese producto no va en la carga de hoy',
       MotivoRechazo.cantidadInvalida => 'Cantidad no válida',

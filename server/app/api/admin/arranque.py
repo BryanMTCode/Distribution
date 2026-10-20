@@ -327,9 +327,9 @@ SELECT
     WHERE pago_estado = 'por_confirmar' AND estado = 'confirmada') AS importe_por_confirmar,
   (SELECT count(*) FROM ventas
     WHERE requiere_revision AND estado = 'confirmada') AS ventas_revision,
-  -- Lo que los vendedores cancelaron o agregaron hoy desde el teléfono (§162).
+  -- Lo que los vendedores cancelaron o modificaron hoy desde el teléfono (§162).
   (SELECT count(*) FROM auditoria a JOIN ventas v ON v.id = a.entidad_id
-    WHERE a.entidad = 'venta' AND a.accion IN ('cancelar', 'agregar')
+    WHERE a.entidad = 'venta' AND a.accion IN ('cancelar', 'modificar')
       AND a.usuario_id = v.vendedor_id
       AND a.ocurrido_en >= CURRENT_DATE) AS cambios_vendedores
 """
@@ -428,7 +428,7 @@ async def pendientes_de_hoy(sesion, actor) -> list[Pendiente]:
             "Al cierre",
             f["cambios_vendedores"],
             "cambio(s) de los vendedores a sus ventas hoy, desde el teléfono (cancelar o "
-            "agregar): mira primero los que se hicieron con el ticket ya impreso.",
+            "modificar): mira primero los que se hicieron con el ticket ya impreso.",
             "/panel/ventas/cambios?dias=1",
         ),
     ]

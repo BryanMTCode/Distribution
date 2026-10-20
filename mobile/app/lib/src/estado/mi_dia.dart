@@ -16,9 +16,9 @@ final reimpresionDeVentasProvider = Provider<ReimpresionDeVentas>(
   (ref) => ReimpresionDeVentas(ref.watch(baseLocalProvider).db),
 );
 
-/// El vendedor le agrega a su venta lo que le faltó, sin señal (ADR 0002 §162).
-final agregadoAVentaProvider = Provider<AgregadoAVenta>(
-  (ref) => AgregadoAVenta(
+/// El vendedor modifica su venta —sube, baja o quita—, sin señal (ADR 0002 §162).
+final modificacionDeVentaProvider = Provider<ModificacionDeVenta>(
+  (ref) => ModificacionDeVenta(
     db: ref.watch(baseLocalProvider).db,
     outbox: ref.watch(outboxProvider),
     nuevoUuid: ref.watch(nuevoUuidProvider),

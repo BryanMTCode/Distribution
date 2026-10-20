@@ -415,15 +415,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+52",
             ),
             Punto(
-                "agregar_a_venta", "Agregarle a una venta lo que le faltó",
-                "Con el modo avión, en «Mi día» toca una venta → «Agregar artículos» → «+» "
-                "a un artículo → «Se me olvidó agregarlo» → «Agregar a la venta» → "
-                "«Agregar». En el aviso, «Imprimir». Intenta también agregar más de lo que "
-                "trae el camión.",
-                "El total sube, el camión baja lo agregado y el ticket nuevo dice "
-                "«MODIFICADA · Sustituye al ticket anterior» con lo de antes y lo nuevo. No "
-                "deja pasar de lo que trae el camión, ni bajar o quitar lo que ya llevaba "
-                "(ADR 0002 §162).",
+                "modificar_venta", "Modificar una venta: subir, bajar o quitar",
+                "Con el modo avión, en «Mi día» toca una venta → «Modificar»: «−» a un "
+                "artículo, «+» a otro, «Agregar otro artículo» → «+», y «Me equivoqué de "
+                "cantidad» → «Guardar cambios» → «Guardar». En el aviso, «Imprimir». Luego "
+                "mira «Mi camión». Intenta también subir más de lo que trae el camión, y "
+                "bajar todo a cero.",
+                "El total cambia; lo que bajó vuelve al camión y lo que subió sale. El "
+                "ticket nuevo dice «MODIFICADA · Sustituye al ticket anterior» con las "
+                "cantidades nuevas. No deja pasar de lo que trae el camión, y con todo en "
+                "cero dice que se cancele (ADR 0002 §162).",
                 desde="+53",
             ),
             Punto(
@@ -822,10 +823,11 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "panel_cambios_vendedores", "La pista de lo que cambian los vendedores",
-                "Después de cancelar una venta y agregarle a otra desde el teléfono (y "
+                "Después de cancelar una venta y modificar otra desde el teléfono (y "
                 "sincronizar): Ventas → «Cambios de los vendedores», y abre cada venta.",
-                "Cada cambio con quién, cuándo, qué se agregó, el total antes y después, el "
-                "motivo, si el ticket ya se había impreso y a cuántos metros de la tienda. "
+                "Cada cambio con quién, cuándo, qué subió, bajó o se quitó, el total antes "
+                "y después, el motivo, si el ticket ya se había impreso y a cuántos metros "
+                "de la tienda. "
                 "Los que se hicieron con el ticket impreso van marcados. La venta dice "
                 "«Historial de cambios» y queda por revisar, y el Tablero lo cuenta en "
                 "Pendientes (ADR 0002 §162).",

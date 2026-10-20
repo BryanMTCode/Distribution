@@ -1134,20 +1134,28 @@ async def test_el_vendedor_cancela_su_venta_con_el_rol_restringido(
     ).scalar_one() == 600
 
 
-async def test_el_vendedor_agrega_a_su_venta_con_el_rol_restringido(
+async def test_el_vendedor_modifica_su_venta_con_el_rol_restringido(
     alcance, sesion, semilla, venta_del_dia  # noqa: F811
 ):
-    """§162: lo que el vendedor le agrega a su venta entra con el rol de producción."""
+    """§162: lo que el vendedor modifica de su venta —y lo que vuelve a su camión—
+    entra con el rol de producción."""
+    import uuid as _uuid
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.infra.sync.manejadores import obtener_manejador
     from tests.test_operaciones import _contexto
-    from tests.test_venta_agregada_por_vendedor import _datos
+    from tests.test_venta_modificada_por_vendedor import _cajas, _datos, _partida
 
+    v = venta_del_dia["venta"]
+    p = await _partida(sesion, v)
     conexion = await alcance("vendedor", semilla["vendedor"], rutas=[semilla["ruta"]])
     s = AsyncSession(bind=conexion)
-    await obtener_manejador("venta.agregar")(
-        s, _contexto(semilla, venta_del_dia), venta_del_dia["venta"], _datos(venta_del_dia)
+    await obtener_manejador("venta.modificar")(
+        s,
+        _contexto(semilla, venta_del_dia),
+        _uuid.uuid4(),
+        _datos(v, _cajas(p["id"], venta_del_dia["producto"], 15)),
     )
     await s.flush()
     await conexion.commit()
@@ -1155,7 +1163,5 @@ async def test_el_vendedor_agrega_a_su_venta_con_el_rol_restringido(
 
     await sesion.rollback()
     assert (
-        await sesion.execute(
-            text("SELECT total FROM ventas WHERE id = :v"), {"v": venta_del_dia["venta"]}
-        )
-    ).scalar_one() == 6300
+        await sesion.execute(text("SELECT total FROM ventas WHERE id = :v"), {"v": v})
+    ).scalar_one() == 4500

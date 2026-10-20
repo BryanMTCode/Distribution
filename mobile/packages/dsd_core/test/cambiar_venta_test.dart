@@ -50,12 +50,34 @@ void main() {
     listaPreciosVersion: 7,
   );
 
-  AgregadoAVenta agregado() => AgregadoAVenta(
+  final pieza = PresentacionVendible(
+    productoId: 'p-sopa',
+    sku: 'SOPA-70G',
+    nombre: 'Sopa de fideo 70 g',
+    unidadCodigo: 'PZA',
+    factor: Factor.uno,
+    precio: Precio.deTexto('13.0000'),
+    listaPreciosId: 'lista-general',
+    listaPreciosVersion: 7,
+  );
+
+  ModificacionDeVenta modificacion() => ModificacionDeVenta(
         db: db,
         outbox: Outbox(db),
         nuevoUuid: uuid,
         ahora: ahora,
       );
+
+  /// La venta como está, con la cantidad del primer renglón cambiada.
+  List<RenglonDeVenta> conCajas(String ventaId, int cajas) {
+    final r = modificacion().renglonesDe(ventaId).single;
+    return [
+      RenglonDeVenta(
+        partidaId: r.partidaId,
+        linea: r.linea.conCantidad(Cantidad.deEnteros(cajas)),
+      ),
+    ];
+  }
 
   Map<String, Object?> datosDelUltimoSobre() {
     final sobre = db.select('SELECT payload FROM outbox ORDER BY secuencia DESC LIMIT 1').single;
@@ -272,13 +294,13 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // Agregar lo que le faltó (§162)
+  // Modificar: subir, bajar o quitar (§162)
   // -------------------------------------------------------------------------
 
-  group('agregar a la venta', () {
-    const porQue = 'Se me olvidó agregarlo';
+  group('modificar la venta', () {
+    const porQue = 'Me equivoqué de cantidad';
 
-    test('renglón nuevo: sale del camión, sube el total y olvida el ticket de antes', () {
+    test('bajar: lo que baja vuelve al camión y el ticket de antes se olvida', () {
       final v = vender();
       CierreDeVenta(
         db: db,
@@ -288,72 +310,114 @@ void main() {
         ahora: ahora,
         identidad: identidad,
       ).marcarImpresa(v.id, ticket: [1, 2, 3]);
+      final partida = modificacion().renglonesDe(v.id).single.partidaId;
 
-      final total = agregado().agregar(
+      final total = modificacion().modificar(
         v.id,
-        lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))],
+        renglones: conCajas(v.id, 1),
         motivo: porQue,
       );
 
-      expect(total.texto, '888.00');
-      expect(enCamion(), 168.0, reason: '240 − 48 − 24');
+      expect(total.texto, '296.00');
+      expect(enCamion(), 216.0, reason: '192 + la caja que ya no se llevó');
       final fila = venta(v.id);
-      expect(fila['total'], 888.0);
+      expect(fila['total'], 296.0);
       expect(fila['modificaciones'], 1);
       expect(fila['impreso'], 0);
       expect(fila['ticket_escpos'], isNull);
-      final lineas = db.select('SELECT linea, cantidad FROM venta_partidas ORDER BY linea');
-      expect(lineas.map((l) => l['linea']), [1, 2], reason: 'lo de antes no se toca');
+      final lineas = db.select('SELECT id, cantidad, importe FROM venta_partidas');
+      expect(lineas.single['id'], partida, reason: 'el mismo renglón, con otra cantidad');
+      expect(lineas.single['cantidad'], 1.0);
+      expect(lineas.single['importe'], 296.0);
 
       final datos = datosDelUltimoSobre();
       expect(datos['motivo'], porQue);
       expect(datos['ticket_impreso'], isTrue);
-      final partida = (datos['partidas']! as List).single as Map;
-      expect(partida['linea'], 2);
-      expect(partida['cantidad'], '1.000');
-      expect(partida['cantidad_base'], '24.000');
-      expect(partida['importe'], '296.00');
+      final enviada = (datos['partidas']! as List).single as Map;
+      expect(enviada['id'], partida);
+      expect(datos['venta_id'], v.id);
+      expect(enviada['cantidad'], '1.000');
+      expect(enviada['importe'], '296.00');
       expect(
         db.select('SELECT tipo FROM outbox ORDER BY secuencia').map((s) => s['tipo']),
-        ['venta.crear', 'venta.agregar'],
+        ['venta.crear', 'venta.modificar'],
       );
     });
 
-    test('no se agrega lo que el camión no trae', () {
+    test('subir y agregar otro: sale del camión', () {
       final v = vender();
-      expect(
-        () => agregado().agregar(
-          v.id,
-          lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(9))],
-          motivo: porQue,
-        ),
-        throwsA(isA<CambioRechazado>()
-            .having((e) => e.motivo, 'motivo', MotivoNoSeToca.sinExistencia)),
+      modificacion().modificar(
+        v.id,
+        renglones: [
+          ...conCajas(v.id, 3),
+          RenglonDeVenta(linea: LineaCarrito(presentacion: pieza, cantidad: Cantidad.deEnteros(5))),
+        ],
+        motivo: 'El cliente pidió más',
+      );
+      // 240 − 72 (3 cajas) − 5 piezas.
+      expect(enCamion(), 163.0);
+      expect(venta(v.id)['total'], 953.0, reason: '888 + 5 × 13');
+      final lineas = db.select('SELECT linea, unidad_codigo FROM venta_partidas ORDER BY linea');
+      expect(lineas.map((l) => l['unidad_codigo']), ['CAJA', 'PZA']);
+    });
+
+    test('quitar un renglón lo devuelve completo', () {
+      final v = vender();
+      modificacion().modificar(
+        v.id,
+        renglones: [
+          ...conCajas(v.id, 2),
+          RenglonDeVenta(linea: LineaCarrito(presentacion: pieza, cantidad: Cantidad.deEnteros(5))),
+        ],
+        motivo: 'El cliente pidió más',
+      );
+      expect(enCamion(), 187.0);
+      final renglones = modificacion().renglonesDe(v.id);
+      modificacion().modificar(
+        v.id,
+        renglones: [renglones.first],
+        motivo: 'El cliente ya no quiso las piezas',
       );
       expect(enCamion(), 192.0);
       expect(venta(v.id)['total'], 592.0);
+      expect(db.select('SELECT * FROM venta_partidas'), hasLength(1));
+      expect(venta(v.id)['modificaciones'], 2);
     });
 
-    test('solo se agrega: sin renglones o con cantidad cero, no', () {
+    test('quitarlo todo no es modificar, es cancelar; y sin cambios no se guarda', () {
       final v = vender();
-      for (final lineas in [
-        <LineaCarrito>[],
-        [LineaCarrito(presentacion: caja, cantidad: Cantidad.cero)],
-      ]) {
+      for (final renglones in [<RenglonDeVenta>[], conCajas(v.id, 0)]) {
         expect(
-          () => agregado().agregar(v.id, lineas: lineas, motivo: porQue),
+          () => modificacion().modificar(v.id, renglones: renglones, motivo: porQue),
           throwsA(isA<CambioRechazado>()
               .having((e) => e.motivo, 'motivo', MotivoNoSeToca.sinRenglones)),
         );
       }
-      expect(db.select('SELECT * FROM venta_partidas'), hasLength(1));
+      expect(
+        () => modificacion().modificar(v.id, renglones: conCajas(v.id, 2), motivo: porQue),
+        throwsA(isA<CambioRechazado>()
+            .having((e) => e.motivo, 'motivo', MotivoNoSeToca.sinCambios)),
+      );
+      expect(enCamion(), 192.0);
+      expect(db.select('SELECT * FROM outbox'), hasLength(1));
+    });
+
+    test('no se sube más de lo que trae el camión', () {
+      final v = vender();
+      // Quedan 192 piezas = 8 cajas; con las 2 de la venta caben 10, no 11.
+      expect(
+        () => modificacion().modificar(v.id, renglones: conCajas(v.id, 11), motivo: porQue),
+        throwsA(isA<CambioRechazado>()
+            .having((e) => e.motivo, 'motivo', MotivoNoSeToca.sinExistencia)),
+      );
+      modificacion().modificar(v.id, renglones: conCajas(v.id, 10), motivo: porQue);
+      expect(enCamion(), 0.0);
     });
 
     test('las mismas reglas que cancelar: motivo, día de trabajo y antes del corte', () {
       final v = vender();
-      final una = [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))];
       expect(
-        () => agregado().agregar(v.id, lineas: una, motivo: 'olvido'),
+        () => modificacion().modificar(v.id, renglones: conCajas(v.id, 1), motivo: 'error'),
         throwsA(isA<CambioRechazado>()
             .having((e) => e.motivo, 'motivo', MotivoNoSeToca.faltaMotivo)),
       );
@@ -363,7 +427,7 @@ void main() {
         [v.fechaOperativa],
       );
       expect(
-        () => agregado().agregar(v.id, lineas: una, motivo: porQue),
+        () => modificacion().modificar(v.id, renglones: conCajas(v.id, 1), motivo: porQue),
         throwsA(isA<CambioRechazado>()
             .having((e) => e.motivo, 'motivo', MotivoNoSeToca.diaCortado)),
       );
@@ -372,11 +436,7 @@ void main() {
 
     test('el ticket nuevo sale como original de la venta modificada, y lo dice', () {
       final v = vender();
-      agregado().agregar(
-        v.id,
-        lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))],
-        motivo: porQue,
-      );
+      modificacion().modificar(v.id, renglones: conCajas(v.id, 3), motivo: porQue);
       TicketParaReimprimir? ticket() => ReimpresionDeVentas(db).ticketDe(
             v.id,
             negocio: negocioDistribucionesSE,
@@ -388,9 +448,8 @@ void main() {
       final papel = decodificar(nuevo.bytes).texto;
       expect(papel, contains('MODIFICADA'));
       expect(papel, contains('Sustituye al ticket anterior'));
+      expect(papel, contains('3 CAJA x 296.00'));
       expect(papel, contains('TOTAL 888.00'));
-      expect(papel, contains('2 CAJA x 296.00'));
-      expect(papel, contains('1 CAJA x 296.00'));
 
       ReimpresionDeVentas(db).anotarImpresa(v.id, nuevo);
       final copia = ticket()!;
@@ -400,29 +459,8 @@ void main() {
 
     test('el delta del servidor después no mueve el camión', () {
       final v = vender();
-      agregado().agregar(
-        v.id,
-        lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))],
-        motivo: porQue,
-      );
-      final ids = db
-          .select('SELECT id, linea FROM venta_partidas ORDER BY linea')
-          .map((f) => f['id'] as String)
-          .toList();
-      Map<String, Object?> partida(String id, int linea, String cantidad, String base,
-              String importe) =>
-          {
-            'id': id,
-            'linea': linea,
-            'producto_id': 'p-sopa',
-            'unidad_codigo': 'CAJA',
-            'factor_unidad': '24.0000',
-            'cantidad': cantidad,
-            'cantidad_base': base,
-            'precio_unitario': '296.0000',
-            'tasa_iva': '0.0000',
-            'importe': importe,
-          };
+      modificacion().modificar(v.id, renglones: conCajas(v.id, 1), motivo: porQue);
+      final id = db.select('SELECT id FROM venta_partidas').single['id'] as String;
       final delta = Delta(
         cursor: 1,
         entidad: 'venta',
@@ -431,13 +469,23 @@ void main() {
         payload: {
           'id': v.id,
           'estado': 'confirmada',
-          'subtotal': '888.00',
+          'subtotal': '296.00',
           'descuento': '0.00',
           'impuestos': '0.00',
-          'total': '888.00',
+          'total': '296.00',
           'partidas': [
-            partida(ids[0], 1, '2.000', '48.000', '592.00'),
-            partida(ids[1], 2, '1.000', '24.000', '296.00'),
+            {
+              'id': id,
+              'linea': 1,
+              'producto_id': 'p-sopa',
+              'unidad_codigo': 'CAJA',
+              'factor_unidad': '24.0000',
+              'cantidad': '1.000',
+              'cantidad_base': '24.000',
+              'precio_unitario': '296.0000',
+              'tasa_iva': '0.0000',
+              'importe': '296.00',
+            },
           ],
         },
       );
@@ -445,32 +493,24 @@ void main() {
         ..aplicar([delta], recibidoEn: '2026-09-29T18:00:00.000Z')
         ..aplicar([delta], recibidoEn: '2026-09-29T18:05:00.000Z');
 
-      expect(enCamion(), 168.0);
-      expect(venta(v.id)['total'], 888.0);
+      expect(enCamion(), 216.0);
+      expect(venta(v.id)['total'], 296.0);
     });
 
-    test('cancelar la modificada devuelve todo, lo de antes y lo agregado', () {
+    test('cancelar la modificada devuelve lo que quedaba', () {
       final v = vender();
-      agregado().agregar(
-        v.id,
-        lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))],
-        motivo: porQue,
-      );
+      modificacion().modificar(v.id, renglones: conCajas(v.id, 3), motivo: porQue);
+      expect(enCamion(), 168.0);
       cancelacion().cancelar(v.id, motivo: _motivo);
       expect(enCamion(), 240.0);
     });
 
     test('«Mi día» dice que se modificó, con el total nuevo', () {
       final v = vender();
-      agregado().agregar(
-        v.id,
-        lineas: [LineaCarrito(presentacion: caja, cantidad: Cantidad.deEnteros(1))],
-        motivo: porQue,
-      );
+      modificacion().modificar(v.id, renglones: conCajas(v.id, 3), motivo: porQue);
       final dia = RepoMiDia(db).delDia(v.fechaOperativa);
       expect(dia.ventas.single.modificaciones, 1);
       expect(dia.ventas.single.total.texto, '888.00');
-      expect(dia.ventas.single.partidas, hasLength(2));
       expect(dia.efectivo.texto, '888.00');
     });
   });

@@ -19,9 +19,9 @@
 /// también sin señal; si ya se había impreso, como «COPIA n».
 ///
 /// Y **cancelar** (ADR 0002 §161), por si el vendedor se equivocó: con su motivo,
-/// sin señal, y la mercancía vuelve al camión ahí mismo. O **agregarle** lo que le
-/// faltó (§162) e imprimir el ticket nuevo; solo agregar, nunca bajar. Después del
-/// corte de ese día, ni una ni otra: la cambia la oficina.
+/// sin señal, y la mercancía vuelve al camión ahí mismo. O **modificarla** (§162):
+/// subir, bajar o quitar artículos, con el camión ajustado, e imprimir el ticket
+/// nuevo. Después del corte de ese día, ni una ni otra: la cambia la oficina.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -35,7 +35,7 @@ import '../../estado/carrito.dart';
 import '../../estado/impresora.dart';
 import '../../estado/mi_dia.dart';
 import '../../estado/sesion.dart';
-import 'agregar_a_venta.dart';
+import 'modificar_venta.dart';
 import 'cierre_del_dia.dart';
 
 class PantallaMiDia extends ConsumerStatefulWidget {
@@ -125,7 +125,10 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
             'pídeselo a la oficina.',
         MotivoNoSeToca.yaCancelada => 'Esa venta ya estaba cancelada.',
         MotivoNoSeToca.noExiste => 'Esa venta ya no está en el teléfono.',
-        MotivoNoSeToca.sinRenglones || MotivoNoSeToca.sinExistencia => 'No se pudo cancelar.',
+        MotivoNoSeToca.sinRenglones ||
+        MotivoNoSeToca.sinCambios ||
+        MotivoNoSeToca.sinExistencia =>
+          'No se pudo cancelar.',
       });
       return;
     } on Object catch (e) {
@@ -155,12 +158,13 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
     }
   }
 
-  /// Le agrega a [venta] lo que le faltó (ADR 0002 §162) y ofrece el ticket nuevo.
-  Future<void> _agregar(VentaDeMiDia venta) async {
+  /// Modifica [venta] (ADR 0002 §162) y ofrece el ticket nuevo.
+  Future<void> _modificar(VentaDeMiDia venta) async {
     final total = await Navigator.of(context).push<Dinero>(
-      MaterialPageRoute(builder: (_) => PantallaAgregarAVenta(venta: venta)),
+      MaterialPageRoute(builder: (_) => PantallaModificarVenta(venta: venta)),
     );
     if (total == null || !mounted) return;
+    ref.invalidate(clientesProvider);
     ref.invalidate(resumenColaProvider);
     ref.read(revisionDelCamionProvider.notifier).state++;
     ScaffoldMessenger.of(context)
@@ -541,10 +545,10 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                         ),
                         if (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id) == null)
                           TextButton.icon(
-                            key: Key('agregar_${venta.folio}'),
-                            onPressed: _imprimiendo != null ? null : () => _agregar(venta),
-                            icon: const Icon(Icons.add_shopping_cart, size: 18),
-                            label: const Text('Agregar artículos'),
+                            key: Key('modificar_${venta.folio}'),
+                            onPressed: _imprimiendo != null ? null : () => _modificar(venta),
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text('Modificar'),
                           ),
                         if (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id) == null)
                           TextButton.icon(
@@ -560,10 +564,10 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                   // Por qué ya no se cancela desde aquí, si es el caso (§161).
                   if (switch (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id)) {
                     MotivoNoSeToca.diaCortado =>
-                      'Ya hiciste el corte de este día: para cancelarla o agregarle '
-                          'algo, pídeselo a la oficina.',
+                      'Ya hiciste el corte de este día: para cancelarla o modificarla, '
+                          'pídeselo a la oficina.',
                     MotivoNoSeToca.otroDia =>
-                      'Es de un día que ya pasó: para cancelarla o agregarle algo, '
+                      'Es de un día que ya pasó: para cancelarla o modificarla, '
                           'pídeselo a la oficina.',
                     _ => null,
                   }

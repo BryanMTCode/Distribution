@@ -76,12 +76,22 @@ _CENTAVO = Decimal("0.01")
 _ACCIONES = {
     "cancelar": "Canceló la venta",
     "corregir": "Corrigió cantidades",
-    "agregar": "Agregó artículos",
+    "modificar": "Modificó la venta",
 }
 
 
+def _cambio_de_renglon(c: dict) -> str:
+    """«Sopa 2 → 3 CAJA», «Atún: se quitó (1 CAJA)», «Agua: se agregó 2 PZA»."""
+    nombre, unidad = c.get("producto") or "producto", c.get("unidad") or ""
+    if c.get("quitado"):
+        return f"{nombre}: se quitó ({_cantidad(c.get('antes'))} {unidad})".strip()
+    if c.get("agregado"):
+        return f"{nombre}: se agregó {_cantidad(c.get('cantidad'))} {unidad}".strip()
+    return f"{nombre} {_cantidad(c.get('antes'))} → {_cantidad(c.get('cantidad'))} {unidad}".strip()
+
+
 def describir_cambio(
-    accion: str, antes: dict | None, despues: dict | None, nombres: dict[str, str]
+    accion: str, antes: dict | None, despues: dict | None
 ) -> tuple[str, bool]:
     """Un renglón del historial en palabras, y si hay que mirarlo con cuidado.
 
@@ -91,14 +101,8 @@ def describir_cambio(
     """
     antes, despues = antes or {}, despues or {}
     partes = [_ACCIONES.get(accion, accion)]
-    if accion == "agregar":
-        agregadas = [
-            f"{_cantidad(a.get('cantidad'))} {a.get('unidad') or ''} "
-            f"{nombres.get(a.get('producto_id'), 'producto')}".strip()
-            for a in despues.get("agregadas") or []
-        ]
-        if agregadas:
-            partes[0] += ": " + ", ".join(agregadas)
+    if accion == "modificar" and despues.get("cambios"):
+        partes[0] += ": " + ", ".join(_cambio_de_renglon(c) for c in despues["cambios"])
     if antes.get("total") is not None and despues.get("total") is not None:
         partes.append(f"total {dinero(antes['total'])} → {dinero(despues['total'])}")
     desde_app = despues.get("desde") == "app"
@@ -129,26 +133,6 @@ def _cantidad(texto) -> str:
     return f"{valor.normalize():f}"
 
 
-async def _nombres_de_productos(sesion, filas) -> dict[str, str]:
-    ids = {
-        a.get("producto_id")
-        for f in filas
-        for a in ((f["datos_despues"] or {}).get("agregadas") or [])
-        if a.get("producto_id")
-    }
-    if not ids:
-        return {}
-    return {
-        str(r["id"]): r["nombre"]
-        for r in (
-            await sesion.execute(
-                text("SELECT id, nombre FROM productos WHERE id::text = ANY(:ids)"),
-                {"ids": list(ids)},
-            )
-        ).mappings()
-    }
-
-
 async def _historial(sesion, venta_id: uuid.UUID) -> list[dict]:
     filas = (
         await sesion.execute(
@@ -165,10 +149,9 @@ async def _historial(sesion, venta_id: uuid.UUID) -> list[dict]:
             {"v": venta_id},
         )
     ).mappings().all()
-    nombres = await _nombres_de_productos(sesion, filas)
     historial = []
     for f in filas:
-        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"], nombres)
+        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"])
         historial.append(
             {"cuando": f["ocurrido_en"], "quien": f["quien"], "que": que,
              "motivo": f["motivo"], "alerta": alerta}
@@ -180,9 +163,9 @@ async def _historial(sesion, venta_id: uuid.UUID) -> list[dict]:
 async def cambios_de_los_vendedores(
     peticion: Request, actor: ActorWeb, sesion: SesionDep, dias: int = 7
 ) -> HTMLResponse:
-    """Lo que los vendedores cancelaron o agregaron desde el teléfono (§162).
+    """Lo que los vendedores cancelaron o modificaron desde el teléfono (§162).
 
-    Es la pista que pidió la dirección: cancelar o agregar es legítimo —el
+    Es la pista que pidió la dirección: cancelar o modificar es legítimo —el
     vendedor se equivoca—, y también es por donde se escaparía un cobro. Primero
     las que se cambiaron con el ticket ya impreso.
     """
@@ -200,7 +183,7 @@ async def cambios_de_los_vendedores(
                   JOIN clientes c ON c.id = v.cliente_id
                   JOIN usuarios u ON u.id = v.vendedor_id
                  WHERE a.entidad = 'venta'
-                   AND a.accion IN ('cancelar', 'agregar')
+                   AND a.accion IN ('cancelar', 'modificar')
                    AND a.usuario_id = v.vendedor_id
                    AND a.ocurrido_en >= now() - make_interval(days => :dias)
                  ORDER BY a.ocurrido_en DESC
@@ -210,10 +193,9 @@ async def cambios_de_los_vendedores(
             {"dias": dias},
         )
     ).mappings().all()
-    nombres = await _nombres_de_productos(sesion, filas)
     cambios = []
     for f in filas:
-        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"], nombres)
+        que, alerta = describir_cambio(f["accion"], f["datos_antes"], f["datos_despues"])
         cambios.append({**f, "que": que, "alerta": alerta})
     return render(
         peticion,
