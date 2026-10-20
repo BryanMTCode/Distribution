@@ -6529,8 +6529,9 @@ mi base de datos.» Las 1,834 tiendas de §120 estaban sin coordenadas.
 - **Cada renglón encuentra su tienda en la base**, dentro de su ruta —encontrada
   como en §120, por su número o por su vendedor—: por nombre y domicilio, luego
   nombre y día, luego nombre, luego domicilio y día; y al final nombre y
-  domicilio en otra ruta, que se ubica sin moverla. Sin acentos ni signos. Con los
-  datos de hoy: 1,808 renglones con tienda, 27 sin ella.
+  domicilio en otra ruta, que se ubica sin moverla —ni de ruta ni de día: se
+  avisa—. Sin acentos ni signos. Con los datos de hoy: 1,808 renglones con
+  tienda, 27 sin ella.
 - **Se ubica la que no tiene ubicación**, con origen «manual» y por el mismo
   camino que el panel (`fijar_ubicacion`): constancia en la auditoría y delta del
   cliente al teléfono de su ruta. La que ya tiene una no se toca: la capturó
@@ -6538,8 +6539,17 @@ mi base de datos.» Las 1,834 tiendas de §120 estaban sin coordenadas.
 - **Los números que Excel volvió fecha** en los Excel de §120 (46025 era «1-3»;
   914660, «4404-4») se corrigen con el domicilio de este Excel: solo si el número
   de la tienda es puro dígito de cinco o más y el nuevo trae guion.
-- **Las 27 que no están en la base no se dan de alta**: el comando las lista.
-  Darlas de alta es otra decisión —su código, su lugar en la ruta—.
+- **Las que no están en la base se dan de alta**: «si vienen en el Excel nuevo
+  tiendas que no estaban en el anterior, también agrégalas». Con los datos de
+  hoy, 27, con los códigos 1934 a 1960 —los que siguen al último—, activas, con la
+  lista general, en la ruta del Excel —la 1101 como quedó arriba; «las demás,
+  conforme al Excel»—, con su día en el plan de visita, **todas semanales** («todas
+  se ponen de visita semanal»: la columna VISITA no cuenta), al final de las de su
+  día, y con su ubicación. El domicilio viene en un campo y se parte en calle,
+  número y colonia: el número es el último que deja calle antes y colonia después,
+  con su letra si la trae («83 A»), y «SN» es «S/N»; contra las 1,798 tiendas de
+  §120 que lo tienen por separado acierta en 1,765, y las 27 nuevas quedaron bien.
+  Si la ruta no existe en el sistema, no se da de alta y se dice.
 - El comando es `ubicar-tiendas`, con `--resumen` y la palabra `UBICAR`, como los
   de §99 y §120.
 

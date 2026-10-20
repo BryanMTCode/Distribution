@@ -444,7 +444,7 @@ async def tiendas_de_rutas(*, solo_resumen: bool = False, confirmado: bool = Fal
 
 async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False) -> int:
     """Pone las coordenadas del Excel LOCALES_MAZATLAN_2 en las tiendas de las rutas
-    1101–1107 que no tengan ubicación (ADR 0002 §148).
+    1101–1107 que no tengan ubicación, y da de alta las que no están (ADR 0002 §148).
 
     Qué hace está en `app/infra/ubicaciones_de_tiendas.py`. `--resumen` solo dice
     lo que haría; `--confirmado` no pregunta.
@@ -472,8 +472,7 @@ async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False
         for ruta, cuenta in plan.por_ruta().items():
             print(f"  {ruta}: {cuenta['con_tienda'] + cuenta['sin_tienda']} en el Excel → "
                   f"{cuenta['ubicar']} se ubican"
-                  + (f", {cuenta['sin_tienda']} sin tienda en la base"
-                     if cuenta["sin_tienda"] else ""))
+                  + (f", {cuenta['nuevas']} nuevas" if cuenta["nuevas"] else ""))
         print(f"\nSe ubican: {len(plan.por_ubicar):,}. Ya estaban: {plan.ya_estaban:,}.")
         for t, numero in plan.numeros:
             print(f"Se corrige el número que Excel volvió fecha: {t} ({t.calle}) "
@@ -488,9 +487,16 @@ async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False
             print(f"Ya tiene otra ubicación, no se toca: {aviso}")
         for r in plan.sin_coordenadas:
             print(f"Sin coordenadas en el Excel: {r} — {r.correccion or 'vienen vacías'}")
-        if plan.sin_tienda:
-            print(f"\nNo están en la base, no se dan de alta ({len(plan.sin_tienda)}):")
-            for r in plan.sin_tienda:
+        if plan.nuevas:
+            print(f"\nNo están en la base y se dan de alta, con visita semanal "
+                  f"({len(plan.nuevas)}, códigos {plan.nuevas[0].codigo} a "
+                  f"{plan.nuevas[-1].codigo}):")
+            for n in plan.nuevas:
+                print(f"  {n}")
+        if plan.sin_ruta:
+            print(f"\nNO se pueden dar de alta: su ruta no existe en el sistema "
+                  f"({len(plan.sin_ruta)}). Créala en Usuarios y rutas y vuelve a correrlo:")
+            for r in plan.sin_ruta:
                 print(f"  {r}")
         if plan.sin_renglon:
             print(f"\nTiendas de estas rutas que no vienen en el Excel: siguen sin "
@@ -500,7 +506,7 @@ async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False
         print()
         if solo_resumen:
             return 0
-        if not plan.por_ubicar and not plan.numeros:
+        if not plan.por_ubicar and not plan.numeros and not plan.nuevas:
             print("Ya estaban todas. No se cambió nada.")
             return 0
         if not confirmado and input(
@@ -511,9 +517,11 @@ async def ubicar_tiendas(*, solo_resumen: bool = False, confirmado: bool = False
         resultado = await aplicar(sesion, renglones, quien=await quien_registra(sesion))
 
     print(f"Listo. {resultado.ubicadas:,} tienda(s) ubicada(s)"
+          + (f", {len(resultado.nuevas)} nueva(s) ({resultado.nuevas[0]} a "
+             f"{resultado.nuevas[-1]})" if resultado.nuevas else "")
           + (f" y {resultado.numeros} número(s) corregido(s)" if resultado.numeros else "")
           + ".")
-    print("Cada teléfono recibe la ubicación de sus tiendas en su próxima sincronización.")
+    print("Cada teléfono recibe sus tiendas y su ubicación en su próxima sincronización.")
     return 0
 
 

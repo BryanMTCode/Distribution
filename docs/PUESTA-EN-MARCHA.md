@@ -977,8 +977,8 @@ dice «Ya estaban todas».
 reconstruida (`docker compose build migraciones api worker && docker compose up -d`).
 
 Pone la latitud y la longitud del Excel LOCALES_MAZATLAN_2 en las tiendas de las
-rutas 1101–1107 que no tengan ubicación (ADR 0002 §148). No da de alta tiendas ni
-las cambia de ruta.
+rutas 1101–1107 que no tengan ubicación, y da de alta las del Excel que no están
+en la base (ADR 0002 §148). No cambia de ruta ni de día a las que ya están.
 
 **1. Lo que va a hacer** (no cambia nada):
 
@@ -988,14 +988,18 @@ docker compose run --rm --no-deps api python -m app.cli ubicar-tiendas --resumen
 ```
 
 **✅ Debes ver** «1,835 tiendas, de lunes a sábado» y, ruta por ruta, cuántas se
-ubican —1101: 261 en el Excel → 259 se ubican, 2 sin tienda en la base…—; «Se
-ubican: 1,808» si nadie ha capturado ubicaciones todavía; los dos números que
+ubican —1101: 261 en el Excel → 259 se ubican, 2 nuevas…—; «Se ubican: 1,808» si
+nadie ha capturado ubicaciones todavía; los dos números que
 Excel había vuelto fecha (113: 46025 → 1-3; 708: 914660 → 4404-4); el aviso de
 ABARROTES SIXTO (908 y 909, las dos se ubican), el de ABARROTES SAN JOSE (en el
 Excel es de la 1105 y en la base de la 1106: se ubica sin moverla) y el de
-ABARROTES NAI (sin coordenadas: la latitud del Excel es 26.27). Al final, las
-**27 que no están en la base** y las **25 de la base que no vienen en el Excel**:
-esas siguen sin ubicación hasta que su vendedor la capture.
+ABARROTES NAI (sin coordenadas: la latitud del Excel es 26.27). Luego las **27
+que se dan de alta**, con visita semanal y los códigos 1934 a 1960, cada una con
+su calle · número · colonia, su ruta y su día —revisa que el domicilio haya
+quedado bien partido—, y las **25 de la base que no vienen en el Excel**: esas
+siguen sin ubicación hasta que su vendedor la capture. **Si dice «NO se pueden
+dar de alta»**, su ruta no existe todavía: créala en *Usuarios y rutas* y vuelve
+a correrlo.
 
 **2. El respaldo y la carga:**
 
@@ -1007,10 +1011,12 @@ docker compose run --rm --no-deps api python -m app.cli ubicar-tiendas
 
 Pide escribir `UBICAR`; con cualquier otra cosa no cambia nada.
 
-**✅ Debes ver** «Listo. 1,808 tienda(s) ubicada(s) y 2 número(s) corregido(s).».
-En el panel, *Clientes* ya no dice «sin ubicación» en esas tiendas, y el mapa del
-tablero las dibuja. Cada teléfono recibe la ubicación de sus tiendas en su
-siguiente sincronización. Correrlo otra vez dice «Ya estaban todas».
+**✅ Debes ver** «Listo. 1,808 tienda(s) ubicada(s), 27 nueva(s) (1934 a 1960) y 2
+número(s) corregido(s).». En el panel, *Clientes* ya no dice «sin ubicación» en
+esas tiendas, las nuevas salen con sus códigos, y el mapa del tablero las dibuja;
+en *Plan de visita*, cada nueva al final de su día. Cada teléfono recibe sus
+tiendas y su ubicación en su siguiente sincronización. Correrlo otra vez dice «Ya
+estaban todas».
 
 
 ## Anexo · Los ZUKO de la factura del 16 de octubre

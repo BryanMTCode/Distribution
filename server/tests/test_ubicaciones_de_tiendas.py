@@ -6,11 +6,14 @@
 2. **Cada renglón encuentra su tienda** de las 1,834 de §120: por nombre y
    domicilio casi todas, en su ruta aunque la ruta se llame «CENTRO»; la
    repetida en la base recibe las dos; la que está en otra ruta se ubica sin
-   moverla; las que no están se dicen.
+   moverla.
 3. **Se ubican con origen «manual»**, y le llega al teléfono; los números que
    Excel volvió fecha se corrigen.
-4. **La que ya tiene ubicación no se toca**, y dos veces no cambia nada.
-5. **El comando pide la frase**, y `--resumen` no cambia nada.
+4. **Las que no están se dan de alta**: código siguiente, ruta del Excel, su día
+   con visita semanal al final de las de ese día, el domicilio partido en tres y
+   su ubicación.
+5. **La que ya tiene ubicación no se toca**, y dos veces no cambia nada.
+6. **El comando pide la frase**, y `--resumen` no cambia nada.
 """
 
 from __future__ import annotations
@@ -113,7 +116,38 @@ async def test_cada_renglon_encuentra_su_tienda(sesion, semilla):
     assert len(plan.sin_renglon) == 25 and "322 SUPER PLAYA NORTE" in {
         str(t) for t in plan.sin_renglon
     }
-    assert plan.por_ruta()["1101"] == {"con_tienda": 259, "sin_tienda": 2, "ubicar": 259}
+    assert plan.por_ruta()["1101"] == {
+        "con_tienda": 259, "sin_tienda": 2, "ubicar": 259, "nuevas": 2
+    }
+    # Las 27 sin tienda se dan de alta, con el código que sigue al 1933.
+    assert plan.sin_ruta == []
+    assert [n.codigo for n in plan.nuevas] == [str(c) for c in range(1934, 1961)]
+    tiny = plan.nuevas[0]
+    assert (tiny.renglon.nombre, tiny.calle, tiny.numero, tiny.colonia, tiny.secuencia) == (
+        "TINYSTORE", "GUILLERMO NELSON", "1601", "SENTRO", 46  # la 1101 tiene 45 los lunes
+    )
+    # El sábado de la 1101 viene de la columna 1108 de su hoja: es de la 1101.
+    assert str(plan.nuevas[1]) == (
+        "1935 ABARROTES JL — ROTARISMO · 218 · REFORMA, ruta 1101 sáb"
+    )
+
+
+@pytest.mark.parametrize(
+    ("domicilio", "partes"),
+    [
+        ("LIBRAMIENTO 3 11400 VALLE DEL EJIDO", ("LIBRAMIENTO 3", "11400", "VALLE DEL EJIDO")),
+        ("EDUARDO AGUIRRE 9203 LA CANTERA 2", ("EDUARDO AGUIRRE", "9203", "LA CANTERA 2")),
+        ("CIRCUITO SAWUARO 133-A LOS MAGUELLES", ("CIRCUITO SAWUARO", "133-A", "LOS MAGUELLES")),
+        ("HUIZACHE SN BUENOS AIRES", ("HUIZACHE", "S/N", "BUENOS AIRES")),
+        ("LIBORIO GILES 2501 12 DE MAYO", ("LIBORIO GILES", "2501", "12 DE MAYO")),
+        ("PASEO OLAS ALTAS 83 A CENTRO", ("PASEO OLAS ALTAS", "83 A", "CENTRO")),
+        ("MELCHOR OCAMPO L-51 CENTRO", ("MELCHOR OCAMPO", "L-51", "CENTRO")),
+        ("13 DE ABRIL 1405 CONSTITUCION", ("13 DE ABRIL", "1405", "CONSTITUCION")),
+        ("SIN NUMERO", ("SIN NUMERO", "S/N", "")),
+    ],
+)
+async def test_el_domicilio_se_parte_en_calle_numero_y_colonia(domicilio, partes):
+    assert _ut().partir_domicilio(domicilio) == partes
 
 
 async def test_se_ubican_y_le_llega_al_telefono(sesion, semilla):
@@ -121,6 +155,7 @@ async def test_se_ubican_y_le_llega_al_telefono(sesion, semilla):
     await _con_las_tiendas(sesion, semilla)
     resultado = await ut.aplicar(sesion, ut.leer_renglones(), quien=semilla["admin"])
     assert (resultado.ubicadas, resultado.numeros) == (1808, 2)
+    assert resultado.nuevas == [str(c) for c in range(1934, 1961)]
 
     primera = await _cliente(sesion, "100")
     assert primera["punto"] and primera["ubicacion_origen"] == "manual"
@@ -147,6 +182,49 @@ async def test_se_ubican_y_le_llega_al_telefono(sesion, semilla):
     assert auditadas == 1808
 
 
+async def test_las_nuevas_quedan_en_su_ruta_su_dia_y_su_lugar(sesion, semilla):
+    ut = _ut()
+    await _con_las_tiendas(sesion, semilla)
+    await ut.aplicar(sesion, ut.leer_renglones(), quien=semilla["admin"])
+
+    nueva = (
+        await sesion.execute(
+            text("SELECT c.nombre_comercial, c.calle, c.numero, c.colonia, c.municipio, "
+                 "       c.estatus, c.origen_alta, c.secuencia, c.lat, c.ubicacion_origen, "
+                 "       c.lista_precios_id IS NOT NULL AS con_lista, r.codigo AS ruta, "
+                 "       f.dia_semana, f.semana_del_mes "
+                 "  FROM clientes c JOIN rutas r ON r.id = c.ruta_id "
+                 "  JOIN clientes_frecuencia f ON f.cliente_id = c.id "
+                 " WHERE c.codigo = '1935'")
+        )
+    ).mappings().one()
+    assert dict(nueva) == {
+        "nombre_comercial": "ABARROTES JL", "calle": "ROTARISMO", "numero": "218",
+        "colonia": "REFORMA", "municipio": "MAZATLÁN", "estatus": "activo",
+        "origen_alta": "oficina", "secuencia": 42, "lat": nueva["lat"],
+        "ubicacion_origen": "manual", "con_lista": True, "ruta": "1101",
+        # Sábado, y todas las semanas: «todas se ponen de visita semanal».
+        "dia_semana": 6, "semana_del_mes": None,
+    }
+    assert nueva["lat"] is not None
+    # 1,834 de §120 + 27 nuevas; todas con ubicación menos NAI y las 25 que no
+    # vienen en el Excel.
+    cuenta = (
+        await sesion.execute(
+            text("SELECT count(*), count(*) FILTER (WHERE lat IS NOT NULL) FROM clientes")
+        )
+    ).one()
+    assert tuple(cuenta) == (1861, 1835)
+    # Viaja al teléfono de su ruta, como cualquier tienda nueva.
+    al_telefono = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log l JOIN clientes c ON c.id = l.entidad_id "
+                 " WHERE l.entidad = 'cliente' AND c.codigo = '1934'")
+        )
+    ).scalar_one()
+    assert al_telefono >= 1
+
+
 async def test_la_que_ya_tiene_ubicacion_no_se_toca_y_dos_veces_no_cambia(sesion, semilla):
     ut = _ut()
     await _con_las_tiendas(sesion, semilla)
@@ -162,8 +240,9 @@ async def test_la_que_ya_tiene_ubicacion_no_se_toca_y_dos_veces_no_cambia(sesion
     assert (primera["lat"], primera["ubicacion_origen"]) == (Decimal("23.2000000"), "gps")
 
     plan = await ut.planear(sesion, ut.leer_renglones())
-    assert plan.por_ubicar == [] and plan.numeros == []
-    assert plan.ya_estaban == 1807
+    assert plan.por_ubicar == [] and plan.numeros == [] and plan.nuevas == []
+    # Las 27 nuevas ya están, con la ubicación del Excel.
+    assert plan.ya_estaban == 1807 + 27
     assert len(plan.con_otra_ubicacion) == 1
     assert plan.con_otra_ubicacion[0].startswith("100 PUESTO PLAYA SUR ya está en 23.2000000")
 
@@ -179,11 +258,12 @@ async def test_el_comando_pide_la_frase(motor, sesion, semilla, monkeypatch, cap
     assert await ubicar_tiendas(solo_resumen=True) == 0
     salida = capsys.readouterr().out
     assert "1,835 tiendas, de lunes a sábado" in salida
-    assert "1101: 261 en el Excel → 259 se ubican, 2 sin tienda en la base" in salida
+    assert "1101: 261 en el Excel → 259 se ubican, 2 nuevas" in salida
     assert "Se ubican: 1,808. Ya estaban: 0." in salida
     assert "113 LADRIDO Y MAULLIDO (MIGUEL ALEMAN) 46025 → 1-3" in salida
-    assert "No están en la base, no se dan de alta (27)" in salida
-    assert "TINYSTORE (GUILLERMO NELSON 1601 SENTRO), ruta 1101 lun" in salida
+    assert ("No están en la base y se dan de alta, con visita semanal (27, códigos 1934 "
+            "a 1960)") in salida
+    assert "1934 TINYSTORE — GUILLERMO NELSON · 1601 · SENTRO, ruta 1101 lun" in salida
 
     monkeypatch.setattr("builtins.input", lambda _="": "no")
     assert await ubicar_tiendas() == 1
@@ -192,10 +272,10 @@ async def test_el_comando_pide_la_frase(motor, sesion, semilla, monkeypatch, cap
 
     monkeypatch.setattr("builtins.input", lambda _="": "ubicar")
     assert await ubicar_tiendas() == 0
-    assert ("Listo. 1,808 tienda(s) ubicada(s) y 2 número(s) corregido(s)."
-            in capsys.readouterr().out)
+    assert ("Listo. 1,808 tienda(s) ubicada(s), 27 nueva(s) (1934 a 1960) y 2 número(s) "
+            "corregido(s).") in capsys.readouterr().out
     await sesion.rollback()
-    assert (await sesion.execute(con_ubicacion)).scalar_one() == 1808
+    assert (await sesion.execute(con_ubicacion)).scalar_one() == 1808 + 27
 
     # Otra vez: ya estaban todas, no pregunta ni cambia nada.
     assert await ubicar_tiendas() == 0

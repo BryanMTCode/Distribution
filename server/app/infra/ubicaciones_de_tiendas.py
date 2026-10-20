@@ -62,10 +62,20 @@ Todo en UNA transacción:
   46025 y «4404-4» como 914660: Excel los leyó como fechas. Si el número de la
   tienda es puro dígito de cinco o más y el domicilio de este Excel trae, entre la
   calle y la colonia, uno con guion, se corrige.
-· Las tiendas del Excel que **no están en la base** no se dan de alta: se dicen,
-  para decidir qué hacer con ellas.
+· **Las tiendas del Excel que no están en la base se dan de alta**: «si vienen en
+  el Excel nuevo tiendas que no estaban en el anterior, también agrégalas». Con
+  el código que sigue al último (§120 llegó al 1933), activas, con la lista de
+  precios general, en la ruta del Excel —la 1101, como quedó arriba—, con su día
+  en el plan de visita y al final de las de ese día, y con su ubicación. El
+  domicilio viene en un solo campo («CALLE NÚMERO COLONIA») y se parte en tres:
+  el número es lo último que parece número y deja calle antes y colonia después
+  («LIBRAMIENTO 3 11400 VALLE DEL EJIDO» → LIBRAMIENTO 3 · 11400 · VALLE DEL
+  EJIDO), con su letra si la trae («83 A»); «SN» es «S/N». Contra las 1,798
+  tiendas de §120 que tienen el domicilio por separado, así acierta en 1,765.
+  Si su ruta no existe en el sistema, no se da de alta y se dice.
 
-Correrlo dos veces no cambia nada la segunda: ya tienen ubicación.
+Correrlo dos veces no cambia nada la segunda: ya tienen ubicación, y las nuevas
+ya están.
 """
 
 from __future__ import annotations
@@ -92,6 +102,7 @@ UBICACIONES = (
 
 PALABRA = "UBICAR"
 DIAS = {1: "lun", 2: "mar", 3: "mié", 4: "jue", 5: "vie", 6: "sáb"}
+MUNICIPIO = "MAZATLÁN"
 
 
 class HojaInvalida(Exception):
@@ -147,6 +158,30 @@ def leer_renglones(archivo: Path = UBICACIONES) -> list[Renglon]:
     return renglones
 
 
+# El número de un domicilio: 1405, 7903A, 133-A, L-51, C7, #301, SN, S/N.
+_NUMERO = re.compile(r"^(#?\d+[A-Z]?(-[A-Z0-9]+)?|[A-Z]{1,2}-?\d+[A-Z]?|S[./]?N)$", re.I)
+_LETRA = re.compile(r"^[A-F]$", re.I)
+
+
+def partir_domicilio(domicilio: str) -> tuple[str, str, str]:
+    """«CALLE NÚMERO COLONIA» → (calle, número, colonia). El número es el último
+    que deja calle antes y colonia después; «12 DE MAYO» es colonia si antes
+    hubo otro número."""
+    p = domicilio.split()
+    candidatos = [i for i in range(1, len(p) - 1) if _NUMERO.match(p[i])]
+    buenos = [i for i in candidatos if p[i + 1].upper() not in ("DE", "MAYO")] or candidatos
+    if not buenos:
+        return domicilio, "S/N", ""
+    i = buenos[-1]
+    fin = i + 1
+    if fin < len(p) - 1 and _LETRA.match(p[fin]):
+        fin += 1  # «83 A»: la letra va con el número
+    numero = " ".join(p[i:fin])
+    if re.fullmatch(r"S[./]?N", numero, re.I):
+        numero = "S/N"
+    return " ".join(p[:i]), numero, " ".join(p[fin:])
+
+
 def llave(texto: str | None) -> str:
     """Sin acentos, en mayúsculas y sin signos: «Joaquín Capilla #715» y
     «JOAQUIN CAPILLA 715» son lo mismo."""
@@ -171,6 +206,7 @@ class Tienda:
     dias: set[int]
     lat: Decimal | None
     lng: Decimal | None
+    secuencia: int | None = None
     # Las llaves para comparar, calculadas una vez.
     llave_nombre: str = ""
     llave_domicilio: str = ""
@@ -185,6 +221,24 @@ class Tienda:
 
     def __str__(self) -> str:
         return f"{self.codigo or 'sin código'} {self.nombre}"
+
+
+@dataclass
+class Nueva:
+    """Una tienda del Excel que no está en la base, como se va a dar de alta."""
+
+    renglon: Renglon
+    codigo: str
+    ruta_id: uuid.UUID
+    secuencia: int
+    calle: str
+    numero: str
+    colonia: str
+
+    def __str__(self) -> str:
+        return (f"{self.codigo} {self.renglon.nombre} — {self.calle} · {self.numero} · "
+                f"{self.colonia or 'sin colonia'}, ruta {self.renglon.ruta} "
+                f"{DIAS[self.renglon.dia]}")
 
 
 @dataclass
@@ -205,9 +259,14 @@ class Plan:
     en_otro_dia: list[str] = field(default_factory=list)
     # Tiendas de estas rutas que no vienen en el Excel.
     sin_renglon: list[Tienda] = field(default_factory=list)
+    # De los renglones sin tienda: las que se dan de alta, y las que no tienen
+    # en qué ruta del sistema quedar.
+    nuevas: list[Nueva] = field(default_factory=list)
+    sin_ruta: list[Renglon] = field(default_factory=list)
 
     def por_ruta(self) -> dict[str, Counter]:
-        """Por ruta: los renglones con tienda, los que no, y las que se ubican."""
+        """Por ruta: los renglones con tienda, los que no, las que se ubican y las
+        que se dan de alta."""
         cuenta: dict[str, Counter] = {r: Counter() for r in RUTAS}
         for renglon, _ in self.parejas:
             cuenta[renglon.ruta]["con_tienda"] += 1
@@ -215,19 +274,21 @@ class Plan:
             cuenta[renglon.ruta]["sin_tienda"] += 1
         for renglon, _ in self.por_ubicar:
             cuenta[renglon.ruta]["ubicar"] += 1
+        for nueva in self.nuevas:
+            cuenta[nueva.renglon.ruta]["nuevas"] += 1
         return cuenta
 
 
-async def _tiendas(sesion) -> list[Tienda]:
+async def _tiendas(sesion, rutas: dict[str, uuid.UUID]) -> list[Tienda]:
     # La ruta de cada tienda, por su número: la del VEND1102 puede llamarse
     # «CENTRO» (§120), y sus tiendas siguen siendo de la 1102.
-    numero = {ruta_id: n for n, ruta_id in (await rutas_del_sistema(sesion)).items()}
+    numero = {ruta_id: n for n, ruta_id in rutas.items()}
     filas = (
         await sesion.execute(
             text(
                 """
                 SELECT c.id, c.codigo, c.nombre_comercial, c.calle, c.numero, c.colonia,
-                       c.lat, c.lng, c.ruta_id, r.codigo AS ruta,
+                       c.lat, c.lng, c.ruta_id, c.secuencia, r.codigo AS ruta,
                        COALESCE(array_agg(f.dia_semana) FILTER (
                                   WHERE f.dia_semana IS NOT NULL), '{}') AS dias
                   FROM clientes c
@@ -246,7 +307,7 @@ async def _tiendas(sesion) -> list[Tienda]:
             calle=f["calle"] or "", numero=f["numero"] or "", colonia=f["colonia"] or "",
             ruta=numero.get(f["ruta_id"]) or numero_de_ruta(f["ruta"] or ""),
             dias=set(f["dias"]),
-            lat=f["lat"], lng=f["lng"],
+            lat=f["lat"], lng=f["lng"], secuencia=f["secuencia"],
         )
         for f in filas
     ]
@@ -271,7 +332,8 @@ def _numero_que_era_fecha(tienda: Tienda, renglon: Renglon) -> str | None:
 
 async def planear(sesion, renglones: list[Renglon]) -> Plan:
     plan = Plan()
-    tiendas = await _tiendas(sesion)
+    rutas = await rutas_del_sistema(sesion)
+    tiendas = await _tiendas(sesion, rutas)
     de_la_ruta: dict[str, list[Tienda]] = defaultdict(list)
     for t in tiendas:
         de_la_ruta[t.ruta].append(t)
@@ -348,7 +410,35 @@ async def planear(sesion, renglones: list[Renglon]) -> Plan:
     plan.sin_renglon = [
         t for ruta in RUTAS for t in de_la_ruta[ruta] if t.id not in usadas
     ]
+    await _las_nuevas(sesion, plan, rutas, de_la_ruta)
     return plan
+
+
+async def _las_nuevas(sesion, plan: Plan, rutas, de_la_ruta) -> None:
+    """Las que no están en la base: su código —el que sigue al último—, su ruta y
+    su lugar al final de las de su día. En orden de ruta, día y Excel, como §120."""
+    siguiente = (
+        await sesion.execute(
+            text("SELECT COALESCE(max(codigo::int), 99) + 1 FROM clientes "
+                 " WHERE codigo ~ '^[0-9]{1,9}$'")
+        )
+    ).scalar_one()
+    lugar: dict[tuple[str, int], int] = {}
+    for r in sorted(plan.sin_tienda, key=lambda r: (RUTAS.index(r.ruta), r.dia, r.linea)):
+        if r.ruta not in rutas:
+            plan.sin_ruta.append(r)
+            continue
+        if (r.ruta, r.dia) not in lugar:
+            lugar[(r.ruta, r.dia)] = max(
+                (t.secuencia or 0 for t in de_la_ruta[r.ruta] if r.dia in t.dias), default=0
+            )
+        lugar[(r.ruta, r.dia)] += 1
+        calle, numero, colonia = partir_domicilio(r.domicilio)
+        plan.nuevas.append(Nueva(
+            renglon=r, codigo=str(siguiente), ruta_id=rutas[r.ruta],
+            secuencia=lugar[(r.ruta, r.dia)], calle=calle, numero=numero, colonia=colonia,
+        ))
+        siguiente += 1
 
 
 # ---------------------------------------------------------------------------
@@ -360,10 +450,12 @@ async def planear(sesion, renglones: list[Renglon]) -> Plan:
 class Resultado:
     ubicadas: int = 0
     numeros: int = 0
+    nuevas: list[str] = field(default_factory=list)
 
 
 async def aplicar(sesion, renglones: list[Renglon], *, quien: uuid.UUID | None) -> Resultado:
-    """Pone las ubicaciones y corrige los números, y hace commit."""
+    """Pone las ubicaciones, corrige los números y da de alta las nuevas, y hace
+    commit."""
     plan = await planear(sesion, renglones)
     resultado = Resultado()
     for renglon, tienda in plan.por_ubicar:
@@ -377,6 +469,8 @@ async def aplicar(sesion, renglones: list[Renglon], *, quien: uuid.UUID | None) 
             {"n": numero[:40], "c": tienda.id},
         )
         resultado.numeros += 1
+    await _dar_de_alta(sesion, plan.nuevas, quien=quien)
+    resultado.nuevas = [n.codigo for n in plan.nuevas]
     await sesion.execute(
         text("INSERT INTO auditoria (entidad, entidad_id, accion, usuario_id, datos_despues, "
              "                       motivo) "
@@ -392,7 +486,8 @@ async def aplicar(sesion, renglones: list[Renglon], *, quien: uuid.UUID | None) 
                         {"codigo": t.codigo, "antes": t.numero, "despues": n}
                         for t, n in plan.numeros
                     ],
-                    "sin_tienda": len(plan.sin_tienda),
+                    "nuevas": resultado.nuevas,
+                    "sin_ruta": [str(r) for r in plan.sin_ruta],
                 },
                 ensure_ascii=False,
             ),
@@ -401,3 +496,60 @@ async def aplicar(sesion, renglones: list[Renglon], *, quien: uuid.UUID | None) 
     )
     await sesion.commit()
     return resultado
+
+
+async def _dar_de_alta(sesion, nuevas: list[Nueva], *, quien: uuid.UUID | None) -> None:
+    """Como §120: activas, de la oficina, con la lista general, en su ruta y con su
+    día; además con su ubicación, escrita («manual»)."""
+    if not nuevas:
+        return
+    lista = (
+        await sesion.execute(
+            text("SELECT id FROM listas_precios WHERE activo "
+                 " ORDER BY es_default DESC, vigente_desde LIMIT 1")
+        )
+    ).scalar_one_or_none()
+    ids = [uuid.uuid4() for _ in nuevas]
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO clientes (id, codigo, nombre_comercial, calle, numero, colonia,
+                                  municipio, ruta_id, secuencia, estatus, origen_alta,
+                                  lista_precios_id, lat, lng, ubicacion_origen,
+                                  ubicacion_capturada_en, creado_por, creado_en,
+                                  actualizado_en)
+            VALUES (:id, :codigo, :nombre, :calle, :numero, :colonia, :municipio, :ruta,
+                    :orden, 'activo', 'oficina', :lista, :lat, :lng,
+                    CASE WHEN CAST(:lat AS numeric) IS NULL THEN NULL ELSE 'manual' END,
+                    CASE WHEN CAST(:lat AS numeric) IS NULL THEN NULL ELSE now() END,
+                    :quien, now(), now())
+            """
+        ),
+        [
+            {
+                "id": cliente,
+                "codigo": n.codigo,
+                "nombre": n.renglon.nombre[:200],
+                "calle": n.calle[:200] or None,
+                "numero": n.numero[:40] or None,
+                "colonia": n.colonia[:120] or None,
+                "municipio": MUNICIPIO,
+                "ruta": n.ruta_id,
+                "orden": n.secuencia,
+                "lista": lista,
+                "lat": n.renglon.lat,
+                "lng": n.renglon.lng,
+                "quien": quien,
+            }
+            for cliente, n in zip(ids, nuevas, strict=True)
+        ],
+    )
+    # El plan de visita en UNA sentencia, como §120: su disparador (0041) copia el
+    # plan a cada tienda una sola vez.
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes_frecuencia (cliente_id, dia_semana) "
+            "SELECT * FROM unnest(CAST(:ids AS uuid[]), CAST(:dias AS smallint[]))"
+        ),
+        {"ids": ids, "dias": [n.renglon.dia for n in nuevas]},
+    )
