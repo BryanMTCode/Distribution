@@ -106,8 +106,9 @@ class LoteSalida(BaseModel):
     resultados: list[ResultadoSobreSalida]
     # Cuánto va mal el reloj del teléfono contra el del servidor, en segundos: lo
     # que el servidor dice al recibir menos lo que el teléfono dijo al mandar
-    # (positivo, el teléfono va atrasado; negativo, adelantado). El teléfono lo usa para avisar que su hora está mal, porque con ella
-    # se decide de qué día es cada venta (ADR 0002 §157). Nulo sin `enviado_en`.
+    # (positivo, el teléfono va atrasado; negativo, adelantado). El teléfono lo
+    # usa para avisar que su hora está mal, porque con ella se decide de qué día
+    # es cada venta (ADR 0002 §157). Nulo sin `enviado_en`.
     desfase_reloj_seg: int | None = None
 
 
