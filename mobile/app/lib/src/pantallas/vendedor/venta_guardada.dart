@@ -14,6 +14,14 @@
 ///
 /// Lo primero que se ve es el **folio**, grande. Es lo que el cliente anota y lo
 /// que la oficina pide cuando algo se aclara por teléfono.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// «OTRA VENTA», SIN SALIR DE LA TIENDA (ADR 0002 §160)
+/// ─────────────────────────────────────────────────────────────────────────
+/// Si el cliente, ya cobrado, pide algo más, el vendedor le hace otra venta ahí
+/// mismo: vuelve al catálogo del mismo cliente, con el carrito vacío y el camión
+/// ya descontado. Es otra remisión, con su folio y su ticket; la primera no se
+/// toca, porque ya es un documento —y quizá ya salió en papel—.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -23,6 +31,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/impresora.dart';
 import '../../estado/carrito.dart';
 import '../../estado/impresora.dart';
+import 'catalogo.dart';
 import 'vista_ticket.dart';
 
 class PantallaVentaGuardada extends ConsumerStatefulWidget {
@@ -170,16 +179,32 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
                   ),
                 ],
                 const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    key: const Key('boton_terminar_visita'),
-                    onPressed: () => _volverALaRuta(context),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('Terminar visita'),
+                // Lado a lado para no robarle alto a la venta en el HYLine Pro.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const Key('boton_otra_venta'),
+                        onPressed: _imprimiendo ? null : () => _otraVenta(context),
+                        icon: const Icon(Icons.add_shopping_cart),
+                        label: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('Otra venta'),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        key: const Key('boton_terminar_visita'),
+                        onPressed: () => _volverALaRuta(context),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('Terminar visita'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -291,6 +316,20 @@ class _EstadoVentaGuardada extends ConsumerState<PantallaVentaGuardada> {
     ref.read(cobroProvider.notifier).reiniciar();
     ref.read(clienteEnVisitaProvider.notifier).state = null;
     Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
+  /// Otra venta al mismo cliente, en la misma visita (ADR 0002 §160).
+  ///
+  /// El cliente de la visita se queda; el carrito ya se vació al cobrar. Se
+  /// vuelve a la ruta y se entra otra vez al catálogo, igual que al tocar la
+  /// tienda en la lista: así no importa cómo se llegó hasta aquí.
+  void _otraVenta(BuildContext context) {
+    final navegador = Navigator.of(context);
+    ref.read(cobroProvider.notifier).reiniciar();
+    ref.read(busquedaCatalogoProvider.notifier).state = '';
+    navegador
+      ..popUntil((r) => r.isFirst)
+      ..push(MaterialPageRoute<void>(builder: (_) => const PantallaCatalogo()));
   }
 }
 

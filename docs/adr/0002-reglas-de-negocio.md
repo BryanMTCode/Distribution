@@ -6905,3 +6905,58 @@ ya no había de dónde sacarlo.
   dice qué hacer y no marca nada.
 
 (versionCode 52)
+
+## 160. Otra venta a la misma tienda, en la misma visita
+
+**Decisión (octubre 2026).** «Que si le quieren vender algo nuevo a un
+cliente, le hagan otra venta en ese mismo rato.»
+
+- **«Otra venta»**, junto a «Terminar visita» en «Venta registrada», vuelve al
+  catálogo de la misma tienda con el pedido vacío y el camión ya descontado.
+- **Es otra remisión**, con el folio siguiente y su propio ticket. La primera no
+  se toca: ya es un documento, y quizá ya salió en papel.
+- **Nada cambia en el servidor**, que ya aceptaba varias ventas al mismo cliente
+  en el día. Antes también se podía, pero había que terminar la visita y buscar
+  la tienda otra vez en la lista.
+
+(versionCode 53)
+
+## 161. El vendedor cancela su venta desde «Mi día»
+
+**Decisión (octubre 2026).** «Quiero que los vendedores puedan cancelar ventas
+por si se equivocan.»
+
+Hasta ahora solo la oficina cancelaba, desde el dashboard. El vendedor que se
+equivocaba de tienda o de cantidades tenía que hablarle a la oficina, y mientras
+tanto su camión y su efectivo decían otra cosa.
+
+- **Dónde.** En «Mi día», al tocar una venta: «Cancelar la venta». Pide el
+  motivo (diez letras o más, como en el panel), con cuatro de un toque —«Me
+  equivoqué de cliente», «… de cantidades», «… de producto», «El cliente ya no
+  la quiso»—, y dice que se recoja el ticket si ya se entregó.
+- **En el teléfono, sin señal**, en una sola transacción con su sobre:
+  · la mercancía vuelve al camión ahí mismo, para venderla otra vez;
+  · la venta queda cancelada, sin partidas y con su motivo;
+  · sale del efectivo de «Mi día» y aparece entre las «canceladas o corregidas»;
+  · la tienda vuelve a la lista con su número (§156);
+  · ya no se reimprime (§159).
+- **Viaja por la cola** como `venta.cancelar`, detrás de su `venta.crear`: una
+  venta hecha y cancelada sin señal llega en orden.
+- **El servidor la cancela igual que el panel** (`cancelar_venta`): la
+  cancelación a nombre del vendedor, la mercancía de vuelta al camión y el delta
+  al teléfono. Repetida no hace nada. La de otro vendedor se rechaza.
+- **Después del corte de ese día, ya no.** El corte cuadró el efectivo contra
+  esas ventas, y la app ya no ofrece el botón: dice que se lo pida a la oficina.
+  Si el día ya se liquidó en el servidor, el sobre se rechaza y queda en
+  cuarentena para la oficina, como el bloqueo del panel.
+- **Solo las del día de trabajo:** hoy, o ayer antes de las 5 de la mañana, como
+  el corte (§157). La de un día pasado puede estar liquidada en el servidor
+  aunque el teléfono no tenga su corte. Ésa también la cancela la oficina.
+- **Un bug que salió al hacerlo.** El delta de una venta cancelada trae sus
+  partidas, porque el servidor las conserva, y el teléfono las volvía a
+  escribir. Si ese delta llegaba otra vez —un `pull` repetido—, las comparaba
+  contra «nada» y devolvía la mercancía al camión una segunda vez. Pasaba
+  también con las que cancela la oficina. Ahora la cancelada se queda sin
+  partidas.
+
+(versionCode 53)

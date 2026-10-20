@@ -170,6 +170,24 @@ void main() {
     expect(enCamion(_atun), equals(600.0));
   });
 
+  test('LA CANCELADA CON SUS PARTIDAS EN EL DELTA, RECIBIDA DOS VECES, DEVUELVE UNA', () {
+    // Como llega de verdad: el servidor conserva las partidas de la cancelada y
+    // las manda en el delta. Antes se volvían a escribir, y la segunda vez el
+    // mismo delta las comparaba contra «nada» y devolvía 480 piezas más (ADR
+    // 0002 §161).
+    sembrarVenta();
+    final d = delta(
+      estado: 'cancelada',
+      partidas: [partida(_atun, '20.000', '480.000')],
+      cancelacion: 'cliente equivocado',
+    );
+    aplicar(d);
+    aplicar(d);
+
+    expect(enCamion(_atun), equals(600.0));
+    expect(db.select('SELECT * FROM venta_partidas'), isEmpty);
+  });
+
   test('una venta que ESTE teléfono no tiene se ignora', () {
     // Pasa después de reinstalar la app: el servidor tiene la venta y el teléfono
     // no. Tocar el camión sería adivinar — el saldo que este teléfono trae ya

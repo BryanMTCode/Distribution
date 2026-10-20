@@ -718,6 +718,63 @@ async def _insertar_partida(
 
 
 # ---------------------------------------------------------------------------
+# El vendedor cancela su venta (ADR 0002 §161)
+# ---------------------------------------------------------------------------
+
+# Lo que se anota si el teléfono no manda motivo. La app lo exige; esto es para un
+# teléfono viejo o alterado, y la cancelación entra igual.
+MOTIVO_DE_CANCELACION_SIN_TEXTO = "Cancelada por el vendedor desde la app, sin motivo."
+
+
+@manejador_de("venta.cancelar")
+async def cancelar_venta_del_vendedor(
+    sesion: AsyncSession, ctx: Contexto, entidad_id: uuid.UUID, datos: dict[str, Any]
+) -> None:
+    """El vendedor cancela una venta suya porque se equivocó.
+
+    `entidad_id` es la venta. Se cancela **igual que en el panel**
+    (`cancelar_venta`): la cancelación con su motivo y a nombre del vendedor, la
+    mercancía de vuelta al camión y el delta al teléfono. Viaja por la cola
+    detrás de su `venta.crear`, así que una venta hecha y cancelada sin señal
+    llega en orden.
+
+    · **Ya cancelada** —la oficina se adelantó, o el sobre se repite—: no hace
+      nada.
+    · **De otro vendedor**: se rechaza. El teléfono no decide de quién es.
+    · **El día ya liquidado**: se rechaza, como en el panel, y el sobre queda en
+      cuarentena para la oficina: ese corte ya se firmó contra estas ventas. La
+      app no lo ofrece después de hacer el corte.
+    """
+    # Aquí y no arriba: el panel importa de la capa de sincronización.
+    from app.api.admin import ventas as panel_ventas
+
+    cabecera = await panel_ventas._cabecera(sesion, entidad_id, para_escribir=True)
+    if cabecera is None:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, f"la venta a cancelar no existe: {entidad_id}"
+        )
+    if cabecera["vendedor_id"] != ctx.usuario_id:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS, "la venta a cancelar es de otro vendedor"
+        )
+    if cabecera["estado"] != "confirmada":
+        return
+
+    bloqueos = await panel_ventas._bloqueos(sesion, cabecera)
+    if bloqueos:
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            "no se puede cancelar desde el teléfono: " + " ".join(bloqueos),
+        )
+
+    motivo = (_texto(datos, "motivo") or "").strip() or MOTIVO_DE_CANCELACION_SIN_TEXTO
+    await panel_ventas.cancelar_venta(
+        sesion, cabecera, motivo=motivo, reingresa=True, quien=ctx.usuario_id
+    )
+    await sesion.flush()
+
+
+# ---------------------------------------------------------------------------
 # Fase 6 · mermas, devoluciones y no-drops
 # ---------------------------------------------------------------------------
 #

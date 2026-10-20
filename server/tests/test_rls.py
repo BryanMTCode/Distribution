@@ -1093,3 +1093,42 @@ async def test_eliminar_una_visita_sin_venta_con_el_rol_restringido(
     assert (
         await sesion.execute(text("SELECT count(*) FROM no_drops WHERE id = :n"), {"n": no_venta})
     ).scalar_one() == 0
+
+
+async def test_el_vendedor_cancela_su_venta_con_el_rol_restringido(
+    alcance, sesion, semilla, venta_del_dia  # noqa: F811
+):
+    """§161: la venta que el vendedor cancela desde el teléfono entra con el rol de
+    producción, con su alcance de vendedor: la cancelación, la mercancía de vuelta
+    al camión y el delta."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.infra.sync.manejadores import obtener_manejador
+    from tests.test_operaciones import _contexto
+
+    conexion = await alcance("vendedor", semilla["vendedor"], rutas=[semilla["ruta"]])
+    s = AsyncSession(bind=conexion)
+    await obtener_manejador("venta.cancelar")(
+        s,
+        _contexto(semilla, venta_del_dia),
+        venta_del_dia["venta"],
+        {"motivo": "Me equivoqué de cliente, era la de al lado"},
+    )
+    await s.flush()
+    await conexion.commit()
+    await s.close()
+
+    await sesion.rollback()
+    assert (
+        await sesion.execute(
+            text("SELECT estado FROM ventas WHERE id = :v"), {"v": venta_del_dia["venta"]}
+        )
+    ).scalar_one() == "cancelada"
+    assert (
+        await sesion.execute(
+            text(
+                "SELECT cantidad FROM existencias WHERE almacen_id = :a AND producto_id = :p"
+            ),
+            {"a": semilla["camion"], "p": venta_del_dia["producto"]},
+        )
+    ).scalar_one() == 600

@@ -4,6 +4,7 @@ library;
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'carrito.dart' show nuevoUuidProvider;
 import 'sesion.dart';
 
 final repoMiDiaProvider = Provider<RepoMiDia>(
@@ -13,6 +14,16 @@ final repoMiDiaProvider = Provider<RepoMiDia>(
 /// Reimprimir el ticket de una venta desde «Mi día» (ADR 0002 §159).
 final reimpresionDeVentasProvider = Provider<ReimpresionDeVentas>(
   (ref) => ReimpresionDeVentas(ref.watch(baseLocalProvider).db),
+);
+
+/// El vendedor cancela su venta desde «Mi día», sin señal (ADR 0002 §161).
+final cancelacionDeVentaProvider = Provider<CancelacionDeVenta>(
+  (ref) => CancelacionDeVenta(
+    db: ref.watch(baseLocalProvider).db,
+    outbox: ref.watch(outboxProvider),
+    nuevoUuid: ref.watch(nuevoUuidProvider),
+    ahora: ref.watch(relojProvider),
+  ),
 );
 
 /// El día operativo tal como lo estampan los documentos.

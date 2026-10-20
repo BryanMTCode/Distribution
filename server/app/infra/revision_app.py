@@ -259,6 +259,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "El ticket trae el folio, la tienda, los artículos y el total.",
             ),
             Punto(
+                "otra_venta", "Otra venta a la misma tienda",
+                "Ya cobrada una venta, en «Venta registrada» toca «Otra venta»: agrega "
+                "un artículo y cobra.",
+                "Vuelve al catálogo de la misma tienda con el pedido vacío; la segunda "
+                "sale con el folio siguiente y su propio ticket, y la primera no cambia "
+                "(ADR 0002 §160).",
+                desde="+53",
+            ),
+            Punto(
                 "venta_en_el_panel", "La venta llega al panel",
                 "Sincroniza y abre el Tablero del panel.",
                 "La venta se suma a las de hoy, con el mismo total, en el vendedor "
@@ -404,6 +413,17 @@ SECCIONES: tuple[Seccion, ...] = (
                 "«COPIA 2»), igual a la del cliente; la que no, sale como original. "
                 "Funciona sin señal (ADR 0002 §159).",
                 desde="+52",
+            ),
+            Punto(
+                "cancelar_venta_vendedor", "Cancelar una venta desde «Mi día»",
+                "Con el modo avión, en «Mi día» toca una venta → «Cancelar la venta» → "
+                "escoge «Me equivoqué de cliente» → «Cancelar la venta». Luego mira «Mi "
+                "camión» y la lista; quita el modo avión y sincroniza.",
+                "Sale del efectivo, aparece entre las canceladas con su motivo, la "
+                "mercancía vuelve al camión y la tienda vuelve roja con su número. En el "
+                "panel la venta queda cancelada a nombre del vendedor. Después de hacer "
+                "el corte ya no se ofrece (ADR 0002 §161).",
+                desde="+53",
             ),
             Punto(
                 "impresora_real", "Elegir la impresora y probarla",

@@ -1121,8 +1121,13 @@ class AplicadorDeltas {
     // Y la venta queda como el servidor la tiene. Las partidas se reescriben
     // completas: una cancelada se queda sin ninguna, y una corregida puede haber
     // perdido un renglón entero.
+    //
+    // La cancelada se queda sin ninguna DE VERDAD, aunque el delta las traiga —el
+    // servidor las conserva y las manda—. Bug encontrado en octubre 2026 (ADR 0002
+    // §161): se volvían a escribir, y el mismo delta recibido otra vez las
+    // comparaba contra «nada» y devolvía la mercancía al camión una segunda vez.
     _db.execute('DELETE FROM venta_partidas WHERE venta_id = ?', [delta.entidadId]);
-    for (final fila in partidas) {
+    for (final fila in cancelada ? const [] : partidas) {
       if (fila is! Map<String, Object?>) continue;
       final producto = fila['producto_id'] as String?;
       if (producto == null) continue;

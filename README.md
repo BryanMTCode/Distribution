@@ -146,6 +146,8 @@ la bodega sube cuando alguien la cuenta.
 | **Los arreglos de la revisión** (§157): carga «para hoy», corte de madrugada, Efectividad sin canceladas, «Sin cortar» como su corte, Mayoreo solo en efectivo y en los totales, aviso de la hora del teléfono, cantidades sin «.000», todo por día sin «esta semana», tocar un camión no abre su corte (y se puede descartar), y en Cortes solo lo que ya toca cortar | ✅ 7 pruebas del servidor, 9 de Dart, 5 de widget |
 | **«No me compró» sin GPS** (§158): se registra marcado, el teléfono viejo deja de exigirlo al arrancar, y el punto de la tienda anterior ya no se cuela | ✅ 2 pruebas del servidor, 2 de Dart, 3 de widget |
 | **Reimprimir el ticket desde «Mi día»** (§159): la ya impresa sale como «COPIA n» con los mismos bytes; la que no, como original armado desde la base; la corregida, como quedó | ✅ 5 pruebas de Dart, 3 de widget |
+| **Otra venta a la misma tienda** (§160): «Otra venta» vuelve al catálogo del mismo cliente con el pedido vacío | ✅ 3 de widget |
+| **El vendedor cancela su venta desde «Mi día»** (§161): con motivo y sin señal; la mercancía vuelve al camión, viaja como `venta.cancelar` y el servidor la cancela como el panel; después del corte ya no. Y el delta de una cancelada ya no devuelve dos veces | ✅ 7 pruebas del servidor, 9 de Dart, 4 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -169,7 +171,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1536 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **706 de Dart** y **374 de widget**, todas en verde.
+**1543 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **715 de Dart** y **381 de widget**, todas en verde.
 
 ## Stack
 

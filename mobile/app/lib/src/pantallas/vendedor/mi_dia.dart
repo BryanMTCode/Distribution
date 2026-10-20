@@ -17,6 +17,10 @@
 /// Cada venta se puede **reimprimir** desde aquí (ADR 0002 §159): el cliente
 /// perdió su ticket, o la impresora no tenía papel al cobrar. Sale de la base,
 /// también sin señal; si ya se había impreso, como «COPIA n».
+///
+/// Y **cancelar** (ADR 0002 §161), por si el vendedor se equivocó: con su motivo,
+/// sin señal, y la mercancía vuelve al camión ahí mismo. Después del corte de ese
+/// día ya no: ésa la cancela la oficina.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -92,6 +96,41 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
           'menú de «Mi ruta» → «Impresora».',
       ImpresionFallida(:final detalle) => 'No se pudo imprimir: $detalle',
     });
+  }
+
+  /// Cancela [venta] con el motivo que escriba el vendedor (ADR 0002 §161).
+  Future<void> _cancelar(VentaDeMiDia venta) async {
+    final motivo = await showDialog<String>(
+      context: context,
+      builder: (_) => _DialogoCancelarVenta(venta: venta),
+    );
+    if (motivo == null || !mounted) return;
+
+    try {
+      ref.read(cancelacionDeVentaProvider).cancelar(venta.id, motivo: motivo);
+    } on CancelacionRechazada catch (e) {
+      _avisar(switch (e.motivo) {
+        MotivoNoCancelacion.faltaMotivo => 'Escribe por qué la cancelas.',
+        MotivoNoCancelacion.diaCortado => 'Ya hiciste el corte de ese día: para '
+            'cancelarla, pídeselo a la oficina.',
+        MotivoNoCancelacion.otroDia => 'Es de un día que ya pasó: para cancelarla, '
+            'pídeselo a la oficina.',
+        MotivoNoCancelacion.yaCancelada => 'Esa venta ya estaba cancelada.',
+        MotivoNoCancelacion.noExiste => 'Esa venta ya no está en el teléfono.',
+      });
+      return;
+    } on Object catch (e) {
+      _avisar('No se pudo cancelar: $e');
+      return;
+    }
+
+    // La tienda vuelve a la lista con su número (§156), la cola tiene un sobre
+    // más y el camión cambió.
+    ref.invalidate(clientesProvider);
+    ref.invalidate(resumenColaProvider);
+    ref.read(revisionDelCamionProvider.notifier).state++;
+    _avisar('Venta ${venta.folio} cancelada. La mercancía volvió a tu camión. '
+        'Si le dejaste el ticket, recógelo.');
   }
 
   void _avisar(String mensaje) => ScaffoldMessenger.of(context)
@@ -311,10 +350,12 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
+                            // Las cancela o corrige la oficina, o el vendedor
+                            // las cancela (§161).
                             dia.tocadasPorOficina.length == 1
-                                ? 'La oficina cambió una venta de $elDia'
-                                : 'La oficina cambió '
-                                    '${dia.tocadasPorOficina.length} ventas de $elDia',
+                                ? 'Una venta de $elDia cancelada o corregida'
+                                : '${dia.tocadasPorOficina.length} ventas de '
+                                    '$elDia canceladas o corregidas',
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
@@ -430,19 +471,52 @@ class _EstadoMiDia extends ConsumerState<PantallaMiDia> {
                     ),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      key: Key('reimprimir_${venta.folio}'),
-                      onPressed: _imprimiendo != null ? null : () => _reimprimir(venta),
-                      icon: _imprimiendo == venta.id
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.print_outlined, size: 18),
-                      label: const Text('Reimprimir el ticket'),
+                    child: Wrap(
+                      spacing: 4,
+                      children: [
+                        TextButton.icon(
+                          key: Key('reimprimir_${venta.folio}'),
+                          onPressed:
+                              _imprimiendo != null ? null : () => _reimprimir(venta),
+                          icon: _imprimiendo == venta.id
+                              ? const SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.print_outlined, size: 18),
+                          label: const Text('Reimprimir el ticket'),
+                        ),
+                        if (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id) == null)
+                          TextButton.icon(
+                            key: Key('cancelar_${venta.folio}'),
+                            onPressed: _imprimiendo != null ? null : () => _cancelar(venta),
+                            style: TextButton.styleFrom(foregroundColor: colores.error),
+                            icon: const Icon(Icons.cancel_outlined, size: 18),
+                            label: const Text('Cancelar la venta'),
+                          ),
+                      ],
                     ),
                   ),
+                  // Por qué ya no se cancela desde aquí, si es el caso (§161).
+                  if (switch (ref.read(cancelacionDeVentaProvider).porQueNo(venta.id)) {
+                    MotivoNoCancelacion.diaCortado =>
+                      'Ya hiciste el corte de este día: para cancelarla, pídeselo a '
+                          'la oficina.',
+                    MotivoNoCancelacion.otroDia =>
+                      'Es de un día que ya pasó: para cancelarla, pídeselo a la '
+                          'oficina.',
+                    _ => null,
+                  }
+                      case final porQue?)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        porQue,
+                        key: Key('cancelar_tras_corte_${venta.folio}'),
+                        style: TextStyle(fontSize: 12, color: colores.outline),
+                      ),
+                    ),
                 ],
               ),
         ],
@@ -501,6 +575,100 @@ class _Renglon extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// El motivo de la cancelación (ADR 0002 §161). Devuelve el texto, o nulo si el
+/// vendedor se arrepiente.
+///
+/// Los motivos de un toque son los errores de todos los días; el texto se puede
+/// cambiar y completar. Se pide lo mismo que en el panel: es lo que alguien va a
+/// leer dentro de seis meses.
+class _DialogoCancelarVenta extends StatefulWidget {
+  const _DialogoCancelarVenta({required this.venta});
+
+  final VentaDeMiDia venta;
+
+  @override
+  State<_DialogoCancelarVenta> createState() => _EstadoDialogoCancelarVenta();
+}
+
+const _motivosDeUnToque = [
+  'Me equivoqué de cliente',
+  'Me equivoqué de cantidades',
+  'Me equivoqué de producto',
+  'El cliente ya no la quiso',
+];
+
+class _EstadoDialogoCancelarVenta extends State<_DialogoCancelarVenta> {
+  final _motivo = TextEditingController();
+
+  @override
+  void dispose() {
+    _motivo.dispose();
+    super.dispose();
+  }
+
+  bool get _alcanza =>
+      _motivo.text.trim().length >= largoMinimoDelMotivoDeCancelacion;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = widget.venta;
+    return AlertDialog(
+      key: const Key('dialogo_cancelar_venta'),
+      title: Text('¿Cancelar la venta ${v.folio}?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${v.cliente} · \$${v.total.texto}. La mercancía vuelve a tu camión y '
+              'la tienda vuelve a la lista. Si ya le diste el ticket, recógelo.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final m in _motivosDeUnToque)
+                  ActionChip(
+                    label: Text(m),
+                    onPressed: () => setState(() => _motivo.text = m),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('motivo_cancelar_venta'),
+              controller: _motivo,
+              maxLines: 2,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: '¿Por qué la cancelas?',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('no_cancelar_venta'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('No'),
+        ),
+        FilledButton(
+          key: const Key('confirmar_cancelar_venta'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: _alcanza ? () => Navigator.of(context).pop(_motivo.text.trim()) : null,
+          child: const Text('Cancelar la venta'),
+        ),
+      ],
     );
   }
 }
