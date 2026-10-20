@@ -282,19 +282,22 @@ class _Cuerpo extends StatelessWidget {
                         '${mismosDias(t.venta.fecha)} con operación',
                 '${t.venta.documentos} remisiones · ticket promedio '
                     '${pesos(t.venta.ticketPromedio)}',
+                // Toda venta es en efectivo (§81): lo vendido es lo que se
+                // entrega en el corte, y no se repite en otra tarjeta (§154).
+                if (t.venta.transferencia.esCero) 'todo en efectivo',
               ].join('\n'),
               alerta: t.venta.referencia.lectura == LecturaDeReferencia.abajo,
             ),
-            Tarjeta(
-              cifra: pesos(t.venta.efectivo, conCentavos: false),
-              etiqueta: 'en efectivo',
-              // Solo efectivo (ADR 0002 §81). Una transferencia de antes del
-              // cambio se separa porque no está en la bolsa del vendedor.
-              detalle: t.venta.transferencia.esCero
-                  ? 'lo que entregan los vendedores en el corte'
-                  : '${pesos(t.venta.transferencia)} por transferencia, '
-                      'que no entra al corte',
-            ),
+            // Solo si llegó una transferencia de un teléfono anterior a la +28:
+            // entonces el efectivo ya no es lo vendido y se separa, porque no
+            // está en la bolsa del vendedor.
+            if (!t.venta.transferencia.esCero)
+              Tarjeta(
+                cifra: pesos(t.venta.efectivo, conCentavos: false),
+                etiqueta: 'en efectivo',
+                detalle: '${pesos(t.venta.transferencia)} por transferencia, '
+                    'que no entra al corte',
+              ),
             Tarjeta(
               cifra: '${t.visitas.efectividad.toStringAsFixed(1)}%',
               etiqueta: 'efectividad de visita',
@@ -749,8 +752,9 @@ class _RenglonVendedorWidget extends StatelessWidget {
     }
     return [
       '${renglon.visitas} visitas · ${renglon.conVenta} con venta · '
-          '${renglon.efectividad.toStringAsFixed(0)}% · '
-          '${pesos(renglon.efectivo, conCentavos: false)} en efectivo',
+          '${renglon.efectividad.toStringAsFixed(0)}%'
+          // Lo vendido va a la derecha; el efectivo solo si es otra cifra (§154).
+          '${renglon.efectivo.centavos == renglon.venta.centavos ? '' : ' · ${pesos(renglon.efectivo, conCentavos: false)} en efectivo'}',
       ?textoDeReferencia(renglon.referencia, fecha),
     ].join(' · ');
   }

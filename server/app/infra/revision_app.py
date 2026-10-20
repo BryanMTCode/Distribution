@@ -120,6 +120,13 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+40",
             ),
             Punto(
+                "vendida_en_verde", "La tienda que ya compró, en verde",
+                "Véndele a una tienda de «Hoy» y a otra márcala sin venta.",
+                "La que compró, verde con palomita; la de sin venta, gris con una equis; "
+                "las que faltan siguen rojas con su número (ADR 0002 §153).",
+                desde="+50",
+            ),
+            Punto(
                 "buscar_tienda", "Buscar una tienda",
                 "Escribe parte del nombre o del código en el buscador de arriba.",
                 "Encuentra la tienda aunque hoy no le toque.",
@@ -387,6 +394,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "qué va —pedida, ACEPTADA o rechazada con su motivo—.",
             ),
             Punto(
+                "ticket_con_logo", "El ticket con el logo y los datos del local",
+                "Con la impresora elegida, «Imprimir una prueba»; después haz una venta e "
+                "imprime su ticket.",
+                "Arriba sale el logo (el óvalo con «Distribuciones SE»), luego «Mercado de "
+                "Abastos, Local 11», «Col. Venadillo, C.P. 82129», «Mazatlán, Sinaloa» y "
+                "el RFC. Nada se corre ni sale basura después del logo (ADR 0002 §155).",
+                desde="+50",
+            ),
+            Punto(
                 "imprimir_solicitud_de_carga", "Imprimir la solicitud de carga",
                 "Con la impresora elegida, pide la carga de mañana y toca «Imprimir» en "
                 "su ticket. Después, en «Mi día», «Ver o imprimir el ticket».",
@@ -408,8 +424,11 @@ SECCIONES: tuple[Seccion, ...] = (
             Punto(
                 "tablero_dia", "Tablero del día",
                 "Tablero en «Día»; cambia de día con el calendario.",
-                "Las cifras del día (ventas, efectivo, visitas) y de qué día son; las "
-                "mismas que el Tablero del panel.",
+                "Las cifras del día (ventas, visitas) y de qué día son; las mismas que el "
+                "Tablero del panel. Todo es en efectivo: «vendido hoy» lo dice y no hay "
+                "otra tarjeta «en efectivo» con la misma cifra; Vendedores y el periodo "
+                "tampoco la repiten (ADR 0002 §154).",
+                desde="+50",
             ),
             Punto(
                 "tablero_periodo", "Tablero por periodo",
@@ -459,6 +478,13 @@ SECCIONES: tuple[Seccion, ...] = (
                 "ubicación marcadas. Hoy dice cuáles ya visitó (con venta o sin venta) y "
                 "cuántas le faltan. Tocar una tienda abre su ficha.",
                 desde="+38",
+            ),
+            Punto(
+                "ruta_del_vendedor_colores", "Su ruta de hoy, en colores",
+                "Pestaña Vendedores: abre uno → «Su ruta» de hoy, ya que haya vendido.",
+                "El número de la tienda que compró va en verde, el de la visitada sin "
+                "venta en gris y el de las que faltan en rojo (ADR 0002 §153).",
+                desde="+50",
             ),
             Punto(
                 "clientes_oficina", "Clientes, desde Empresa",

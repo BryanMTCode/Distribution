@@ -175,9 +175,10 @@
         <th>Vendedor</th>
         <th class="numero">Ventas</th>
         <th class="numero">Importe</th>
-        <th class="numero">Efectivo</th>
-        {# Solo efectivo desde la +28: la columna sale si alguna llegó. #}
-        {% if cifras.transferencias %}<th class="numero">Transferencia</th>{% endif %}
+        {# Solo efectivo desde la +28: el importe ES el efectivo, y las dos
+           columnas salen solo si llegó alguna transferencia (ADR 0002 §154). #}
+        {% if cifras.transferencias %}<th class="numero">Efectivo</th>
+        <th class="numero">Transferencia</th>{% endif %}
         <th class="numero">Sin venta</th>
         <th class="numero">Mermas</th>
       </tr>
@@ -189,8 +190,8 @@
           <span class="sutil">{{ v.codigo }}{% if v.activo == false %} · desactivado{% endif %}</span></td>
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
-        <td class="numero">{{ v.efectivo|dinero }}</td>
-        {% if cifras.transferencias %}<td class="numero">{{ v.transferencias|dinero }}</td>{% endif %}
+        {% if cifras.transferencias %}<td class="numero">{{ v.efectivo|dinero }}</td>
+        <td class="numero">{{ v.transferencias|dinero }}</td>{% endif %}
         <td class="numero">{{ v.no_ventas }}</td>
         <td class="numero">{{ v.mermas }}</td>
       </tr>
@@ -208,7 +209,8 @@
   <table id="tabla_por_dia">
     <thead>
       <tr><th>Día</th><th class="numero">Ventas</th><th class="numero">Importe</th>
-          <th style="width:30%"></th><th class="numero">Efectivo</th></tr>
+          <th style="width:30%"></th>
+          {% if cifras.transferencias %}<th class="numero">Efectivo</th>{% endif %}</tr>
     </thead>
     <tbody>
       {% for d in por_dia %}
@@ -219,7 +221,7 @@
         <td aria-hidden="true">
           <div style="height:10px;border-radius:5px;background:var(--acento);width:{{ d.barra }}%;min-width:{{ 2 if d.importe else 0 }}px"></div>
         </td>
-        <td class="numero">{{ d.efectivo|dinero }}</td>
+        {% if cifras.transferencias %}<td class="numero">{{ d.efectivo|dinero }}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>

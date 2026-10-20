@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/sesion.dart';
 import '../../estado/vendedores.dart';
+import '../../marca.dart';
 import '../canceladas.dart';
 import '../familias.dart';
 import 'clientes_oficina.dart';
@@ -197,8 +198,10 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
                   title: Text(v.nombre),
                   subtitle: Text(
                     '${v.camion ?? 'sin camión'} · ${v.rutas ?? 'sin ruta'}\n'
-                    '${v.ventas} venta(s) · ${pesos(v.importe)} · '
-                    '${pesos(v.efectivo)} en efectivo'
+                    '${v.ventas} venta(s) · ${pesos(v.importe)}'
+                    // Toda venta es en efectivo (§81): el efectivo solo se dice
+                    // si es otra cifra —una transferencia de un teléfono viejo—.
+                    '${v.efectivo.centavos == v.importe.centavos ? '' : ' · ${pesos(v.efectivo)} en efectivo'}'
                     '${v.noVentas > 0 ? ' · ${v.noVentas} sin venta' : ''}\n'
                     '${v.saldoCuenta.centavos > 0 ? 'Debe ${pesos(v.saldoCuenta)} · ' : ''}'
                     'Su teléfono: ${antiguedadEnPalabras(v.ultimoContacto)}',
@@ -624,10 +627,7 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
             ListTile(
               key: Key('tienda_ruta_${t.codigo ?? t.id}'),
               contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                radius: 15,
-                child: Text(t.orden == null ? '·' : '${t.orden}', style: estilo.labelMedium),
-              ),
+              leading: _ordenDeLaTienda(t, esHoy: r.esHoy, estilo: estilo),
               title: Text(t.nombre),
               subtitle: Text(
                 [
@@ -648,6 +648,25 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
             ),
         ],
       ],
+    );
+  }
+
+  /// El número de orden. Hoy, la que ya compró va en verde y la visitada sin
+  /// venta en gris; las que faltan, en el rojo de la marca (ADR 0002 §153).
+  Widget _ordenDeLaTienda(TiendaDeRuta t, {required bool esHoy, required TextTheme estilo}) {
+    final (fondo, letra) = switch (esHoy ? t.visita : null) {
+      'venta' => (colorDeVendida, Colors.white),
+      'no_venta' => (colorDeSinVenta, letraDeSinVenta),
+      _ => (null, null),
+    };
+    return CircleAvatar(
+      key: Key('orden_ruta_${t.codigo ?? t.id}'),
+      radius: 15,
+      backgroundColor: fondo,
+      child: Text(
+        t.orden == null ? '·' : '${t.orden}',
+        style: estilo.labelMedium?.copyWith(color: letra),
+      ),
     );
   }
 

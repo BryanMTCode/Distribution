@@ -28,6 +28,7 @@ class ClienteEnRuta {
     this.plan = const [],
     this.tocaHoy = false,
     this.visitadoHoy = false,
+    this.vendidoHoy = false,
     this.reprogramadaHoy = false,
     this.proximaReprogramada,
   });
@@ -67,6 +68,10 @@ class ClienteEnRuta {
   /// Es la misma definición de «visita» que usa Efectividad en el servidor para
   /// contar lo que tocaba y nadie hizo.
   final bool visitadoHoy;
+
+  /// Si hoy ya le vendió: una venta confirmada de hoy. En la lista va de otro
+  /// color que las demás visitas, para verla de reojo (ADR 0002 §153).
+  final bool vendidoHoy;
 
   bool get conUbicacion => lat != null && lng != null;
 }
@@ -109,6 +114,9 @@ class RepoClientes {
               OR EXISTS (SELECT 1 FROM mermas m
                           WHERE m.cliente_id = c.id AND m.fecha_operativa = ?4)
              ) AS visitado_hoy,
+             EXISTS (SELECT 1 FROM ventas v
+                      WHERE v.cliente_id = c.id AND v.fecha_operativa = ?4
+                        AND v.estado = 'confirmada') AS vendido_hoy,
              -- La visita reprogramada (ADR 0002 §103): la que trae el cliente
              -- desde el servidor, o la que se capturó en este teléfono y todavía
              -- no sube. Cualquiera de las dos vale.
@@ -160,6 +168,7 @@ class RepoClientes {
       plan: plan,
       tocaHoy: tocaVisita(plan, hoy) || (f['reprogramada_hoy'] as int? ?? 0) == 1,
       visitadoHoy: (f['visitado_hoy'] as int? ?? 0) == 1,
+      vendidoHoy: (f['vendido_hoy'] as int? ?? 0) == 1,
       reprogramadaHoy: (f['reprogramada_hoy'] as int? ?? 0) == 1,
       proximaReprogramada: f['proxima_reprogramada'] as String?,
     );

@@ -241,6 +241,20 @@ VistaPrevia decodificar(
         case 0x4C: // GS L nL nH — margen izquierdo (§141): no cambia el texto
         case 0x57: // GS W nL nH — ancho del área de impresión
           i += 4;
+        case 0x76: // GS v 0 — una imagen (el logo, §155): un renglón que la marca
+          if (actual.isNotEmpty) cerrarLinea();
+          final porRenglon = i + 5 < bytes.length ? bytes[i + 4] | (bytes[i + 5] << 8) : 0;
+          final renglones = i + 7 < bytes.length ? bytes[i + 6] | (bytes[i + 7] << 8) : 0;
+          lineas.add(
+            LineaImpresa(
+              texto: '[logo]',
+              alineacion: alineacion,
+              negrita: false,
+              anchoDoble: false,
+              altoDoble: false,
+            ),
+          );
+          i += 8 + porRenglon * renglones;
         default:
           desconocidos.add('GS 0x${siguiente.toRadixString(16)}');
           i += 2;

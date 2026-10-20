@@ -17,6 +17,15 @@ const rojoDistribucionesSE = Color(0xFFE0282E);
 
 const nombreDeLaEmpresa = 'Distribuciones SE';
 
+/// La tienda que ya compró hoy, en las listas de la ruta: verde, para que no se
+/// confunda con las que faltan, que van en el rojo de la marca con su número
+/// (ADR 0002 §153).
+final colorDeVendida = Colors.green.shade600;
+
+/// La visitada sin venta (no-drop o devolución): gris.
+final colorDeSinVenta = Colors.blueGrey.shade100;
+final letraDeSinVenta = Colors.blueGrey.shade800;
+
 /// El tema de la app, con el rojo de la marca.
 ThemeData temaDeLaMarca() {
   final esquema = ColorScheme.fromSeed(

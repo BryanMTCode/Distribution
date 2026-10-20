@@ -6661,3 +6661,85 @@ mayoreo sácalo».
 - De paso: el aviso de la carga con la bodega vacía mandaba a «Almacén →
   Entradas», que ya no existe en la app (§134). Ahora dice dónde está en el
   dashboard: Almacén → Entradas y salidas → Entradas.
+
+## 153. En la lista de la ruta, la tienda que ya compró va en verde
+
+**Decisión (octubre 2026).** «En la lista, los que ya les vendí cámbiales de
+color: que las otras sigan apareciendo rojo con el número, pero los demás que
+tengan otro color, para que sean más fáciles de identificar.»
+
+El círculo del orden de visita tomaba el color del tema, que es el rojo de la
+marca, y la palomita de «ya visitada» iba sobre el mismo rojo: de reojo, todas
+se veían iguales.
+
+- **En la lista del vendedor** (la de su ruta):
+  · la que ya compró hoy —una venta confirmada de hoy— va en **verde** con
+    palomita;
+  · la visitada sin venta —un no-drop o una devolución, que también cuentan como
+    visita— va en **gris** con una equis;
+  · las que faltan siguen en el **rojo** de la marca, con su número;
+  · una venta cancelada no pinta de verde.
+- **En la app del gerente**, en Vendedores → un vendedor → «Su ruta», el número
+  de orden va igual, pero solo hoy: verde si compró, gris si se visitó sin venta,
+  rojo si falta. Los otros días no hay visitas que pintar.
+- El mapa del vendedor ya ponía en verde la tienda visitada; no cambia.
+- Los dos colores viven en `marca.dart` (`colorDeVendida`, `colorDeSinVenta`),
+  para que las dos listas digan lo mismo.
+
+## 154. Toda venta es en efectivo: lo vendido no se repite como «en efectivo»
+
+**Decisión (octubre 2026).** «Toda la venta es en efectivo, así que cambia esto,
+porque aparece lo vendido y lo de efectivo.»
+
+Desde la +28 no hay transferencias (§81, enmienda), así que «vendido» y «en
+efectivo» son la misma cifra, y la app del gerente y el dashboard la ponían dos
+veces.
+
+- **App del gerente:**
+  · en el **Tablero**, la tarjeta «en efectivo» se va y «vendido hoy» dice
+    «todo en efectivo»; en la lista por vendedor, lo vendido sigue a la
+    derecha, sin repetirlo como efectivo;
+  · en **Vendedores**, «3 venta(s) · $2,250.00», sin «· $2,250.00 en
+    efectivo»;
+  · en el **periodo** (semana, mes…), «vendido» dice «Todo en efectivo» en vez
+    de «Efectivo $X · Transferencia $0», y cada vendedor no repite su efectivo.
+- **Dashboard:** las tablas por vendedor y por día del Tablero y la de
+  Vendedores pierden la columna «Efectivo», que era igual a «Importe».
+- **La transferencia de un teléfono viejo** sigue a la vista cuando llega alguna
+  (la oficina la revisa en Transferencias): entonces el efectivo ya no es lo
+  vendido, y se vuelven a separar —la tarjeta, el texto y las columnas—.
+- No cambia lo del vendedor: «Mi día» y el corte dicen «Efectivo que debes
+  entregar», que es la cifra que importa en su bolsa.
+
+## 155. El ticket lleva el logo, el domicilio del local y el RFC
+
+**Decisión (octubre 2026).** «Estos datos son para el ticket; ¿puedes agregar el
+logo de la empresa también?», con el domicilio del local y el RFC, y luego:
+«obviamente solo pon el domicilio necesario, no vayas a poner todo ese que te
+mandé».
+
+- **El encabezado de la remisión** (el ticket que se queda el cliente) queda así:
+  · el logo;
+  · «Distribuciones SE»;
+  · tres renglones de domicilio: «Mercado de Abastos, Local 11», «Col. Venadillo,
+    C.P. 82129» y «Mazatlán, Sinaloa»;
+  · «RFC TAVE760701597».
+  Las calles de cruce no van: con el mercado, el local, la colonia y el código
+  postal basta para llegar.
+- **La dirección va por renglones** (`\n` en `DatosDelNegocio.direccion`): en 32
+  columnas, partirla por palabras dejaba media dirección colgando en otra línea.
+- **El logo es el parche de la app en blanco y negro** (`logo_del_ticket.dart`):
+  · el óvalo y las letras con Dancing Script, la misma letra del APK;
+  · 288 × 160 puntos (unos 36 × 20 mm), centrado;
+  · se manda en un solo `GS v 0`, que entienden las térmicas de ruta.
+  Se generó una vez con `mobile/app/tool/hacer_logo_del_ticket.py`, y la app no
+  dibuja nada al imprimir.
+- **El margen de la EC-MP200** (§141) se salta la imagen entera: entre sus
+  puntos puede haber un `1B 40` que no es un `ESC @`. La vista previa la marca
+  como «[logo]».
+- **La página de prueba de la impresora** también trae el logo: si sale ahí,
+  sale en la remisión.
+- **Un ticket ya impreso se reimprime igual**: la reimpresión usa los bytes
+  guardados (§ del ticket), así que las ventas de antes salen sin logo.
+- El corte, la solicitud y la carga son papeles de la casa y siguen sin
+  encabezado.

@@ -46,6 +46,10 @@ Map<String, Object?> tableroDelServidor({
   bool vendedorSinMovimiento = true,
   Map<String, Object?>? referencia,
   bool luisSinSincronizar = false,
+  // Una transferencia de un teléfono anterior a la +28; desde entonces todo es
+  // en efectivo (ADR 0002 §81).
+  String efectivo = '31180.00',
+  String transferencia = '11000.00',
 }) =>
     {
       'frescura': {
@@ -60,8 +64,8 @@ Map<String, Object?> tableroDelServidor({
       'venta': {
         'fecha': '2026-09-24',
         'total': total,
-        'efectivo': '31180.00',
-        'transferencia': '11000.00',
+        'efectivo': efectivo,
+        'transferencia': transferencia,
         'documentos': 34,
         'ticket_promedio': '1240.59',
         'calculado_en': calculadoEn,
@@ -291,6 +295,23 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('crédito'), findsNothing);
+    });
+
+    testWidgets('todo en efectivo: lo vendido no se repite en otra tarjeta (§154)',
+        (tester) async {
+      // «Toda la venta es en efectivo, así que cambia esto, porque aparece lo
+      // vendido y lo de efectivo.»
+      await montarTablero(
+        tester,
+        TransporteDeGerencia(
+          tablero: tableroDelServidor(efectivo: '42180.00', transferencia: '0.00'),
+        ),
+      );
+      expect(find.text(r'$42,180'), findsOneWidget);
+      expect(find.text('vendido hoy'), findsOneWidget);
+      expect(find.text('en efectivo'), findsNothing);
+      expect(find.textContaining('todo en efectivo'), findsOneWidget);
+      expect(find.textContaining('por transferencia'), findsNothing);
     });
 
     testWidgets('los no-drops nuestros se marcan como lo accionable',

@@ -4,6 +4,7 @@
 /// ni bloqueo; muestra el orden de visita, lo visitado y lo que falta por subir.
 library;
 
+import 'package:dsd_app/src/marca.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -213,6 +214,47 @@ void main() {
     });
     expect(find.byKey(const Key('visitado_c1')), findsOneWidget);
     expect(find.text('Visitados 1 de 1'), findsOneWidget);
+    // Estuvo, pero no le vendió: gris con una equis, no el verde de la venta
+    // (ADR 0002 §153).
+    expect(find.byKey(const Key('sin_venta_c1')), findsOneWidget);
+    expect(
+      tester.widget<CircleAvatar>(find.byKey(const Key('visitado_c1'))).backgroundColor,
+      colorDeSinVenta,
+    );
+  });
+
+  testWidgets('la que ya compró hoy va en verde; las que faltan, rojas con su número',
+      (tester) async {
+    // «Los que ya les vendí cámbiales de color: que las otras sigan apareciendo
+    // rojo con el número, pero los demás que tengan otro color.»
+    await entrar(tester, (base) {
+      sembrarCliente(base, id: 'c1', nombre: 'Ya compró', secuencia: 1);
+      sembrarCliente(base, id: 'c2', nombre: 'Falta', secuencia: 2);
+      sembrarCliente(base, id: 'c3', nombre: 'Le cancelaron', secuencia: 3);
+      base.db.execute(
+        "INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, subtotal, "
+        "total, fecha_dispositivo, fecha_operativa, creado_en) "
+        "VALUES ('v1', 1, 'VEND01-000001', 'c1', 'contado', 100, 100, "
+        "'2026-09-24T07:00:00.000Z', '2026-09-24', '2026-09-24T07:00:00.000Z')",
+      );
+      // Una venta cancelada no es una venta: cuenta como visita, sin el verde.
+      base.db.execute(
+        "INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo, subtotal, "
+        "total, fecha_dispositivo, fecha_operativa, estado, creado_en) "
+        "VALUES ('v2', 2, 'VEND01-000002', 'c3', 'contado', 50, 50, "
+        "'2026-09-24T07:10:00.000Z', '2026-09-24', 'cancelada', '2026-09-24T07:10:00.000Z')",
+      );
+    });
+    expect(find.byKey(const Key('vendida_c1')), findsOneWidget);
+    expect(
+      tester.widget<CircleAvatar>(find.byKey(const Key('visitado_c1'))).backgroundColor,
+      colorDeVendida,
+    );
+    // La que falta sigue con su número, en el color de la marca.
+    expect(find.byKey(const Key('visitado_c2')), findsNothing);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.byKey(const Key('vendida_c3')), findsNothing);
+    expect(find.byKey(const Key('sin_venta_c3')), findsOneWidget);
   });
 
   testWidgets('sin plan en ningún cliente, la lista es la de siempre', (tester) async {

@@ -394,16 +394,12 @@ final impresoraProvider = Provider<Impresora>((ref) {
   return modoDemoDisponible ? ImpresoraSimulada() : const SinImpresora();
 });
 
-/// Los datos del negocio que van en el encabezado del ticket.
+/// Los datos del negocio que van en el encabezado del ticket: el logo, el
+/// domicilio del local y el RFC (ADR 0002 §155).
 ///
 /// Fijos por ahora. Cuando exista el panel de configuración salen de ahí, y el
 /// mismo binario sirve para otra distribuidora.
-final negocioProvider = Provider<DatosDelNegocio>(
-  (_) => const DatosDelNegocio(
-    nombre: 'Distribuciones SE',
-    leyendaFinal: 'Gracias por su compra',
-  ),
-);
+final negocioProvider = Provider<DatosDelNegocio>((_) => negocioDistribucionesSE);
 
 /// Arma el ticket de una venta ya guardada.
 ///

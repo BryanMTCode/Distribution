@@ -23,6 +23,10 @@
 </form>
 
 {% if vendedores %}
+{# Solo efectivo desde la +28: el importe ES el efectivo. La columna sale solo si
+   en alguno no coincide —una transferencia de un teléfono viejo— (§154). #}
+{% set otra_cifra = namespace(hay=false) %}
+{% for v in vendedores %}{% if v.efectivo != v.importe %}{% set otra_cifra.hay = true %}{% endif %}{% endfor %}
 <div class="tabla-marco">
   <table id="tabla_vendedores">
     <thead>
@@ -31,7 +35,7 @@
         <th>Camión · rutas</th>
         <th class="numero">Ventas</th>
         <th class="numero">Importe</th>
-        <th class="numero">Efectivo</th>
+        {% if otra_cifra.hay %}<th class="numero">Efectivo</th>{% endif %}
         <th class="numero">Sin venta</th>
         <th class="numero">Mermas</th>
         <th class="numero">Debe (cuenta)</th>
@@ -51,7 +55,7 @@
         </td>
         <td class="numero">{{ v.ventas }}</td>
         <td class="numero">{{ v.importe|dinero }}</td>
-        <td class="numero">{{ v.efectivo|dinero }}</td>
+        {% if otra_cifra.hay %}<td class="numero">{{ v.efectivo|dinero }}</td>{% endif %}
         <td class="numero">{{ v.no_ventas }}</td>
         <td class="numero">{{ v.mermas }}</td>
         <td class="numero">

@@ -84,6 +84,53 @@ VistaPrevia _vista(VentaGuardada venta, {int copia = 0}) => decodificar(
     );
 
 void main() {
+  group('el encabezado de Distribuciones SE (ADR 0002 §155)', () {
+    VistaPrevia vista() => decodificar(
+          ticketDeVenta(_venta(), negocio: negocioDistribucionesSE, visita: _visita),
+        );
+
+    test('el logo arriba, luego el nombre, el domicilio necesario y el RFC', () {
+      final lineas = vista().lineas.map((l) => l.texto).toList();
+      expect(lineas.first, '[logo]');
+      final nombre = lineas.indexOf('Distribuciones SE');
+      expect(nombre, greaterThan(0));
+      // «Obviamente solo pon el domicilio necesario»: el local, la colonia con
+      // el código postal y la ciudad, un renglón cada uno.
+      expect(lineas.sublist(nombre + 1, nombre + 5), [
+        'Mercado de Abastos, Local 11',
+        'Col. Venadillo, C.P. 82129',
+        'Mazatlán, Sinaloa',
+        'RFC TAVE760701597',
+      ]);
+    });
+
+    test('cabe en el papel y la vista previa lo entiende entero', () {
+      final v = vista();
+      expect(v.desconocidos, isEmpty);
+      for (final l in v.lineas) {
+        expect(l.columnasOcupadas, lessThanOrEqualTo(32), reason: l.texto);
+      }
+    });
+
+    test('el logo es un GS v 0 de 288 × 160 puntos, centrado', () {
+      final bytes = ticketDeVenta(_venta(), negocio: negocioDistribucionesSE, visita: _visita);
+      final i = _indiceDe(bytes, [0x1D, 0x76, 0x30, 0x00]);
+      expect(i, greaterThan(0));
+      // 36 bytes por renglón (288 puntos), 160 renglones.
+      expect(bytes.sublist(i + 4, i + 8), [36, 0, 160, 0]);
+      // Antes, `ESC a 1`: al centro.
+      expect(bytes.sublist(i - 3, i), [0x1B, 0x61, 1]);
+      expect(logoDelTicket.puntos.length, 36 * 160);
+      // Tiene tinta: el óvalo y las letras.
+      expect(logoDelTicket.puntos.where((b) => b != 0), isNotEmpty);
+    });
+
+    test('sin logo, el ticket de siempre', () {
+      final lineas = _vista(_venta()).lineas.map((l) => l.texto);
+      expect(lineas, isNot(contains('[logo]')));
+    });
+  });
+
   group('la forma del papel', () {
     test('ninguna línea se desborda, EN NINGUNA VARIANTE del ticket', () {
       // Una línea que se desborda no se corta: la impresora la continúa en la
@@ -363,4 +410,18 @@ void main() {
       expect(decodificar(bytes437).texto, contains('ÑANDU'));
     });
   });
+}
+
+int _indiceDe(List<int> bytes, List<int> buscado) {
+  for (var i = 0; i + buscado.length <= bytes.length; i++) {
+    var igual = true;
+    for (var k = 0; k < buscado.length; k++) {
+      if (bytes[i + k] != buscado[k]) {
+        igual = false;
+        break;
+      }
+    }
+    if (igual) return i;
+  }
+  return -1;
 }

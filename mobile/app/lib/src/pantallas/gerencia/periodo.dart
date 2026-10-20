@@ -241,8 +241,10 @@ class _EstadoPeriodo extends ConsumerState<VistaDelPeriodo> {
                   key: const Key('periodo_vendido'),
                   cifra: pesos(d.cifras.total, conCentavos: false),
                   etiqueta: 'vendido',
-                  detalle: 'Efectivo ${pesos(d.cifras.efectivo)}\n'
-                      'Transferencia ${pesos(d.cifras.transferencias)}'
+                  // Toda venta es en efectivo (§81): la partición solo se dice si
+                  // llegó una transferencia de un teléfono viejo (§154).
+                  detalle: '${d.cifras.transferencias.esCero ? 'Todo en efectivo' : 'Efectivo ${pesos(d.cifras.efectivo)}\n'
+                      'Transferencia ${pesos(d.cifras.transferencias)}'}'
                       '${d.cifras.canceladas > 0 ? '\n${d.cifras.canceladas} cancelada(s)' : ''}',
                 ),
                 Tarjeta(
@@ -265,7 +267,8 @@ class _EstadoPeriodo extends ConsumerState<VistaDelPeriodo> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(v.nombre),
                   subtitle: Text(
-                    '${v.ventas} venta(s) · ${pesos(v.efectivo)} en efectivo'
+                    '${v.ventas} venta(s)'
+                    '${v.efectivo.centavos == v.importe.centavos ? '' : ' · ${pesos(v.efectivo)} en efectivo'}'
                     '${v.noVentas > 0 ? ' · ${v.noVentas} sin venta' : ''}'
                     '${v.mermas > 0 ? ' · ${v.mermas} merma(s)' : ''}',
                   ),

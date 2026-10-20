@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:dsd_app/src/estado/sesion.dart';
 import 'package:dsd_app/src/estado/sincronizacion.dart';
+import 'package:dsd_app/src/marca.dart';
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,10 @@ class _ServidorDeOficina implements Transporte {
 
   /// Sin el resumen de la empresa: sin señal a media consulta, o sin permiso.
   bool sinResumenDeEmpresa = false;
+
+  /// El periodo sin la transferencia de un teléfono viejo: todo en efectivo,
+  /// como es desde la +28 (ADR 0002 §81).
+  bool todoEnEfectivo = false;
 
   @override
   Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async {
@@ -68,7 +73,7 @@ class _ServidorDeOficina implements Transporte {
             {
               'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'activo': true,
               'camion': 'Camión 01', 'rutas': 'R04', 'ventas': 3, 'importe': '2250.00',
-              'efectivo': '100.00', 'no_ventas': 1, 'mermas': 0,
+              'efectivo': '2250.00', 'no_ventas': 1, 'mermas': 0,
               'ultimo_contacto': null, 'saldo_cuenta': '35.00',
             },
           ],
@@ -160,13 +165,15 @@ class _ServidorDeOficina implements Transporte {
           'periodo': _periodo(clave, desde, hasta),
           'periodos': _periodos,
           'cifras': {
-            'efectivo': '2000.00', 'transferencias': '250.00', 'total': '2250.00',
+            'efectivo': todoEnEfectivo ? '2250.00' : '2000.00',
+            'transferencias': todoEnEfectivo ? '0.00' : '250.00', 'total': '2250.00',
             'canceladas': 0, 'mermas': 0, 'devoluciones': 0,
             'no_ventas': 1, 'clientes_atendidos': 2, 'clientes_nuevos': 0,
           },
           'por_vendedor': [
             {'id': 'v1', 'codigo': 'VEND01', 'nombre': 'Juan Pérez', 'ventas': 3,
-             'importe': '2250.00', 'efectivo': '2000.00', 'transferencias': '250.00',
+             'importe': '2250.00', 'efectivo': todoEnEfectivo ? '2250.00' : '2000.00',
+             'transferencias': todoEnEfectivo ? '0.00' : '250.00',
              'mermas': 0, 'no_ventas': 1},
           ],
           'por_dia': [
@@ -406,8 +413,10 @@ void main() {
 
       expect(find.byKey(const Key('pantalla_vendedores')), findsOneWidget);
       expect(find.text('Hoy, jueves 24 de septiembre'), findsOneWidget);
-      expect(textoQueContiene(r'3 venta(s) · $2,250.00 · $100.00 en efectivo'),
-          findsOneWidget);
+      // Toda venta es en efectivo (§81): lo vendido no se repite como
+      // «en efectivo» (§154).
+      expect(textoQueContiene(r'3 venta(s) · $2,250.00 · 1 sin venta'), findsOneWidget);
+      expect(textoQueContiene('en efectivo'), findsNothing);
       expect(textoQueContiene(r'Debe $35.00'), findsOneWidget);
     });
 
@@ -525,6 +534,14 @@ void main() {
       expect(find.text('\$350.00'), findsOneWidget);
       expect(find.text('sin venta'), findsOneWidget);
       expect(find.text('pendiente'), findsOneWidget);
+      // La que ya compró, en verde; la visitada sin venta, en gris; la que
+      // falta, en el rojo de la marca con su número (ADR 0002 §153).
+      Color? fondo(String codigo) => tester
+          .widget<CircleAvatar>(find.byKey(Key('orden_ruta_$codigo')))
+          .backgroundColor;
+      expect(fondo('250'), colorDeVendida);
+      expect(fondo('251'), colorDeSinVenta);
+      expect(fondo('252'), isNull);
       expect(textoQueContiene('252 · sin ubicación'), findsOneWidget);
       expect(find.byKey(const Key('sin_ubicacion_ruta')), findsOneWidget);
 
@@ -536,6 +553,11 @@ void main() {
       expect(find.byKey(const Key('tienda_ruta_100')), findsOneWidget);
       expect(find.byKey(const Key('tienda_ruta_250')), findsNothing);
       expect(find.text('pendiente'), findsNothing);
+      // Otro día no hay visitas que pintar.
+      expect(
+        tester.widget<CircleAvatar>(find.byKey(const Key('orden_ruta_100'))).backgroundColor,
+        isNull,
+      );
       expect(
         textoQueContiene('100 · EMBARCADERO DE LA PUNTILLA S/N, PLAYA SUR · sin ubicación'),
         findsOneWidget,
@@ -564,6 +586,31 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(const Key('periodo_dia_2026-09-23')), 200, scrollable: listaDelPeriodo);
       expect(find.text('miércoles 23 de septiembre'), findsOneWidget);
+    });
+
+    testWidgets('todo en efectivo: el periodo no repite lo vendido como efectivo (§154)',
+        (tester) async {
+      final servidor = await _montar(tester);
+      servidor.todoEnEfectivo = true;
+      await tester.tap(find.byKey(const Key('periodo_semana')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('periodo_vendido')),
+          matching: find.textContaining('Todo en efectivo'),
+        ),
+        findsOneWidget,
+      );
+      expect(textoQueContiene('Transferencia'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('periodo_vendedor_VEND01')), 200, scrollable: listaDelPeriodo);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('periodo_vendedor_VEND01')),
+          matching: find.textContaining('en efectivo'),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('tocar un día abre el tablero completo de ese día, y Hoy regresa',

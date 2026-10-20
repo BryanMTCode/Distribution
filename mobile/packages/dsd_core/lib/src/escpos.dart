@@ -175,6 +175,21 @@ List<int> codificar(String texto, {TablaDeCodigos tabla = TablaDeCodigos.pc437})
 int ancho(String texto, {TablaDeCodigos tabla = TablaDeCodigos.pc437}) =>
     codificar(texto, tabla: tabla).length;
 
+/// Una imagen de un bit por punto: lo que imprime `GS v 0` (ADR 0002 §155).
+///
+/// Cada renglón ocupa `bytesPorRenglon` bytes; el bit más alto de cada byte es
+/// el punto de la izquierda, y un 1 es un punto negro.
+class ImagenMonocroma {
+  const ImagenMonocroma({required this.ancho, required this.alto, required this.puntos});
+
+  /// En puntos de la cabeza (384 caben en 58 mm).
+  final int ancho;
+  final int alto;
+  final List<int> puntos;
+
+  int get bytesPorRenglon => (ancho + 7) ~/ 8;
+}
+
 /// Arma el flujo de bytes de un ticket.
 ///
 /// Cada método devuelve `this` para poder encadenar, que es como se lee mejor un
@@ -285,6 +300,27 @@ class ConstructorEscPos {
     return linea('${' ' * izq}$texto');
   }
 
+  /// `GS v 0 m xL xH yL yH d…` — una imagen de puntos, en tamaño normal.
+  ///
+  /// La centra `ESC a 1`, como al texto. Va en un solo comando y no en tiras
+  /// (`ESC *`) porque las térmicas de ruta lo entienden todas, y así la vista
+  /// previa y el margen (`conMargenIzquierdo`) saben dónde termina.
+  ConstructorEscPos imagen(ImagenMonocroma imagen) {
+    final porRenglon = imagen.bytesPorRenglon;
+    if (imagen.puntos.length != porRenglon * imagen.alto) {
+      throw ArgumentError(
+        'la imagen dice ${imagen.ancho}×${imagen.alto} y trae ${imagen.puntos.length} bytes',
+      );
+    }
+    _bytes.addAll([
+      _gs, 0x76, 0x30, 0x00,
+      porRenglon & 0xFF, (porRenglon >> 8) & 0xFF,
+      imagen.alto & 0xFF, (imagen.alto >> 8) & 0xFF,
+      ...imagen.puntos,
+    ]);
+    return this;
+  }
+
   /// `ESC d n` — avanza n líneas. Es lo que deja papel para cortar a mano.
   ConstructorEscPos avanzar(int lineas) {
     if (lineas < 0 || lineas > 255) {
@@ -355,6 +391,13 @@ int _largoDelComando(List<int> b, int i) {
     };
   }
   if (b[i] == _gs) {
+    // `GS v 0`: la imagen trae sus puntos detrás, y entre ellos puede haber un
+    // 1B 40 que no es un `ESC @`. Se salta entera.
+    if (siguiente == 0x76 && i + 7 < b.length) {
+      final porRenglon = b[i + 4] | (b[i + 5] << 8);
+      final renglones = b[i + 6] | (b[i + 7] << 8);
+      return hasta(8 + porRenglon * renglones);
+    }
     return switch (siguiente) {
       0x21 => hasta(3),
       0x56 => hasta(i + 2 < b.length && (b[i + 2] == 0x41 || b[i + 2] == 0x42) ? 4 : 3),

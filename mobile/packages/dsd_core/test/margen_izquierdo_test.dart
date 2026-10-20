@@ -96,4 +96,35 @@ void main() {
       expect(l.columnasOcupadas, lessThanOrEqualTo(30), reason: l.texto);
     }
   });
+
+  test('una imagen que trae un 1B 40 entre sus puntos no se toma por ESC @ (§155)', () {
+    // Los puntos de la imagen son datos: un 1B 40 ahí es parte del dibujo. Si el
+    // margen se metiera en medio, la imagen se corre y el resto del ticket sale
+    // como basura.
+    const imagen = ImagenMonocroma(ancho: 16, alto: 2, puntos: [0x1B, 0x40, 0x1B, 0x40]);
+    final bytes = (ConstructorEscPos()
+          ..inicializar()
+          ..imagen(imagen)
+          ..linea('fin'))
+        .bytes;
+    final conMargen = conMargenIzquierdo(bytes, 24);
+    // Un solo margen, el del ESC @ de verdad.
+    final margen = margenIzquierdo(24);
+    var veces = 0;
+    for (var i = 0; i + margen.length <= conMargen.length; i++) {
+      if (List.generate(margen.length, (k) => conMargen[i + k]).join(',') == margen.join(',')) {
+        veces++;
+      }
+    }
+    expect(veces, 1);
+    expect(conMargen.length, bytes.length + margen.length);
+    expect(decodificar(conMargen).lineas.map((l) => l.texto), ['[logo]', 'fin']);
+  });
+
+  test('una imagen que no mide lo que dice no se arma', () {
+    expect(
+      () => ConstructorEscPos().imagen(const ImagenMonocroma(ancho: 16, alto: 2, puntos: [0])),
+      throwsArgumentError,
+    );
+  });
 }

@@ -139,6 +139,9 @@ la bodega sube cuando alguien la cuenta.
 | **El vendedor imprime el ticket de su solicitud de carga**, como el del corte (§150) | ✅ 1 de widget |
 | **La carga y el corte son del día en que se hacen**: la de la noche del lunes queda el lunes («para vender el martes…»), el corte de las 11 p. m. es de ese día, y los cortes van como las cargas, con los camiones «Sin cortar» dentro de su día (§151) | ✅ 2 pruebas del servidor, 3 de Dart, 4 de widget |
 | **La barra del gerente**: Clientes se abre desde Empresa (con botones si el resumen no llega) y Mayoreo sale de Almacén a su propia pestaña; Almacén se queda con existencias, cargas y corte (§152) | ✅ 3 de widget |
+| **La tienda que ya compró, en verde** en la lista de la ruta del vendedor y en «Su ruta» del gerente; la visitada sin venta en gris; las que faltan, rojas con su número (§153) | ✅ 3 de widget |
+| **Todo en efectivo**: la app del gerente y el dashboard ya no repiten lo vendido como «en efectivo»; la transferencia de un teléfono viejo se separa solo si llega (§154) | ✅ 3 de widget, 2 del servidor |
+| **El ticket con el logo, el domicilio del local y el RFC**: el parche en blanco y negro con `GS v 0`, que el margen de la EC-MP200 no rompe; también en la página de prueba (§155) | ✅ 6 de Dart |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -162,7 +165,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1526 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **685 de Dart** y **361 de widget**, todas en verde.
+**1528 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **691 de Dart** y **364 de widget**, todas en verde.
 
 ## Stack
 

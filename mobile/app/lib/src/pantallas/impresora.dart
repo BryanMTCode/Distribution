@@ -35,6 +35,9 @@ List<int> ticketDePrueba({
   final b = ConstructorEscPos(columnas: columnas)
     ..inicializar()
     ..alinear(Alineacion.centro)
+    // El logo del ticket (ADR 0002 §155): si sale aquí, sale en la remisión.
+    ..imagen(logoDelTicket)
+    ..linea()
     ..negrita(true)
     ..tamano(ancho: 2, alto: 2)
     ..linea('PRUEBA')

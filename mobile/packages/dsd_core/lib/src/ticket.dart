@@ -29,6 +29,7 @@ library;
 
 import 'dinero.dart';
 import 'escpos.dart';
+import 'logo_del_ticket.dart';
 import 'forma_de_pago.dart';
 import 'venta.dart';
 
@@ -43,17 +44,38 @@ class DatosDelNegocio {
     this.telefono,
     this.rfc,
     this.leyendaFinal,
+    this.logo,
   });
 
   final String nombre;
+
+  /// Un renglón por línea (`\n`): la calle, el local, la colonia… En 32
+  /// columnas, partirla por palabras dejaba «Local 11 interior» a media línea.
   final String? direccion;
   final String? telefono;
   final String? rfc;
+
+  /// El logo, arriba de todo (ADR 0002 §155). Nulo, sin logo.
+  final ImagenMonocroma? logo;
 
   /// Lo que se imprime al pie, después del aviso no fiscal. Sirve para el
   /// horario de atención o el teléfono de aclaraciones.
   final String? leyendaFinal;
 }
+
+/// El encabezado de Distribuciones SE (ADR 0002 §155): el logo, la dirección
+/// del local en el Mercado de Abastos y el RFC.
+const negocioDistribucionesSE = DatosDelNegocio(
+  nombre: 'Distribuciones SE',
+  // Solo lo necesario para encontrar el local («obviamente solo pon el
+  // domicilio necesario»).
+  direccion: 'Mercado de Abastos, Local 11\n'
+      'Col. Venadillo, C.P. 82129\n'
+      'Mazatlán, Sinaloa',
+  rfc: 'TAVE760701597',
+  leyendaFinal: 'Gracias por su compra',
+  logo: logoDelTicket,
+);
 
 /// Quién atendió y a quién.
 class DatosDeLaVisita {
@@ -106,9 +128,13 @@ List<int> ticketDeVenta(
 }
 
 void _encabezado(ConstructorEscPos t, DatosDelNegocio negocio, {required int copia}) {
-  t
-    ..alinear(Alineacion.centro)
-    ..negrita(true);
+  t.alinear(Alineacion.centro);
+  if (negocio.logo != null) {
+    t
+      ..imagen(negocio.logo!)
+      ..linea();
+  }
+  t.negrita(true);
 
   // El nombre en tamaño doble **solo si cabe en una línea**. En 58 mm el tamaño
   // doble da 16 columnas, y "Distribuidora El Ñandú" son 22: partido en dos
@@ -125,7 +151,11 @@ void _encabezado(ConstructorEscPos t, DatosDelNegocio negocio, {required int cop
 
   t.negrita(false);
 
-  if (negocio.direccion != null) t.parrafo(negocio.direccion!);
+  if (negocio.direccion != null) {
+    for (final renglon in negocio.direccion!.split('\n')) {
+      t.parrafo(renglon);
+    }
+  }
   if (negocio.telefono != null) t.linea('Tel. ${negocio.telefono}');
   if (negocio.rfc != null) t.linea('RFC ${negocio.rfc}');
 

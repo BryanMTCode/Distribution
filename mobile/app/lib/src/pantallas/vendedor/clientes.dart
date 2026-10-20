@@ -20,6 +20,7 @@ import '../../estado/alta.dart';
 import '../../estado/carrito.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
+import '../../marca.dart';
 import '../impresora.dart';
 import 'alta_cliente.dart';
 import 'camion.dart';
@@ -637,12 +638,19 @@ class _Renglon extends StatelessWidget {
     return ListTile(
       key: Key('cliente_${cliente.id}'),
       // Visitado hoy: la palomita en lugar del número de orden. Es lo que el
-      // vendedor busca con la vista al recorrer la lista a media ruta.
+      // vendedor busca con la vista al recorrer la lista a media ruta. La que ya
+      // le compró va en verde y la visita sin venta en gris; las que faltan
+      // siguen en el rojo de la marca, con su número (ADR 0002 §153).
       leading: cliente.visitadoHoy
           ? CircleAvatar(
               key: Key('visitado_${cliente.id}'),
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: const Icon(Icons.check, size: 20),
+              backgroundColor: cliente.vendidoHoy ? colorDeVendida : colorDeSinVenta,
+              foregroundColor: cliente.vendidoHoy ? Colors.white : letraDeSinVenta,
+              child: Icon(
+                cliente.vendidoHoy ? Icons.check : Icons.close,
+                key: Key(cliente.vendidoHoy ? 'vendida_${cliente.id}' : 'sin_venta_${cliente.id}'),
+                size: 20,
+              ),
             )
           : CircleAvatar(
               child: Text(
