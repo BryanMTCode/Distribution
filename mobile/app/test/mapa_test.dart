@@ -3,7 +3,8 @@
 /// · Desde la lista, «Mapa»: las tiendas con ubicación como pines (las que no
 ///   tienen, no) y el vendedor como punto azul; sin el mapa de calles, el aviso
 ///   para bajarlo.
-/// · Tocar una tienda abre su ficha con la distancia, y «Guíame» va a la flecha.
+/// · Tocar una tienda abre su ficha con la distancia; «Venderle» abre su visita
+///   (§166) y «Guíame» va a la flecha.
 /// · Bajar el mapa: el avance en MB, y al terminar queda guardado y con calles.
 ///   Si llega dañado o cortado no se guarda nada; sin mapa en el servidor o sin
 ///   conexión, lo dice; en todos los casos se puede volver a intentar.
@@ -167,6 +168,26 @@ void main() {
     expect(find.text('500 m'), findsOneWidget);
   });
 
+  testWidgets('«Venderle» abre la visita de esa tienda, aunque le toque otro día',
+      (tester) async {
+    // «Que desde el mapa al dar clic a una tienda me dé la opción de venderle,
+    // para no tener que regresarme a buscarla en la pantalla principal» (§166).
+    await _entrar(tester, lecturas: [_gps(23.2449, _tiendaLng)]);
+    await _abrirMapa(tester);
+    await tester.tap(find.byKey(const Key('pin_c3')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ficha_mapa_c3')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('mapa_venderle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('ficha_mapa_c3')), findsNothing, reason: 'la ficha se cierra');
+    expect(find.byKey(const Key('campo_busqueda_catalogo')), findsOneWidget,
+        reason: 'abre el catálogo');
+    expect(find.widgetWithText(AppBar, 'Tienda Los Pinos'), findsOneWidget,
+        reason: 'la visita es de la tienda que se tocó, con sus precios');
+  });
+
   testWidgets('bajar el mapa: el avance, y queda guardado y con calles', (tester) async {
     final contenido = _archivoDePrueba(1200000);
     final fuente = _FuenteFalsa(contenido: contenido)
@@ -299,6 +320,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pin_c1')));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('mapa_venderle')), findsOneWidget);
     expect(find.byKey(const Key('mapa_guiame')), findsOneWidget);
   });
 

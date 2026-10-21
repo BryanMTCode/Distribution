@@ -398,7 +398,7 @@ async def detalle(
         {
             "cliente": cliente,
             "duplicados": duplicados,
-            "rutas": await _rutas(sesion),
+            "rutas": await _rutas(sesion, ademas=cliente["ruta_id"]),
             "listas": await _listas(sesion),
             "canales": await _canales(sesion),
             "estatus_posibles": ESTATUS,
@@ -884,14 +884,22 @@ def _volver(cliente_id: uuid.UUID, *, error: str = "", guardado: str = ""):
     )
 
 
-async def _rutas(sesion) -> list[dict]:
+async def _rutas(sesion, *, ademas: uuid.UUID | None = None) -> list[dict]:
+    """Las rutas activas, y además la que la tienda ya trae aunque esté inactiva.
+
+    Sin la suya en la lista, el formulario de la tienda la mostraba como «— sin
+    ruta —», y guardar cualquier otro dato —el nombre, el orden de visita— le
+    borraba la ruta. Una tienda sin ruta les llega a todos los teléfonos y
+    ninguno la puede vender (ADR 0002 §165).
+    """
     return (
         await sesion.execute(
             text(
                 "SELECT r.id, r.codigo, r.nombre, u.nombre AS vendedor "
                 "  FROM rutas r LEFT JOIN usuarios u ON u.id = r.vendedor_id "
-                " WHERE r.activo ORDER BY r.codigo"
-            )
+                " WHERE r.activo OR r.id = :ademas ORDER BY r.codigo"
+            ),
+            {"ademas": ademas},
         )
     ).mappings().all()
 

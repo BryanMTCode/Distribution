@@ -18,6 +18,7 @@ existiera la primera pantalla de venta.
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -269,6 +270,11 @@ FORMAS_DE_PAGO_DE_VENTA = ("efectivo", "transferencia")
 MOTIVO_LEJOS_DEL_CLIENTE = "fuera_de_geocerca"
 MOTIVO_SIN_GEOSELLO = "sin_ubicacion"
 MOTIVO_RELOJ_DESFASADO = "reloj_desfasado"
+# La tienda es de una ruta que el vendedor no tiene (ADR 0002 §165): la oficina se
+# la pasó a otra ruta, o le quitó la ruta, mientras él vendía sin señal. La venta
+# entra igual —la mercancía ya salió de SU camión y el dinero lo trae él— y queda
+# para que la oficina vea a quién le vendió.
+MOTIVO_CLIENTE_DE_OTRA_RUTA = "cliente_de_otra_ruta"
 
 
 # Más allá de esta distancia, la venta se marca. No se rechaza: el cliente pudo
@@ -368,14 +374,7 @@ async def crear_venta(
     # ------------------------------------------------------------------
     # Reglas: se MARCAN. La venta entra de todos modos.
     # ------------------------------------------------------------------
-    cliente = (
-        await sesion.execute(
-            text(
-                "SELECT ruta_id, lista_precios_id, lat, lng FROM clientes WHERE id = :id"
-            ),
-            {"id": cliente_id},
-        )
-    ).mappings().first()
+    cliente = await _cliente_del_telefono(sesion, cliente_id)
 
     if cliente is None:
         # El cliente viaja en el MISMO sobre cuando se dio de alta en la calle, y
@@ -387,10 +386,15 @@ async def crear_venta(
             f"la venta referencia un cliente que no existe: {cliente_id}",
         )
 
+    # La tienda de una ruta que el vendedor ya no tiene: se MARCA (§0.1, ADR 0002
+    # §165). Antes se rechazaba, y con RLS ni siquiera llegaba aquí: la tienda no
+    # se veía y la venta se iba a cuarentena como «cliente que no existe», con su
+    # cancelación detrás. La venta queda en la ruta del vendedor —es su camión y
+    # su corte—, así el delta le regresa a su teléfono.
+    ruta_de_la_venta = cliente["ruta_id"]
     if cliente["ruta_id"] is not None and ctx.rutas and cliente["ruta_id"] not in ctx.rutas:
-        raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, "el cliente no pertenece a la ruta del vendedor"
-        )
+        motivos.append(MOTIVO_CLIENTE_DE_OTRA_RUTA)
+        ruta_de_la_venta = _ruta_del_vendedor(ctx, datos)
 
     # La lista de precios: le falta trazabilidad, no coherencia. Se marca (ver la
     # sección "LO QUE AQUÍ NO SE PUSO" en 0012_importes_rigidos.sql).
@@ -480,7 +484,7 @@ async def crear_venta(
             # nombre de quién vende, un equipo comprometido escribiría en la ruta
             # de cualquier otro.
             "vendedor": ctx.usuario_id,
-            "ruta": cliente["ruta_id"],
+            "ruta": ruta_de_la_venta,
             "almacen": ctx.almacen_id,
             "carga": _uuid_opcional(datos, "carga_id"),
             "visita": _uuid_opcional(datos, "visita_id"),
@@ -558,6 +562,31 @@ async def crear_venta(
         )
 
     await sesion.flush()
+
+
+async def _cliente_del_telefono(sesion: AsyncSession, cliente_id: uuid.UUID):
+    """La ruta, la lista y la ubicación de la tienda a la que se le vendió.
+
+    Por `fn_cliente_del_telefono` (migración 0067) y no con un SELECT: con el rol
+    de producción, RLS solo deja ver las tiendas de las rutas del vendedor, y el
+    teléfono puede traer una que no lo es —una tienda sin ruta, que les llega a
+    todos; una que cambió de ruta mientras vendía sin señal—. El SELECT la
+    escondía y la venta salía como «un cliente que no existe» (ADR 0002 §165).
+    """
+    return (
+        await sesion.execute(
+            text("SELECT * FROM fn_cliente_del_telefono(:id)"), {"id": cliente_id}
+        )
+    ).mappings().first()
+
+
+def _ruta_del_vendedor(ctx: Contexto, datos: dict[str, Any]) -> uuid.UUID | None:
+    """La ruta del vendedor para un documento hecho en una tienda que no es suya:
+    la que dice su teléfono si de verdad la tiene, y si no, la primera que tiene."""
+    declarada = _uuid_opcional(datos, "ruta_id")
+    if declarada in ctx.rutas:
+        return declarada
+    return sorted(ctx.rutas)[0] if ctx.rutas else None
 
 
 async def _sacar_del_camion(
@@ -747,11 +776,13 @@ async def _rastro_del_telefono(
     if lat is not None and lng is not None:
         distancia = (
             await sesion.execute(
+                # La tienda por la función, no por `clientes`: con RLS, la de una
+                # tienda que el vendedor no ve salía sin distancia (§165).
                 text(
                     "SELECT round(ST_Distance("
                     "  ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,"
                     "  ST_SetSRID(ST_MakePoint(c.lng, c.lat), 4326)::geography)) "
-                    "  FROM clientes c WHERE c.id = :c AND c.lat IS NOT NULL"
+                    "  FROM fn_cliente_del_telefono(:c) c WHERE c.lat IS NOT NULL"
                 ),
                 {"lat": float(lat), "lng": float(lng), "c": cliente_id},
             )
@@ -766,6 +797,41 @@ async def _rastro_del_telefono(
         "lng": str(lng) if lng is not None else None,
         "distancia_cliente_m": int(distancia) if distancia is not None else None,
     }
+
+
+async def _la_venta_no_esta(
+    sesion: AsyncSession, ctx: Contexto, venta_id: uuid.UUID, accion: str
+) -> ErrorDeManejador:
+    """El rechazo de cancelar o modificar una venta que el servidor no tiene.
+
+    Casi siempre es que la venta misma está en cuarentena: viaja delante en la
+    cola, la rechazaron, y lo que venía detrás ya no encuentra a quién aplicarse
+    (ADR 0002 §165). Decirlo le ahorra a la oficina adivinar que «no existe» se
+    arregla reprocesando OTRA fila, y cuál. Al reprocesar esa, esta entra con ella.
+    """
+    en_cuarentena = (
+        await sesion.execute(
+            text(
+                "SELECT id FROM sync_cuarentena "
+                " WHERE estado = 'pendiente' AND dispositivo_id = :d "
+                "   AND payload -> 'operaciones' @> CAST(:op AS jsonb) "
+                " ORDER BY id DESC LIMIT 1"
+            ),
+            {
+                "d": ctx.dispositivo_id,
+                "op": json.dumps([{"tipo": "venta.crear", "entidad_id": str(venta_id)}]),
+            },
+        )
+    ).scalar_one_or_none()
+    if en_cuarentena is not None:
+        return ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            f"la venta a {accion} no existe todavía en el servidor: está en cuarentena "
+            f"(#{en_cuarentena}). Al reprocesarla, esta entra con ella: {venta_id}",
+        )
+    return ErrorDeManejador(
+        CodigoError.CONFLICTO_DE_DATOS, f"la venta a {accion} no existe: {venta_id}"
+    )
 
 
 async def _marcar_venta(sesion: AsyncSession, venta_id: uuid.UUID, motivos: list[str]) -> None:
@@ -805,9 +871,7 @@ async def cancelar_venta_del_vendedor(
 
     cabecera = await panel_ventas._cabecera(sesion, entidad_id, para_escribir=True)
     if cabecera is None:
-        raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, f"la venta a cancelar no existe: {entidad_id}"
-        )
+        raise await _la_venta_no_esta(sesion, ctx, entidad_id, "cancelar")
     if cabecera["vendedor_id"] != ctx.usuario_id:
         raise ErrorDeManejador(
             CodigoError.CONFLICTO_DE_DATOS, "la venta a cancelar es de otro vendedor"
@@ -869,9 +933,7 @@ async def modificar_venta(
     entidad_id = _uuid_obligatorio(datos, "venta_id")
     cabecera = await panel_ventas._cabecera(sesion, entidad_id, para_escribir=True)
     if cabecera is None:
-        raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, f"la venta a modificar no existe: {entidad_id}"
-        )
+        raise await _la_venta_no_esta(sesion, ctx, entidad_id, "modificar")
     if cabecera["vendedor_id"] != ctx.usuario_id:
         raise ErrorDeManejador(
             CodigoError.CONFLICTO_DE_DATOS, "la venta a modificar es de otro vendedor"
@@ -1407,11 +1469,11 @@ async def crear_no_drop(
             f"el motivo de no-drop {motivo_codigo!r} no existe en el catálogo",
         )
 
-    cliente = (
-        await sesion.execute(
-            text("SELECT ruta_id FROM clientes WHERE id = :id"), {"id": cliente_id}
-        )
-    ).mappings().first()
+    # Como la venta: la tienda se busca sin que RLS la esconda (ADR 0002 §165).
+    # Una tienda sin ruta entra; la de otra ruta se sigue rechazando aquí, porque
+    # el no-drop no lleva mercancía ni dinero, y una visita cruzada ensucia la
+    # efectividad de las dos rutas.
+    cliente = await _cliente_del_telefono(sesion, cliente_id)
     if cliente is None:
         raise ErrorDeManejador(
             CodigoError.CONFLICTO_DE_DATOS,

@@ -22,6 +22,7 @@ export 'src/dia_operativo.dart';
 export 'src/dinero.dart';
 export 'src/escpos.dart';
 export 'src/logo_del_ticket.dart';
+export 'src/lo_que_no_entro.dart';
 export 'src/esquema_al_dia.dart';
 export 'src/esquema_local.dart';
 export 'src/dispositivo_cliente.dart';

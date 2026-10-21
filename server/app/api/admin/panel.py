@@ -514,15 +514,24 @@ async def descartar_cuarentena(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    await sesion.execute(
-        text(
-            "UPDATE sync_cuarentena "
-            "   SET estado = 'descartada', resuelto_por = :quien, resuelto_en = now(), "
-            "       nota_resolucion = :nota "
-            " WHERE id = :id AND estado = 'pendiente'"
-        ),
-        {"id": id_fila, "quien": actor.usuario_id, "nota": nota.strip()},
-    )
+    from app.infra.sync.ingesta import cambios_de_sus_ventas
+
+    # Lo que venía detrás de una venta —su cancelación, sus cambios— se va con
+    # ella (ADR 0002 §165): sin la venta no tiene a qué aplicarse, y dejarlo
+    # pendiente es dejar en la lista algo que nadie puede resolver.
+    detras = await cambios_de_sus_ventas(sesion, id_fila)
+    for fila, nota_fila in [(id_fila, nota.strip())] + [
+        (d["id"], f"Se descarta con su venta (#{id_fila}): {nota.strip()}") for d in detras
+    ]:
+        await sesion.execute(
+            text(
+                "UPDATE sync_cuarentena "
+                "   SET estado = 'descartada', resuelto_por = :quien, resuelto_en = now(), "
+                "       nota_resolucion = :nota "
+                " WHERE id = :id AND estado = 'pendiente'"
+            ),
+            {"id": fila, "quien": actor.usuario_id, "nota": nota_fila},
+        )
     await sesion.commit()
     return RedirectResponse("/panel/cuarentena", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -573,6 +582,8 @@ EXPLICACION_MOTIVOS = {
     "sin_lista_de_precios": "No trae lista de precios",
     "fuera_de_geocerca": "Lejos del domicilio registrado",
     "sin_ubicacion": "Sin GPS",
+    # La tienda es de una ruta que el vendedor no tiene (ADR 0002 §165).
+    "cliente_de_otra_ruta": "Le vendió a una tienda que no es de su ruta",
     # Lo que el vendedor cambió desde el teléfono (ADR 0002 §162).
     "cancelada_por_vendedor": "La canceló el vendedor",
     "modificada_por_vendedor": "La modificó el vendedor",

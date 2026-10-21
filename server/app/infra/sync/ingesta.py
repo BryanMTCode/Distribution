@@ -57,7 +57,12 @@ log = logging.getLogger("dsd.sync")
 # recibida, y el tablero lo DICE: muestra la antigüedad de cada cifra.
 RETRASO_TABLERO_SEG = 60
 
-__all__ = ["anotar_version_de_la_app", "procesar_lote", "reprocesar_cuarentena"]
+__all__ = [
+    "anotar_version_de_la_app",
+    "cambios_de_sus_ventas",
+    "procesar_lote",
+    "reprocesar_cuarentena",
+]
 
 
 async def anotar_version_de_la_app(
@@ -415,13 +420,126 @@ async def _procesar_sobre(
 # rojo. Si no pasa, se queda pendiente con el motivo nuevo.
 
 
+# Lo que viene detrás de una venta y no se puede aplicar sin ella: su
+# cancelación y sus cambios desde el teléfono (ADR 0002 §161, §162). Si la venta
+# cae en cuarentena, ellos caen detrás con «la venta no existe» (§165).
+_CAMBIOS_DE_VENTA = {"venta.cancelar": "su cancelación", "venta.modificar": "su cambio"}
+
+
+async def cambios_de_sus_ventas(sesion: AsyncSession, id_fila: int) -> list[dict]:
+    """Las filas pendientes del mismo teléfono que cancelan o modifican una venta
+    de esta fila, en el orden en que el teléfono las encoló."""
+    payload = (
+        await sesion.execute(
+            text("SELECT payload FROM sync_cuarentena WHERE id = :id"), {"id": id_fila}
+        )
+    ).scalar_one_or_none() or {}
+    ventas = [
+        o["entidad_id"]
+        for o in payload.get("operaciones") or []
+        if o.get("tipo") == "venta.crear" and o.get("entidad_id")
+    ]
+    if not ventas:
+        return []
+    return [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text(
+                    """
+                    SELECT c.id, c.tipo
+                      FROM sync_cuarentena c
+                     WHERE c.estado = 'pendiente' AND c.id <> :id
+                       AND c.dispositivo_id = (SELECT dispositivo_id FROM sync_cuarentena
+                                                WHERE id = :id)
+                       AND EXISTS (
+                           SELECT 1 FROM jsonb_array_elements(c.payload -> 'operaciones') o
+                            WHERE (o ->> 'tipo' = 'venta.cancelar'
+                                   AND o ->> 'entidad_id' = ANY(:ventas))
+                               OR (o ->> 'tipo' = 'venta.modificar'
+                                   AND o -> 'datos' ->> 'venta_id' = ANY(:ventas)))
+                     ORDER BY (c.payload ->> 'secuencia')::bigint NULLS LAST, c.id
+                    """
+                ),
+                {"id": id_fila, "ventas": ventas},
+            )
+        ).mappings()
+    ]
+
+
 async def reprocesar_cuarentena(
     sesion: AsyncSession, id_fila: int, quien: uuid.UUID
 ) -> tuple[bool, str]:
     """Vuelve a aplicar una operación en cuarentena. Devuelve (pasó, mensaje).
 
+    Si es una venta y entra, entra también lo que venía detrás de ella —su
+    cancelación, sus cambios— (ADR 0002 §165). Sin esto la oficina tenía que dar
+    con la otra fila, y reprocesar solo la venta dejaba en el servidor vendida una
+    venta que en el teléfono ya estaba cancelada: la mercancía, fuera del camión
+    dos veces.
+
     No hace `commit`: lo hace quien llama, igual que con el push.
     """
+    detras = await cambios_de_sus_ventas(sesion, id_fila)
+    if not detras:
+        return await _reprocesar_una(sesion, id_fila, quien)
+
+    # Todo o nada: si la venta entra y su cancelación no —el día ya se liquidó,
+    # por ejemplo—, no entra ninguna. Lo contrario dejaría la venta vendida aquí y
+    # cancelada en el teléfono.
+    entraron: list[str] = []
+    fallo: tuple[dict, str, str] | None = None
+    try:
+        async with sesion.begin_nested():
+            paso, mensaje = await _reprocesar_una(sesion, id_fila, quien)
+            if paso:
+                for fila in detras:
+                    nombre = next(
+                        (v for k, v in _CAMBIOS_DE_VENTA.items() if k in fila["tipo"]),
+                        fila["tipo"],
+                    )
+                    paso_detras, mensaje_detras = await _reprocesar_una(
+                        sesion, fila["id"], quien
+                    )
+                    if not paso_detras:
+                        fallo = (fila, nombre, mensaje_detras.removeprefix(_SIGUE))
+                        raise _SeDeshace
+                    entraron.append(nombre)
+    except _SeDeshace:
+        pass
+
+    if not paso:
+        return paso, mensaje
+    if fallo is not None:
+        fila, nombre, motivo = fallo
+        # El deshacer se llevó también el motivo que se le anotó: se vuelve a poner.
+        await sesion.execute(
+            text("UPDATE sync_cuarentena SET error_mensaje = :m WHERE id = :id"),
+            {"m": motivo[:2000], "id": fila["id"]},
+        )
+        return False, (
+            f"No entró ninguna. La venta sí podía entrar, pero {nombre} (#{fila['id']}) "
+            f"no: {motivo}. Se quedan las dos en cuarentena para no dejar la venta "
+            "vendida aquí y cancelada en el teléfono."
+        )
+    return True, (
+        f"Aplicada. Con ella entró también {' y '.join(entraron)}. En el teléfono, toca "
+        "la barra roja para reintentar: el servidor le contesta que ya las tiene y se "
+        "le quita el error."
+    )
+
+
+_SIGUE = "Sigue sin poder aplicarse: "
+
+
+class _SeDeshace(Exception):
+    """Para deshacer la venta reprocesada cuando lo de detrás no puede entrar."""
+
+
+async def _reprocesar_una(
+    sesion: AsyncSession, id_fila: int, quien: uuid.UUID
+) -> tuple[bool, str]:
+    """Una sola fila de la cuarentena, con las mismas reglas que el push."""
     fila = (
         await sesion.execute(
             text(
@@ -493,7 +611,7 @@ async def reprocesar_cuarentena(
             ),
             {"c": codigo, "m": (mensaje or "")[:2000], "id": id_fila},
         )
-        return False, f"Sigue sin poder aplicarse: {mensaje}"
+        return False, f"{_SIGUE}{mensaje}"
 
     entidad = payload.get("visita_id") or operaciones[0]["entidad_id"]
     actualizadas = (

@@ -261,6 +261,7 @@ void sembrarPendienteEnCola(
   BaseLocal base, {
   int cuantos = 1,
   bool enCuarentena = false,
+  String? error,
 }) {
   for (var i = 0; i < cuantos; i++) {
     final sobre = SobreLocal(
@@ -278,9 +279,10 @@ void sembrarPendienteEnCola(
     base.db.execute(
       '''
       INSERT INTO outbox (operacion_id, tipo, entidad_id, payload, hash_payload,
-                          secuencia, visita_id, estado, intentos, creado_en)
+                          secuencia, visita_id, estado, intentos, creado_en,
+                          ultimo_error)
       VALUES (?, 'cliente.crear', ?, ?, ?, ?, ?, ?, 0,
-              '2026-09-24T09:00:00.000Z')
+              '2026-09-24T09:00:00.000Z', ?)
       ''',
       [
         sobre.operacionId,
@@ -290,6 +292,7 @@ void sembrarPendienteEnCola(
         i,
         sobre.visitaId,
         enCuarentena ? 'cuarentena' : 'pendiente',
+        error,
       ],
     );
   }

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.sync.sobres import CodigoError
 from app.infra.sync.manejadores import (
+    MOTIVO_CLIENTE_DE_OTRA_RUTA,
     MOTIVO_LEJOS_DEL_CLIENTE,
     MOTIVO_PRECIO_DESACTUALIZADO,
     MOTIVO_RELOJ_DESFASADO,
@@ -573,11 +574,15 @@ async def test_un_folio_como_string_se_rechaza(sesion: AsyncSession, escenario: 
         await aplicar(sesion, escenario, payload(escenario, folio_consecutivo="124"))
 
 
-async def test_una_venta_de_otra_ruta_se_rechaza(
+async def test_una_venta_a_una_tienda_de_otra_ruta_entra_marcada(
     sesion: AsyncSession, escenario: dict
 ):
-    """El alcance por ruta no es una regla de negocio blanda: es la frontera que
-    impide que un equipo comprometido escriba en la cartera de otro vendedor."""
+    """La tienda que la oficina pasó a otra ruta mientras el vendedor vendía sin
+    señal (ADR 0002 §165). Antes se rechazaba —y con RLS salía como «cliente que
+    no existe», con su cancelación detrás—. Pero la mercancía ya salió de SU
+    camión y el dinero lo trae él (§0.1): entra a su nombre y en su ruta, y queda
+    marcada para que la oficina vea a quién le vendió. No hay cartera que
+    proteger: toda venta es de contado (§81)."""
     otra_ruta = uuid.uuid4()
     await sesion.execute(
         text("INSERT INTO rutas(id, codigo, nombre) VALUES (:r, 'R99', 'Otra')"),
@@ -589,9 +594,14 @@ async def test_una_venta_de_otra_ruta_se_rechaza(
     )
     await sesion.commit()
 
-    with pytest.raises(ErrorDeManejador) as e:
-        await aplicar(sesion, escenario, payload(escenario))
-    assert e.value.codigo == CodigoError.CONFLICTO_DE_DATOS
+    venta_id = await aplicar(sesion, escenario, payload(escenario))
+    await sesion.commit()
+
+    venta = await leer_venta(sesion, venta_id)
+    assert venta["vendedor_id"] == escenario["vendedor"]
+    assert venta["ruta_id"] == escenario["ruta"], "la de su camión: el delta le regresa"
+    assert MOTIVO_CLIENTE_DE_OTRA_RUTA in venta["revision_motivos"]
+    assert venta["requiere_revision"] is True
 
 
 async def test_una_venta_de_un_cliente_que_no_existe_se_rechaza(

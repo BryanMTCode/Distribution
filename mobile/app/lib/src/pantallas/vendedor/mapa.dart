@@ -12,6 +12,7 @@
 ///
 /// Las tiendas van de color: las de hoy por visitar, las ya visitadas con su
 /// palomita, y las demás de la ruta en gris. Tocar una abre su ficha con
+/// «Venderle» —la visita ahí mismo, sin regresar a buscarla en la lista (§166)—,
 /// «Guíame» (la flecha de §129), «Abrir en Mapas» y su perfil. Entrando desde
 /// la guía, la tienda va marcada y una línea punteada la une con el vendedor.
 library;
@@ -36,6 +37,7 @@ import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
 import '../../estado/mapa.dart';
 import '../../estado/sesion.dart';
+import 'catalogo.dart';
 import 'guia.dart';
 import 'perfil_cliente.dart';
 import 'tema_del_mapa.dart';
@@ -580,7 +582,15 @@ class _FichaEnElMapa extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
+                // «Que desde el mapa al dar clic a una tienda me dé la opción de
+                // venderle, para no tener que regresarme a buscarla» (§166).
                 FilledButton.icon(
+                  key: const Key('mapa_venderle'),
+                  onPressed: () => abrirLaVisita(Navigator.of(context)..pop(), ref, c.id),
+                  icon: const Icon(Icons.shopping_cart_outlined),
+                  label: const Text('Venderle'),
+                ),
+                OutlinedButton.icon(
                   key: const Key('mapa_guiame'),
                   onPressed: () {
                     Navigator.of(context)

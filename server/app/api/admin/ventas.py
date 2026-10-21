@@ -680,6 +680,10 @@ async def marcar_revisada(
 
 
 async def _cabecera(sesion, venta_id: uuid.UUID, *, para_escribir: bool = False):
+    # `LEFT JOIN clientes`, no `JOIN`: el teléfono también cancela y modifica con
+    # esto, y con RLS el vendedor no ve una tienda sin ruta o de otra ruta. Con el
+    # JOIN, su propia venta salía como «la venta a cancelar no existe» (ADR 0002
+    # §165). La oficina ve todas las tiendas: para ella no cambia nada.
     return (
         await sesion.execute(
             text(
@@ -690,7 +694,7 @@ async def _cabecera(sesion, venta_id: uuid.UUID, *, para_escribir: bool = False)
                 "       k.motivo AS cancelacion_motivo, k.reingresa_stock, "
                 "       w.nombre AS cancelada_por_nombre, k.fecha_servidor AS cancelada_en "
                 "  FROM ventas v "
-                "  JOIN clientes c ON c.id = v.cliente_id "
+                "  LEFT JOIN clientes c ON c.id = v.cliente_id "
                 "  JOIN usuarios u ON u.id = v.vendedor_id "
                 "  JOIN almacenes a ON a.id = v.almacen_id "
                 "  LEFT JOIN usuarios q ON q.id = v.corregida_por "

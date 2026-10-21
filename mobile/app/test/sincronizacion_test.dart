@@ -203,7 +203,12 @@ void main() {
     await montarApp(
       tester,
       credencial: credencialDelServidor(),
-      sembrar: (base) => sembrarPendienteEnCola(base, cuantos: 1, enCuarentena: true),
+      sembrar: (base) => sembrarPendienteEnCola(
+        base,
+        cuantos: 1,
+        enCuarentena: true,
+        error: 'conflicto_de_datos: la venta referencia un cliente que no existe: c-9',
+      ),
       extras: [
         transporteProvider.overrideWithValue(TransporteDePrueba()),
         tokenProvider.overrideWith((_) => 'token-de-prueba'),
@@ -212,10 +217,23 @@ void main() {
     await entrarCon(tester, pinCorrecto);
 
     expect(textoQueContiene('1 con error'), findsOneWidget);
-    expect(textoQueContiene('toca para reintentar'), findsOneWidget,
+    expect(textoQueContiene('toca para ver por qué'), findsOneWidget,
         reason: 'si no se dice, nadie adivina que la barra se toca');
 
+    // Tocarla dice QUÉ no entró y lo que contestó el servidor (ADR 0002 §165):
+    // antes solo contaba «1 con error».
     await tester.tap(find.byKey(const Key('barra_pendientes')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('lo_que_no_entro')), findsOneWidget);
+    expect(textoQueContiene('Tienda nueva · Tienda 0'), findsOneWidget);
+    expect(
+      textoQueContiene('la venta referencia un cliente que no existe: c-9'),
+      findsOneWidget,
+    );
+    expect(textoQueContiene('conflicto_de_datos'), findsNothing,
+        reason: 'el código técnico no le dice nada al vendedor');
+
+    await tester.tap(find.byKey(const Key('reintentar_lo_que_fallo')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('barra_pendientes')), findsNothing,

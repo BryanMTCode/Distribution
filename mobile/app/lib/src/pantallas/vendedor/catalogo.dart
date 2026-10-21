@@ -30,6 +30,20 @@ import 'merma.dart';
 import 'no_drop.dart';
 import 'perfil_cliente.dart';
 
+/// Abre la visita de una tienda: fija de quién es el carrito y entra al
+/// catálogo con SUS precios. Desde la lista y desde el mapa (ADR 0002 §166): el
+/// catálogo no existe «en general», el precio depende de la lista de la tienda.
+///
+/// Recibe el navegador y no el `context`: desde el mapa se llama al cerrar la
+/// ficha, y el `context` de la ficha ya va de salida.
+void abrirLaVisita(NavigatorState navegador, WidgetRef ref, String clienteId) {
+  ref.read(clienteEnVisitaProvider.notifier).state = clienteId;
+  ref.read(busquedaCatalogoProvider.notifier).state = '';
+  navegador.push(
+    MaterialPageRoute<void>(builder: (_) => const PantallaCatalogo()),
+  );
+}
+
 class PantallaCatalogo extends ConsumerStatefulWidget {
   const PantallaCatalogo({super.key});
 

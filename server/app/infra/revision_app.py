@@ -152,6 +152,22 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+55",
             ),
             Punto(
+                "por_que_no_entro", "Por qué algo no subió",
+                "Cuando la barra de arriba diga «con error», tócala.",
+                "Dice qué documento es (la venta con su folio y su tienda) y lo que "
+                "contestó el servidor, con «Reintentar». Antes solo contaba «2 con "
+                "error» (ADR 0002 §165).",
+                desde="+56",
+            ),
+            Punto(
+                "venderle_desde_el_mapa", "Venderle desde el mapa",
+                "Abre «Mapa», toca una tienda —también una que toque otro día— y toca "
+                "«Venderle».",
+                "Abre la visita de esa tienda con sus precios, sin regresar a buscarla "
+                "en la lista (ADR 0002 §166).",
+                desde="+56",
+            ),
+            Punto(
                 "buscar_tienda", "Buscar una tienda",
                 "Escribe parte del nombre o del código en el buscador de arriba.",
                 "Encuentra la tienda aunque hoy no le toque.",
@@ -849,6 +865,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "«Historial de cambios» y queda por revisar, y el Tablero lo cuenta en "
                 "Pendientes (ADR 0002 §162).",
                 desde="+53",
+            ),
+            Punto(
+                "cuarentena_venta_y_cancelacion", "Una venta en cuarentena entra con su "
+                "cancelación",
+                "Si en Teléfonos → Cuarentena hay una venta y, detrás, su cancelación o su "
+                "cambio: toca «Ver» en la VENTA y luego «Reprocesar».",
+                "Dice «Con ella entró también su cancelación» y las dos salen de "
+                "Pendientes. La cancelación dice qué fila reprocesar. En el teléfono, la "
+                "barra roja → «Reintentar» y se le quita el error (ADR 0002 §165).",
+                desde="+56",
             ),
             Punto(
                 "panel_cancelar_venta", "Cancelar o corregir una venta",

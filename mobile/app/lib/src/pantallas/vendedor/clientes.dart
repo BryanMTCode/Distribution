@@ -17,7 +17,6 @@ import '../../datos/repo_clientes.dart';
 import '../../datos/servicio_ubicacion.dart';
 import '../../demo.dart';
 import '../../estado/alta.dart';
-import '../../estado/carrito.dart';
 import '../../estado/reloj.dart';
 import '../../estado/sesion.dart';
 import '../../estado/sincronizacion.dart';
@@ -355,19 +354,8 @@ class PantallaClientes extends ConsumerWidget {
                       final ClienteEnRuta cliente => _Renglon(
                           cliente: cliente,
                           distanciaMetros: distancias[cliente.id],
-                          // Tocar un cliente ABRE SU VISITA: fija de quién es el
-                          // carrito y entra al catálogo con SUS precios. El
-                          // catálogo no existe "en general" — el precio depende
-                          // de su lista.
-                          alTocar: () {
-                            ref.read(clienteEnVisitaProvider.notifier).state = cliente.id;
-                            ref.read(busquedaCatalogoProvider.notifier).state = '';
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const PantallaCatalogo(),
-                              ),
-                            );
-                          },
+                          // Tocar un cliente ABRE SU VISITA.
+                          alTocar: () => abrirLaVisita(Navigator.of(context), ref, cliente.id),
                         ),
                       _ => const SizedBox.shrink(),
                     },
@@ -459,7 +447,7 @@ class _BarraPendientes extends ConsumerWidget implements PreferredSizeWidget {
           Expanded(
             child: Text(
               hayErrores
-                  ? 'Por enviar: ${cola.pendientes}$cuarentena · toca para reintentar'
+                  ? 'Por enviar: ${cola.pendientes}$cuarentena · toca para ver por qué'
                   : 'Por enviar: ${cola.pendientes}',
               style: TextStyle(
                 color:
@@ -476,10 +464,70 @@ class _BarraPendientes extends ConsumerWidget implements PreferredSizeWidget {
     if (!hayErrores) {
       return Container(key: const Key('barra_pendientes'), child: contenido);
     }
+    // Tocarla enseña QUÉ no entró y por qué (ADR 0002 §165), y desde ahí se
+    // reintenta. Antes reintentaba directo: el vendedor veía «2 con error» y
+    // nadie sabía decirle qué había pasado sin entrar al panel.
     return InkWell(
       key: const Key('barra_pendientes'),
-      onTap: () => ref.read(syncProvider.notifier).reintentarLoQueFallo(),
+      onTap: () => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (_) => const _LoQueNoEntro(),
+      ),
       child: contenido,
+    );
+  }
+}
+
+/// Lo que el servidor no aceptó: cada documento con lo que contestó.
+class _LoQueNoEntro extends ConsumerWidget {
+  const _LoQueNoEntro();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final errores = documentosConError(ref.read(baseLocalProvider).db);
+    final texto = Theme.of(context).textTheme;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        child: ListView(
+          key: const Key('lo_que_no_entro'),
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Text('Lo que no entró al servidor', style: texto.titleMedium),
+            const SizedBox(height: 4),
+            const Text(
+              'Está guardado en tu teléfono: no se perdió. Esto es lo que contestó el '
+              'servidor al recibirlo.',
+            ),
+            for (final (i, e) in errores.indexed)
+              ListTile(
+                key: Key('no_entro_$i'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.error_outline),
+                title: Text(e.que),
+                subtitle: Text(e.motivo),
+              ),
+            const SizedBox(height: 8),
+            const Text(
+              'Si al reintentar sigue igual, avisa a la oficina: lo ve en el panel, '
+              'en Teléfonos → Cuarentena, y desde ahí lo hace entrar.',
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('reintentar_lo_que_fallo'),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                ref.read(syncProvider.notifier).reintentarLoQueFallo();
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -7064,3 +7064,65 @@ del martes 20.»
   §157).
 
 (versionCode 55)
+
+## 165. La venta a una tienda que el vendedor no «ve», y lo que viene detrás
+
+**Bug de campo (miércoles 21 de octubre de 2026).** «Hice una venta a un cliente
+que no me tocaba hoy y lo quise sincronizar y no me dejó, luego la cancelé y
+ahora para sincronizarlas las dos me aparecen con error.» En Teléfonos →
+Cuarentena: la venta con «la venta referencia un cliente que no existe» y su
+cancelación con «la venta a cancelar no existe».
+
+- **El día no tenía nada que ver.** El servidor no revisa qué día le toca a una
+  tienda; una venta a una tienda de la ruta que toca otro día entra igual, con
+  su cancelación (está probado por la subida real).
+- **La causa:** con el rol de producción, la seguridad por renglón (migración
+  0022) solo le deja **ver** al vendedor las tiendas de sus rutas. Su teléfono
+  puede traer otras: una tienda **sin ruta** —su delta va a todos los teléfonos—
+  o una que la oficina pasó a otra ruta mientras él vendía sin señal. El
+  teléfono no guarda la ruta de cada tienda, así que la enseña como «de tu ruta».
+  El manejador buscaba la tienda con un SELECT común, no la encontraba, y la
+  venta se iba a cuarentena como «cliente que no existe». La cancelación, detrás,
+  ya no encontraba la venta. Las pruebas corrían como dueño de las tablas, que se
+  salta esa seguridad, y por eso no se veía.
+- **El arreglo, en el servidor:**
+  - La venta y el no-drop encuentran la tienda con `fn_cliente_del_telefono`
+    (migración 0067): la ruta, la lista y la ubicación de una tienda por su id,
+    aunque el vendedor no la vea. No lista tiendas ni enseña nombres.
+  - **La tienda sin ruta** entra como siempre debió.
+  - **La de otra ruta** se marcaba como rechazo; ahora entra (§0.1: la mercancía
+    ya salió de su camión y el dinero lo trae él), en la ruta del vendedor —así
+    el delta le regresa a su teléfono— y marcada «Le vendió a una tienda que no
+    es de su ruta». El no-drop de otra ruta se sigue rechazando: no lleva
+    mercancía ni dinero.
+  - Cancelar y modificar desde el teléfono ya no pierden su venta cuando la
+    tienda no se ve (la cabecera la busca con `LEFT JOIN`).
+- **Lo que ya quedó en cuarentena se recupera de una vez:**
+  - La cancelación o el cambio de una venta en cuarentena dice qué fila
+    reprocesar: «está en cuarentena (#N). Al reprocesarla, esta entra con ella».
+  - **Reprocesar la venta** hace entrar también su cancelación y sus cambios,
+    en orden, y **todo o nada**: si alguno de detrás no puede entrar —el día ya se
+    liquidó, por ejemplo— no entra ninguno y se dice por qué. Sin esto, reprocesar
+    solo la venta la dejaba vendida en el servidor y cancelada en el teléfono.
+  - **Descartar la venta** descarta también lo que venía detrás, con la nota
+    «Se descarta con su venta (#N)».
+- **El teléfono dice por qué** (versionCode 56): tocar la barra roja ya no
+  reintenta a ciegas; enseña cada documento que no entró —«Venta VEND01-000124 ·
+  Abarrotes Doña Mary»— con lo que contestó el servidor, y desde ahí
+  «Reintentar».
+- **Una forma de quedarse sin ruta, cerrada:** el formulario de la tienda en el
+  panel solo listaba rutas activas; con la suya inactiva salía «— sin ruta —», y
+  guardar cualquier otro dato le borraba la ruta. Ahora lista también la suya.
+
+## 166. Venderle a una tienda desde el mapa
+
+«Quiero también que desde el mapa al dar clic a una tienda me dé la opción de
+venderle a esa, para no tener que regresarme a buscarla en la pantalla
+principal.»
+
+- La ficha de la tienda en el mapa trae **«Venderle»**, primero: abre su visita
+  con sus precios, igual que tocarla en la lista. Sirve también con una tienda
+  que toca otro día.
+- «Guíame», «Ruta por calles» y «Perfil» siguen ahí.
+
+(versionCode 56)
