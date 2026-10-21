@@ -27,6 +27,7 @@ import '../../marca.dart';
 import '../canceladas.dart';
 import '../familias.dart';
 import 'clientes_oficina.dart';
+import 'mapa_de_rutas.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 
@@ -145,6 +146,14 @@ class _EstadoVendedores extends ConsumerState<PantallaVendedores> {
       appBar: AppBar(
         title: Text(widget.desactivados ? 'Vendedores desactivados' : 'Vendedores'),
         actions: [
+          IconButton(
+            key: const Key('abrir_mapa_de_rutas'),
+            tooltip: 'Mapa de rutas',
+            icon: const Icon(Icons.route_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PantallaMapaDeRutas()),
+            ),
+          ),
           IconButton(
             tooltip: 'Volver a consultar',
             icon: const Icon(Icons.refresh),
@@ -347,6 +356,19 @@ class _EstadoVendedor extends ConsumerState<PantallaVendedor>
           key: const Key('pantalla_vendedor'),
           appBar: AppBar(
             title: Text(widget.nombre),
+            actions: [
+              // Su ruta en el mapa, del día que se elija (ADR 0002 §168).
+              IconButton(
+                key: const Key('abrir_mapa_de_su_ruta'),
+                tooltip: 'Su ruta en el mapa',
+                icon: const Icon(Icons.route_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PantallaMapaDeRutas(vendedorId: widget.vendedorId),
+                  ),
+                ),
+              ),
+            ],
             bottom: const TabBar(
               tabs: [
                 Tab(key: Key('pestana_movimientos'), text: 'Movimientos'),

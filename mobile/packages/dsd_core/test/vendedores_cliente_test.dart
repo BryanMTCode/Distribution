@@ -245,6 +245,30 @@ void main() {
     expect(r.sinUbicacion, 1);
   });
 
+  test('para el mapa de rutas: dónde está cada tienda y cuáles tocan esa semana (§168)',
+      () async {
+    final t = _Transporte(200, {
+      'vendedor': 'Juan Pérez', 'rutas': ['R1101'], 'dia': 1, 'fecha': '2026-10-12',
+      'es_hoy': true, 'sin_ubicacion': 0, 'dias': <Object?>[],
+      'tiendas': [
+        {'id': 'c1', 'codigo': '100', 'nombre': 'OLAS ALTAS', 'direccion': null,
+         'ruta': 'R1101', 'orden': 1, 'con_ubicacion': true, 'semanas': [1, 3],
+         'lat': '23.2329000', 'lng': '-106.4062000'},
+        {'id': 'c2', 'codigo': '900', 'nombre': 'DE OTRA RUTA', 'direccion': null,
+         'ruta': 'R1107', 'orden': null, 'con_ubicacion': false, 'semanas': <int>[],
+         'visita': 'venta', 'importe': '90.00', 'fuera_de_dia': true},
+      ],
+    });
+    final [ubicada, fuera] = (await ClienteVendedores(t).ruta('v1', fecha: '2026-10-12')).tiendas;
+    expect((ubicada.lat, ubicada.lng), (23.2329, -106.4062));
+    expect(ubicada.enElMapa, isTrue);
+    expect(ubicada.tocaLaSemanaDe('2026-10-12'), isFalse, reason: 'el 12 es la 2.ª semana');
+    expect(ubicada.tocaLaSemanaDe('2026-10-19'), isTrue, reason: 'el 19 es la 3.ª semana');
+    expect(fuera.fueraDeDia, isTrue);
+    expect(fuera.enElMapa, isFalse);
+    expect(fuera.tocaLaSemanaDe('2026-10-12'), isTrue);
+  });
+
   test('un servidor viejo no tiene la ruta: se dice que falta actualizarlo', () async {
     final t = _Transporte(404, '{"detail":"Not Found"}');
     expect(

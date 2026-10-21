@@ -446,6 +446,9 @@ class TiendaDeRuta {
     this.reprogramada = false,
     this.visita,
     this.importe,
+    this.lat,
+    this.lng,
+    this.fueraDeDia = false,
   });
 
   factory TiendaDeRuta.deJson(Map<String, Object?> j) => TiendaDeRuta(
@@ -460,6 +463,9 @@ class TiendaDeRuta {
         reprogramada: (j['reprogramada'] as bool?) ?? false,
         visita: j['visita'] as String?,
         importe: j['importe'] == null ? null : Dinero.deTexto(j['importe']! as String),
+        lat: j['lat'] == null ? null : double.parse(j['lat']!.toString()),
+        lng: j['lng'] == null ? null : double.parse(j['lng']!.toString()),
+        fueraDeDia: (j['fuera_de_dia'] as bool?) ?? false,
       );
 
   final String id;
@@ -479,6 +485,23 @@ class TiendaDeRuta {
   /// Solo si el día es hoy: 'venta', 'no_venta' o nula (todavía no).
   final String? visita;
   final Dinero? importe;
+
+  /// Dónde está, para el mapa de rutas de la oficina (ADR 0002 §168). Nulas si
+  /// todavía no tiene ubicación; un servidor viejo no las manda.
+  final double? lat;
+  final double? lng;
+
+  /// Ese día no le tocaba ni estaba reagendada, y aun así la visitó (§167).
+  final bool fueraDeDia;
+
+  bool get enElMapa => lat != null && lng != null;
+
+  /// Si le toca la semana del mes de [fecha] (`YYYY-MM-DD`): la ruta de un día de
+  /// la semana trae también las de cada quince días, y el mapa de una fecha solo
+  /// las de esa semana. Como `toca_visita` del servidor.
+  bool tocaLaSemanaDe(String fecha) =>
+      semanas.isEmpty || reprogramada || fueraDeDia ||
+      semanas.contains((DateTime.parse(fecha).day - 1) ~/ 7 + 1);
 }
 
 class RutaDelVendedor {

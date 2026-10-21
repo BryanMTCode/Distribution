@@ -10,8 +10,9 @@
 /// sobre un fondo liso, que ya dice qué queda cerca de qué, y arriba cómo
 /// bajarlo.
 ///
-/// Las tiendas van de color: las de hoy por visitar, las ya visitadas con su
-/// palomita, y las demás de la ruta en gris. Tocar una abre su ficha con
+/// Las tiendas van de color: las de hoy por visitar en rojo, las reagendadas
+/// para hoy en morado (§168), las ya visitadas en verde con su palomita, y las
+/// demás de la ruta en gris. Tocar una abre su ficha con
 /// «Venderle» —la visita ahí mismo, sin regresar a buscarla en la lista (§166)—,
 /// «Guíame» (la flecha de §129), «Abrir en Mapas» y su perfil. Entrando desde
 /// la guía, la tienda va marcada y una línea punteada la une con el vendedor.
@@ -37,6 +38,7 @@ import '../../datos/servicio_ubicacion.dart';
 import '../../estado/alta.dart';
 import '../../estado/mapa.dart';
 import '../../estado/sesion.dart';
+import '../../marca.dart';
 import 'catalogo.dart';
 import 'guia.dart';
 import 'perfil_cliente.dart';
@@ -276,14 +278,14 @@ class _EstadoMapa extends ConsumerState<PantallaMapa> {
               top: 8,
               left: 8,
               right: 8,
-              child: _AvisoDelMapa(estado: descarga, hayMapa: guardado != null),
+              child: AvisoDelMapa(estado: descarga, hayMapa: guardado != null),
             )
           else if (capa?.valueOrNull == null && capa?.isLoading == false)
             Positioned(
               top: 8,
               left: 8,
               right: 8,
-              child: _AvisoDelMapa(estado: descarga, danado: true),
+              child: AvisoDelMapa(estado: descarga, danado: true),
             ),
           Positioned(
             left: 8,
@@ -363,9 +365,12 @@ class _Pin extends StatelessWidget {
         ? (colores.error, Icons.location_on)
         : cliente.visitadoHoy
             ? (Colors.green.shade700, Icons.where_to_vote)
-            : cliente.tocaHoy
-                ? (colores.primary, Icons.location_on)
-                : (Colors.blueGrey.shade400, Icons.location_on);
+            // La reagendada para hoy, aparte de las de su plan (ADR 0002 §168).
+            : cliente.reprogramadaHoy
+                ? (colorDeReagendada, Icons.location_on)
+                : cliente.tocaHoy
+                    ? (colores.primary, Icons.location_on)
+                    : (Colors.blueGrey.shade400, Icons.location_on);
     return Semantics(
       button: true,
       label: cliente.nombreComercial,
@@ -431,6 +436,7 @@ class _Leyenda extends StatelessWidget {
                 runSpacing: 2,
                 children: [
                   punto(colores.primary, 'Hoy'),
+                  punto(colorDeReagendada, 'Reagendada'),
                   punto(Colors.green.shade700, 'Visitada'),
                   punto(Colors.blueGrey.shade400, 'Otro día'),
                   punto(const Color(0xFF1A73E8), 'Tú'),
@@ -449,8 +455,13 @@ class _Leyenda extends StatelessWidget {
   }
 }
 
-class _AvisoDelMapa extends ConsumerWidget {
-  const _AvisoDelMapa({required this.estado, this.hayMapa = false, this.danado = false});
+class AvisoDelMapa extends ConsumerWidget {
+  const AvisoDelMapa({
+    super.key,
+    required this.estado,
+    this.hayMapa = false,
+    this.danado = false,
+  });
 
   final EstadoDescargaDelMapa estado;
   final bool hayMapa;
@@ -564,7 +575,12 @@ class _FichaEnElMapa extends ConsumerWidget {
     final datos = [
       if (distanciaMetros != null) 'a ${distanciaEnPalabras(distanciaMetros!)}',
       if (c.codigo != null) c.codigo,
-      if (c.visitadoHoy) 'ya visitada hoy' else if (c.tocaHoy) 'le toca hoy',
+      if (c.visitadoHoy)
+        'ya visitada hoy'
+      else if (c.reprogramadaHoy)
+        'reagendada para hoy'
+      else if (c.tocaHoy)
+        'le toca hoy',
     ].whereType<String>().join(' · ');
     return SafeArea(
       child: Padding(

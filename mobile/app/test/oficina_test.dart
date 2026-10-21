@@ -108,6 +108,28 @@ class _ServidorDeOficina implements Transporte {
           'limite': 500,
           'telefonos': <Object?>[],
         },
+      // El mapa de rutas del miércoles 23 (ADR 0002 §168): cómo le fue a cada una.
+      '/v1/vendedores/v1/ruta' when parametros?['fecha'] == '2026-09-23' => {
+          'vendedor': 'Juan Pérez', 'rutas': ['R1101'], 'fecha': '2026-09-23', 'dia': 3,
+          'es_hoy': true, 'sin_ubicacion': 1, 'dias': <Object?>[],
+          'tiendas': [
+            for (final (id, orden, extra) in [
+              ('c300', 1, {'visita': 'venta', 'importe': '350.00'}),
+              ('c301', 2, {'visita': 'no_venta'}),
+              ('c302', 3, <String, Object?>{}),
+              ('c303', 1, {'reprogramada': true}),
+              ('c304', null, {'fuera_de_dia': true, 'visita': 'venta', 'importe': '90.00',
+                              'ruta': 'R1107'}),
+              // Cada quince días, la primera semana: el 23 no le toca.
+              ('c306', 4, {'semanas': [1]}),
+            ])
+              {'id': id, 'codigo': id.substring(1), 'nombre': 'TIENDA $id',
+               'direccion': null, 'ruta': 'R1101', 'orden': orden, 'con_ubicacion': true,
+               'lat': '23.24${orden ?? 9}00', 'lng': '-106.43${orden ?? 9}00', ...extra},
+            {'id': 'c305', 'codigo': '305', 'nombre': 'SIN UBICACIÓN', 'direccion': null,
+             'ruta': 'R1101', 'orden': 5, 'con_ubicacion': false},
+          ],
+        },
       '/v1/vendedores/v1/ruta' => {
           'vendedor': 'Juan Pérez', 'rutas': ['R1101'], 'fecha': '2026-09-24',
           // Sin `dia`, el de hoy: jueves 24.
@@ -510,6 +532,67 @@ void main() {
       expect(find.byKey(const Key('camion_ATUN-140')), findsNothing);
       expect(find.byKey(const Key('camion_SARD')), findsNothing);
       expect(find.byKey(const Key('camion_MARU')), findsOneWidget);
+    });
+
+    testWidgets('el mapa de rutas: un vendedor y un día, con cómo le fue a cada tienda '
+        '(ADR 0002 §168)', (tester) async {
+      final servidor = await _montar(tester);
+      tester.view.physicalSize = const Size(360, 760);
+      await tester.tap(find.byKey(const Key('boton_vendedores')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('abrir_mapa_de_rutas')));
+      await tester.pumpAndSettle();
+
+      // Abre con el primer vendedor y hoy.
+      expect(find.byKey(const Key('pantalla_mapa_de_rutas')), findsOneWidget);
+      expect(find.byKey(const Key('mapa_rutas_vendedor')), findsOneWidget);
+      expect(servidor.pedidas.last.$1, '/v1/vendedores/v1/ruta');
+      expect(servidor.pedidas.last.$2, {'fecha': '2026-09-24'});
+
+      // Ayer.
+      await tester.tap(find.byKey(const Key('boton_dia_anterior_mapa_rutas')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(servidor.pedidas.last.$1, '/v1/vendedores/v1/ruta');
+      expect(servidor.pedidas.last.$2, {'fecha': '2026-09-23'});
+      expect(
+        find.text('5 tienda(s) · 1 vendida(s) · 1 sin venta · 3 sin visitar · '
+            '1 reagendada(s) · 1 fuera de su día · 1 sin ubicación (no salen)'),
+        findsOneWidget,
+      );
+      for (final id in ['c300', 'c301', 'c302', 'c303', 'c304']) {
+        expect(find.byKey(Key('pin_ruta_$id')), findsOneWidget, reason: id);
+      }
+      expect(find.byKey(const Key('pin_ruta_c305')), findsNothing, reason: 'sin ubicación');
+      expect(find.byKey(const Key('pin_ruta_c306')), findsNothing, reason: 'no es su semana');
+      Color? color(String id) => (tester
+              .widget<DecoratedBox>(find.byKey(Key('circulo_ruta_$id')))
+              .decoration as BoxDecoration)
+          .color;
+      expect(color('c300'), colorDeVendida);
+      expect(color('c302'), rojoDistribucionesSE);
+      expect(color('c303'), colorDeReagendada);
+      // El recorrido, en el orden de su hoja.
+      expect(find.byKey(const Key('linea_de_la_ruta')), findsOneWidget);
+      expect(find.text('No se visitó'), findsOneWidget, reason: 'en la leyenda: el día ya pasó');
+
+      await tester.tap(find.byKey(const Key('pin_ruta_c304')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ficha_ruta_c304')), findsOneWidget);
+      expect(find.text('Fuera de su día · vendida \$90.00'), findsOneWidget);
+    });
+
+    testWidgets('desde un vendedor, el mapa abre con él', (tester) async {
+      final servidor = await _montar(tester);
+      await tester.tap(find.byKey(const Key('boton_vendedores')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('vendedor_VEND01')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('abrir_mapa_de_su_ruta')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pantalla_mapa_de_rutas')), findsOneWidget);
+      expect(servidor.pedidas.last.$1, '/v1/vendedores/v1/ruta');
+      expect(servidor.pedidas.last.$2, {'fecha': '2026-09-24'});
     });
 
     testWidgets('su ruta de cada día: las tiendas en orden y lo de hoy (ADR 0002 §121)',

@@ -397,6 +397,11 @@ class TiendaDeRuta(BaseModel):
     # Solo si el día es hoy: 'venta', 'no_venta' o nula (todavía no la visita).
     visita: str | None = None
     importe: Dinero | None = None
+    # Para el mapa de rutas de la oficina (ADR 0002 §168).
+    lat: Decimal | None = None
+    lng: Decimal | None = None
+    # Ese día no le tocaba ni estaba reagendada, y aun así la visitó (§167).
+    fuera_de_dia: bool = False
 
 
 class RutaDelVendedor(BaseModel):
@@ -419,7 +424,8 @@ WITH sus_rutas AS (
                         WHERE ur.ruta_id = r.id AND ur.usuario_id = :v))
 )
 SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.calle, c.numero, c.colonia,
-       sr.codigo AS ruta, c.secuencia AS orden, c.visita_reprogramada,
+       COALESCE(sr.codigo, r.codigo, '') AS ruta, sr.id IS NOT NULL AS de_sus_rutas,
+       c.secuencia AS orden, c.visita_reprogramada, c.lat, c.lng,
        (c.ubicacion IS NOT NULL OR (c.lat IS NOT NULL AND c.lng IS NOT NULL))
          AS con_ubicacion,
        COALESCE(array_agg(f.dia_semana) FILTER (WHERE f.id IS NOT NULL), '{}') AS dias,
@@ -427,10 +433,13 @@ SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.calle, c.numero, c.coloni
          AS semanas,
        bool_or(f.dia_semana = :dia AND f.semana_del_mes IS NULL) AS todas_las_semanas
   FROM clientes c
-  JOIN sus_rutas sr ON sr.id = c.ruta_id
+  LEFT JOIN sus_rutas sr ON sr.id = c.ruta_id
+  LEFT JOIN rutas r ON r.id = c.ruta_id
   LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
- WHERE c.estatus IN ('activo', 'prospecto') AND NOT c.mayoreo
- GROUP BY c.id, sr.codigo
+ WHERE (sr.id IS NOT NULL AND c.estatus IN ('activo', 'prospecto') AND NOT c.mayoreo)
+    -- Y las que visitó ese día aunque no sean de sus rutas (ADR 0002 §168).
+    OR c.id = ANY(CAST(:visitadas AS uuid[]))
+ GROUP BY c.id, sr.codigo, sr.id, r.codigo
 """
 
 
@@ -460,11 +469,8 @@ async def ruta(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "el día va de 0 a 6")
     es_hoy = dia == dia_de_hoy
 
-    filas = (
-        await sesion.execute(text(SQL_SUS_TIENDAS), {"v": vendedor_id, "dia": dia})
-    ).mappings().all()
-
     visitas: dict[uuid.UUID, tuple[str, Decimal | None]] = {}
+    reagendadas: set[uuid.UUID] = set()
     if es_hoy:
         for f in (
             await sesion.execute(
@@ -482,14 +488,36 @@ async def ruta(
             # La venta manda sobre la visita sin venta del mismo cliente.
             if f["visita"] == "venta" or f["cliente_id"] not in visitas:
                 visitas[f["cliente_id"]] = (f["visita"], f["importe"])
+        # Las reagendadas para ese día, por quien sea: `visita_reprogramada` solo
+        # guarda la última, y el mapa de un día pasado necesita las de ese día.
+        reagendadas = set(
+            (
+                await sesion.execute(
+                    text("SELECT cliente_id FROM no_drops WHERE reprogramada_para = :hoy"),
+                    {"hoy": hoy},
+                )
+            ).scalars()
+        )
+
+    filas = (
+        await sesion.execute(
+            text(SQL_SUS_TIENDAS),
+            {"v": vendedor_id, "dia": dia, "visitadas": [str(c) for c in visitas]},
+        )
+    ).mappings().all()
 
     cuenta = {d: 0 for d, _ in DIAS_DE_RUTA}
     tiendas: list[TiendaDeRuta] = []
     for f in filas:
-        for d in set(f["dias"]):
-            cuenta[d] += 1
-        reprogramada = es_hoy and f["visita_reprogramada"] == hoy
-        if dia not in f["dias"] and not reprogramada:
+        if f["de_sus_rutas"]:
+            for d in set(f["dias"]):
+                cuenta[d] += 1
+        reprogramada = es_hoy and (
+            f["visita_reprogramada"] == hoy or f["id"] in reagendadas
+        )
+        de_su_dia = f["de_sus_rutas"] and dia in f["dias"]
+        fuera_de_dia = not de_su_dia and not reprogramada and f["id"] in visitas
+        if not de_su_dia and not reprogramada and not fuera_de_dia:
             continue
         visita, importe = visitas.get(f["id"], (None, None))
         direccion = " ".join(x for x in (f["calle"], f["numero"]) if x)
@@ -505,13 +533,19 @@ async def ruta(
             con_ubicacion=f["con_ubicacion"],
             semanas=[] if f["todas_las_semanas"] or dia not in f["dias"]
             else sorted(s for s in f["semanas"] if s is not None),
-            reprogramada=reprogramada and dia not in f["dias"],
+            reprogramada=reprogramada and not de_su_dia,
             visita=visita,
             importe=importe,
+            lat=f["lat"],
+            lng=f["lng"],
+            fuera_de_dia=fuera_de_dia,
         ))
-    # Las reprogramadas para hoy no son de su recorrido: van al final.
+    # Las reprogramadas para hoy no son de su recorrido: van al final, y detrás las
+    # que visitó fuera de su día.
     tiendas.sort(
-        key=lambda t: (t.reprogramada, t.ruta, t.orden is None, t.orden or 0, t.nombre)
+        key=lambda t: (
+            t.fuera_de_dia, t.reprogramada, t.ruta, t.orden is None, t.orden or 0, t.nombre
+        )
     )
 
     rutas = list(

@@ -26,7 +26,9 @@ import 'package:dsd_app/src/datos/abridor_de_mapas.dart';
 import 'package:dsd_app/src/datos/mapa_offline.dart';
 import 'package:dsd_app/src/datos/servicio_ubicacion.dart';
 import 'package:dsd_app/src/estado/alta.dart';
+import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/estado/mapa.dart';
+import 'package:dsd_app/src/marca.dart';
 import 'package:dsd_app/src/pantallas/vendedor/guia.dart';
 import 'package:dsd_app/src/pantallas/vendedor/mapa.dart';
 import 'package:dsd_core/dsd_core.dart';
@@ -90,6 +92,7 @@ Future<(ServicioUbicacionFalso, Directory)> _entrar(
   FuenteDelMapa? fuente,
   bool conMapa = false,
   List<String>? versionesDibujadas,
+  void Function(BaseLocal base)? antes,
 }) async {
   final carpeta = Directory.systemTemp.createTempSync('mapa_de_prueba');
   addTearDown(() => carpeta.deleteSync(recursive: true));
@@ -111,6 +114,7 @@ Future<(ServicioUbicacionFalso, Directory)> _entrar(
       base.db.execute(
         "UPDATE clientes SET plan_visita = '[{\"dia\":4,\"semana\":null}]' WHERE id = 'c1'",
       );
+      antes?.call(base);
     },
     extras: [
       servicioUbicacionProvider.overrideWithValue(gps),
@@ -186,6 +190,33 @@ void main() {
         reason: 'abre el catálogo');
     expect(find.widgetWithText(AppBar, 'Tienda Los Pinos'), findsOneWidget,
         reason: 'la visita es de la tienda que se tocó, con sus precios');
+  });
+
+  testWidgets('la reagendada para hoy va en morado, aparte de las de su plan (§168)',
+      (tester) async {
+    // «Quiero que en el mapa de los vendedores las reagendadas que toquen ese día
+    // se marquen de un color especial.» Los Pinos no toca hoy (jueves 24), pero
+    // pidió que se volviera hoy.
+    await _entrar(tester, lecturas: [_gps(23.2449, _tiendaLng)], antes: (base) {
+      base.db.execute(
+        "UPDATE clientes SET visita_reprogramada = '2026-09-24' WHERE id = 'c3'",
+      );
+    });
+    await _abrirMapa(tester);
+
+    Color? colorDe(String id) => tester
+        .widget<Icon>(find.descendant(of: find.byKey(Key(id)), matching: find.byType(Icon)))
+        .color;
+    expect(colorDe('pin_c3'), colorDeReagendada);
+    expect(colorDe('pin_c1'), rojoDistribucionesSE, reason: 'la de su plan sigue en rojo');
+    expect(
+      find.descendant(of: find.byKey(const Key('mapa_leyenda')), matching: find.text('Reagendada')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('pin_c3')));
+    await tester.pumpAndSettle();
+    expect(textoQueContiene('reagendada para hoy'), findsOneWidget);
   });
 
   testWidgets('bajar el mapa: el avance, y queda guardado y con calles', (tester) async {

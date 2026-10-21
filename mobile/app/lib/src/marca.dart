@@ -22,6 +22,10 @@ const nombreDeLaEmpresa = 'Distribuciones SE';
 /// (ADR 0002 §153).
 final colorDeVendida = Colors.green.shade600;
 
+/// La tienda reagendada para hoy («Ven mañana», §103): morado, para distinguirla
+/// en el mapa de las que tocan por su plan (rojo) (ADR 0002 §168).
+const colorDeReagendada = Color(0xFF7B1FA2);
+
 /// La visitada sin venta (no-drop o devolución): gris.
 final colorDeSinVenta = Colors.blueGrey.shade100;
 final letraDeSinVenta = Colors.blueGrey.shade800;

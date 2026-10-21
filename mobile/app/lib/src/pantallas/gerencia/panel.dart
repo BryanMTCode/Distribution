@@ -41,6 +41,7 @@ import '../../estado/tablero.dart';
 import 'comunes.dart';
 import 'periodo.dart';
 import 'mapa.dart';
+import 'mapa_de_rutas.dart';
 import 'objetivos.dart';
 
 class PantallaGerencia extends ConsumerStatefulWidget {
@@ -366,6 +367,16 @@ class _Cuerpo extends StatelessWidget {
           ),
           icon: const Icon(Icons.place_outlined),
           label: const Text('Ver el mapa del día'),
+        ),
+        const SizedBox(height: 8),
+        // Un vendedor y un día, con sus tiendas en el mapa (ADR 0002 §168).
+        OutlinedButton.icon(
+          key: const Key('boton_mapa_de_rutas'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PantallaMapaDeRutas()),
+          ),
+          icon: const Icon(Icons.route_outlined),
+          label: const Text('Mapa de rutas'),
         ),
         const SizedBox(height: 32),
       ],

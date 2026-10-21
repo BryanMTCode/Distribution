@@ -171,3 +171,54 @@ async def test_solo_la_oficina_y_un_dia_que_existe(cliente, sesion, semilla, rut
     assert r.status_code == 422
     r = await cliente.get(f"/v1/vendedores/{uuid.uuid4()}/ruta", headers=cab)
     assert r.status_code == 404
+
+
+async def test_para_el_mapa_de_rutas(cliente, sesion, semilla, ruta_de_juan):
+    """El mapa de rutas de la oficina (ADR 0002 §168): la ubicación de cada tienda;
+    la reagendada para ese día aunque después se reagendara a otro (la de un día
+    pasado); y la que visitó ese día fuera de su plan, también de otra ruta."""
+    ids = ruta_de_juan
+    await _visitas_del_lunes(sesion, semilla, ids)
+    # EL FARO (martes) se reagendó para el lunes 12 y luego otra vez para el 19:
+    # `visita_reprogramada` ya dice 19, pero el lunes 12 sí le tocaba.
+    dispositivo = (
+        await sesion.execute(text("SELECT id FROM dispositivos LIMIT 1"))
+    ).scalar_one()
+    for (fecha, para) in ((date(2026, 10, 9), LUNES), (LUNES, date(2026, 10, 19))):
+        await sesion.execute(
+            text(
+                "INSERT INTO no_drops (id, dispositivo_id, folio_consecutivo, cliente_id, "
+                "  vendedor_id, ruta_id, motivo_codigo, fecha_dispositivo, fecha_operativa, "
+                "  reprogramada_para) "
+                "VALUES (:id, :d, :n, :c, :v, :r, 'CERRADO', now(), :f, :p)"
+            ),
+            {"id": uuid.uuid4(), "d": dispositivo, "n": 10 + fecha.day, "c": ids["faro"],
+             "v": semilla["vendedor"], "r": semilla["ruta"], "f": fecha, "p": para},
+        )
+    # Y le vendió a DE OTRA RUTA, que no es suya ni le tocaba.
+    await sesion.execute(
+        text(
+            "INSERT INTO ventas (id, dispositivo_id, folio_consecutivo, folio_local, cliente_id, "
+            "  vendedor_id, ruta_id, almacen_id, tipo, subtotal, total, fecha_dispositivo, "
+            "  fecha_operativa) "
+            "VALUES (:id, :d, 2, 'VEND01-000002', :c, :v, :r, :a, 'contado', 90, 90, now(), :f)"
+        ),
+        {"id": uuid.uuid4(), "d": dispositivo, "c": ids["ajena"], "v": semilla["vendedor"],
+         "r": semilla["ruta"], "a": semilla["camion"], "f": LUNES},
+    )
+    await sesion.commit()
+    cab = await _cab(cliente)
+
+    cuerpo = (await cliente.get(
+        f"/v1/vendedores/{semilla['vendedor']}/ruta?fecha=2026-10-12", headers=cab
+    )).json()
+
+    por_codigo = {t["codigo"]: t for t in cuerpo["tiendas"]}
+    assert list(por_codigo) == ["101", "100", "102", "103", "106"]
+    assert (por_codigo["101"]["lat"], por_codigo["101"]["lng"]) == ("23.2000000", "-106.4000000")
+    assert por_codigo["100"]["lat"] is None
+    assert por_codigo["102"]["reprogramada"], "reagendada para ese día, aunque luego a otro"
+    ajena = por_codigo["106"]
+    assert ajena["fuera_de_dia"] and ajena["visita"] == "venta" and ajena["ruta"] == "R09"
+    # La cuenta de cada día sigue siendo la de sus rutas.
+    assert [(d["etiqueta"], d["tiendas"]) for d in cuerpo["dias"]][0] == ("Lun", 2)

@@ -7141,7 +7141,37 @@ otros días pero se reagendaron esa semana para ese día.»
 - Lo decide el servidor al recibir la venta, con `fn_le_toca_visita` (migración
   0067): el plan que la tienda tiene, más las visitas reagendadas para ese día
   por cualquier vendedor. Las ventas que ya entraron antes de esto no se marcan.
-- **En el teléfono no cambia nada:** la tienda reagendada ya salía en «Hoy» y,
-  en el mapa, en rojo como las del día, hasta que se visita (verde).
+- **En el teléfono no cambia nada por esto:** la tienda reagendada ya salía en
+  «Hoy»; en el mapa, ahora con su propio color (§168).
+
+## 168. Las reagendadas en morado, y el mapa de rutas de la oficina
+
+«Quiero que en el mapa de los vendedores las reagendadas que toquen ese día se
+marquen de un color especial, además que en la app del gerente haya un mapa que
+me permita elegir el conductor y día para ver la ruta.»
+
+- **En el mapa del vendedor**, la tienda reagendada para hoy («Ven mañana»,
+  «Otro día») va en **morado**, aparte del rojo de las que tocan por su plan; en
+  la leyenda, «Reagendada», y en su ficha «reagendada para hoy». Al visitarla se
+  pone verde como las demás. En la lista, su aviso «Te pidió que volvieras hoy»
+  también va en morado.
+- **El mapa de rutas** (app de gerencia: Tablero → «Mapa de rutas», Vendedores →
+  el icono de ruta, o desde un vendedor → «Su ruta en el mapa»):
+  - Se elige el **vendedor** y el **día** —‹ › y el calendario, hacia atrás o
+    hacia adelante—.
+  - Salen las tiendas que le tocan ese día, con su número en la hoja y unidas por
+    una línea punteada en ese orden; las de cada quince días, solo su semana.
+  - Cada una del color de cómo le fue: **verde** vendida, **gris** visitada sin
+    venta, **rojo** por visitar (o «no se visitó», si el día ya pasó), **morado**
+    reagendada para ese día y **verde azulado** las que visitó fuera de su día
+    (§167), también de otra ruta. Tocarla dice cuál es, su número y cuánto se le
+    vendió.
+  - Arriba, la cuenta: «5 tienda(s) · 1 vendida(s) · 1 sin venta · 3 sin visitar
+    · 1 reagendada(s) · 1 fuera de su día · 1 sin ubicación (no salen)».
+  - Las calles son las del mapa de Mazatlán que el teléfono baja una vez (§130);
+    sin él, las tiendas se ven sobre un fondo liso y arriba sale cómo bajarlo.
+- **En el servidor**, la ruta del vendedor (`/v1/vendedores/{id}/ruta`) trae la
+  ubicación de cada tienda, las reagendadas para esa fecha —aunque después se
+  reagendaran a otra— y las que visitó ese día fuera de su plan.
 
 (versionCode 56)

@@ -160,6 +160,13 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+56",
             ),
             Punto(
+                "reagendada_en_morado", "La reagendada, en morado en el mapa",
+                "Con una tienda reagendada para hoy («Ven mañana» ayer), abre «Mapa».",
+                "Esa tienda va en morado —«Reagendada» en la leyenda— y las de tu plan "
+                "en rojo; al visitarla se pone verde (ADR 0002 §168).",
+                desde="+56",
+            ),
+            Punto(
                 "venderle_desde_el_mapa", "Venderle desde el mapa",
                 "Abre «Mapa», toca una tienda —también una que toque otro día— y toca "
                 "«Venderle».",
@@ -548,6 +555,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "mapa_del_dia", "El mapa del día",
                 "En el Tablero, «Ver el mapa del día».",
                 "Las tiendas del día sobre el lienzo, con su leyenda.",
+            ),
+            Punto(
+                "mapa_de_rutas", "El mapa de rutas",
+                "En el Tablero, «Mapa de rutas» (o en Vendedores, el icono de ruta). "
+                "Elige un vendedor y muévete de día con ‹ › o el calendario.",
+                "Sus tiendas de ese día en el mapa, con su número y una línea en el orden "
+                "de su hoja; verde vendida, gris sin venta, rojo por visitar, morado "
+                "reagendada, verde azulado fuera de su día. Arriba la cuenta, y tocar una "
+                "tienda dice cuánto se le vendió (ADR 0002 §168).",
+                desde="+56",
             ),
             Punto(
                 "barra_por_vista", "La barra de avance por Hoy, Semana o Mes",

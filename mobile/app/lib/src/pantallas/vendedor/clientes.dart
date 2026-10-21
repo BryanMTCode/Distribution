@@ -804,8 +804,11 @@ class _Renglon extends StatelessWidget {
         Text(
           aviso,
           key: Key('reprogramada_${cliente.id}'),
+          // El morado de la reagendada, como en el mapa (ADR 0002 §168).
           style: TextStyle(
-            color: Theme.of(context).colorScheme.primary,
+            color: cliente.reprogramadaHoy
+                ? colorDeReagendada
+                : Theme.of(context).colorScheme.primary,
             fontWeight: FontWeight.w600,
           ),
         ),
