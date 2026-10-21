@@ -275,6 +275,10 @@ MOTIVO_RELOJ_DESFASADO = "reloj_desfasado"
 # entra igual —la mercancía ya salió de SU camión y el dinero lo trae él— y queda
 # para que la oficina vea a quién le vendió.
 MOTIVO_CLIENTE_DE_OTRA_RUTA = "cliente_de_otra_ruta"
+# La tienda no tocaba ese día: ni por su plan ni porque se reagendara para ese día
+# (ADR 0002 §167). Entra igual —el cliente que llama pidiendo mercancía existe—,
+# y la oficina la distingue de la venta del recorrido.
+MOTIVO_FUERA_DE_SU_DIA = "fuera_de_su_dia"
 
 
 # Más allá de esta distancia, la venta se marca. No se rechaza: el cliente pudo
@@ -452,6 +456,20 @@ async def crear_venta(
         motivos.append(MOTIVO_RELOJ_DESFASADO)
 
     fecha_operativa = _texto(datos, "fecha_operativa", obligatorio=True)
+
+    # ¿Le tocaba ese día? (ADR 0002 §167). Una fecha mal escrita no se juzga aquí:
+    # la rechaza la columna al insertar, como siempre.
+    try:
+        dia_de_la_venta = date.fromisoformat(fecha_operativa)
+    except ValueError:
+        dia_de_la_venta = None
+    if dia_de_la_venta is not None and (
+        await sesion.execute(
+            text("SELECT fn_le_toca_visita(:c, :d)"),
+            {"c": cliente_id, "d": dia_de_la_venta},
+        )
+    ).scalar_one() is False:
+        motivos.append(MOTIVO_FUERA_DE_SU_DIA)
 
     await sesion.execute(
         text(

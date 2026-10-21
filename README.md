@@ -153,6 +153,7 @@ la bodega sube cuando alguien la cuenta.
 | **«Hoy» cambia solo** (§164): a medianoche y al volver a la app; antes «Mi día» se quedaba en el día en que se abrió | ✅ 2 de la app |
 | **La venta a una tienda que el vendedor no «ve»** (§165): una tienda sin ruta, o que cambió de ruta mientras vendía sin señal, ya no manda su venta a cuarentena como «cliente que no existe» —ni su cancelación detrás—; reprocesar la venta hace entrar lo que venía detrás (todo o nada), y el teléfono dice por qué algo no subió | ✅ 7 pruebas del servidor (con RLS), 3 de Dart, 1 de widget |
 | **Venderle desde el mapa** (§166): la ficha de la tienda trae «Venderle» | ✅ 1 de widget |
+| **Ventas fuera de su día** (§167): la venta a una tienda que no tocaba ese día —ni por su plan ni reagendada para él— entra marcada, con su pestaña en Ventas | ✅ 5 pruebas del servidor |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}Ventas{% endblock %}
 {% block contenido %}
-<h1>{% if viendo_canceladas %}Ventas canceladas{% elif solo_revision %}Ventas por revisar{% else %}Ventas recibidas{% endif %}</h1>
+<h1>{% if viendo_canceladas %}Ventas canceladas{% elif viendo_fuera_de_dia %}Ventas fuera de su día{% elif solo_revision %}Ventas por revisar{% else %}Ventas recibidas{% endif %}</h1>
 <p class="subtitulo">
   El servidor nunca rechaza una venta hecha en la calle: la acepta y la marca.
   <strong>Esta pantalla es la otra mitad de esa regla</strong> — marcar sin que
@@ -12,10 +12,13 @@
   <button type="submit" name="solo_revision" value="1"
           class="{% if not solo_revision %}secundario{% endif %}">Por revisar</button>
   <button type="submit" name="solo_revision" value="0"
-          class="{% if solo_revision or viendo_canceladas %}secundario{% endif %}">Todas</button>
+          class="{% if solo_revision or viendo_canceladas or viendo_fuera_de_dia %}secundario{% endif %}">Todas</button>
   {# Las canceladas, aparte: no se mezclan con las que cuentan (ADR 0002 §95). #}
   <button type="submit" name="ver" value="canceladas" id="ver_canceladas"
           class="{% if not viendo_canceladas %}secundario{% endif %}">Canceladas ({{ cuantas_canceladas }})</button>
+  {# Las de tiendas que no tocaban ese día ni estaban reagendadas para él (§167). #}
+  <button type="submit" name="ver" value="fuera_de_dia" id="ver_fuera_de_dia"
+          class="{% if not viendo_fuera_de_dia %}secundario{% endif %}">Fuera de su día ({{ cuantas_fuera_de_dia }})</button>
   {# Lo que cancelaron o agregaron los vendedores desde el teléfono (§162). #}
   <a href="/panel/ventas/cambios" class="boton-chico" id="ver_cambios_vendedores">Cambios de los vendedores</a>
 </form>
@@ -94,6 +97,9 @@
 <div class="vacio">
   {% if viendo_canceladas %}
     Ninguna venta cancelada.
+  {% elif viendo_fuera_de_dia %}
+    Ninguna venta fuera de su día: todas fueron a tiendas que tocaban ese día o que
+    estaban reagendadas para él.
   {% elif solo_revision %}
     Ninguna venta marcada. Todo lo que entró venía limpio.
   {% else %}

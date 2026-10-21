@@ -7125,4 +7125,23 @@ principal.»
   que toca otro día.
 - «Guíame», «Ruta por calles» y «Perfil» siguen ahí.
 
+## 167. Las ventas fuera de su día, marcadas
+
+«Quiero que las ventas a tiendas que no tocan ese día se marquen de forma de
+identificarlas; solo entrarían ventas normales las de ese día y las que son de
+otros días pero se reagendaron esa semana para ese día.»
+
+- **Venta normal:** la de una tienda que ese día tiene en su plan de visita, o
+  que se reagendó para ese día con «Ven mañana» / «Otro día» (§103).
+- **Fuera de su día:** cualquier otra. Entra igual —el cliente que llama pidiendo
+  mercancía existe (§0.1)— y queda marcada «Fuera de su día», como las demás
+  marcas de revisión. En Ventas tiene su pestaña, **«Fuera de su día (N)»**.
+- **La tienda sin plan** —casi siempre la que se acaba de dar de alta en la
+  calle— no se marca: no tiene un día del que estar fuera.
+- Lo decide el servidor al recibir la venta, con `fn_le_toca_visita` (migración
+  0067): el plan que la tienda tiene, más las visitas reagendadas para ese día
+  por cualquier vendedor. Las ventas que ya entraron antes de esto no se marcan.
+- **En el teléfono no cambia nada:** la tienda reagendada ya salía en «Hoy» y,
+  en el mapa, en rojo como las del día, hasta que se visita (verde).
+
 (versionCode 56)

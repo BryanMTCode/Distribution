@@ -584,6 +584,8 @@ EXPLICACION_MOTIVOS = {
     "sin_ubicacion": "Sin GPS",
     # La tienda es de una ruta que el vendedor no tiene (ADR 0002 §165).
     "cliente_de_otra_ruta": "Le vendió a una tienda que no es de su ruta",
+    # Ni su día del plan ni reagendada para ese día (ADR 0002 §167).
+    "fuera_de_su_dia": "Fuera de su día",
     # Lo que el vendedor cambió desde el teléfono (ADR 0002 §162).
     "cancelada_por_vendedor": "La canceló el vendedor",
     "modificada_por_vendedor": "La modificó el vendedor",
@@ -609,8 +611,12 @@ async def ventas(
     # Las canceladas no se mezclan con las demás: tienen su propia pestaña
     # (ADR 0002 §95).
     canceladas = ver == "canceladas"
+    # Las de tiendas que no tocaban ese día, juntas (ADR 0002 §167).
+    fuera_de_dia = ver == "fuera_de_dia"
     if canceladas:
         filtro = "WHERE v.estado = 'cancelada'"
+    elif fuera_de_dia:
+        filtro = "WHERE 'fuera_de_su_dia' = ANY(v.revision_motivos) AND v.estado <> 'cancelada'"
     elif solo_revision:
         filtro = "WHERE v.requiere_revision AND v.estado = 'confirmada'"
     else:
@@ -642,11 +648,20 @@ async def ventas(
         "ventas.html",
         {
             "filas": filas,
-            "solo_revision": bool(solo_revision) and not canceladas,
+            "solo_revision": bool(solo_revision) and not canceladas and not fuera_de_dia,
             "viendo_canceladas": canceladas,
+            "viendo_fuera_de_dia": fuera_de_dia,
             "cuantas_canceladas": (
                 await sesion.execute(
                     text("SELECT count(*) FROM ventas WHERE estado = 'cancelada'")
+                )
+            ).scalar_one(),
+            "cuantas_fuera_de_dia": (
+                await sesion.execute(
+                    text(
+                        "SELECT count(*) FROM ventas WHERE estado <> 'cancelada' "
+                        "   AND 'fuera_de_su_dia' = ANY(revision_motivos)"
+                    )
                 )
             ).scalar_one(),
             "explicacion": EXPLICACION_MOTIVOS,

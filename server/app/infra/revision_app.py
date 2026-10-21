@@ -877,6 +877,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+56",
             ),
             Punto(
+                "ventas_fuera_de_su_dia", "Las ventas fuera de su día",
+                "Véndele a una tienda que hoy no toca (y que no se haya reagendado para "
+                "hoy), sincroniza y abre Ventas → «Fuera de su día».",
+                "Ahí sale esa venta, con «Fuera de su día». Las de las tiendas del día y "
+                "las reagendadas para hoy no salen (ADR 0002 §167).",
+                desde="+56",
+            ),
+            Punto(
                 "panel_cancelar_venta", "Cancelar o corregir una venta",
                 "Abre una venta de prueba: «Corregir la venta», o «Cancelar la venta» con "
                 "su motivo.",

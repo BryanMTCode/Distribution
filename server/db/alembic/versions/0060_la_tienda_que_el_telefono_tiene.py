@@ -1,4 +1,4 @@
-"""La tienda que el teléfono tiene, aunque el alcance no la deje ver
+"""La tienda que el teléfono tiene, aunque el alcance no la deje ver; y si le tocaba
 
 Revision ID: 0060_la_tienda_del_telefono
 Revises: 0059_no_drop_sin_gps
@@ -25,4 +25,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP FUNCTION IF EXISTS fn_le_toca_visita(uuid, date)")
     op.execute("DROP FUNCTION IF EXISTS fn_cliente_del_telefono(uuid)")
