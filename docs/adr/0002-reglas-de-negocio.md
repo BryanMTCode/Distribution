@@ -7024,3 +7024,22 @@ artículo y subirla.»
   repetía la llave.
 
 (versionCode 53)
+
+## 163. La lista del vendedor trae todas sus tiendas, no las primeras 200
+
+**Bug de campo (octubre 2026).** «En algunos vendedores la ruta me aparece con
+menos clientes que los que hay ese día.»
+
+- **La causa:** la lista del teléfono cargaba solo las primeras 200 tiendas en
+  orden de ruta, y de ésas salía «Hoy». Las rutas traen 250 a 270 tiendas, así
+  que se quedaban fuera las del final de la ruta y las que no tienen número de
+  orden (las nuevas del Excel, por ejemplo).
+- **A quién le pegaba más:** al vendedor con dos rutas, porque los números de
+  orden se repiten y se le cortaban tiendas de las dos. «Visitados N de M» y el
+  mapa de «Hoy» salían con el mismo hueco. La vista de la ruta en la app de
+  gerencia y el dashboard no tenían el tope: decían bien cuántas tocaban.
+- **El arreglo:** la lista trae todas las tiendas del vendedor. Se dibuja
+  conforme se desplaza, así que no se hace pesada. Una prueba con una ruta de
+  260 tiendas lo cuida.
+
+(versionCode 54)

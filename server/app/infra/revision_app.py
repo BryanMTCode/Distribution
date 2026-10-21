@@ -135,6 +135,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+50",
             ),
             Punto(
+                "hoy_completo", "«Hoy» trae todas las tiendas del día",
+                "Con un vendedor de ruta grande (o de dos rutas), compara «Hoy · N» del "
+                "teléfono con la ruta de ese día en la app de gerencia (Vendedores → su "
+                "ruta).",
+                "Dicen el mismo número: antes el teléfono solo traía las primeras 200 "
+                "tiendas y se le perdían las del final de la ruta (ADR 0002 §163).",
+                desde="+54",
+            ),
+            Punto(
                 "buscar_tienda", "Buscar una tienda",
                 "Escribe parte del nombre o del código en el buscador de arriba.",
                 "Encuentra la tienda aunque hoy no le toque.",

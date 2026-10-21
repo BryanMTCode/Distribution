@@ -147,6 +147,23 @@ void main() {
     expect(find.byKey(const Key('otras_de_la_ruta')), findsNothing);
   });
 
+  testWidgets('una ruta de más de 200 tiendas sale completa en «Hoy»', (tester) async {
+    // Bug de campo, octubre 2026: la lista traía solo las primeras 200 tiendas
+    // en orden de ruta, y las rutas tienen 250–270. Las del final, y las que no
+    // tienen número de orden, no salían en «Hoy»: el día se veía con menos.
+    await entrar(tester, (base) {
+      for (var i = 1; i <= 260; i++) {
+        // Las últimas diez sin número de orden: van al final de la lista.
+        sembrarCliente(base, id: 't$i', nombre: 'Tienda $i', secuencia: i <= 250 ? i : null);
+        conPlan(base, 't$i', i.isEven ? '[{"dia":4,"semana":null}]' : '[{"dia":1,"semana":null}]');
+      }
+    });
+
+    // Con el tope salían 100: las pares de las primeras 200.
+    expect(find.text('Hoy · 130'), findsOneWidget);
+    expect(textoQueContiene('Visitados 0 de 130'), findsOneWidget);
+  });
+
   testWidgets('las tiendas van agrupadas por día (ADR 0002 §123)', (tester) async {
     await entrar(tester, (base) {
       // El número de la hoja se repite cada día: sin agrupar se mezclaban.

@@ -83,9 +83,16 @@ class RepoClientes {
   final Database _db;
 
   /// Clientes de la ruta, en orden de visita.
+  ///
+  /// TODOS, sin tope (−1 en SQLite). Bug de campo, octubre 2026: había un tope
+  /// de 200 y las rutas traen 250–270 tiendas —más si el vendedor tiene dos
+  /// rutas, que repiten los números de orden—, así que las del final de la ruta
+  /// y las que no tienen número nunca salían en «Hoy»: el día se veía con menos
+  /// tiendas de las que tocaban. La lista se dibuja conforme se desplaza, así que
+  /// cargarlas todas no la hace pesada.
   List<ClienteEnRuta> deLaRuta({
     String? busqueda,
-    int limite = 200,
+    int limite = -1,
     DateTime? hoy,
   }) {
     final filtro = (busqueda ?? '').trim();
@@ -149,7 +156,7 @@ class RepoClientes {
   }
 
   ClienteEnRuta? porId(String id) {
-    final filas = deLaRuta(limite: 1000);
+    final filas = deLaRuta();
     for (final c in filas) {
       if (c.id == id) return c;
     }
