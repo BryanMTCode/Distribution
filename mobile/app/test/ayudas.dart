@@ -344,6 +344,8 @@ Future<BaseLocal> montarApp(
   WidgetTester tester, {
   Map<String, Object?>? credencial,
   DateTime? ahora,
+  /// Un reloj que la prueba puede mover (ADR 0002 §164); gana sobre [ahora].
+  DateTime Function()? reloj,
   void Function(BaseLocal base)? sembrar,
   List<Override> extras = const [],
   /// Un almacén seguro propio, para poder inspeccionarlo después de la prueba.
@@ -384,7 +386,7 @@ Future<BaseLocal> montarApp(
       overrides: [
         almacenSeguroProvider.overrideWithValue(almacen),
         baseLocalProvider.overrideWithValue(base),
-        relojProvider.overrideWithValue(() => ahora ?? relojDePrueba()),
+        relojProvider.overrideWithValue(reloj ?? () => ahora ?? relojDePrueba()),
         ...extras,
       ],
       child: const AppDsd(),

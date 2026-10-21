@@ -7043,3 +7043,24 @@ menos clientes que los que hay ese día.»
   260 tiendas lo cuida.
 
 (versionCode 54)
+
+## 164. «Hoy» cambia solo: a medianoche y al volver a la app
+
+**Bug de campo (miércoles 21 de octubre de 2026).** «¿Cómo funciona la fecha
+de Mi día? En un teléfono, hoy miércoles 21, la última fecha que me sale es la
+del martes 20.»
+
+- **La causa:** el día de «Mi día» se calculaba una sola vez, al abrir la app.
+  Android deja la app viva en segundo plano de un día para otro, así que el
+  teléfono seguía en el día en que se abrió. El calendario no deja pasar de
+  «hoy», y para la app «hoy» era el martes.
+- **El mismo riesgo** lo tenía «Hoy» de la lista de tiendas sin señal: solo se
+  recalculaba al vender o al sincronizar.
+- **El arreglo:** el día de hoy se vuelve a mirar en el reloj a medianoche y
+  cada vez que la app vuelve a primer plano. Si ya es otro día, «Mi día» y la
+  lista de «Hoy» se recalculan solos.
+- **No cambia la regla del día**, que es la misma con que se estampan las
+  ventas: el día local del teléfono (y para el corte, la de la madrugada del
+  §157).
+
+(versionCode 55)

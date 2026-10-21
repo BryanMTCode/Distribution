@@ -150,6 +150,7 @@ la bodega sube cuando alguien la cuenta.
 | **El vendedor cancela su venta desde «Mi día»** (§161): con motivo y sin señal; la mercancía vuelve al camión, viaja como `venta.cancelar` y el servidor la cancela como el panel; después del corte ya no. Y el delta de una cancelada ya no devuelve dos veces | ✅ 7 pruebas del servidor, 9 de Dart, 4 de widget |
 | **El vendedor modifica su venta** (§162): sube, baja o quita artículos; lo que sube sale del camión (revisado contra lo que trae) y lo que baja vuelve; ticket nuevo «MODIFICADA»; y la pista de cancelar y modificar —quién, cuándo, qué, si el ticket ya estaba impreso, dónde— en la venta, en «Cambios de los vendedores» y en Pendientes | ✅ 11 pruebas del servidor, 12 de Dart, 5 de widget |
 | **La lista del vendedor trae todas sus tiendas** (§163): antes solo las primeras 200, y «Hoy» salía con menos tiendas de las que tocaban | ✅ 1 de widget |
+| **«Hoy» cambia solo** (§164): a medianoche y al volver a la app; antes «Mi día» se quedaba en el día en que se abrió | ✅ 2 de la app |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |
@@ -173,7 +174,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1554 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **727 de Dart** y **387 de widget**, todas en verde.
+**1554 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **727 de Dart** y **389 de widget**, todas en verde.
 
 ## Stack
 

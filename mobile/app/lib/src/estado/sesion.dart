@@ -126,6 +126,48 @@ final outboxProvider = Provider<Outbox>(
 /// `DateTime.now()` directo las volvería dependientes del día en que corren.
 final relojProvider = Provider<DateTime Function()>((_) => DateTime.now);
 
+/// El día operativo de HOY (`AAAA-MM-DD`), con `diaOperativoDe`: la MISMA
+/// función que estampa la venta, el cobro, la merma y el no-drop.
+///
+/// ───────────────────────────────────────────────────────────────────────────
+/// QUE CAMBIE SOLO (ADR 0002 §164)
+/// ───────────────────────────────────────────────────────────────────────────
+/// Bug de campo, miércoles 21 de octubre de 2026: «Mi día» decía martes 20 y no
+/// dejaba pasar a hoy. El día se calculaba UNA vez, al abrir la app, y Android
+/// la deja viva en segundo plano de un día para otro: el teléfono seguía en el
+/// día en que se abrió. Ahora se vuelve a mirar el reloj a medianoche y cada vez
+/// que la app vuelve a primer plano (`DiaDeHoy.revisar`, desde `AppDsd`).
+final diaOperativoProvider = NotifierProvider<DiaDeHoy, String>(DiaDeHoy.new);
+
+class DiaDeHoy extends Notifier<String> {
+  Timer? _medianoche;
+
+  @override
+  String build() {
+    final reloj = ref.watch(relojProvider);
+    ref.onDispose(() => _medianoche?.cancel());
+    _programar(reloj);
+    return diaOperativoDe(reloj());
+  }
+
+  /// Vuelve a mirar el reloj. Si ya es otro día, todo lo que dependa de «hoy»
+  /// —«Mi día», la lista de «Hoy»— se recalcula.
+  void revisar() {
+    final reloj = ref.read(relojProvider);
+    final hoy = diaOperativoDe(reloj());
+    if (hoy != state) state = hoy;
+    _programar(reloj);
+  }
+
+  /// Un segundo después de la siguiente medianoche local.
+  void _programar(DateTime Function() reloj) {
+    _medianoche?.cancel();
+    final ahora = reloj().toLocal();
+    final siguiente = DateTime(ahora.year, ahora.month, ahora.day + 1);
+    _medianoche = Timer(siguiente.difference(ahora) + const Duration(seconds: 1), revisar);
+  }
+}
+
 /// Estado de la sesión.
 sealed class Sesion {
   const Sesion();
@@ -608,6 +650,8 @@ final busquedaClientesProvider = StateProvider<String>((_) => '');
 
 final clientesProvider = Provider<List<ClienteEnRuta>>((ref) {
   final busqueda = ref.watch(busquedaClientesProvider);
+  // «Hoy te tocan» cambia con el día, aunque nada más cambie (§164).
+  ref.watch(diaOperativoProvider);
   // El reloj del provider, no `DateTime.now()`: «hoy te tocan» depende del día, y
   // las pruebas tienen que poder decir qué día es.
   return ref

@@ -18,8 +18,32 @@ import 'pantallas/login.dart';
 import 'pantallas/sin_servidor.dart';
 import 'pantallas/vendedor/clientes.dart';
 
-class AppDsd extends StatelessWidget {
+class AppDsd extends ConsumerStatefulWidget {
   const AppDsd({super.key});
+
+  @override
+  ConsumerState<AppDsd> createState() => _EstadoAppDsd();
+}
+
+class _EstadoAppDsd extends ConsumerState<AppDsd> {
+  /// Al volver a primer plano se mira el reloj otra vez (ADR 0002 §164):
+  /// Android deja la app viva de un día para otro, y «hoy» se quedaba en el día
+  /// en que se abrió.
+  late final AppLifecycleListener _alVolver;
+
+  @override
+  void initState() {
+    super.initState();
+    _alVolver = AppLifecycleListener(
+      onResume: () => ref.read(diaOperativoProvider.notifier).revisar(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _alVolver.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(

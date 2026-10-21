@@ -36,20 +36,15 @@ final cancelacionDeVentaProvider = Provider<CancelacionDeVenta>(
   ),
 );
 
-/// El día operativo tal como lo estampan los documentos.
-///
-/// Con `diaOperativoDe`, la MISMA función que estampa la venta, el cobro, la
-/// merma y el no-drop. Si esta pantalla calculara el día de otra forma, mostraría
-/// un corte distinto del que la liquidación va a cobrar.
+/// El día operativo de hoy está en `sesion.dart` (`diaOperativoProvider`): lo
+/// usan también la lista de «Hoy», y cambia solo a medianoche y al volver a la
+/// app (ADR 0002 §164).
 ///
 /// Bug de campo, octubre 2026: aquí se usaba el día UTC (`toUtc()` y los diez
 /// primeros caracteres) cuando los documentos ya se estampaban con el día LOCAL.
 /// En el centro de México, de las 18:00 en adelante el día UTC ya es mañana, así
 /// que «Mi día» buscaba las ventas de mañana: el vendedor vendía, la venta llegaba
 /// al servidor, y su corte no la mostraba.
-final diaOperativoProvider = Provider<String>(
-  (ref) => diaOperativoDe(ref.watch(relojProvider)()),
-);
 
 /// Lo vendido y lo cobrado hoy, leído de SQLite: funciona sin señal.
 ///

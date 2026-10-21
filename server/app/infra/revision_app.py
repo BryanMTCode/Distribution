@@ -144,6 +144,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+54",
             ),
             Punto(
+                "dia_nuevo_solo", "El día cambia solo, sin cerrar la app",
+                "Deja la app abierta (o en segundo plano) de un día para otro. A la "
+                "mañana siguiente vuelve a ella y abre «Mi día».",
+                "«Mi día» y «Hoy» ya son del día nuevo, sin cerrar ni volver a entrar. "
+                "Antes se quedaban en el día en que se abrió la app (ADR 0002 §164).",
+                desde="+55",
+            ),
+            Punto(
                 "buscar_tienda", "Buscar una tienda",
                 "Escribe parte del nombre o del código en el buscador de arriba.",
                 "Encuentra la tienda aunque hoy no le toque.",
