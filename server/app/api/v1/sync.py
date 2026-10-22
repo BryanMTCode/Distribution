@@ -616,7 +616,12 @@ async def apartar_push_ilegible(peticion: Request, fallos: list[dict]) -> int:
         return 0
     motivo = "; ".join(f"{f['donde']} ({f['que']})" for f in fallos[:5])
     proveedor = peticion.app.dependency_overrides.get(obtener_sesion, obtener_sesion)
-    async for sesion in proveedor():
+    # El generador se cierra a mano, como lo haría FastAPI al terminar la
+    # petición: dejarlo a medias deja la sesión abierta hasta que alguien lo
+    # recoja.
+    generador = proveedor()
+    sesion = await generador.__anext__()
+    try:
         await fijar_alcance(
             sesion, rol=str(claims.get("rol") or ""), usuario_id=usuario_id, rutas=rutas
         )
@@ -628,5 +633,6 @@ async def apartar_push_ilegible(peticion: Request, fallos: list[dict]) -> int:
             motivo=motivo or "el envío no tiene la forma esperada",
         )
         await sesion.commit()
-        return apartados
-    return 0
+    finally:
+        await generador.aclose()
+    return apartados

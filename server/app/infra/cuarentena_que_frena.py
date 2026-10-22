@@ -28,7 +28,7 @@ from sqlalchemy import text
 # Los tipos de operación que pueden explicar una diferencia de dinero o de
 # mercancía. `desconocido` es lo que llegó sin poderse leer (§172): podría ser
 # una venta, y por eso frena.
-_QUE_EXPLICA_UNA_DIFERENCIA = r"(^|\+)((venta|merma|traspaso|corte)\.|desconocido)"
+_QUE_EXPLICA_UNA_DIFERENCIA = r"(^|\+)((venta|merma|traspaso|corte)(\.|\+|$)|desconocido)"
 
 
 async def cuarentena_que_frena(
