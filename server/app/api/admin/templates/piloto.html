@@ -172,10 +172,10 @@
       <div class="ayuda">El sistema trae ${{ '{:,.2f}'.format(sistema.importe) }}.</div>
     </div>
     <div class="campo">
-      <label for="cobranza">Cobranza en el papel</label>
+      <label for="cobranza">Efectivo cobrado en el papel</label>
       <input type="text" id="cobranza" name="cobranza"
              value="{{ dia_capturado.cobranza_papel if dia_capturado else '' }}">
-      <div class="ayuda">El sistema trae ${{ '{:,.2f}'.format(sistema.cobranza) }}.</div>
+      <div class="ayuda">El sistema trae ${{ '{:,.2f}'.format(sistema.cobranza) }} en efectivo: toda venta es de contado.</div>
     </div>
     <div class="campo">
       <label for="visitas">Visitas (si el papel las trae)</label>

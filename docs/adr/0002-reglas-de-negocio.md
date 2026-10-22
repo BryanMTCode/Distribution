@@ -7219,3 +7219,53 @@ está en las cargas; sin pedido sugerido».
 - Sin pedido sugerido y sin notificaciones al teléfono.
 
 (versionCode 57)
+
+## 170. Solo efectivo, revisado de punta a punta: también el Desempeño y el Excel
+
+«Quiero que revises a lo largo de la app que todos los pagos son solo en
+efectivo, incluido en los reportes de Excel que se hacen.»
+
+Se revisó el cobro del vendedor, sus tickets, «Mi día», el corte y su WhatsApp,
+el mayoreo, la app del gerente, el dashboard y el reporte en Excel. El cobro ya era
+solo en efectivo (§81, enmienda; §157 para el mayoreo), y la regla de §154
+—lo vendido no se repite como «en efectivo»— se había aplicado al Tablero y a
+Vendedores, pero no a dos pantallas:
+
+- **El reporte en Excel.** El Resumen decía «Ventas de los vendedores» y abajo
+  «De eso, en efectivo» con la misma cifra, como si hubiera otra forma de pago; y
+  la hoja «Ventas y efectivo» repetía «Importe» en una columna «En efectivo», día
+  por día y por vendedor. Ahora el Resumen dice «N ventas en la calle, todas en
+  efectivo: es lo que tienen que entregar en el corte», sin el renglón repetido;
+  la hoja de ventas pierde la columna y dice «Todas las ventas del periodo fueron
+  en efectivo». Los cortes («Debía entregar», «Entregó») no cambian.
+- **Desempeño del día.** «Vendido» decía «$X en efectivo · $0.00 por
+  transferencia», y debajo estaban las tarjetas «efectivo a entregar» (la misma
+  cifra) y «por transferencia» ($0.00); la tabla por vendedor tenía la columna
+  «Efectivo», igual a «Vendido». Ahora «vendido» dice «Todo en efectivo: es lo que
+  se entrega en el corte del día», sin las dos tarjetas ni la columna.
+- **Lo que solo se vuelve a separar con una transferencia vieja.** El servidor
+  sigue aceptando la venta por transferencia de un teléfono anterior a la +28 —la
+  mercancía ya salió— (§81). Si en el día o en el periodo hay alguna, el efectivo
+  ya no es lo vendido, y el Excel y el Desempeño vuelven a enseñar el renglón, las
+  columnas y las tarjetas, como el Tablero (§154).
+- **Textos que todavía hablaban de otra forma de pago:**
+  · el arqueo con sobrante decía «…o una transferencia que se capturó como
+    efectivo»; ahora solo «Suele ser una venta que el teléfono todavía no
+    sincronizó»;
+  · el rol Supervisor decía «Carga, corte del día, cuarentena y transferencias»;
+    ahora sin «transferencias» (el permiso para revisar las viejas se queda);
+  · la pantalla Transferencias explica que solo llegan de un teléfono sin
+    actualizar;
+  · en el cuadre del piloto, «Cobranza en el papel» es «Efectivo cobrado en el
+    papel», que es lo que siempre contó (las ventas en efectivo del día);
+  · en la cuenta del vendedor, el recibo de un cobro del piloto enlazaba a la
+    pantalla de cobranza que se quitó con el crédito y daba error; ahora es solo
+    el texto «Recibo …»;
+  · la demostración de la app (solo en las versiones de prueba, no en el APK que
+    se instala) sembraba una venta por transferencia; ahora es en efectivo.
+- **Lo que no se tocó: las compras a proveedores.** En Compras, lo que la empresa
+  le paga a un proveedor se sigue registrando en efectivo, transferencia o cheque,
+  y con sus días de crédito: es dinero que sale, no lo que se le cobra a una
+  tienda.
+
+(versionCode 57)

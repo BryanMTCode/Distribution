@@ -272,6 +272,11 @@ async def listar(
         dias=int(ref_dia["dias"]),
     )
     venta_total = Decimal(resumen["venta_total"])
+    # Toda venta es en efectivo (ADR 0002 §81, §154): entonces «vendido» y «en
+    # efectivo» son la misma cifra y no se ponen dos veces. Se separan solo si en
+    # el día hay algo que no es efectivo —una transferencia de un teléfono
+    # anterior a la +28—, porque entonces la bolsa ya no es lo vendido (§170).
+    separar_efectivo = Decimal(resumen["venta_efectivo"]) != venta_total
 
     return render(
         peticion,
@@ -315,6 +320,7 @@ async def listar(
                 "cuantos": DIAS_DE_REFERENCIA,
             },
             "renglones": renglones,
+            "separar_efectivo": separar_efectivo,
             "sin_arrancar": sin_arrancar,
             "sin_sincronizar_lista": sin_sincronizar,
             "por_debajo": por_debajo,

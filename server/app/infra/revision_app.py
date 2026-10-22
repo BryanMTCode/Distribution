@@ -812,6 +812,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 "información (el teléfono que no ha sincronizado).",
             ),
             Punto(
+                "panel_desempeno_solo_efectivo", "Desempeño, todo en efectivo",
+                "Desempeño → Del día, con ventas de hoy.",
+                "«Vendido» dice «Todo en efectivo»: sin «$0.00 por transferencia», sin "
+                "la tarjeta «efectivo a entregar» repetida y sin la columna «Efectivo» en "
+                "la tabla (ADR 0002 §170).",
+                desde="+57",
+            ),
+            Punto(
                 "panel_visitas", "Por qué no compraron",
                 "Desempeño → Visitas.",
                 "Los «No me compró» con su motivo y por vendedor, el cumplimiento del "
@@ -1288,6 +1296,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "La venta ya no cuenta en el Resumen ni en Ventas y efectivo, y sus piezas "
                 "vuelven a estar en el camión en la hoja de Inventario.",
                 desde="+41",
+            ),
+            Punto(
+                "panel_reporte_solo_efectivo", "El reporte, todo en efectivo",
+                "Baja el reporte de «Esta semana» y mira el Resumen y la hoja Ventas y "
+                "efectivo.",
+                "«Ventas de los vendedores» dice «todas en efectivo», sin el renglón «De "
+                "eso, en efectivo» con la misma cifra; la hoja de ventas, sin la columna "
+                "«En efectivo» y con «Todas las ventas del periodo fueron en efectivo» "
+                "(ADR 0002 §170).",
+                desde="+57",
             ),
         ),
         parte="dashboard",

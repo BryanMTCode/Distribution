@@ -43,7 +43,9 @@
           <div>{{ m.concepto }}</div>
           <div class="sutil">
             {% if m.corte %}<a href="/panel/liquidaciones/{{ m.liquidacion_id }}">Corte {{ m.corte }}</a>{% endif %}
-            {% if m.recibo %}<a href="/panel/cobranza/{{ m.cobro_id }}" class="mono">{{ m.recibo }}</a>{% endif %}
+            {# El recibo de un cobro del piloto, cuando había crédito. Sin enlace:
+               la pantalla de cobranza se quitó con el crédito (§81) y daba 404. #}
+            {% if m.recibo %}<span class="mono">Recibo {{ m.recibo }}</span>{% endif %}
             {% if m.registro %}· registró {{ m.registro }}{% endif %}
           </div>
           {% if m.detalle and m.detalle is iterable and m.detalle is not mapping %}

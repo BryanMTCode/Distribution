@@ -733,8 +733,10 @@ async def guardar_arqueo(
         )
     else:
         aviso = (
+            # Ya no «o una transferencia que se capturó como efectivo»: toda venta
+            # es en efectivo (ADR 0002 §170).
             f"Sobran {dinero(falta)}. Suele ser una venta que el teléfono todavía "
-            "no sincronizó, o una transferencia que se capturó como efectivo."
+            "no sincronizó."
         )
     return aviso
 

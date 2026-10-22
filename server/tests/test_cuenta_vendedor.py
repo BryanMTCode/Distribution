@@ -346,11 +346,16 @@ async def test_la_cuenta_no_viaja_al_telefono(cliente, sesion, semilla, dia_de_t
     await _cerrar(cliente, liq)
     assert len(await _movimientos(sesion, semilla["vendedor"])) == 2
 
+    # El costo como número —8.5, 8.50, 8.5000—, sin dígitos pegados. Un `LIKE
+    # '%8.5%'` también encontraba la hora de cualquier payload: «…03:22:18.5…»
+    # (segundos que acaban en 8 y fracción que empieza en 5), y la prueba fallaba
+    # de vez en cuando sin ninguna fuga.
     fugas = (
         await sesion.execute(
             text(
                 "SELECT count(*) FROM change_log "
-                " WHERE entidad LIKE '%cuenta%' OR payload::text LIKE '%8.5%'"
+                " WHERE entidad LIKE '%cuenta%' "
+                "    OR payload::text ~ '(^|[^0-9.])8\\.50*([^0-9]|$)'"
             )
         )
     ).scalar_one()

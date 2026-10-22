@@ -195,7 +195,8 @@ async def test_muestra_la_venta_del_dia_de_cada_vendedor(cliente, semilla, jorna
     assert "Juan Pérez" in plano
     assert "VEND01" in plano
     assert "$2,200.00" in plano
-    # El desglose, porque efectivo y transferencia no son lo mismo para la caja.
+    # El desglose, porque efectivo y transferencia no son lo mismo para la caja:
+    # sale porque la de Puente llegó por transferencia de un teléfono viejo.
     assert "$1,000.00 en efectivo" in plano
     assert "$1,200.00 por transferencia" in plano
 
@@ -234,6 +235,33 @@ async def test_el_efectivo_a_entregar_cuadra_con_el_arqueo_de_la_liquidacion(
     plano = await _ver(cliente)
     assert "$1,000.00" in plano
     assert "efectivo a entregar" in plano
+
+
+async def test_todo_en_efectivo_no_repite_lo_vendido(cliente, sesion, semilla, jornada):
+    """Toda venta es en efectivo (ADR 0002 §154, §170): «vendido» y «en efectivo»
+    son la misma cifra y no se ponen dos veces, ni «$0.00 por transferencia».
+
+    La jornada trae la de Puente por transferencia (un teléfono viejo); aquí se
+    pasa a efectivo, que es lo que hoy manda cualquier teléfono.
+    """
+    await sesion.execute(
+        text("UPDATE ventas SET forma_pago = 'efectivo' WHERE cliente_id = :c"),
+        {"c": jornada["clientes"]["Puente"]},
+    )
+    await sesion.commit()
+    await recalcular_dia(sesion, jornada["dia"])
+    await sesion.commit()
+
+    await _entrar(cliente)
+    r = await cliente.get("/panel/desempeno")
+    plano = solo_texto(r)
+
+    assert "$2,200.00" in plano
+    assert "Todo en efectivo" in plano
+    assert "transferencia" not in plano
+    assert "efectivo a entregar" not in plano
+    assert 'id="tarjeta_efectivo_a_entregar"' not in r.text
+    assert '<th class="numero">Efectivo</th>' not in r.text
 
 
 # ===========================================================================

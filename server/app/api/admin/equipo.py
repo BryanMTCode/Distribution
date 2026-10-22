@@ -63,7 +63,7 @@ MINIMO_PASSWORD = 12
 
 ROLES = [
     ("vendedor", "Vendedor", "Opera una ruta con su camión. Entra por la app, no por el panel."),
-    ("supervisor", "Supervisor", "Carga, corte del día, cuarentena y transferencias."),
+    ("supervisor", "Supervisor", "Carga, corte del día y cuarentena."),
     ("gerente", "Gerencia", "Solo lectura sobre la operación."),
     ("admin", "Administrador", "Todos los permisos, incluido dar de alta usuarios."),
 ]

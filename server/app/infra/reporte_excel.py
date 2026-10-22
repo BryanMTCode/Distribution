@@ -19,7 +19,11 @@ LAS MISMAS CIFRAS QUE EL DASHBOARD
 ────────────────────────────────────────────────────────────────────────────
 Las ventas son las confirmadas, como el tablero; lo eliminado en Operaciones
 (§119, §126) no cuenta en ninguna hoja. El efectivo es el de las ventas de
-contado en efectivo, que es el que decide el corte. El inventario es el de hoy,
+contado en efectivo, que es el que decide el corte. Y como toda venta es en
+efectivo (§81, §154), lo vendido no se repite como «en efectivo»: el renglón y
+las columnas del efectivo salen solo si en el periodo hubo una transferencia
+de un teléfono anterior a la +28, porque entonces ya no son la misma cifra
+(§170). El inventario es el de hoy,
 valuado a precio de venta como en Inventario (§86): no depende del periodo.
 La cuenta del vendedor es su saldo de hoy, y sus movimientos del periodo.
 """
@@ -366,6 +370,8 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
 
     ventas_importe = _suma(reporte.ventas, "importe")
     ventas_efectivo = _suma(reporte.ventas, "efectivo")
+    separar_efectivo = ventas_efectivo != ventas_importe
+    cuantas_ventas = int(sum(r["ventas"] for r in reporte.ventas))
     mayoreo_importe = _suma(reporte.mayoreo, "total")
     cerrados = [c for c in reporte.cortes if c["estado"] == "cerrada"]
     piezas_cargadas = _suma(reporte.cargas, "piezas")
@@ -385,10 +391,20 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
         "Lo más importante",
         [("Qué", "texto"), ("Cuánto", "dinero"), ("Para entenderlo", "texto")],
         [
-            ["Ventas de los vendedores", ventas_importe,
-             f"{int(sum(r['ventas'] for r in reporte.ventas)):,} ventas en la calle"],
-            ["De eso, en efectivo", ventas_efectivo,
-             "Lo que los vendedores tienen que entregar en el corte"],
+            *(
+                [
+                    ["Ventas de los vendedores", ventas_importe,
+                     f"{cuantas_ventas:,} ventas en la calle"],
+                    ["De eso, en efectivo", ventas_efectivo,
+                     "Lo que los vendedores tienen que entregar en el corte"],
+                ]
+                if separar_efectivo
+                else [
+                    ["Ventas de los vendedores", ventas_importe,
+                     f"{cuantas_ventas:,} ventas en la calle, todas en efectivo: es lo "
+                     "que tienen que entregar en el corte"],
+                ]
+            ),
             ["Efectivo que entregaron", _suma(cerrados, "entregado"),
              f"En {len(cerrados)} corte(s) ya cerrados"],
             ["Diferencia en los cortes", _suma(cerrados, "diferencia"),
@@ -423,14 +439,22 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     # --- Ventas y efectivo -----------------------------------------------------
     hoja = _Hoja(libro, "Ventas y efectivo")
     hoja.titulo("Ventas y efectivo", periodo)
+    # La columna «En efectivo» repetiría «Importe» peso por peso: sale solo si
+    # algo del periodo no fue en efectivo.
+    en_efectivo = [("En efectivo", "dinero")] if separar_efectivo else []
+
+    def _y_efectivo(cifra) -> list:
+        return [cifra] if separar_efectivo else []
+
     hoja.tabla(
         "Ventas de cada vendedor, día por día",
         [("Día", "texto"), ("Vendedor", "texto"), ("Ventas", "entero"),
-         ("Piezas", "entero"), ("Importe", "dinero"), ("En efectivo", "dinero")],
+         ("Piezas", "entero"), ("Importe", "dinero"), *en_efectivo],
         [[_con_dia(r["fecha"]), r["vendedor"], r["ventas"], r["piezas"], r["importe"],
-          r["efectivo"]] for r in reporte.ventas],
-        totales=["Total", "", sum(r["ventas"] for r in reporte.ventas),
-                 _suma(reporte.ventas, "piezas"), ventas_importe, ventas_efectivo],
+          *_y_efectivo(r["efectivo"])] for r in reporte.ventas],
+        totales=["Total", "", cuantas_ventas,
+                 _suma(reporte.ventas, "piezas"), ventas_importe,
+                 *_y_efectivo(ventas_efectivo)],
     )
     por_vendedor: dict[str, dict] = {}
     for r in reporte.ventas:
@@ -443,12 +467,15 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     hoja.tabla(
         "Total de cada vendedor",
         [("Vendedor", "texto"), ("Ventas", "entero"), ("Importe", "dinero"),
-         ("En efectivo", "dinero")],
-        [[n, v["ventas"], v["importe"], v["efectivo"]]
+         *en_efectivo],
+        [[n, v["ventas"], v["importe"], *_y_efectivo(v["efectivo"])]
          for n, v in sorted(por_vendedor.items(), key=lambda par: -par[1]["importe"])],
         totales=["Total", sum(v["ventas"] for v in por_vendedor.values()), ventas_importe,
-                 ventas_efectivo],
+                 *_y_efectivo(ventas_efectivo)],
     )
+    if not separar_efectivo and reporte.ventas:
+        hoja.nota("Todas las ventas del periodo fueron en efectivo.")
+        hoja.fila += 1
     hoja.tabla(
         "Cortes: el efectivo que entregó cada vendedor",
         [("Día", "texto"), ("Vendedor", "texto"), ("Folio", "texto"),

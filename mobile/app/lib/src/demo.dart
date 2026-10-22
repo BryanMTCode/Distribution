@@ -178,8 +178,8 @@ class _ClienteDemo {
   final double metrosAlNorte;
   final double metrosAlEste;
 
-  /// Venta por transferencia sin sincronizar: se ve en «Mi día» separada del
-  /// efectivo y en la barra de lo que falta por subir.
+  /// Venta sin sincronizar, en efectivo como toda venta (ADR 0002 §170): se ve
+  /// en «Mi día» y en la barra de lo que falta por subir.
   final double ventaPendiente;
   final String? direccion;
 }
@@ -275,7 +275,7 @@ void sembrarDemo(
         INSERT INTO ventas (id, folio_consecutivo, folio_local, cliente_id, tipo,
                             forma_pago, estado, total, fecha_dispositivo,
                             fecha_operativa, sincronizada, creado_en)
-        VALUES (?, ?, ?, ?, 'contado', 'transferencia', 'confirmada', ?, ?, ?, 0, ?)
+        VALUES (?, ?, ?, ?, 'contado', 'efectivo', 'confirmada', ?, ?, ?, 0, ?)
         ON CONFLICT(id) DO NOTHING
         ''',
         [

@@ -118,7 +118,12 @@
     <div class="numero">{{ resumen.venta_total }}</div>
     <div class="etiqueta">vendido</div>
     <div class="sutil" style="margin-top:6px">
-      {{ resumen.venta_efectivo }} en efectivo · {{ resumen.venta_transferencia }} por transferencia
+      {% if separar_efectivo %}
+        {{ resumen.venta_efectivo }} en efectivo · {{ resumen.venta_transferencia }} por transferencia
+      {% else %}
+        Todo en efectivo: es lo que se entrega en el
+        <a href="/panel/liquidaciones">corte del día</a>.
+      {% endif %}
       <div style="margin-top:4px">
         {% if referencia.lectura == 'incompleta' %}
           {{ referencia.variacion }}% contra {{ referencia.promedio }}, pero
@@ -171,7 +176,9 @@
     </div>
   </div>
 
-  <div class="tarjeta">
+  {# Solo si algo no fue en efectivo: si no, son la cifra de «vendido» (§154). #}
+  {% if separar_efectivo %}
+  <div class="tarjeta" id="tarjeta_efectivo_a_entregar">
     <div class="numero">{{ resumen.efectivo_a_entregar }}</div>
     <div class="etiqueta">efectivo a entregar</div>
     <div class="sutil" style="margin-top:6px">
@@ -180,13 +187,15 @@
     </div>
   </div>
 
-  <a class="tarjeta" href="/panel/transferencias" style="text-decoration:none;color:inherit">
+  <a class="tarjeta" href="/panel/transferencias" style="text-decoration:none;color:inherit"
+     id="tarjeta_por_transferencia">
     <div class="numero">{{ resumen.venta_transferencia }}</div>
     <div class="etiqueta">por transferencia</div>
     <div class="sutil" style="margin-top:6px">
-      No entra a la bolsa: se confirma contra el banco.
+      De un teléfono sin actualizar. No entra a la bolsa: se confirma contra el banco.
     </div>
   </a>
+  {% endif %}
 
   <div class="tarjeta {% if resumen.mermas_documentos %}aviso{% endif %}">
     <div class="numero">{{ resumen.mermas_documentos }}</div>
@@ -219,7 +228,7 @@
       <th class="numero">Drop</th>
       <th class="numero">Visitas</th>
       <th class="numero">Efect.</th>
-      <th class="numero">Efectivo</th>
+      {% if separar_efectivo %}<th class="numero">Efectivo</th>{% endif %}
       <th class="numero">Mermas</th>
       <th>Su teléfono</th>
     </tr>
@@ -258,7 +267,7 @@
         {% if r.no_drops %}<div class="sutil">{{ r.no_drops }} perdidas</div>{% endif %}
       </td>
       <td class="numero">{% if r.visitas %}{{ r.efectividad }}%{% else %}<span class="sutil">—</span>{% endif %}</td>
-      <td class="numero">{{ r.efectivo }}</td>
+      {% if separar_efectivo %}<td class="numero">{{ r.efectivo }}</td>{% endif %}
       <td class="numero">
         {% if r.mermas_documentos %}{{ r.mermas_documentos }}
         {% else %}<span class="sutil">—</span>{% endif %}

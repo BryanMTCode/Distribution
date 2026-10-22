@@ -10,6 +10,8 @@ del periodo que se elija al bajarlo.
 2. **Lo eliminado no cuenta** en ninguna hoja.
 3. **Quién**: la oficina —quien ve el Tablero: administrador, gerencia y
    supervisor—; sin entrar al panel, nadie.
+4. **Todo es en efectivo** (§170): lo vendido no se repite como «en efectivo»,
+   salvo que en el periodo haya una transferencia de un teléfono viejo.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from decimal import Decimal
 
 import pytest
 from openpyxl import load_workbook
+from sqlalchemy import text
 
 from tests.test_cierre_del_vendedor import _cerrar, _corte, dia  # noqa: F401
 from tests.test_cortes_api import _cab, _usuario
@@ -79,7 +82,6 @@ async def test_el_reporte_trae_sus_hojas_con_las_cifras_del_dashboard(
     assert resumen["A1"].value == "Reporte de Distribuciones SE"
     assert "hecho el" in resumen["A2"].value and "por Bryan" in resumen["A2"].value
     assert _renglon(resumen, "Ventas de los vendedores")[1] == 2250
-    assert _renglon(resumen, "De eso, en efectivo")[1] == 2250
     assert _renglon(resumen, "Efectivo que entregaron")[1] == 2200
     assert _renglon(resumen, "Diferencia en los cortes")[1] == -50
     assert _renglon(resumen, "Lo que deben los vendedores (hoy)")[1] == 50
@@ -87,7 +89,7 @@ async def test_el_reporte_trae_sus_hojas_con_las_cifras_del_dashboard(
 
     ventas = libro["Ventas y efectivo"]
     fila = _con(ventas, "Juan Pérez")
-    assert fila[2:6] == [1, 180, 2250, 2250]
+    assert fila[2:5] == [1, 180, 2250]
     corte = _con(ventas, "Faltaron $50.00")
     assert corte[3:6] == [2250, 2200, -50]
 
@@ -137,3 +139,56 @@ async def test_lo_baja_la_oficina_y_sin_entrar_nadie(cliente, sesion, semilla, d
     await _entrar(cliente, "SUP01")
     _, libro = await _bajar(cliente, "hoy")
     assert libro.sheetnames == HOJAS
+
+
+# ---------------------------------------------------------------------------
+# Todo es en efectivo (ADR 0002 §170)
+# ---------------------------------------------------------------------------
+
+
+def _textos(hoja) -> set:
+    return {c for f in hoja.iter_rows(values_only=True) for c in f if c}
+
+
+async def test_todo_en_efectivo_no_repite_lo_vendido(cliente, sesion, semilla, dia):  # noqa: F811
+    """«Revisa que todos los pagos son solo en efectivo, incluido en los reportes
+    de Excel.» El Resumen decía «Ventas de los vendedores» y abajo «De eso, en
+    efectivo» con la misma cifra, como si hubiera otra forma de pago; y la hoja de
+    ventas repetía «Importe» en una columna «En efectivo»."""
+    await _entrar(cliente)
+    _, libro = await _bajar(cliente)
+
+    resumen = libro["Resumen"]
+    vendido = _renglon(resumen, "Ventas de los vendedores")
+    assert vendido[1] == 2250
+    assert "todas en efectivo" in vendido[2]
+    assert "De eso, en efectivo" not in _textos(resumen)
+
+    ventas = libro["Ventas y efectivo"]
+    assert "En efectivo" not in _textos(ventas)
+    assert "Todas las ventas del periodo fueron en efectivo." in _textos(ventas)
+    assert _con(ventas, "Juan Pérez")[2:5] == [1, 180, 2250]
+
+
+async def test_una_transferencia_de_un_telefono_viejo_lo_vuelve_a_separar(
+    cliente, sesion, semilla, dia  # noqa: F811
+):
+    """El servidor la sigue aceptando —la mercancía ya salió— (§81, enmienda):
+    entonces el efectivo ya no es lo vendido, y el reporte lo dice."""
+    await sesion.execute(
+        text(
+            "UPDATE ventas SET forma_pago = 'transferencia', pago_estado = 'por_confirmar'"
+            " WHERE id = :v"
+        ),
+        {"v": dia["venta"]},
+    )
+    await sesion.commit()
+    await _entrar(cliente)
+    _, libro = await _bajar(cliente)
+
+    resumen = libro["Resumen"]
+    assert _renglon(resumen, "Ventas de los vendedores")[1] == 2250
+    assert _renglon(resumen, "De eso, en efectivo")[1] == 0
+    ventas = libro["Ventas y efectivo"]
+    assert "En efectivo" in _textos(ventas)
+    assert _con(ventas, "Juan Pérez")[2:6] == [1, 180, 2250, 0]

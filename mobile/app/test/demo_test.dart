@@ -100,7 +100,7 @@ void main() {
       expect(clientes.every((c) => c['lat'] != null && c['lng'] != null), isTrue);
     });
 
-    test('incluye una transferencia encolada para verla aparte del efectivo', () {
+    test('incluye una venta encolada, en efectivo como toda venta', () {
       final base = BaseLocal.enMemoria();
       addTearDown(base.cerrar);
       sembrarDemo(base.db, ahora: '2026-09-28T10:00:00.000Z');
@@ -109,9 +109,10 @@ void main() {
         'SELECT tipo, forma_pago FROM ventas WHERE sincronizada = 0',
       );
       expect(ventas, isNotEmpty);
-      // Todo es de contado (ADR 0002 §81).
+      // Todo es de contado y en efectivo (ADR 0002 §81, §170): la demo no
+      // enseña una transferencia que la app ya no puede cobrar.
       expect(ventas.every((v) => v['tipo'] == 'contado'), isTrue);
-      expect(ventas.any((v) => v['forma_pago'] == 'transferencia'), isTrue);
+      expect(ventas.every((v) => v['forma_pago'] == 'efectivo'), isTrue);
     });
 
     test('sembrar dos veces no duplica', () {
