@@ -435,11 +435,15 @@ class ControladorSesion extends Notifier<Sesion> {
     // ya se evaluó como `null` al construirse la pantalla y Riverpod lo cachea.
     // Sin invalidarlo, el teléfono no diría de quién es hasta reiniciar la app.
     ref.invalidate(credencialGuardadaProvider);
-    ref.read(baseLocalProvider).db.execute(
-      "INSERT INTO sync_estado (clave, valor) VALUES ('dispositivo_id', ?) "
-      'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
-      [id],
-    );
+    ref.read(baseLocalProvider).db
+      ..execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('dispositivo_id', ?) "
+        'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+        [id],
+      )
+      // Lo que traiga de su vínculo anterior se revisa en la primera
+      // sincronización, aunque hoy ya se hubiera revisado (ADR 0002 §174).
+      ..execute("DELETE FROM sync_estado WHERE clave = 'tiendas_revisadas'");
     ref.read(tokenProvider.notifier).state = sesion.accessToken;
     await ref
         .read(almacenSeguroProvider)

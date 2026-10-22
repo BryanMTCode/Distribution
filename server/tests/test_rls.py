@@ -1196,3 +1196,38 @@ async def test_registrar_el_telefono_desde_el_panel_con_el_rol_restringido(
         )
     ).scalar_one()
     assert bajas == 1
+
+
+@pytest.mark.asyncio
+async def test_preguntar_las_tiendas_con_el_rol_restringido(cliente_rls, sesion, semilla):
+    """Con RLS el vendedor no VE la tienda sin ruta: una consulta común la daría
+    por ajena y el teléfono soltaría una tienda que sí es suya (ADR 0002 §174)."""
+    from tests.conftest import PASSWORD_VENDEDOR
+    from tests.test_tiendas_que_no_son_suyas import _otra_ruta, _tienda
+
+    dispositivo = uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO dispositivos (id, usuario_id, etiqueta, estado, registrado_en) "
+            "VALUES (:d, :u, 'Moto G54', 'activo', now())"
+        ),
+        {"d": dispositivo, "u": semilla["vendedor"]},
+    )
+    suya = await _tienda(sesion, ruta=semilla["ruta"])
+    sin_ruta = await _tienda(sesion, ruta=None)
+    ajena = await _tienda(sesion, ruta=await _otra_ruta(sesion))
+    await sesion.commit()
+    r = await cliente_rls.post(
+        "/v1/auth/login",
+        json={"codigo": "VEND01", "password": PASSWORD_VENDEDOR,
+              "dispositivo_id": str(dispositivo)},
+    )
+    cab = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    r = await cliente_rls.post(
+        "/v1/sync/tiendas", json={"tiene": [str(suya), str(sin_ruta), str(ajena)]},
+        headers=cab,
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["soltar"] == [str(ajena)]

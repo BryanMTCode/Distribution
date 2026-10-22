@@ -17,16 +17,26 @@ import 'ayudas.dart';
 
 /// Transporte programable, igual que el de dsd_core pero para la app.
 class TransporteDePrueba implements Transporte {
-  TransporteDePrueba({this.codigoPush = 200, this.seCaeLaRed = false});
+  TransporteDePrueba({this.codigoPush = 200, this.seCaeLaRed = false, this.ajenas = const {}});
 
   final int codigoPush;
   final bool seCaeLaRed;
   final List<String> llamadas = [];
 
+  /// Las tiendas que el servidor dice que no son del vendedor (ADR 0002 §174).
+  final Set<String> ajenas;
+
   @override
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     llamadas.add(ruta);
     if (seCaeLaRed) throw const ErrorDeRed('sin señal');
+    if (ruta == '/v1/sync/tiendas') {
+      final tiene = (cuerpo['tiene']! as List).cast<String>();
+      return RespuestaHttp(
+        200,
+        jsonEncode({'soltar': tiene.where(ajenas.contains).toList()}),
+      );
+    }
     // Los folios (ADR 0002 §171): el servidor alarga el rango de venta mil más.
     if (ruta.endsWith('/folios')) {
       final consumido = (cuerpo['consumido'] as Map<String, Object?>?) ?? {};
@@ -187,6 +197,37 @@ void main() {
     );
 
     expect(transporte.llamadas.where((r) => r.endsWith('/folios')), isEmpty);
+  });
+
+  testWidgets('al sincronizar suelta las tiendas que no son suyas (ADR 0002 §174)',
+      (tester) async {
+    // «En todos los días de la semana me aparecen como 90 y tantas tiendas»: la
+    // ruta dos veces, la que se tiró con la base en blanco y la de ahora.
+    final transporte = TransporteDePrueba(ajenas: {'c-vieja'});
+    late BaseLocal base;
+    await entrarYSincronizar(
+      tester,
+      transporte: transporte,
+      sembrar: (b) {
+        base = b as BaseLocal;
+        sembrarCliente(base, id: 'c-suya', nombre: 'Abarrotes Lupita');
+        sembrarCliente(base, id: 'c-vieja', nombre: 'Abarrotes Lupita (la de antes)');
+      },
+    );
+
+    expect(transporte.llamadas, contains('/v1/sync/tiendas'));
+    expect(find.text('Abarrotes Lupita'), findsOneWidget);
+    expect(find.text('Abarrotes Lupita (la de antes)'), findsNothing);
+    expect(
+      base.db.select("SELECT activo FROM clientes WHERE id = 'c-vieja'").single['activo'],
+      0,
+      reason: 'se deja inactiva, como con una baja: sus ventas siguen en pie',
+    );
+
+    // Una vez al día: la siguiente sincronización ya no pregunta.
+    await tester.tap(find.byKey(const Key('boton_sincronizar')));
+    await tester.pumpAndSettle();
+    expect(transporte.llamadas.where((r) => r == '/v1/sync/tiendas'), hasLength(1));
   });
 
   testWidgets('una sincronización sin nada pendiente lo dice', (tester) async {

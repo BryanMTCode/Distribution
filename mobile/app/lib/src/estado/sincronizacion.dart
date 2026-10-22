@@ -307,6 +307,7 @@ class ControladorSync extends Notifier<EstadoSync> {
     // se pedían al vincular, y a las mil ventas el vendedor no podía vender.
     if (resultado.fin == FinDeSync.completa || resultado.fin == FinDeSync.parcial) {
       await _pedirFoliosSiFaltan(transporte, reloj);
+      await _soltarTiendasAjenas(transporte, reloj);
     }
 
     // ---- Orden de borrado (Fase 9) --------------------------------------
@@ -379,6 +380,36 @@ class ControladorSync extends Notifier<EstadoSync> {
       }
     } on Object catch (e) {
       debugPrint('No se pudieron pedir folios: $e');
+    }
+  }
+
+  /// Las tiendas que no son suyas, fuera (ADR 0002 §174). Una vez al día —y al
+  /// vincular el teléfono, que borra la marca—: lo que el servidor conoce ya le
+  /// llega como baja, y esto es para lo que no conoce, como lo que se tiró con
+  /// la base en blanco. Corre después del pull, en la misma corrida: no hay otro
+  /// pull en medio que pudiera devolverle una tienda que acaba de soltar.
+  Future<void> _soltarTiendasAjenas(
+    Transporte transporte,
+    DateTime Function() reloj,
+  ) async {
+    final db = ref.read(baseLocalProvider).db;
+    final hoy = reloj().toLocal().toIso8601String().substring(0, 10);
+    final fila = db.select(
+      "SELECT valor FROM sync_estado WHERE clave = 'tiendas_revisadas'",
+    );
+    if (fila.isNotEmpty && fila.first['valor'] == hoy) return;
+    try {
+      final soltadas = await soltarTiendasAjenas(transporte: transporte, db: db);
+      // Un servidor que todavía no sabe contestar: se le vuelve a preguntar.
+      if (soltadas == null) return;
+      db.execute(
+        "INSERT INTO sync_estado (clave, valor) VALUES ('tiendas_revisadas', ?) "
+        'ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+        [hoy],
+      );
+      if (soltadas > 0) ref.invalidate(clientesProvider);
+    } on Object catch (e) {
+      debugPrint('No se pudieron revisar las tiendas: $e');
     }
   }
 

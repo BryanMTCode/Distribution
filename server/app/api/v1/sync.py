@@ -533,6 +533,68 @@ async def foto_del_camion(actor: ActorDep, sesion: SesionDep) -> FotoDelCamion:
 
 
 # ---------------------------------------------------------------------------
+# Las tiendas del teléfono (ADR 0002 §174)
+# ---------------------------------------------------------------------------
+# El teléfono solo suelta una tienda con la baja del servidor, y de lo que se
+# tiró con la base en blanco el servidor ya no sabe nada: no hay baja que
+# mandar. «Me aparecen 90 y tantas» tiendas cada día donde la ruta tiene 47: la
+# ruta dos veces, la de antes y la de ahora. Así que el teléfono pregunta.
+
+
+class TiendasDelTelefono(EntradaBase):
+    # Las que enseña: activas y ya conocidas por el servidor (sin las altas que
+    # todavía no suben).
+    tiene: list[uuid.UUID] = Field(max_length=20000)
+
+
+class TiendasQueSoltar(BaseModel):
+    soltar: list[uuid.UUID]
+
+
+@router.post("/tiendas", response_model=TiendasQueSoltar)
+async def tiendas_del_telefono(
+    peticion: TiendasDelTelefono, actor: ActorDep, sesion: SesionDep
+) -> TiendasQueSoltar:
+    """De las tiendas que el teléfono enseña, las que no son suyas.
+
+    «Suyas» es lo que le baja el pull: las de sus rutas y las que no tienen ruta,
+    sin las de mayoreo, activas o prospecto. Lo que contesta, el teléfono lo deja
+    inactivo, igual que con una baja. Lo de cada teléfono queda anotado para la
+    oficina (`piloto_listo.sh`).
+    """
+    if actor.dispositivo_id is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "revisar las tiendas exige un token emitido para un dispositivo registrado",
+        )
+    tiene = list(dict.fromkeys(peticion.tiene))
+    soltar = list(
+        (
+            await sesion.execute(
+                text("SELECT fn_tiendas_que_no_son_suyas(CAST(:tiene AS uuid[]))"),
+                {"tiene": [str(t) for t in tiene]},
+            )
+        ).scalars()
+    )
+    await sesion.execute(
+        text(
+            "UPDATE dispositivos SET tiendas_en_telefono = :n, tiendas_soltadas = :s, "
+            "       tiendas_revisadas_en = now() "
+            " WHERE id = :dev"
+        ),
+        {"n": len(tiene), "s": len(soltar), "dev": actor.dispositivo_id},
+    )
+    await sesion.commit()
+    if soltar:
+        logging.getLogger("dsd.sync").info(
+            "tiendas que no son suyas",
+            extra={"dispositivo_id": str(actor.dispositivo_id), "tenia": len(tiene),
+                   "soltadas": len(soltar)},
+        )
+    return TiendasQueSoltar(soltar=soltar)
+
+
+# ---------------------------------------------------------------------------
 # Estado
 # ---------------------------------------------------------------------------
 

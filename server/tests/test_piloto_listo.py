@@ -191,6 +191,18 @@ async def test_dice_cuantas_tiendas_le_salen_y_cuantas_le_tocan_hoy(sesion, semi
     assert "R04: 7, hoy 3" in seccion
     assert "1 tienda(s) sin ruta: les salen a todos los vendedores" in seccion
     assert "sus rutas no tienen clientes" not in seccion
+    assert "su teléfono todavía no revisa cuáles tiendas son suyas" in seccion
+
+    # El teléfono pregunta (la +59) y queda anotado lo que soltó.
+    dispositivo = await _telefono(sesion, semilla)
+    await sesion.execute(
+        text("UPDATE dispositivos SET tiendas_en_telefono = 14, tiendas_soltadas = 7, "
+             "       tiendas_revisadas_en = now() WHERE id = :d"),
+        {"d": dispositivo},
+    )
+    await sesion.commit()
+    _, salida = _correr("VEND01", respaldos=tmp_path)
+    assert "su teléfono enseñaba 14 tiendas y soltó 7 que no eran suyas" in salida
 
     _, resumen = _correr("todos", respaldos=tmp_path)
     renglon = next(r for r in resumen.splitlines() if "VEND01" in r and "tiendas" in r)

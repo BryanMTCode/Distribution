@@ -47,6 +47,7 @@ export 'src/sobre.dart';
 export 'src/sync_cliente.dart';
 export 'src/tablero.dart';
 export 'src/tablero_cliente.dart';
+export 'src/tiendas_del_telefono.dart';
 export 'src/traspaso.dart';
 export 'src/vendedores_cliente.dart';
 export 'src/ticket.dart';

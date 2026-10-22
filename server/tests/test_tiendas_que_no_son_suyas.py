@@ -227,3 +227,62 @@ async def test_la_limpieza_de_una_vez_dice_cuantas_bajas_mando(sesion, semilla):
     ).scalar_one()
     assert bajas == 3
 
+
+
+# ---------------------------------------------------------------------------
+# Y lo que el servidor ya no conoce: el teléfono pregunta (versionCode 59)
+# ---------------------------------------------------------------------------
+
+
+async def test_el_telefono_pregunta_y_el_servidor_le_dice_cuales_soltar(
+    cliente, sesion, semilla
+):
+    """«En todos los días me aparecen como 90 y tantas»: la ruta dos veces.
+
+    Las de antes de la base en blanco ya no existen en el servidor, y de ésas no
+    hay baja que mandar.
+    """
+    cabeceras, dispositivo = await _cab_vendedor(cliente, sesion, semilla)
+    otra = await _otra_ruta(sesion)
+    suya = await _tienda(sesion, ruta=semilla["ruta"])
+    sin_ruta = await _tienda(sesion, ruta=None)
+    ajena = await _tienda(sesion, ruta=otra)
+    mayoreo = await _tienda(sesion, ruta=None, mayoreo=True)
+    de_baja = await _tienda(sesion, ruta=semilla["ruta"])
+    await sesion.execute(
+        text("UPDATE clientes SET estatus = 'baja' WHERE id = :c"), {"c": de_baja}
+    )
+    await sesion.commit()
+    de_antes = uuid.uuid4()  # la que se tiró con la base en blanco
+
+    r = await cliente.post(
+        "/v1/sync/tiendas",
+        json={"tiene": [str(t) for t in (suya, sin_ruta, ajena, mayoreo, de_baja, de_antes)]},
+        headers=cabeceras,
+    )
+
+    assert r.status_code == 200, r.text
+    assert set(r.json()["soltar"]) == {str(t) for t in (ajena, mayoreo, de_baja, de_antes)}
+    # Y queda anotado para la oficina.
+    fila = (
+        await sesion.execute(
+            text("SELECT tiendas_en_telefono, tiendas_soltadas, tiendas_revisadas_en "
+                 "  FROM dispositivos WHERE id = :d"),
+            {"d": dispositivo},
+        )
+    ).mappings().one()
+    assert (fila["tiendas_en_telefono"], fila["tiendas_soltadas"]) == (6, 4)
+    assert fila["tiendas_revisadas_en"] is not None
+
+
+async def test_sin_telefono_no_se_pregunta(cliente, sesion, semilla):
+    from tests.conftest import PASSWORD_VENDEDOR
+
+    r = await cliente.post(
+        "/v1/auth/login", json={"codigo": "ADMIN01", "password": PASSWORD_VENDEDOR}
+    )
+    cabeceras = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    r = await cliente.post("/v1/sync/tiendas", json={"tiene": []}, headers=cabeceras)
+
+    assert r.status_code == 403

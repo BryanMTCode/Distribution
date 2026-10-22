@@ -29,6 +29,11 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS trg_telefono_nuevo_suelta_lo_ajeno ON dispositivos")
     op.execute("DROP FUNCTION IF EXISTS fn_telefono_nuevo_suelta_lo_ajeno()")
     op.execute("DROP FUNCTION IF EXISTS fn_soltar_tiendas_ajenas(uuid)")
+    op.execute("DROP FUNCTION IF EXISTS fn_tiendas_que_no_son_suyas(uuid[])")
+    op.execute(
+        "ALTER TABLE dispositivos DROP COLUMN IF EXISTS tiendas_en_telefono, "
+        "DROP COLUMN IF EXISTS tiendas_soltadas, DROP COLUMN IF EXISTS tiendas_revisadas_en"
+    )
     # El de la 0034: solo avisaba a la ruta que perdía al cliente si tenía ruta.
     op.execute(
         """

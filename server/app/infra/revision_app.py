@@ -114,12 +114,14 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "solo_sus_tiendas", "Solo las tiendas de sus rutas",
-                "Con el servidor actualizado, sincroniza con señal. En el servidor corre "
-                "«bash scripts/en_el_servidor.sh piloto_listo.sh todos».",
-                "«Todos» y «Hoy» dicen lo mismo que la revisión para ese vendedor: las "
-                "tiendas de otras rutas y los clientes de mayoreo ya no le salen (ADR 0002 "
+                "Con señal, deja que se sincronice sola (cada dos minutos; el vendedor "
+                "no hace nada). En el servidor corre «bash scripts/en_el_servidor.sh "
+                "piloto_listo.sh todos».",
+                "Cada día de «Todos» dice lo que la revisión dice para ese vendedor, sin "
+                "la ruta dos veces; la revisión dice cuántas tiendas soltó su teléfono. "
+                "Las de otras rutas y los clientes de mayoreo ya no le salen (ADR 0002 "
                 "§174).",
-                desde="+58",
+                desde="+59",
             ),
             Punto(
                 "ruta_por_dia", "Mi ruta, agrupada por día",

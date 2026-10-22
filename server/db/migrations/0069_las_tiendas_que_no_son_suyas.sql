@@ -156,3 +156,57 @@ BEGIN
        FROM (SELECT DISTINCT usuario_id FROM dispositivos) u;
 END
 $$;
+
+-- =============================================================================
+-- Y lo que el servidor ya no conoce: el teléfono pregunta (versionCode 59)
+-- =============================================================================
+-- Lo de arriba manda la baja de lo que el servidor CONOCE. Lo que se tiró con
+-- la base en blanco (§90) ya no está ni en `clientes` ni en el `change_log`, y
+-- un teléfono que se vinculó de nuevo antes de empezar de cero —«empezar a
+-- operar» se llevó su equipo y su marca (§138)— se quedó con esas tiendas: la
+-- misma ruta dos veces, cada día al doble, y la venta a una de ellas «a un
+-- cliente que no existe».
+--
+-- Así que el teléfono manda los ids de las tiendas que enseña y el servidor le
+-- contesta cuáles no son suyas. «Suyas» es lo mismo que le baja el pull: las de
+-- sus rutas y las que no tienen ruta (menos las de mayoreo), activas o
+-- prospecto. SECURITY DEFINER porque con RLS el vendedor no ve las que no tienen
+-- ruta y parecerían ajenas; las rutas salen del alcance de la sesión
+-- (`dsd_rutas()`), no de un parámetro, y solo devuelve ids que el teléfono ya
+-- mandó.
+
+CREATE OR REPLACE FUNCTION fn_tiendas_que_no_son_suyas(p_tiene uuid[])
+RETURNS SETOF uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT t.id
+      FROM unnest(p_tiene) AS t(id)
+     WHERE NOT EXISTS (
+             SELECT 1 FROM clientes c
+              WHERE c.id = t.id
+                AND c.estatus IN ('activo', 'prospecto')
+                AND (c.ruta_id = ANY (dsd_rutas())
+                     OR (c.ruta_id IS NULL AND NOT c.mayoreo)))
+     ORDER BY t.id
+$$;
+
+COMMENT ON FUNCTION fn_tiendas_que_no_son_suyas(uuid[]) IS
+    'De las tiendas que el teléfono enseña, las que no son del vendedor de la '
+    'sesión (dsd_rutas): de otra ruta, de mayoreo, inactivas o que ya no existen '
+    '(ADR 0002 §174).';
+
+-- Lo que dijo cada teléfono la última vez, para que la oficina lo vea sin
+-- tener el teléfono en la mano (`piloto_listo.sh`).
+ALTER TABLE dispositivos
+    ADD COLUMN IF NOT EXISTS tiendas_en_telefono integer,
+    ADD COLUMN IF NOT EXISTS tiendas_soltadas integer,
+    ADD COLUMN IF NOT EXISTS tiendas_revisadas_en timestamptz;
+
+COMMENT ON COLUMN dispositivos.tiendas_en_telefono IS
+    'Cuántas tiendas enseñaba el teléfono la última vez que preguntó cuáles son '
+    'suyas, antes de soltar las demás (ADR 0002 §174).';
+COMMENT ON COLUMN dispositivos.tiendas_soltadas IS
+    'Cuántas de ésas no eran suyas y soltó.';

@@ -392,6 +392,26 @@ if [ "${SIN_RUTA:-0}" -gt 0 ] 2>/dev/null; then
           "asígnales su ruta en el panel → Clientes"
 fi
 
+# Y lo que dijo su teléfono la última vez que preguntó cuáles son suyas: al
+# sincronizar, una vez al día, suelta las demás (ADR 0002 §174, la +59).
+REVISADAS="$(consultar "
+    SELECT tiendas_en_telefono, tiendas_soltadas,
+           to_char(tiendas_revisadas_en AT TIME ZONE 'America/Mazatlan', 'DD/MM HH24:MI')
+      FROM dispositivos
+     WHERE usuario_id = '$ID' AND estado = 'activo' AND tiendas_revisadas_en IS NOT NULL
+     ORDER BY tiendas_revisadas_en DESC LIMIT 1")"
+if [ -z "$REVISADAS" ]; then
+    avisa "su teléfono todavía no revisa cuáles tiendas son suyas" \
+          "lo hace solo al sincronizar, desde la app +59"
+else
+    IFS='|' read -r TENIA SOLTO CUANDO <<<"$REVISADAS"
+    if [ "${SOLTO:-0}" -gt 0 ] 2>/dev/null; then
+        bien "su teléfono enseñaba $TENIA tiendas y soltó $SOLTO que no eran suyas ($CUANDO)"
+    else
+        bien "su teléfono enseña $TENIA tiendas, todas suyas ($CUANDO)"
+    fi
+fi
+
 # Sin coordenadas no hay mapa del día ni distancia al cliente, y el alta en
 # calle del piloto no se puede comparar contra nada.
 SIN_GPS="$(consultar "

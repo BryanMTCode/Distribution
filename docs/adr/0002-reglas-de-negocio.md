@@ -7386,9 +7386,11 @@ todos entonces sí vengan todos los días.»
 ## 174. En el teléfono, solo las tiendas de sus rutas
 
 «Verifica cuántas tiendas aparecen a cada vendedor en la app, porque me aparecen
-90 y tantas para el que trae la ruta 1107.» El jueves de la 1107 son 47 (273 en
-toda la ruta). Y el caso de Luis (§165): le vendió a una tienda que su teléfono
-enseñaba como suya y que en el servidor era de la R1102.
+90 y tantas para el que trae la ruta 1107.» Y luego: «en todos los días de la
+semana aparecen como 90 y tantas tiendas», ya con la +58. La 1107 trae 273: 46 el
+lunes, 46 el martes, 57 el miércoles, 47 el jueves, 49 el viernes y 28 el sábado.
+Cada día al doble es la ruta dos veces. Y el caso de Luis (§165): le vendió a una
+tienda que su teléfono enseñaba como suya, «un cliente que no existe».
 
 El teléfono no borra tiendas por su cuenta: solo suelta una cuando el servidor le
 manda la baja. Había tres caminos por donde esa baja no llegaba nunca:
@@ -7402,6 +7404,12 @@ manda la baja. Había tres caminos por donde esa baja no llegaba nunca:
 - **El teléfono que se vincula de nuevo** se quedaba con las tiendas de su
   vínculo anterior: otro vendedor, otras rutas, los de prueba que se fueron con
   «empezar a operar» (§138).
+- **Lo que se tiró con la base en blanco** (§90). Las tiendas volvieron a
+  cargarse con identificadores nuevos, y cada teléfono quedó marcado para
+  empezar de cero. Pero «empezar a operar» se llevó esos teléfonos, con su
+  marca, y se vincularon como nuevos: se quedaron con las tiendas de antes y
+  recibieron las de ahora. De ésas el servidor ya no sabe nada, así que no
+  tiene baja que mandar.
 
 Ahora (migración 0069):
 
@@ -7418,14 +7426,26 @@ Ahora (migración 0069):
   no hace falta APK nuevo. La baja de una tienda que el teléfono no tiene no le
   hace nada.
 
+- **Y el teléfono pregunta** (versionCode 59), solo, sin que el vendedor decida
+  nada —«todo es desde el sistema»—: al sincronizarse, una vez al día y después
+  de vincularlo, manda los identificadores de las tiendas que enseña y
+  el servidor le contesta cuáles no son suyas. Eso cubre lo que el servidor ya
+  no conoce. Las deja inactivas, igual que con una baja: sus ventas sin subir
+  siguen en pie, y si la oficina se la vuelve a dar, el alta la regresa. Las
+  altas que todavía no suben no se mandan ni se tocan. «Suyas» es lo mismo que
+  le baja la sincronización: las de sus rutas y las que no tienen ruta (menos
+  las de mayoreo), activas o prospecto.
+
 La baja solo lleva el identificador de la tienda, sin ningún dato: a un vendedor
-no le llega nada de una tienda de otra ruta.
+no le llega nada de una tienda de otra ruta. Y al preguntar, el servidor solo
+contesta sobre los identificadores que el teléfono mandó.
 
 `piloto_listo.sh` dice ahora cuántas tiendas debe enseñar cada teléfono y
 cuántas le tocan hoy, ruta por ruta. Con `todos` va en el resumen, junto a cada
 vendedor («R1107: 273 tiendas, hoy 47»). Avisa también de las tiendas sin ruta,
-que les salen a todos. La revisión contaba con una columna que no existe
+que les salen a todos, y dice lo que contestó su teléfono la última vez que
+preguntó: cuántas tiendas enseñaba y cuántas soltó. La revisión contaba con una columna que no existe
 (`clientes.activo`) y decía siempre «sus rutas no tienen clientes». Con la del
 precio (`precios.activo`) pasaba igual.
 
-(Servidor; migración 0069, esquema `0062_tiendas_ajenas`.)
+(Migración 0069, esquema `0062_tiendas_ajenas`; versionCode 59.)
