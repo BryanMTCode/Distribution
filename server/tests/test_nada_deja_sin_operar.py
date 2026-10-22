@@ -25,16 +25,19 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy import text
 
-from app.api.admin.cargas import _bloqueos_para_cargar
-from app.api.admin.liquidaciones import _bloqueos_para_cerrar
 from app.domain.sync.sobres import Operacion
-from app.infra.sync import ingesta
 from tests.ayudas_sync import a_json, operacion_cliente, sobre
 from tests.test_rls import cliente_rls, motor_restringido, rol_api  # noqa: F401
 from tests.test_venta_ingesta import RELOJ_DISPOSITIVO, escenario, payload  # noqa: F401
 from tests.test_venta_tienda_que_no_ve import _cab_vendedor
 
 pytestmark = pytest.mark.asyncio
+
+# Los módulos que abren la conexión (`app.core.db`, por `ingesta`, `cargas` y
+# `liquidaciones`) se importan DENTRO de cada prueba, como en el resto de la
+# suite: importados al recolectar, antes de que `esquema` fije la base de
+# pruebas, el motor de la app quedaba apuntando a la de desarrollo y fallaban
+# pruebas de otros archivos —el worker, la poda, el comando de arranque—.
 
 
 async def _cuarentena(sesion) -> list[dict]:
@@ -60,6 +63,8 @@ async def _cuarentena(sesion) -> list[dict]:
 async def test_un_bug_en_una_operacion_no_tumba_el_lote(
     cliente, sesion, escenario, monkeypatch  # noqa: F811
 ):
+    from app.infra.sync import ingesta
+
     malo = uuid.uuid4()
     original = ingesta.obtener_manejador
 
@@ -180,6 +185,8 @@ async def _pendiente(sesion, escenario, tipo: str, *, recibido_hace_dias: int = 
 
 
 async def _frena_el_corte(sesion, escenario) -> bool:  # noqa: F811
+    from app.api.admin.liquidaciones import _bloqueos_para_cerrar
+
     bloqueos = await _bloqueos_para_cerrar(
         sesion, {"vendedor_id": escenario["vendedor"], "fecha_operativa": date.today()}
     )
@@ -200,6 +207,8 @@ async def test_la_venta_de_hoy_en_cuarentena_si_frena(sesion, escenario):  # noq
     await _pendiente(sesion, escenario, "cliente.crear+venta.crear")
 
     assert await _frena_el_corte(sesion, escenario)
+    from app.api.admin.liquidaciones import _bloqueos_para_cerrar
+
     bloqueos = await _bloqueos_para_cerrar(
         sesion, {"vendedor_id": escenario["vendedor"], "fecha_operativa": date.today()}
     )
@@ -214,6 +223,8 @@ async def test_la_venta_de_un_dia_ya_cerrado_no_frena_el_de_hoy(sesion, escenari
 
 
 async def test_la_carga_de_manana_tampoco_la_frena_lo_viejo(sesion, escenario):  # noqa: F811
+    from app.api.admin.cargas import _bloqueos_para_cargar
+
     ayer = date.today() - timedelta(days=1)
     await sesion.execute(
         text(
