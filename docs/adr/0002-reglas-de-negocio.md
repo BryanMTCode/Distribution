@@ -1174,7 +1174,7 @@ No es cuánto vendimos —eso lo dice el reporte de ventas— sino **cuántas vi
 perdidas podemos arreglar nosotros**. La categoría del motivo es lo que lo permite:
 
     cliente    cerrado, no estaba quien decide, no tiene dinero hoy
-    operación  se le acabó el crédito
+    operación  (excedió su límite de crédito: ya no se ofrece, solo contado)
     producto   no traigo lo que pidió, le pareció caro
     vendedor   no alcancé a visitarlo
 
@@ -1182,6 +1182,13 @@ Las tres últimas son nuestras. Un día con ocho no-drops por «no traigo lo que
 pidió» no es un problema de ventas: es un problema de carga, y se arregla en la
 bodega a la mañana siguiente. Sin la categoría, las ocho se ven como «no compró» y
 nadie cambia nada.
+
+La tarjeta «visitas perdidas que son nuestras» nombra esos motivos con su nombre
+del catálogo —los activos de las tres categorías, más el que ya no se ofrece si se
+usó en el rango, porque también suma—, en vez de un texto fijo. El fijo decía «se le
+acabó el crédito» cuando ese motivo ya no se ofrecía (todo es de contado, 0046)
+y no decía «le pareció caro», que sí contaba (octubre 2026). Si en Motivos se le
+cambia la categoría a uno, la tarjeta lo dice sola.
 
 ### Una visita es un cliente visitado, no un documento
 

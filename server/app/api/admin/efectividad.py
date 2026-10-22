@@ -16,7 +16,7 @@ No es "cuánto vendimos" —eso lo dice el reporte de ventas— sino **cuántas 
 perdidas podemos arreglar nosotros**:
 
     cliente    cerrado, no estaba quien decide, no tiene dinero hoy
-    operación  se le acabó el crédito
+    operación  (excedió su límite de crédito: ya no se ofrece, solo contado)
     producto   no traigo lo que pidió, le pareció caro
     vendedor   no alcancé a visitarlo
 
@@ -67,7 +67,7 @@ DIAS_POR_OMISION = 7
 # Qué categorías de no-drop puede arreglar la empresa.
 #
 # Es la línea que convierte el reporte en algo accionable: 'cliente' es el mundo, y
-# las otras tres son decisiones nuestras —qué se cargó, a quién se le dio crédito,
+# las otras tres son decisiones nuestras —qué se cargó, a qué precio se vende,
 # cómo se planeó la ruta—.
 NUESTRA_CULPA = ("operacion", "producto", "vendedor")
 
@@ -284,6 +284,29 @@ async def listar(
     # foránea a `motivos_no_drop`, así que el `JOIN` nunca pierde renglones.
     con_motivo = sum(f["cuantas"] for f in motivos)
 
+    # Los motivos que cuentan como nuestros, para decirlos con su nombre debajo de
+    # la cifra. Del catálogo y no escritos en la plantilla: la plantilla decía «se
+    # le acabó el crédito» cuando ese motivo ya no se ofrecía (solo contado, 0046)
+    # y no decía «le pareció caro», que sí contaba. Los activos, más los que se
+    # usaron en el rango aunque ya no se ofrezcan, porque también suman a la cifra.
+    motivos_nuestros = (
+        await sesion.execute(
+            text(
+                """
+                SELECT nombre
+                  FROM motivos_no_drop
+                 WHERE categoria = ANY(:nuestras)
+                   AND (activo OR codigo = ANY(:usados))
+                 ORDER BY orden, nombre
+                """
+            ),
+            {
+                "nuestras": list(NUESTRA_CULPA),
+                "usados": [f["codigo"] for f in motivos],
+            },
+        )
+    ).scalars().all()
+
     por_categoria: dict[str, int] = {}
     for f in motivos:
         por_categoria[f["categoria"]] = por_categoria.get(f["categoria"], 0) + f["cuantas"]
@@ -321,6 +344,7 @@ async def listar(
             "por_categoria": por_categoria,
             "etiqueta_categoria": ETIQUETA_CATEGORIA,
             "nuestra_culpa": NUESTRA_CULPA,
+            "motivos_nuestros": motivos_nuestros,
             "unidades_mermadas": sum(
                 Decimal(f["unidades"]) for f in mermas
             ),

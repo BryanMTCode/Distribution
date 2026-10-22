@@ -350,6 +350,73 @@ async def test_separa_lo_que_podemos_arreglar_de_lo_que_no(cliente, semana):
     assert "Lo podemos arreglar nosotros" in plano
 
 
+async def test_dice_cuales_motivos_son_nuestros_con_su_nombre(cliente, sesion, semana):
+    """«Qué es eso de visitas perdidas que son nuestras» (octubre 2026).
+
+    La tarjeta lo explicaba con un texto fijo que decía «se le acabó el crédito»
+    —un motivo que ya no se ofrece desde que todo es de contado (0046)— y no decía
+    «le pareció caro», que sí cuenta. Ahora sale del catálogo: si en Motivos se
+    cambia la categoría de uno, la tarjeta lo dice sin tocar la plantilla.
+    """
+    await _entrar(cliente)
+    plano = solo_texto(await cliente.get("/panel/efectividad"))
+
+    assert (
+        "Son las de «No traigo lo que pidió», «Le pareció caro» o "
+        "«No alcancé a visitarlo»." in plano
+    )
+    assert "crédito" not in plano
+
+    # Si se cambia la categoría de un motivo, la tarjeta lo dice. El catálogo no se
+    # vacía entre pruebas: se deja como estaba.
+    async def categoria_de_caro(categoria):
+        await sesion.execute(
+            text("UPDATE motivos_no_drop SET categoria = :c WHERE codigo = 'PRECIO_ALTO'"),
+            {"c": categoria},
+        )
+        await sesion.commit()
+
+    await categoria_de_caro("cliente")
+    try:
+        plano = solo_texto(await cliente.get("/panel/efectividad"))
+    finally:
+        await categoria_de_caro("producto")
+    assert "Son las de «No traigo lo que pidió» o «No alcancé a visitarlo»." in plano
+
+
+async def test_el_motivo_que_ya_no_se_ofrece_se_dice_si_se_uso(
+    cliente, sesion, semana, semilla
+):
+    """Un no-drop viejo por «crédito» sigue sumando a la cifra: entonces se nombra."""
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO no_drops (id, dispositivo_id, folio_consecutivo, cliente_id,
+                                  vendedor_id, ruta_id, motivo_codigo, lat, lng,
+                                  fecha_dispositivo, fecha_operativa)
+            VALUES (:n, :d, 900, :c, :u, :r, 'SIN_CREDITO', 20.6736, -103.3440,
+                    now(), :dia)
+            """
+        ),
+        {
+            "n": uuid.uuid4(),
+            "d": semana["dispositivo"],
+            "c": semana["clientes"]["La Esquina"],
+            "u": semilla["vendedor"],
+            "r": semilla["ruta"],
+            "dia": semana["dia"],
+        },
+    )
+    await sesion.commit()
+    await _entrar(cliente)
+    plano = solo_texto(await cliente.get("/panel/efectividad"))
+
+    assert (
+        "Son las de «Excedió su límite de crédito», «No traigo lo que pidió», "
+        "«Le pareció caro» o «No alcancé a visitarlo»." in plano
+    )
+
+
 async def test_los_motivos_se_muestran_con_su_nombre_y_su_cuenta(cliente, semana):
     await _entrar(cliente)
     plano = solo_texto(await cliente.get("/panel/efectividad"))

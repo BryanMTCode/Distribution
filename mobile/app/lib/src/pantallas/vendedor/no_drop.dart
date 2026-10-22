@@ -9,7 +9,7 @@
 /// temprano.
 ///
 /// Con ellos se puede preguntar lo que de verdad importa: cuántas visitas
-/// perdidas son culpa nuestra —no traía lo que pidió, se le acabó el crédito— y
+/// perdidas son culpa nuestra —no traía lo que pidió, le pareció caro— y
 /// cuántas del cliente.
 ///
 /// ─────────────────────────────────────────────────────────────────────────

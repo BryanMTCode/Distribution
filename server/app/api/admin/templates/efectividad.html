@@ -45,8 +45,13 @@
     <div class="etiqueta">visitas perdidas que son nuestras</div>
     <div class="sutil" style="margin-top:6px">
       {% if perdidas %}
-        {{ arreglables }}% de las perdidas. No traíamos lo que pidió, se le acabó
-        el crédito, o no se alcanzó a visitar.
+        {{ arreglables }}% de las perdidas.
+        {% if motivos_nuestros %}
+          Son las de
+          {% for nombre in motivos_nuestros -%}
+            «{{ nombre }}»{% if loop.revindex == 2 %} o {% elif not loop.last %}, {% endif %}
+          {%- endfor %}.
+        {% endif %}
       {% else %}
         No se perdió ninguna visita.
       {% endif %}
