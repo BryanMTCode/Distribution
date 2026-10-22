@@ -270,11 +270,6 @@ FORMAS_DE_PAGO_DE_VENTA = ("efectivo", "transferencia")
 MOTIVO_LEJOS_DEL_CLIENTE = "fuera_de_geocerca"
 MOTIVO_SIN_GEOSELLO = "sin_ubicacion"
 MOTIVO_RELOJ_DESFASADO = "reloj_desfasado"
-# La tienda es de una ruta que el vendedor no tiene (ADR 0002 §165): la oficina se
-# la pasó a otra ruta, o le quitó la ruta, mientras él vendía sin señal. La venta
-# entra igual —la mercancía ya salió de SU camión y el dinero lo trae él— y queda
-# para que la oficina vea a quién le vendió.
-MOTIVO_CLIENTE_DE_OTRA_RUTA = "cliente_de_otra_ruta"
 # La tienda no tocaba ese día: ni por su plan ni porque se reagendara para ese día
 # (ADR 0002 §167). Entra igual —el cliente que llama pidiendo mercancía existe—,
 # y la oficina la distingue de la venta del recorrido.
@@ -390,15 +385,13 @@ async def crear_venta(
             f"la venta referencia un cliente que no existe: {cliente_id}",
         )
 
-    # La tienda de una ruta que el vendedor ya no tiene: se MARCA (§0.1, ADR 0002
-    # §165). Antes se rechazaba, y con RLS ni siquiera llegaba aquí: la tienda no
-    # se veía y la venta se iba a cuarentena como «cliente que no existe», con su
-    # cancelación detrás. La venta queda en la ruta del vendedor —es su camión y
-    # su corte—, así el delta le regresa a su teléfono.
-    ruta_de_la_venta = cliente["ruta_id"]
+    # Un vendedor no le vende a una tienda de otra ruta: se rechaza (ADR 0002 §165),
+    # y el rechazo dice de qué ruta es para que la oficina sepa qué corregir.
     if cliente["ruta_id"] is not None and ctx.rutas and cliente["ruta_id"] not in ctx.rutas:
-        motivos.append(MOTIVO_CLIENTE_DE_OTRA_RUTA)
-        ruta_de_la_venta = _ruta_del_vendedor(ctx, datos)
+        raise ErrorDeManejador(
+            CodigoError.CONFLICTO_DE_DATOS,
+            await _no_es_de_su_ruta(sesion, ctx, cliente["ruta_id"]),
+        )
 
     # La lista de precios: le falta trazabilidad, no coherencia. Se marca (ver la
     # sección "LO QUE AQUÍ NO SE PUSO" en 0012_importes_rigidos.sql).
@@ -502,7 +495,7 @@ async def crear_venta(
             # nombre de quién vende, un equipo comprometido escribiría en la ruta
             # de cualquier otro.
             "vendedor": ctx.usuario_id,
-            "ruta": ruta_de_la_venta,
+            "ruta": cliente["ruta_id"],
             "almacen": ctx.almacen_id,
             "carga": _uuid_opcional(datos, "carga_id"),
             "visita": _uuid_opcional(datos, "visita_id"),
@@ -590,6 +583,8 @@ async def _cliente_del_telefono(sesion: AsyncSession, cliente_id: uuid.UUID):
     teléfono puede traer una que no lo es —una tienda sin ruta, que les llega a
     todos; una que cambió de ruta mientras vendía sin señal—. El SELECT la
     escondía y la venta salía como «un cliente que no existe» (ADR 0002 §165).
+    Encontrada, la regla de la ruta decide: sin ruta entra, de otra ruta se
+    rechaza diciendo de cuál es.
     """
     return (
         await sesion.execute(
@@ -598,13 +593,23 @@ async def _cliente_del_telefono(sesion: AsyncSession, cliente_id: uuid.UUID):
     ).mappings().first()
 
 
-def _ruta_del_vendedor(ctx: Contexto, datos: dict[str, Any]) -> uuid.UUID | None:
-    """La ruta del vendedor para un documento hecho en una tienda que no es suya:
-    la que dice su teléfono si de verdad la tiene, y si no, la primera que tiene."""
-    declarada = _uuid_opcional(datos, "ruta_id")
-    if declarada in ctx.rutas:
-        return declarada
-    return sorted(ctx.rutas)[0] if ctx.rutas else None
+async def _no_es_de_su_ruta(sesion: AsyncSession, ctx: Contexto, ruta_id: uuid.UUID) -> str:
+    """«el cliente no pertenece a la ruta del vendedor: es de la R1102 y el vendedor
+    tiene R1107». Con las rutas a la vista, la oficina sabe si mover la tienda o
+    descartar el documento (ADR 0002 §165)."""
+    codigos = dict(
+        (
+            await sesion.execute(
+                text("SELECT id, codigo FROM rutas WHERE id = ANY(:r)"),
+                {"r": [ruta_id, *ctx.rutas]},
+            )
+        ).all()
+    )
+    suyas = ", ".join(sorted(codigos.get(r, str(r)) for r in ctx.rutas))
+    return (
+        "el cliente no pertenece a la ruta del vendedor: es de la "
+        f"{codigos.get(ruta_id, ruta_id)} y el vendedor tiene {suyas}"
+    )
 
 
 async def _sacar_del_camion(
@@ -1488,9 +1493,8 @@ async def crear_no_drop(
         )
 
     # Como la venta: la tienda se busca sin que RLS la esconda (ADR 0002 §165).
-    # Una tienda sin ruta entra; la de otra ruta se sigue rechazando aquí, porque
-    # el no-drop no lleva mercancía ni dinero, y una visita cruzada ensucia la
-    # efectividad de las dos rutas.
+    # Una tienda sin ruta entra; la de otra ruta se rechaza: una visita cruzada
+    # ensucia la efectividad de las dos rutas.
     cliente = await _cliente_del_telefono(sesion, cliente_id)
     if cliente is None:
         raise ErrorDeManejador(
@@ -1499,7 +1503,8 @@ async def crear_no_drop(
         )
     if cliente["ruta_id"] is not None and ctx.rutas and cliente["ruta_id"] not in ctx.rutas:
         raise ErrorDeManejador(
-            CodigoError.CONFLICTO_DE_DATOS, "el cliente no pertenece a la ruta del vendedor"
+            CodigoError.CONFLICTO_DE_DATOS,
+            await _no_es_de_su_ruta(sesion, ctx, cliente["ruta_id"]),
         )
 
     motivos: list[str] = []

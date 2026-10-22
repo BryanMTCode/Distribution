@@ -15,7 +15,8 @@ Lo que se defiende:
 
 1. **Por la subida real y con RLS**, la venta y su cancelación a una tienda sin
    ruta entran las dos, y la mercancía vuelve al camión.
-2. La de una tienda de otra ruta entra en la ruta del vendedor, **marcada**.
+2. La de una tienda de otra ruta se **rechaza**, como siempre, pero diciendo de
+   qué ruta es en vez de «cliente que no existe».
 3. **Lo que ya quedó en cuarentena se recupera de una vez**: la cancelación dice
    qué fila reprocesar, y al reprocesar la venta entra también su cancelación.
    Descartar la venta descarta también lo que venía detrás.
@@ -33,7 +34,6 @@ import pytest
 from sqlalchemy import text
 
 from app.domain.sync.sobres import Operacion
-from app.infra.sync.manejadores import MOTIVO_CLIENTE_DE_OTRA_RUTA
 from tests.ayudas_sync import a_json, sobre
 from tests.conftest import PASSWORD_VENDEDOR
 from tests.conftest import csrf_del_panel as _csrf
@@ -114,9 +114,11 @@ async def test_la_venta_y_su_cancelacion_a_una_tienda_sin_ruta_entran_con_rls(
     assert await _en_camion(sesion, escenario) == 0, "salió y volvió al camión"
 
 
-async def test_la_de_una_tienda_de_otra_ruta_entra_marcada_con_rls(
+async def test_la_de_una_tienda_de_otra_ruta_se_rechaza_diciendo_de_cual_con_rls(
     cliente_rls, sesion, escenario  # noqa: F811
 ):
+    """Un vendedor no le vende a una tienda de otra ruta. Con RLS el rechazo decía
+    «un cliente que no existe»; ahora dice de qué ruta es."""
     otra = uuid.uuid4()
     await sesion.execute(
         text("INSERT INTO rutas (id, codigo, nombre) VALUES (:r, 'R77', 'Ruta 77')"), {"r": otra}
@@ -127,20 +129,16 @@ async def test_la_de_una_tienda_de_otra_ruta_entra_marcada_con_rls(
     )
     await sesion.commit()
     cab = await _cab_vendedor(cliente_rls, escenario)
-    venta = uuid.uuid4()
-    cuerpo = a_json([sobre(Operacion("venta.crear", venta, payload(escenario)))])
+    cuerpo = a_json([sobre(Operacion("venta.crear", uuid.uuid4(), payload(escenario)))])
 
     r = await cliente_rls.post("/v1/sync/push", json=cuerpo, headers=cab)
 
-    assert r.json()["aceptadas"] == 1, r.json()["resultados"]
-    await sesion.rollback()
-    fila = (
-        await sesion.execute(
-            text("SELECT ruta_id, revision_motivos FROM ventas WHERE id = :v"), {"v": venta}
-        )
-    ).mappings().one()
-    assert fila["ruta_id"] == escenario["ruta"]
-    assert MOTIVO_CLIENTE_DE_OTRA_RUTA in fila["revision_motivos"]
+    resultado = r.json()["resultados"][0]
+    assert resultado["estado"] == "rechazada"
+    assert resultado["error_mensaje"] == (
+        "el cliente no pertenece a la ruta del vendedor: es de la R77 y el vendedor "
+        "tiene R04"
+    )
 
 
 async def _las_dos_en_cuarentena(cliente, sesion, escenario):  # noqa: F811

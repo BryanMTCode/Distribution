@@ -582,8 +582,6 @@ EXPLICACION_MOTIVOS = {
     "sin_lista_de_precios": "No trae lista de precios",
     "fuera_de_geocerca": "Lejos del domicilio registrado",
     "sin_ubicacion": "Sin GPS",
-    # La tienda es de una ruta que el vendedor no tiene (ADR 0002 §165).
-    "cliente_de_otra_ruta": "Le vendió a una tienda que no es de su ruta",
     # Ni su día del plan ni reagendada para ese día (ADR 0002 §167).
     "fuera_de_su_dia": "Fuera de su día",
     # Lo que el vendedor cambió desde el teléfono (ADR 0002 §162).

@@ -7090,11 +7090,16 @@ cancelación con «la venta a cancelar no existe».
     (migración 0067): la ruta, la lista y la ubicación de una tienda por su id,
     aunque el vendedor no la vea. No lista tiendas ni enseña nombres.
   - **La tienda sin ruta** entra como siempre debió.
-  - **La de otra ruta** se marcaba como rechazo; ahora entra (§0.1: la mercancía
-    ya salió de su camión y el dinero lo trae él), en la ruta del vendedor —así
-    el delta le regresa a su teléfono— y marcada «Le vendió a una tienda que no
-    es de su ruta». El no-drop de otra ruta se sigue rechazando: no lleva
-    mercancía ni dinero.
+  - **La de otra ruta se sigue rechazando**: un vendedor no le vende a tiendas
+    que no son de su ruta. Pero el rechazo ya no dice «cliente que no existe»,
+    sino de qué ruta es: «el cliente no pertenece a la ruta del vendedor: es de
+    la R1102 y el vendedor tiene R1107». Con eso la oficina sabe si la tienda
+    estaba mal asignada —se pasa a su ruta y se reprocesa— o si se descarta.
+    Igual el no-drop.
+  - **Una tienda que se eliminó en el dashboard** (las que no tienen ventas se
+    borran de verdad) y que el teléfono todavía tenía porque no había
+    sincronizado, sigue saliendo como «cliente que no existe»: ahí no hay tienda
+    a la cual colgarle la venta.
   - Cancelar y modificar desde el teléfono ya no pierden su venta cuando la
     tienda no se ve (la cabecera la busca con `LEFT JOIN`).
 - **Lo que ya quedó en cuarentena se recupera de una vez:**

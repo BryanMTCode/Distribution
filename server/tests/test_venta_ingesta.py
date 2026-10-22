@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.sync.sobres import CodigoError
 from app.infra.sync.manejadores import (
-    MOTIVO_CLIENTE_DE_OTRA_RUTA,
     MOTIVO_LEJOS_DEL_CLIENTE,
     MOTIVO_PRECIO_DESACTUALIZADO,
     MOTIVO_RELOJ_DESFASADO,
@@ -574,15 +573,12 @@ async def test_un_folio_como_string_se_rechaza(sesion: AsyncSession, escenario: 
         await aplicar(sesion, escenario, payload(escenario, folio_consecutivo="124"))
 
 
-async def test_una_venta_a_una_tienda_de_otra_ruta_entra_marcada(
+async def test_una_venta_de_otra_ruta_se_rechaza(
     sesion: AsyncSession, escenario: dict
 ):
-    """La tienda que la oficina pasó a otra ruta mientras el vendedor vendía sin
-    señal (ADR 0002 §165). Antes se rechazaba —y con RLS salía como «cliente que
-    no existe», con su cancelación detrás—. Pero la mercancía ya salió de SU
-    camión y el dinero lo trae él (§0.1): entra a su nombre y en su ruta, y queda
-    marcada para que la oficina vea a quién le vendió. No hay cartera que
-    proteger: toda venta es de contado (§81)."""
+    """Un vendedor no le vende a una tienda de otra ruta. El rechazo dice de cuál
+    es y qué rutas tiene el vendedor, para que la oficina sepa qué corregir (ADR
+    0002 §165): antes, con RLS, salía como «un cliente que no existe»."""
     otra_ruta = uuid.uuid4()
     await sesion.execute(
         text("INSERT INTO rutas(id, codigo, nombre) VALUES (:r, 'R99', 'Otra')"),
@@ -594,14 +590,13 @@ async def test_una_venta_a_una_tienda_de_otra_ruta_entra_marcada(
     )
     await sesion.commit()
 
-    venta_id = await aplicar(sesion, escenario, payload(escenario))
-    await sesion.commit()
-
-    venta = await leer_venta(sesion, venta_id)
-    assert venta["vendedor_id"] == escenario["vendedor"]
-    assert venta["ruta_id"] == escenario["ruta"], "la de su camión: el delta le regresa"
-    assert MOTIVO_CLIENTE_DE_OTRA_RUTA in venta["revision_motivos"]
-    assert venta["requiere_revision"] is True
+    with pytest.raises(ErrorDeManejador) as e:
+        await aplicar(sesion, escenario, payload(escenario))
+    assert e.value.codigo == CodigoError.CONFLICTO_DE_DATOS
+    assert e.value.mensaje == (
+        "el cliente no pertenece a la ruta del vendedor: es de la R99 y el vendedor "
+        "tiene R04"
+    )
 
 
 async def test_una_venta_de_un_cliente_que_no_existe_se_rechaza(
