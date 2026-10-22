@@ -7365,3 +7365,20 @@ operar y que no vaya a haber errores que los deje sin operar.» De la revisión
   día.
 
 (migración 0068; versionCode 58)
+
+## 173. «Hoy» es solo el día de hoy
+
+«Quiero que en la parte donde se despliegan las tiendas, donde dice hoy solo
+salga la vista de hoy, que quites lo que despliega los demás días, y donde dice
+todos entonces sí vengan todos los días.»
+
+- **«Hoy»** trae solo las tiendas que tocan hoy según el plan y las reagendadas
+  para hoy. Ya no lleva debajo «Las demás de tu ruta · N», agrupadas por día
+  (§108). Si hoy no toca nadie, lo dice: «Toda tu ruta está en «Todos»».
+- **«Todos»** sigue siendo la ruta entera, día por día, con su encabezado y
+  plegable (§123).
+- La tienda de otro día sigue a la mano: en «Todos», en el mapa —con «Venderle»
+  (§166)— y al buscar, que busca en toda la ruta. Venderle sigue igual, y sale en
+  el panel como «Fuera de su día» (§167).
+
+(versionCode 58)

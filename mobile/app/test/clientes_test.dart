@@ -119,32 +119,26 @@ void main() {
     conPlan(base, 'c2', '[{"dia":1,"semana":null}]');
   }
 
-  testWidgets('ABRE EN «HOY» CON LOS QUE TOCAN HOY, Y ABAJO LAS DEMÁS', (tester) async {
-    // ADR 0002 §108: el vendedor también pasa a dejarle algo a una tienda que
-    // hoy no le toca; las demás de la ruta siguen ahí, abajo.
+  testWidgets('ABRE EN «HOY» SOLO CON LOS DE HOY; «TODOS» TRAE TODOS LOS DÍAS',
+      (tester) async {
+    // ADR 0002 §173: «En la parte donde dice hoy solo salga la vista de hoy,
+    // que quites lo que despliega los demás días, y donde dice todos entonces sí
+    // vengan todos los días.» Antes, debajo de las de hoy venía «Las demás de tu
+    // ruta», por día.
     await entrar(tester, sembrarRutaConPlan);
 
     expect(find.text('Hoy · 1'), findsOneWidget);
-    final jueves = tester.getTopLeft(find.text('Toca el jueves')).dy;
-    final encabezado = tester.getTopLeft(find.byKey(const Key('otras_de_la_ruta'))).dy;
-    final lunes = tester.getTopLeft(find.text('Toca el lunes')).dy;
-    expect(jueves < encabezado && encabezado < lunes, isTrue);
-    expect(textoQueContiene('Las demás de tu ruta · 2'), findsOneWidget);
-    expect(find.text('Sin plan'), findsOneWidget);
-
-    // Se pliegan con un toque.
-    await tester.tap(find.byKey(const Key('otras_de_la_ruta')));
-    await tester.pumpAndSettle();
-    expect(find.text('Toca el lunes'), findsNothing);
     expect(find.text('Toca el jueves'), findsOneWidget);
+    expect(find.text('Toca el lunes'), findsNothing);
+    expect(find.text('Sin plan'), findsNothing);
+    expect(textoQueContiene('Las demás de tu ruta'), findsNothing);
 
-    // «Todos» es la ruta entera, por día (ADR 0002 §123), sin el encabezado de
-    // «las demás».
+    // «Todos» es la ruta entera, por día (ADR 0002 §123).
     await tester.tap(find.text('Todos'));
     await tester.pumpAndSettle();
+    expect(find.text('Toca el jueves'), findsOneWidget);
     expect(find.text('Toca el lunes'), findsOneWidget);
     expect(find.text('Sin plan'), findsOneWidget);
-    expect(find.byKey(const Key('otras_de_la_ruta')), findsNothing);
   });
 
   testWidgets('una ruta de más de 200 tiendas sale completa en «Hoy»', (tester) async {
@@ -180,12 +174,13 @@ void main() {
       conPlan(base, 'lj', '[{"dia":1,"semana":null},{"dia":4,"semana":null}]');
     });
 
-    // «Hoy» (jueves): las suyas arriba, y las demás de la ruta por día.
+    // «Hoy» (jueves): solo las suyas, sin los demás días (ADR 0002 §173).
     expect(find.text('Hoy · 2'), findsOneWidget);
-    expect(find.byKey(const Key('dia_otras_1')), findsOneWidget);
-    expect(find.text('Lunes · 2'), findsOneWidget);
-    expect(find.byKey(const Key('dia_otras_2')), findsOneWidget);
-    expect(find.byKey(const Key('dia_otras_sin')), findsOneWidget);
+    expect(find.text('Jueves primera'), findsOneWidget);
+    expect(find.text('Lunes y jueves'), findsOneWidget);
+    expect(find.text('Lunes primera'), findsNothing);
+    expect(find.text('Martes primera'), findsNothing);
+    expect(find.text('Sin día'), findsNothing);
 
     await tester.tap(find.text('Todos'));
     await tester.pumpAndSettle();
@@ -307,12 +302,17 @@ void main() {
     expect(find.text('Primera'), findsOneWidget);
   });
 
-  testWidgets('si hoy no toca nadie, lo dice y abajo siguen las demás', (tester) async {
+  testWidgets('si hoy no toca nadie, lo dice y dónde está la ruta', (tester) async {
     await entrar(tester, (base) {
       sembrarCliente(base, id: 'c2', nombre: 'Toca el lunes', secuencia: 1);
       conPlan(base, 'c2', '[{"dia":1,"semana":null}]');
     });
     expect(find.textContaining('Hoy no te toca nadie'), findsOneWidget);
+    expect(textoQueContiene('Toda tu ruta está en «Todos»'), findsOneWidget);
+    // Solo la vista de hoy (ADR 0002 §173): la del lunes está en «Todos».
+    expect(find.text('Toca el lunes'), findsNothing);
+    await tester.tap(find.text('Todos'));
+    await tester.pumpAndSettle();
     expect(find.text('Toca el lunes'), findsOneWidget);
   });
 

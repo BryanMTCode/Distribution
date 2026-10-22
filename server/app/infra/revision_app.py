@@ -105,11 +105,12 @@ SECCIONES: tuple[Seccion, ...] = (
         "ruta", "Vendedor: la ruta y las tiendas", "Teléfono de un vendedor",
         (
             Punto(
-                "hoy_y_las_demas", "«Hoy» y las demás tiendas de la ruta",
-                "Abre la lista en «Hoy».",
-                "Arriba, las tiendas que tocan hoy según el plan. Abajo, «Las demás de tu "
-                "ruta · N», agrupadas por día, que se pliegan y despliegan con un toque.",
-                desde="+34",
+                "hoy_solo_hoy", "«Hoy» es solo el día de hoy",
+                "Abre la lista en «Hoy»; luego toca «Todos».",
+                "En «Hoy», solo las tiendas que tocan hoy y las reagendadas para hoy, sin "
+                "«Las demás de tu ruta» debajo. En «Todos», la ruta entera, día por día "
+                "(ADR 0002 §173).",
+                desde="+58",
             ),
             Punto(
                 "ruta_por_dia", "Mi ruta, agrupada por día",

@@ -5,8 +5,8 @@
 ///
 /// Agrupada por día (ADR 0002 §123): en «Todos», cada día con su encabezado y
 /// sus tiendas en el orden del recorrido —el número de la hoja se repite cada
-/// día, así que sin agrupar se mezclaban—; en «Hoy», las demás de la ruta
-/// también por día.
+/// día, así que sin agrupar se mezclaban—. «Hoy» es solo el día de hoy (ADR
+/// 0002 §173): las de los otros días están en «Todos», en el mapa y al buscar.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
@@ -51,11 +51,9 @@ class PantallaClientes extends ConsumerWidget {
     final deHoy = todos.where((c) => c.tocaHoy).toList();
     final filtrando = hayPlan && soloHoy && !buscando;
     final visitadosHoy = deHoy.where((c) => c.visitadoHoy).length;
-    // En «Hoy», primero las que tocan y abajo las demás de la ruta: el vendedor
-    // también pasa a dejarle algo a una tienda que hoy no le toca (ADR 0002
-    // §108). «Todos» es la ruta entera en su orden.
-    final otras = filtrando ? todos.where((c) => !c.tocaHoy).toList() : const <ClienteEnRuta>[];
-    final otrasPlegadas = ref.watch(otrasTiendasPlegadasProvider);
+    // «Hoy» es solo lo de hoy —las de su plan y las reagendadas para hoy—, sin
+    // «Las demás de tu ruta» debajo (ADR 0002 §173; antes, §108). La tienda de
+    // otro día sigue a la mano en «Todos», en el mapa y en la búsqueda.
     // «Todos», con plan y sin buscar: por día (ADR 0002 §123).
     final porDias = hayPlan && !soloHoy && !buscando;
     final plegados = ref.watch(diasPlegadosProvider);
@@ -81,13 +79,6 @@ class PantallaClientes extends ConsumerWidget {
         : <Object>[
             if (filtrando && deHoy.isEmpty) const _SinNadieHoy(),
             if (!porDias) ...(filtrando ? deHoy : todos),
-            if (otras.isNotEmpty) _EncabezadoDeOtras(otras.length, plegadas: otrasPlegadas),
-            // Las demás, también por día; sin plegarse cada uno: ya se pliegan juntas.
-            if (otras.isNotEmpty && !otrasPlegadas)
-              for (final (dia, suyas) in _porDia(otras)) ...[
-                _EncabezadoDeDia(dia, suyas.length, clave: 'dia_otras', esHoy: false),
-                ...suyas,
-              ],
             if (porDias)
               for (final (dia, suyas) in _porDia(todos)) ...[
                 _EncabezadoDeDia(
@@ -344,13 +335,6 @@ class PantallaClientes extends ConsumerWidget {
                     itemBuilder: (_, i) => switch (renglones[i]) {
                       final _SinNadieHoy aviso => aviso,
                       final _EncabezadoDeDia encabezado => encabezado,
-                      _EncabezadoDeOtras(:final cuantas, :final plegadas) => _EncabezadoDeOtras(
-                          cuantas,
-                          plegadas: plegadas,
-                          alTocar: () => ref
-                              .read(otrasTiendasPlegadasProvider.notifier)
-                              .state = !plegadas,
-                        ),
                       final ClienteEnRuta cliente => _Renglon(
                           cliente: cliente,
                           distanciaMetros: distancias[cliente.id],
@@ -534,7 +518,7 @@ class _LoQueNoEntro extends ConsumerWidget {
   }
 }
 
-/// «Hoy» sin nadie del plan: se dice, y abajo siguen las demás de la ruta.
+/// «Hoy» sin nadie del plan: se dice, y dónde está la ruta entera.
 /// «La hora del teléfono va 1 h atrasada» (ADR 0002 §157): con la hora mal, las
 /// ventas pueden quedar en otro día y el corte no las ve.
 class _AvisoDeReloj extends ConsumerWidget {
@@ -570,7 +554,7 @@ class _SinNadieHoy extends StatelessWidget {
   Widget build(BuildContext context) => const Padding(
         key: Key('lista_vacia'),
         padding: EdgeInsets.all(16),
-        child: Text('Hoy no te toca nadie según el plan. Abajo están las demás de tu ruta.'),
+        child: Text('Hoy no te toca nadie según el plan. Toda tu ruta está en «Todos».'),
       );
 }
 
@@ -658,40 +642,6 @@ class _EncabezadoDeDia extends StatelessWidget {
       ),
     );
   }
-}
-
-/// El encabezado de las tiendas que hoy no tocan: se toca para plegarlas.
-class _EncabezadoDeOtras extends StatelessWidget {
-  const _EncabezadoDeOtras(this.cuantas, {required this.plegadas, this.alTocar});
-
-  final int cuantas;
-  final bool plegadas;
-  final VoidCallback? alTocar;
-
-  @override
-  Widget build(BuildContext context) => Material(
-        key: const Key('otras_de_la_ruta'),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: InkWell(
-          onTap: alTocar,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Row(
-              children: [
-                Icon(plegadas ? Icons.chevron_right : Icons.expand_more),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'Las demás de tu ruta · $cuantas',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                Text('hoy no te tocan', style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-        ),
-      );
 }
 
 class _Renglon extends StatelessWidget {

@@ -670,11 +670,6 @@ final clientesProvider = Provider<List<ClienteEnRuta>>((ref) {
 /// pregunta con la que el vendedor la abre en la mañana.
 final verSoloHoyProvider = StateProvider<bool>((_) => true);
 
-/// En «Hoy», si «Las demás de tu ruta» van plegadas. Abiertas de entrada: el
-/// vendedor también pasa a dejarle algo a una tienda que hoy no le toca
-/// (ADR 0002 §108).
-final otrasTiendasPlegadasProvider = StateProvider<bool>((_) => false);
-
 /// En «Todos», los días de «Mi ruta» que van plegados (ADR 0002 §123): la clave
 /// es el día (0–6, 1 = lunes) o «sin». Abiertos de entrada.
 final diasPlegadosProvider = StateProvider<Set<String>>((_) => const {});

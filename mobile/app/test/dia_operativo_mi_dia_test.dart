@@ -60,8 +60,9 @@ void main() {
     );
     await entrarCon(tester, pinCorrecto);
     expect(find.text('Hoy · 1'), findsOneWidget);
-    final martes = tester.getTopLeft(find.text('Toca el martes')).dy;
-    expect(martes < tester.getTopLeft(find.byKey(const Key('otras_de_la_ruta'))).dy, isTrue);
+    // «Hoy» es solo lo de hoy (ADR 0002 §173).
+    expect(find.text('Toca el martes'), findsOneWidget);
+    expect(find.text('Toca el miércoles'), findsNothing);
 
     // Pasa la noche con la app en segundo plano y el vendedor vuelve.
     ahora = DateTime(2026, 10, 21, 8);
@@ -78,8 +79,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // «Hoy» ya es la del miércoles.
-    final miercoles = tester.getTopLeft(find.text('Toca el miércoles')).dy;
-    expect(miercoles < tester.getTopLeft(find.byKey(const Key('otras_de_la_ruta'))).dy, isTrue);
+    expect(find.text('Toca el miércoles'), findsOneWidget);
+    expect(find.text('Toca el martes'), findsNothing);
 
     // Y «Mi día» abre en el miércoles 21.
     await tester.tap(find.byKey(const Key('boton_mi_dia')));
