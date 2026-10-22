@@ -204,7 +204,8 @@ pasó?», y esta tabla es la única que la contesta.
 | 3 | 2026-10-05 | «1 con error» al sincronizar ventas: no llegaban al tablero | El `lote_id` del empujón no era un UUID y el servidor contestaba 422 antes de tocar el dominio (sin rastro en cuarentena) | `lote_id` derivado del contenido con SHA-256; el servidor ahora registra los 422 con ruta y campo | ☐ |
 | 4 | 2026-10-05 | «Se queda cargando y no avanza la venta» al vender lo último que quedaba de un producto | Dos fallas juntas: la guarda de existencia comparaba el REAL crudo contra la cantidad —con deriva, la última pieza se negaba para siempre— y cualquier falla que no fuera de negocio dejaba el botón girando sin estado terminal | La guarda compara en milésimas con la misma regla de redondeo que la pantalla; el cierre ahora solo lanza `VentaRechazada` o `CierreRoto`, y la pantalla avisa en diálogo si la venta quedó o no | ☐ |
 | 5 | 2026-10-21 | Una venta a una tienda de otro día «con error» al sincronizar, y su cancelación también | Con RLS el vendedor no «ve» una tienda sin ruta o de otra ruta, y el manejador la daba por inexistente: «la venta referencia un cliente que no existe»; la cancelación, detrás, «la venta a cancelar no existe» | Migración **0067** (`fn_cliente_del_telefono`); la de otra ruta se sigue rechazando pero dice de cuál es; reprocesar la venta hace entrar su cancelación; el teléfono dice por qué (ADR 0002 §165) | ☐ |
-| 6 | | | | | |
+| 6 | 2026-10-22 | (revisión antes de operar, sin verse todavía en campo) «Te quedan N folios. Sincroniza para pedir más» y nunca llegaban más | Los folios solo se pedían al vincular el teléfono, y el servidor nunca marcaba un rango como agotado: a las mil ventas el vendedor no podía vender, ni volviendo a vincular | La sincronización los pide cuando quedan 300 o menos, y el servidor alarga el mismo rango mil más; agotado y sin poder crecer, da uno nuevo (ADR 0002 §171) | ☐ |
+| 7 | | | | | |
 
 ---
 
@@ -751,6 +752,17 @@ bash scripts/en_el_servidor.sh piloto_listo.sh VEND01
 
 Revisa los nueve primeros puntos de la lista del día −1 y **dice qué falta y cómo
 se arregla**.
+
+> **Para el día de operación, todos los vendedores de una vez** (ADR 0002 §171):
+>
+> ```bash
+> bash scripts/en_el_servidor.sh piloto_listo.sh todos
+> ```
+>
+> Además de lo de arriba revisa lo que pide el día: los folios que le quedan a
+> cada teléfono, la versión de la app, la última sincronización, el corte de
+> ayer sin cerrar, la carga y lo que quedó en cuarentena. Al final dice quién
+> está listo y quién no.
 
 **✅ Debes ver** los nueve en verde.
 

@@ -300,6 +300,15 @@ class ControladorSync extends Notifier<EstadoSync> {
       ref.invalidate(miDiaDelProvider);
     }
 
+    // ---- Los folios (ADR 0002 §171) -------------------------------------
+    //
+    // Con señal, y solo si a algún tipo le quedan pocos: «te quedan N folios,
+    // sincroniza para pedir más» por fin hace lo que dice. Antes los folios solo
+    // se pedían al vincular, y a las mil ventas el vendedor no podía vender.
+    if (resultado.fin == FinDeSync.completa || resultado.fin == FinDeSync.parcial) {
+      await _pedirFoliosSiFaltan(transporte, reloj);
+    }
+
     // ---- Orden de borrado (Fase 9) --------------------------------------
     //
     // Se atiende al final, después de guardar el cursor y la hora: si la app
@@ -344,6 +353,35 @@ class ControladorSync extends Notifier<EstadoSync> {
   ///    teléfono ya está limpio; la oficina lo verá como «orden sin confirmar»,
   ///    que es el lado correcto del que equivocarse. Confirmar ANTES dejaría al
   ///    servidor creyendo que el equipo está limpio cuando aún tiene todo.
+  /// Pide folios si a algún tipo le quedan pocos, y avisa a las pantallas que
+  /// los muestran. Si falla —sin señal a la mitad, el servidor ocupado— no pasa
+  /// nada: la siguiente sincronización, a los dos minutos, lo vuelve a intentar,
+  /// y mientras se vende con los que quedan.
+  Future<void> _pedirFoliosSiFaltan(
+    Transporte transporte,
+    DateTime Function() reloj,
+  ) async {
+    final fila = ref
+        .read(baseLocalProvider)
+        .db
+        .select("SELECT valor FROM sync_estado WHERE clave = 'dispositivo_id'");
+    if (fila.isEmpty) return;
+    try {
+      final pidio = await pedirFoliosSiFaltan(
+        transporte: transporte,
+        repo: ref.read(repoFoliosProvider),
+        dispositivoId: fila.first['valor'] as String,
+        ahora: reloj().toUtc().toIso8601String(),
+      );
+      if (pidio) {
+        ref.invalidate(foliosDeMermaProvider);
+        ref.invalidate(foliosDeNoDropProvider);
+      }
+    } on Object catch (e) {
+      debugPrint('No se pudieron pedir folios: $e');
+    }
+  }
+
   Future<EstadoSync> _borrarEsteEquipo({
     required ClienteSync cliente,
     required String? motivo,

@@ -7269,3 +7269,49 @@ Vendedores, pero no a dos pantallas:
   tienda.
 
 (versionCode 57)
+
+## 171. La revisión antes de operar: los folios que se acaban, y todos los vendedores de una vez
+
+«Dale una revisada a todas las conexiones de la app y cosas necesarias para
+operar, porque hoy ya operarán normalmente.»
+
+Se revisó la conexión del teléfono con el servidor (la dirección fija al
+compilar, solo HTTPS, 30 segundos por petición, lotes de 50 envíos, el token que
+se renueva solo cada 30 minutos con el de 30 días, y que el de renovación no
+cambia —una respuesta que se corta sin señal no deja al vendedor fuera—), el
+servidor (Caddy con su certificado, reinicio solo de cada servicio, el rol con
+RLS obligatorio, la zona horaria de Mazatlán en todos, `/salud`) y lo que el día
+necesita. Salieron tres cosas:
+
+- **Los folios no se renovaban nunca.** Cada teléfono recibe mil folios por tipo
+  de documento al vincularse, y solo entonces. Con pocos, la app decía «Te
+  quedan N folios. Sincroniza para pedir más», pero la sincronización no pedía
+  nada; y el servidor nunca marcaba un rango como agotado, así que volver a
+  vincular devolvía el mismo rango lleno. A las mil ventas —un mes de ruta— el
+  vendedor no habría podido vender. Ahora:
+  · al sincronizar con señal, si a un tipo le quedan **300 o menos** —o no tiene
+    rango, porque el vínculo no alcanzó a traerlo—, el teléfono los pide y dice
+    cuántos lleva, contando lo que no ha subido;
+  · el servidor **alarga el mismo rango mil folios más**, sin brincar números;
+  · si no se puede alargar porque los siguientes ya los tiene otro teléfono del
+    vendedor —uno anterior que se volvió a usar—, se usa hasta el final y, ya
+    agotado, se marca así y sale uno nuevo después del último del vendedor;
+  · un teléfono anterior a la +58 no los pide solo, pero volver a vincularlo
+    ahora sí le alarga el rango.
+- **La revisión de cada vendedor era la del piloto.** `piloto_listo.sh` revisaba
+  el usuario, su camión, su ruta, su teléfono, sus clientes y el respaldo. Ahora
+  también, en «Para vender hoy»: los folios que le quedan de venta, visita y
+  merma; la versión de la app contra la última; la última sincronización; el
+  corte de días anteriores sin cerrar —con él, su carga no sale—; la carga o lo
+  que tiene el camión; y lo que tiene en cuarentena. Con `todos` revisa a cada
+  vendedor activo y al final dice quién está listo y quién no. La sección del
+  piloto sale solo si hay uno corriendo, y el recordatorio final es el de la
+  bodega: la impresión de prueba, batería y datos, entrar con señal antes de
+  salir.
+- **Dos revisiones comparaban la revisión de la base con el nombre del archivo**
+  de la última migración, y en la 0060 no son iguales (`alembic_version` guarda
+  32 caracteres): `piloto_listo.sh` daba una FALLA de migraciones con la base al
+  día, y el simulacro semanal del respaldo avisaba de un esquema viejo que no lo
+  era. Ahora leen la revisión de dentro del archivo.
+
+(versionCode 58)

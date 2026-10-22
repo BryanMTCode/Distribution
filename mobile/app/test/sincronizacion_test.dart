@@ -27,6 +27,23 @@ class TransporteDePrueba implements Transporte {
   Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async {
     llamadas.add(ruta);
     if (seCaeLaRed) throw const ErrorDeRed('sin señal');
+    // Los folios (ADR 0002 §171): el servidor alarga el rango de venta mil más.
+    if (ruta.endsWith('/folios')) {
+      final consumido = (cuerpo['consumido'] as Map<String, Object?>?) ?? {};
+      return RespuestaHttp(
+        200,
+        jsonEncode([
+          {
+            'documento_tipo': 'venta',
+            'desde': 1,
+            'hasta': 2000,
+            'consumido_hasta': consumido['venta'] ?? 0,
+          },
+          for (final tipo in ['no_drop', 'merma'])
+            {'documento_tipo': tipo, 'desde': 1, 'hasta': 1000, 'consumido_hasta': 0},
+        ]),
+      );
+    }
     final sobres = (cuerpo['sobres'] as List).cast<Map<String, Object?>>();
     if (codigoPush != 200) return RespuestaHttp(codigoPush, '{"detail":"no"}');
     return RespuestaHttp(
@@ -132,6 +149,44 @@ void main() {
         reason: 'se envió lo pendiente');
     expect(textoQueContiene('enviadas 2'), findsNothing, reason: 'sin aviso');
     expect(find.text('Todo al día.'), findsNothing);
+  });
+
+  testWidgets('al sincronizar pide los folios que se están acabando (ADR 0002 §171)',
+      (tester) async {
+    // «Te quedan N folios. Sincroniza para pedir más», y la sincronización no
+    // los pedía: a las mil ventas el vendedor ya no podía vender.
+    final transporte = TransporteDePrueba();
+    late BaseLocal base;
+    await entrarYSincronizar(
+      tester,
+      transporte: transporte,
+      sembrar: (b) {
+        base = b as BaseLocal;
+        sembrarParaCobrar(base, hasta: 1000, consumidoHasta: 800);
+        sembrarFolios(base, tipo: 'no_drop', hasta: 1000);
+        sembrarFolios(base, tipo: 'merma', hasta: 1000);
+      },
+    );
+
+    expect(transporte.llamadas, contains('/v1/dispositivos/dispositivo-de-prueba/folios'));
+    final venta = RepoFolios(base.db).leer('venta')!;
+    expect((venta.desde, venta.hasta, venta.consumidoHasta), (1, 2000, 800));
+  });
+
+  testWidgets('con folios de sobra no los pide', (tester) async {
+    final transporte = TransporteDePrueba();
+    await entrarYSincronizar(
+      tester,
+      transporte: transporte,
+      sembrar: (b) {
+        final base = b as BaseLocal;
+        sembrarParaCobrar(base, hasta: 1000);
+        sembrarFolios(base, tipo: 'no_drop', hasta: 1000);
+        sembrarFolios(base, tipo: 'merma', hasta: 1000);
+      },
+    );
+
+    expect(transporte.llamadas.where((r) => r.endsWith('/folios')), isEmpty);
   });
 
   testWidgets('una sincronización sin nada pendiente lo dice', (tester) async {

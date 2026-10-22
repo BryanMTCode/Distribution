@@ -188,7 +188,7 @@
           "dispositivos"
         ],
         "summary": "Asignar Folios",
-        "description": "Entrega un rango nuevo por tipo de documento.\n\nSi la app se reinstala, el contador local vuelve a 1. Sin rangos, el equipo\nempezaría a reimprimir folios que ya están en papel en manos de clientes.\nEl constraint `no_traslape_rangos` (EXCLUDE) lo hace imposible.",
+        "description": "Entrega un rango nuevo por tipo de documento.\n\nSi la app se reinstala, el contador local vuelve a 1. Sin rangos, el equipo\nempezaría a reimprimir folios que ya están en papel en manos de clientes.\nEl constraint `no_traslape_rangos` (EXCLUDE) lo hace imposible.\n\nAl rango vigente que se está acabando —menos de `UMBRAL_PARA_RENOVAR` por\ndelante— se le agregan mil folios más **al mismo rango**, para que la\nnumeración siga sin huecos. Si no se puede porque otro teléfono del vendedor\nya tiene los siguientes, se sigue usando hasta el final, y ya agotado se\nmarca así y se entrega uno nuevo después del último del vendedor (§171).",
         "operationId": "asignar_folios_v1_dispositivos__dispositivo_id__folios_post",
         "security": [
           {
@@ -207,6 +207,21 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Peticion",
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PeticionFolios"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7522,6 +7537,20 @@
         ],
         "title": "PeticionEntrada"
       },
+      "PeticionFolios": {
+        "properties": {
+          "consumido": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Consumido"
+          }
+        },
+        "type": "object",
+        "title": "PeticionFolios",
+        "description": "Lo que el teléfono lleva consumido de cada rango, contando lo que todavía\nno ha subido. Opcional: los teléfonos anteriores a la +58 mandan `{}`."
+      },
       "PeticionLogin": {
         "properties": {
           "codigo": {
@@ -9548,6 +9577,23 @@
             "description": "Importe con 2 decimales, serializado como string: '250.00'",
             "title": "Importe",
             "nullable": true
+          },
+          "lat": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lat",
+            "nullable": true
+          },
+          "lng": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lng",
+            "nullable": true
+          },
+          "fuera_de_dia": {
+            "type": "boolean",
+            "title": "Fuera De Dia",
+            "default": false
           }
         },
         "type": "object",

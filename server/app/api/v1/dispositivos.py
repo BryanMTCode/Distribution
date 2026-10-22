@@ -20,6 +20,14 @@ router = APIRouter(prefix="/dispositivos", tags=["dispositivos"])
 TAMANO_RANGO = 1000
 TIPOS_DOCUMENTO = ("venta", "cobro", "merma", "no_drop")
 
+# Con cuántos folios por delante se le extiende el rango a un teléfono (ADR 0002
+# §171). Antes no se renovaba nunca: el teléfono decía «sincroniza para pedir
+# más» y nadie los pedía, y el servidor no marcaba ningún rango como agotado, así
+# que ni volviendo a vincular salía uno nuevo. A las mil ventas, el vendedor no
+# podía vender. Con trescientos por delante y la sincronización cada dos minutos
+# (§169), el rango crece días antes de que haga falta, con señal o sin ella.
+UMBRAL_PARA_RENOVAR = 300
+
 # Dónde queda escrito cada tipo de documento, con su `folio_consecutivo`.
 TABLA_DE_DOCUMENTO = {
     "venta": "ventas",
@@ -111,16 +119,64 @@ class RangoAsignado(BaseModel):
     consumido_hasta: int
 
 
+class PeticionFolios(BaseModel):
+    """Lo que el teléfono lleva consumido de cada rango, contando lo que todavía
+    no ha subido. Opcional: los teléfonos anteriores a la +58 mandan `{}`."""
+
+    consumido: dict[str, int] = Field(default_factory=dict)
+
+
+async def _se_puede_extender(
+    sesion, *, usuario_id, tipo: str, tabla: str, rango_id: int, desde: int, hasta: int
+) -> bool:
+    """Si los folios `desde..hasta` del vendedor están libres: ningún otro rango
+    suyo de ese tipo los tiene —el de otro teléfono suyo— y ningún documento los
+    usó. El folio impreso es «VEND01-000123» y no dice de qué teléfono salió."""
+    ocupado = (
+        await sesion.execute(
+            text(
+                f"""
+                SELECT EXISTS (
+                         SELECT 1 FROM folios_rangos r
+                           JOIN dispositivos d ON d.id = r.dispositivo_id
+                          WHERE d.usuario_id = :usr AND r.documento_tipo = :tipo
+                            AND r.id <> :rango
+                            AND int4range(r.desde, r.hasta, '[]')
+                                && int4range(:desde, :hasta, '[]'))
+                    OR EXISTS (
+                         SELECT 1 FROM {tabla} x
+                           JOIN dispositivos d ON d.id = x.dispositivo_id
+                          WHERE d.usuario_id = :usr
+                            AND x.folio_consecutivo BETWEEN :desde AND :hasta)
+                """  # noqa: S608 — la tabla sale de una constante, no del usuario
+            ),
+            {"usr": usuario_id, "tipo": tipo, "rango": rango_id,
+             "desde": desde, "hasta": hasta},
+        )
+    ).scalar_one()
+    return not ocupado
+
+
 @router.post("/{dispositivo_id}/folios", response_model=list[RangoAsignado])
 async def asignar_folios(
-    dispositivo_id: uuid.UUID, actor: ActorDep, sesion: SesionDep
+    dispositivo_id: uuid.UUID,
+    actor: ActorDep,
+    sesion: SesionDep,
+    peticion: PeticionFolios | None = None,
 ) -> list[RangoAsignado]:
     """Entrega un rango nuevo por tipo de documento.
 
     Si la app se reinstala, el contador local vuelve a 1. Sin rangos, el equipo
     empezaría a reimprimir folios que ya están en papel en manos de clientes.
     El constraint `no_traslape_rangos` (EXCLUDE) lo hace imposible.
+
+    Al rango vigente que se está acabando —menos de `UMBRAL_PARA_RENOVAR` por
+    delante— se le agregan mil folios más **al mismo rango**, para que la
+    numeración siga sin huecos. Si no se puede porque otro teléfono del vendedor
+    ya tiene los siguientes, se sigue usando hasta el final, y ya agotado se
+    marca así y se entrega uno nuevo después del último del vendedor (§171).
     """
+    reportado = (peticion or PeticionFolios()).consumido
     dispositivo = await sesion.get(Dispositivo, dispositivo_id)
     if dispositivo is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "dispositivo no encontrado")
@@ -181,17 +237,36 @@ async def asignar_folios(
                     {"dev": dispositivo_id, "desde": activo.desde, "hasta": activo.hasta},
                 )
             ).scalar_one()
+            # Y lo que el teléfono dice que lleva, que incluye lo que no ha subido.
+            # Solo decide cuándo crecer el rango: dentro de sus límites.
+            del_telefono = min(max(int(reportado.get(tipo, 0)), 0), activo.hasta)
+            usado = max(usado, del_telefono)
             if usado > activo.consumido_hasta:
                 activo.consumido_hasta = usado
-            asignados.append(
-                RangoAsignado(
-                    documento_tipo=tipo,
-                    desde=activo.desde,
-                    hasta=activo.hasta,
-                    consumido_hasta=activo.consumido_hasta,
+
+            if activo.hasta - activo.consumido_hasta <= UMBRAL_PARA_RENOVAR:
+                if await _se_puede_extender(
+                    sesion, usuario_id=dispositivo.usuario_id, tipo=tipo, tabla=tabla,
+                    rango_id=activo.id, desde=activo.hasta + 1,
+                    hasta=activo.hasta + TAMANO_RANGO,
+                ):
+                    activo.hasta += TAMANO_RANGO
+                elif activo.consumido_hasta >= activo.hasta:
+                    # Agotado y sin poder crecer: se cierra y sale uno nuevo abajo.
+                    activo.agotado = True
+                    await sesion.flush()
+                    activo = None
+
+            if activo is not None:
+                asignados.append(
+                    RangoAsignado(
+                        documento_tipo=tipo,
+                        desde=activo.desde,
+                        hasta=activo.hasta,
+                        consumido_hasta=activo.consumido_hasta,
+                    )
                 )
-            )
-            continue
+                continue
 
         rango = FolioRango(
             dispositivo_id=dispositivo_id,

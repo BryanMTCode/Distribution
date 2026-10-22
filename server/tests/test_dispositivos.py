@@ -255,3 +255,113 @@ async def test_el_telefono_nuevo_de_un_vendedor_sigue_donde_se_quedo_el_anterior
     r = await cliente.post(f"/v1/dispositivos/{nuevo}/folios", headers=cabeceras)
     venta = next(x for x in r.json() if x["documento_tipo"] == "venta")
     assert venta["desde"] == 1001
+
+
+# ---------------------------------------------------------------------------
+# El rango que se acaba se renueva (ADR 0002 §171)
+# ---------------------------------------------------------------------------
+# «Te quedan N folios. Sincroniza para pedir más»: y nadie los pedía, ni el
+# servidor marcaba un rango como agotado. A las mil ventas el vendedor no podía
+# vender, y volver a vincular devolvía el mismo rango lleno.
+
+
+async def _rango(cliente, cabeceras, dispositivo_id, tipo="venta", consumido=None) -> dict:
+    cuerpo = {"consumido": consumido} if consumido is not None else None
+    r = await cliente.post(
+        f"/v1/dispositivos/{dispositivo_id}/folios", headers=cabeceras, json=cuerpo
+    )
+    assert r.status_code == 200, r.text
+    return next(x for x in r.json() if x["documento_tipo"] == tipo)
+
+
+async def _consumir(sesion, dispositivo_id, hasta: int, tipo="venta") -> None:
+    await sesion.execute(
+        text(
+            "UPDATE folios_rangos SET consumido_hasta = :h "
+            " WHERE dispositivo_id = :d AND documento_tipo = :t AND NOT agotado"
+        ),
+        {"h": hasta, "d": uuid.UUID(dispositivo_id), "t": tipo},
+    )
+    await sesion.commit()
+
+
+async def test_el_rango_que_se_acaba_crece_sin_huecos(cliente, semilla, sesion):
+    """Con 250 por delante, el MISMO rango llega a 2000: la numeración sigue de
+    corrido y el teléfono no cambia de rango."""
+    cabeceras = {"Authorization": f"Bearer {await _token_admin(cliente)}"}
+    dispositivo_id = await _equipo_con_folios(cliente, cabeceras)
+    await _consumir(sesion, dispositivo_id, 750)
+
+    venta = await _rango(cliente, cabeceras, dispositivo_id)
+
+    assert (venta["desde"], venta["hasta"], venta["consumido_hasta"]) == (1, 2000, 750)
+    # Y pedirlo otra vez ya no lo hace crecer: le quedan 1,250.
+    otra = await _rango(cliente, cabeceras, dispositivo_id)
+    assert otra["hasta"] == 2000
+
+
+async def test_con_folios_de_sobra_no_crece(cliente, semilla, sesion):
+    cabeceras = {"Authorization": f"Bearer {await _token_admin(cliente)}"}
+    dispositivo_id = await _equipo_con_folios(cliente, cabeceras)
+    await _consumir(sesion, dispositivo_id, 699)
+
+    assert (await _rango(cliente, cabeceras, dispositivo_id))["hasta"] == 1000
+
+
+async def test_cuenta_lo_que_el_telefono_no_ha_subido(cliente, semilla, sesion):
+    """El servidor solo ve lo sincronizado; el teléfono dice cuánto lleva."""
+    cabeceras = {"Authorization": f"Bearer {await _token_admin(cliente)}"}
+    dispositivo_id = await _equipo_con_folios(cliente, cabeceras)
+
+    venta = await _rango(cliente, cabeceras, dispositivo_id, consumido={"venta": 820})
+
+    assert (venta["desde"], venta["hasta"], venta["consumido_hasta"]) == (1, 2000, 820)
+    # Lo de los otros tipos no se movió.
+    merma = await _rango(cliente, cabeceras, dispositivo_id, tipo="merma")
+    assert merma["hasta"] == 1000
+
+
+async def test_si_otro_telefono_suyo_tiene_los_siguientes_sale_uno_nuevo_al_agotarse(
+    cliente, semilla, sesion
+):
+    """Un vendedor tiene un solo teléfono activo, pero el de antes guarda su rango:
+    el primero se dio de baja, el segundo recibió 1001–2000, y luego se volvió al
+    primero. Ese no puede crecer encima del otro; usa lo que le queda y, agotado,
+    recibe 2001–3000."""
+    cabeceras = {"Authorization": f"Bearer {await _token_admin(cliente)}"}
+
+    async def estado(dispositivo, cual):
+        await sesion.execute(
+            text(
+                "UPDATE dispositivos SET estado = :e, "
+                "       revocado_en = CASE WHEN :e = 'revocado' THEN now() END "
+                " WHERE id = :d"
+            ),
+            {"e": cual, "d": uuid.UUID(dispositivo)},
+        )
+        await sesion.commit()
+
+    primero = await _equipo_con_folios(cliente, cabeceras)
+    await estado(primero, "revocado")
+    segundo = await _equipo_con_folios(cliente, cabeceras)
+    assert (await _rango(cliente, cabeceras, segundo))["desde"] == 1001
+    await estado(segundo, "revocado")
+    await estado(primero, "activo")
+
+    await _consumir(sesion, primero, 900)
+    venta = await _rango(cliente, cabeceras, primero)
+    assert (venta["desde"], venta["hasta"]) == (1, 1000), "le quedan 100: los usa"
+
+    await _consumir(sesion, primero, 1000)
+    venta = await _rango(cliente, cabeceras, primero)
+    assert (venta["desde"], venta["hasta"], venta["consumido_hasta"]) == (2001, 3000, 2000)
+    viejo = (
+        await sesion.execute(
+            text(
+                "SELECT agotado FROM folios_rangos "
+                " WHERE dispositivo_id = :d AND documento_tipo = 'venta' AND desde = 1"
+            ),
+            {"d": uuid.UUID(primero)},
+        )
+    ).scalar_one()
+    assert viejo is True

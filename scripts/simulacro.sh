@@ -129,8 +129,13 @@ contar() {
 VERSION="$(psql "$BASE_URL" -tAc 'SELECT version_num FROM alembic_version' 2>/dev/null || echo '')"
 if [ -n "$VERSION" ]; then
     bien "migraciones: $VERSION"
-    ESPERADA="$(ls -1 "$(dirname "$0")/../server/db/alembic/versions"/*.py \
-        | sed 's#.*/##; s/\.py$//' | sort | tail -1)"
+    # El id de la revisión que trae el último archivo, no su nombre: la 0060 se
+    # llama «…_que_el_telefono_tiene» y su revisión «…_del_telefono» (32
+    # caracteres en `alembic_version`), y comparar nombres avisaba de más.
+    ULTIMA_MIGRACION="$(ls -1 "$(dirname "$0")/../server/db/alembic/versions"/*.py \
+        | grep -v __ | sort | tail -1)"
+    ESPERADA="$(grep -m1 '^revision = "' "$ULTIMA_MIGRACION" \
+        | sed 's/^revision = "\([^"]*\)".*/\1/')"
     if [ "$VERSION" = "$ESPERADA" ]; then
         bien "coincide con la última migración del repositorio"
     else

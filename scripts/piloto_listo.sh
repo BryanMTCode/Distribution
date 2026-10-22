@@ -23,11 +23,59 @@
 #
 #   make piloto-listo VENDEDOR=VEND01
 #
+# Y para el día de operación, todos de una vez (ADR 0002 §171):
+#
+#   bash scripts/en_el_servidor.sh piloto_listo.sh todos
+#
 set -uo pipefail
 
 VENDEDOR="${1:-${DSD_PILOTO_VENDEDOR:-}}"
 URL="${DSD_DATABASE_URL:-postgresql://postgres:dsd@127.0.0.1:5432/dsd}"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Lo que ningún script puede revisar. Una sola vez, también con `todos`.
+recordatorio() {
+cat <<'TXT'
+
+Y lo que ningún script puede revisar, en la bodega antes de salir:
+
+  · La impresora: prendida, con papel, y en la app ⋮ → Impresora →
+    «Imprimir una prueba». Si no imprime ahí, no imprimirá la venta.
+  · El teléfono con batería y datos. La app trabaja sin señal y se sincroniza
+    sola cada dos minutos cuando la hay; al final del día, «Sincronizar ahora».
+  · Que entre a la app ANTES de salir, con señal: así baja su carga y sus
+    tiendas del día.
+  · El precio NO se negocia en la calle, y todo se cobra en efectivo.
+TXT
+
+}
+
+# `todos`: la misma revisión para cada vendedor activo, y al final quién está
+# listo y quién no, para no tener que leer veinte pantallas para saberlo.
+if [ "$VENDEDOR" = "todos" ]; then
+    CODIGOS="$(psql "$URL" -Atq -c "
+        SELECT codigo FROM usuarios
+         WHERE rol_codigo = 'vendedor' AND activo ORDER BY codigo" 2>/dev/null)"
+    if [ -z "$CODIGOS" ]; then
+        echo "No hay vendedores activos, o no se pudo leer la base."
+        exit 1
+    fi
+    RESUMEN=""
+    MAL=0
+    for codigo in $CODIGOS; do
+        if DSD_SIN_RECORDATORIO=1 bash "${BASH_SOURCE[0]}" "$codigo"; then
+            RESUMEN="${RESUMEN}  listo        $codigo"$'\n'
+        else
+            RESUMEN="${RESUMEN}  POR ARREGLAR $codigo"$'\n'
+            MAL=$((MAL + 1))
+        fi
+        printf '\n\n'
+    done
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf 'Todos los vendedores\n\n%s' "$RESUMEN"
+    recordatorio
+    exit $(( MAL > 0 ? 1 : 0 ))
+fi
 
 if [ -t 1 ]; then
     VERDE=$'\033[32m'; ROJO=$'\033[31m'; AMBAR=$'\033[33m'; GRIS=$'\033[90m'; FIN=$'\033[0m'
@@ -37,7 +85,11 @@ fi
 
 FALLAS=0
 bien()  { printf '  %sOK%s    %s\n' "$VERDE" "$FIN" "$1"; }
-avisa() { printf '  %sNOTA%s  %s\n' "$AMBAR" "$FIN" "$1"; }
+avisa() {
+    printf '  %sNOTA%s  %s\n' "$AMBAR" "$FIN" "$1"
+    [ $# -gt 1 ] && printf '        %s%s%s\n' "$GRIS" "$2" "$FIN"
+    return 0
+}
 falla() {
     FALLAS=$((FALLAS + 1))
     printf '  %sFALLA%s %s\n' "$ROJO" "$FIN" "$1"
@@ -48,7 +100,7 @@ titulo() { printf '\n%s\n' "$1"; }
 
 if [ -z "$VENDEDOR" ]; then
     echo "Falta el código del vendedor."
-    echo "  make piloto-listo VENDEDOR=VEND01"
+    echo "  make piloto-listo VENDEDOR=VEND01     (o VENDEDOR=todos)"
     exit 2
 fi
 
@@ -57,8 +109,10 @@ fi
 # valor vacío y seguir revisando lo demás, no abortar el diagnóstico completo.
 consultar() { psql "$URL" -Atq -c "$1" 2>/dev/null; }
 
-printf 'Piloto de campo — revisión previa de %s\n' "$VENDEDOR"
-printf '%s%s%s\n' "$GRIS" "base: ${URL%%\?*}" "$FIN"
+printf 'Revisión antes de salir a ruta — %s\n' "$VENDEDOR"
+# Sin usuario ni contraseña: en el servidor la URL trae la del `.env`.
+BASE_SIN_CLAVE="${URL%%\?*}"
+printf '%s%s%s\n' "$GRIS" "base: ${BASE_SIN_CLAVE##*@}" "$FIN"
 
 # ---------------------------------------------------------------------------
 titulo "Base de datos"
@@ -70,8 +124,14 @@ if ! consultar "SELECT 1" | grep -q 1; then
 fi
 bien "conecta"
 
-VERSION_REPO="$(ls "$RAIZ"/server/db/alembic/versions/*.py 2>/dev/null \
-    | grep -v __ | sed 's#.*/##; s#\.py$##' | sort | tail -1)"
+# El id de la revisión que trae el archivo, no su nombre: no siempre son iguales.
+# `alembic_version` guarda 32 caracteres, así que la 0060 se llama
+# «…_la_tienda_que_el_telefono_tiene» y su revisión es «…_la_tienda_del_telefono».
+# Comparar nombres daba una FALLA de migraciones con la base al día.
+ULTIMA_MIGRACION="$(ls "$RAIZ"/server/db/alembic/versions/*.py 2>/dev/null \
+    | grep -v __ | sort | tail -1)"
+VERSION_REPO="$(grep -m1 '^revision = "' "$ULTIMA_MIGRACION" 2>/dev/null \
+    | sed 's/^revision = "\([^"]*\)".*/\1/')"
 VERSION_BASE="$(consultar "SELECT version_num FROM alembic_version")"
 if [ -z "$VERSION_BASE" ]; then
     falla "la base no tiene migraciones aplicadas" "make migrar"
@@ -113,7 +173,7 @@ IFS='|' read -r ID ROL ACTIVO CAMION TIPO_ALMACEN DIAS <<<"$FILA"
 bien "existe ($VENDEDOR)"
 
 [ "$ROL" = "vendedor" ] && bien "rol: vendedor" \
-    || falla "su rol es '$ROL' y el piloto es de un vendedor de ruta" \
+    || falla "su rol es '$ROL' y esta revisión es de un vendedor de ruta" \
              "cámbialo en el panel → Usuarios y rutas"
 [ "$ACTIVO" = "t" ] && bien "activo" \
     || falla "está inactivo: no podrá entrar a la app" "actívalo en el panel"
@@ -169,6 +229,101 @@ BORRADO="$(consultar "
 [ "${BORRADO:-0}" -eq 0 ] 2>/dev/null && bien "sin órdenes de borrado pendientes" \
     || falla "tiene $BORRADO equipo(s) con borrado ordenado sin confirmar" \
              "cancélalo en el panel → Teléfonos si el equipo sigue en uso"
+
+# ---------------------------------------------------------------------------
+titulo "Para vender hoy"
+# ---------------------------------------------------------------------------
+# Lo que el día de operación necesita y la revisión del piloto no veía (ADR 0002
+# §171): sin folios el teléfono no cierra la venta, con el corte de ayer abierto
+# la carga de hoy no sale, y con una versión vieja la app no hace lo que la
+# oficina espera.
+if [ "${EQUIPOS:-0}" -ge 1 ] 2>/dev/null; then
+    for par in venta:ventas:venta no_drop:no_drops:visita merma:mermas:merma; do
+        IFS=':' read -r tipo tabla nombre <<<"$par"
+        QUEDAN="$(consultar "
+            SELECT r.hasta - GREATEST(r.consumido_hasta, COALESCE((
+                     SELECT max(x.folio_consecutivo) FROM $tabla x
+                      WHERE x.dispositivo_id = r.dispositivo_id
+                        AND x.folio_consecutivo BETWEEN r.desde AND r.hasta), 0))
+              FROM folios_rangos r
+              JOIN dispositivos d ON d.id = r.dispositivo_id
+             WHERE d.usuario_id = '$ID' AND d.estado = 'activo'
+               AND r.documento_tipo = '$tipo' AND NOT r.agotado
+             ORDER BY r.hasta DESC LIMIT 1")"
+        if [ -z "$QUEDAN" ]; then
+            falla "su teléfono no tiene folios de $nombre: no podrá cerrar una" \
+                  "que entre a la app con señal y sincronice; si sigue, vuelve a vincularlo"
+        elif [ "$QUEDAN" -le 0 ] 2>/dev/null; then
+            falla "se le acabaron los folios de $nombre" \
+                  "que sincronice con la app +58 o más nueva, o vuelve a vincular el teléfono"
+        elif [ "$QUEDAN" -le 300 ] 2>/dev/null; then
+            avisa "le quedan $QUEDAN folios de $nombre: al sincronizar se le alargan solos"
+        else
+            bien "folios de $nombre: le quedan $QUEDAN"
+        fi
+    done
+
+    IFS='|' read -r APP ULTIMA <<<"$(consultar "
+        SELECT COALESCE(app_version, ''),
+               COALESCE(to_char(ultima_sync_push_en AT TIME ZONE current_setting('TimeZone'),
+                                'DD/MM HH24:MI'), '')
+          FROM dispositivos
+         WHERE usuario_id = '$ID' AND estado = 'activo'
+         ORDER BY ultima_sync_push_en DESC NULLS LAST LIMIT 1")"
+    ULTIMA_APP="$(grep -m1 '^version:' "$RAIZ/mobile/app/pubspec.yaml" 2>/dev/null \
+                  | sed 's/^version:[[:space:]]*//')"
+    if [ -z "$APP" ]; then
+        avisa "su teléfono no ha dicho qué versión de la app tiene: que sincronice"
+    elif [ -n "$ULTIMA_APP" ] && [ "$APP" != "$ULTIMA_APP" ]; then
+        avisa "tiene la app $APP y la última es la $ULTIMA_APP: instálale la nueva encima"
+    else
+        bien "app $APP"
+    fi
+    if [ -z "$ULTIMA" ]; then
+        avisa "su teléfono no ha sincronizado nunca"
+    else
+        bien "última sincronización: $ULTIMA"
+    fi
+fi
+
+CORTES_VIEJOS="$(consultar "
+    SELECT count(*) FROM cortes_vendedor
+     WHERE vendedor_id = '$ID' AND estado = 'pendiente'
+       AND fecha_operativa < CURRENT_DATE")"
+[ "${CORTES_VIEJOS:-0}" -eq 0 ] 2>/dev/null && bien "sin cortes de días anteriores por cerrar" \
+    || falla "tiene $CORTES_VIEJOS corte(s) de días anteriores sin cerrar: su carga no sale" \
+             "panel → Cortes y cargas (si pidió carga, aceptarla cierra el corte)"
+
+CARGA="$(consultar "
+    SELECT folio || ' (' || CASE estado WHEN 'confirmada' THEN 'en el camión'
+                                        ELSE 'en el corte' END || ')'
+      FROM cargas
+     WHERE vendedor_id = '$ID' AND estado IN ('confirmada', 'en_ruta')
+     ORDER BY fecha_operativa DESC, creado_en DESC LIMIT 1")"
+PIDIO="$(consultar "
+    SELECT count(*) FROM solicitudes_carga
+     WHERE vendedor_id = '$ID' AND estado = 'pendiente'")"
+PIEZAS="$(consultar "
+    SELECT COALESCE(sum(e.cantidad), 0)::int FROM existencias e
+      JOIN usuarios u ON u.almacen_id = e.almacen_id
+     WHERE u.id = '$ID' AND e.cantidad > 0")"
+if [ -n "$CARGA" ]; then
+    bien "carga $CARGA · ${PIEZAS:-0} pieza(s) en el camión"
+elif [ "${PIDIO:-0}" -ge 1 ] 2>/dev/null; then
+    avisa "pidió carga y espera que la aceptes" "panel → Cortes y cargas, o la app de Gerencia"
+elif [ "${PIEZAS:-0}" -gt 0 ] 2>/dev/null; then
+    avisa "sin carga nueva: sale con las ${PIEZAS} pieza(s) que tiene en el camión"
+else
+    falla "su camión está vacío y no tiene carga" \
+          "que pida su carga desde la app, o créasela en el panel → Cargas"
+fi
+
+CUARENTENA="$(consultar "
+    SELECT count(*) FROM sync_cuarentena
+     WHERE usuario_id = '$ID' AND estado = 'pendiente'")"
+[ "${CUARENTENA:-0}" -eq 0 ] 2>/dev/null && bien "nada suyo en cuarentena" \
+    || avisa "$CUARENTENA operación(es) suya(s) en cuarentena: lo vendió y no ha entrado" \
+             "panel → Cuarentena: Reprocesar o Descartar"
 
 # ---------------------------------------------------------------------------
 titulo "Sus clientes y su catálogo"
@@ -243,22 +398,21 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-titulo "El piloto"
+# El piloto, solo si hay uno corriendo: en la operación de todos los días no hay,
+# y una NOTA que sale siempre enseña a no leer las notas.
 # ---------------------------------------------------------------------------
-if ! consultar "SELECT 1 FROM piloto_criterios LIMIT 1" | grep -q 1; then
-    falla "no están sembrados los criterios de salida" "make migrar"
-else
-    CUANTOS="$(consultar "SELECT count(*) FROM piloto_criterios")"
-    bien "$CUANTOS criterios de salida sembrados"
-fi
-
 ACTIVO_PILOTO="$(consultar "
     SELECT p.codigo || ' · ' || u.codigo || ' · ' || p.inicio || ' a ' || p.fin
       FROM pilotos p JOIN usuarios u ON u.id = p.vendedor_id
      WHERE p.activo")"
-if [ -z "$ACTIVO_PILOTO" ]; then
-    avisa "no hay piloto definido todavía: defínelo en el panel → Piloto"
-else
+if [ -n "$ACTIVO_PILOTO" ]; then
+    titulo "El piloto"
+    if ! consultar "SELECT 1 FROM piloto_criterios LIMIT 1" | grep -q 1; then
+        falla "no están sembrados los criterios de salida" "make migrar"
+    else
+        CUANTOS="$(consultar "SELECT count(*) FROM piloto_criterios")"
+        bien "$CUANTOS criterios de salida sembrados"
+    fi
     bien "piloto activo: $ACTIVO_PILOTO"
 fi
 
@@ -268,20 +422,7 @@ printf '%s───────────────────────�
 if [ "$FALLAS" -eq 0 ]; then
     printf '%sLo que una consulta puede revisar, está.%s\n' "$VERDE" "$FIN"
 else
-    printf '%s%s cosa(s) que hay que arreglar antes del lunes.%s\n' "$ROJO" "$FALLAS" "$FIN"
+    printf '%s%s cosa(s) que hay que arreglar antes de que salga.%s\n' "$ROJO" "$FALLAS" "$FIN"
 fi
-cat <<'TXT'
-
-Y lo que ningún script puede revisar, que es el punto más importante de la
-lista del día −1:
-
-  · ¿El vendedor hizo una JORNADA COMPLETA de práctica, haciendo y no mirando?
-    Diez ventas, un cobro, un no-drop, una merma, una cancelación y la
-    liquidación. Con la base de pruebas.
-  · ¿Sabe que el precio NO se negocia en la calle? Si lo descubre frente al
-    cliente, es la peor forma de enterarse.
-  · ¿Sabe que la app no es la libreta de la noche?
-
-  docs/PILOTO.md §1
-TXT
+[ -z "${DSD_SIN_RECORDATORIO:-}" ] && recordatorio
 exit $(( FALLAS > 0 ? 1 : 0 ))

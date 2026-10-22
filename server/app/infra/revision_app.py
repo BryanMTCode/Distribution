@@ -176,6 +176,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+57",
             ),
             Punto(
+                "folios_se_piden_solos", "Los folios se piden solos",
+                "En el servidor, `bash scripts/en_el_servidor.sh piloto_listo.sh todos` "
+                "dice cuántos folios le quedan a cada teléfono; sincroniza con señal.",
+                "Cuando le quedan 300 o menos, al sincronizar el mismo rango crece mil "
+                "más, sin brincar números: «Te quedan N folios» ya no llega a cero (ADR "
+                "0002 §171).",
+                desde="+58",
+            ),
+            Punto(
                 "venderle_desde_el_mapa", "Venderle desde el mapa",
                 "Abre «Mapa», toca una tienda —también una que toque otro día— y toca "
                 "«Venderle».",
