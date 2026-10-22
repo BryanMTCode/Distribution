@@ -176,6 +176,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+57",
             ),
             Punto(
+                "baja_aunque_no_suba", "Un error del servidor no frena al teléfono",
+                "Al final del día, en el panel → Cuarentena, busca algo con «error "
+                "interno del servidor».",
+                "Lo normal es que no haya nada. Si aparece, esa operación no entró pero "
+                "las demás sí, y el teléfono siguió bajando su carga y sus precios: "
+                "mándame el mensaje para arreglar la causa (ADR 0002 §172).",
+                desde="+58",
+            ),
+            Punto(
                 "folios_se_piden_solos", "Los folios se piden solos",
                 "En el servidor, `bash scripts/en_el_servidor.sh piloto_listo.sh todos` "
                 "dice cuántos folios le quedan a cada teléfono; sincroniza con señal.",
@@ -927,6 +936,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Pendientes. La cancelación dice qué fila reprocesar. En el teléfono, la "
                 "barra roja → «Reintentar» y se le quita el error (ADR 0002 §165).",
                 desde="+56",
+            ),
+            Punto(
+                "cuarentena_que_frena", "Lo que de la cuarentena frena el corte",
+                "Con una ubicación o un no-drop en Cuarentena, cierra el corte del "
+                "vendedor o acepta su carga.",
+                "Se cierra y sale la carga: solo frenan las ventas, mermas, devoluciones "
+                "y el corte de ese día; lo demás sigue en Cuarentena a la vista (ADR 0002 "
+                "§172).",
+                desde="+58",
             ),
             Punto(
                 "ventas_fuera_de_su_dia", "Las ventas fuera de su día",

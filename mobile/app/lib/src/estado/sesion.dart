@@ -89,8 +89,14 @@ final credencialGuardadaProvider = FutureProvider<CredencialLocal?>(
 /// credencial (Gerencia, o uno que se borró a distancia) no gana una por aquí.
 ///
 /// Con `renovarVigencia` —al entrar con la contraseña y señal— se guarda aunque
-/// solo cambie la vigencia; al renovar el acceso, que pasa cada media hora, solo
-/// si cambió la contraseña o el código.
+/// solo cambie la vigencia. Al renovar el acceso, que pasa cada media hora, se
+/// guarda si cambió la contraseña, el código o la ruta, y también si la vigencia
+/// avanzó más de un día (ADR 0002 §172): antes el acceso sin señal solo volvía a
+/// empezar cuando el vendedor tecleaba su contraseña con señal, y el que entraba
+/// siempre sin datos se quedaba fuera a los siete días aunque sincronizara a
+/// diario. Al renovar, el servidor acaba de comprobar que el equipo sigue activo:
+/// es tan seguro como entrar con la contraseña. Una vez al día, no cada media
+/// hora, para no reescribir el Keystore a cada rato.
 Future<void> guardarCredencialAlDia(
   Ref ref,
   SesionEnLinea sesion, {
@@ -106,7 +112,8 @@ Future<void> guardarCredencialAlDia(
       guardada.codigo == nueva.codigo &&
       // La ruta que la oficina le cambió llega igual (ADR 0002 §143).
       _mismasRutas(guardada.rutas, nueva.rutas) &&
-      (!renovarVigencia || guardada.validaHasta == nueva.validaHasta);
+      (!renovarVigencia || guardada.validaHasta == nueva.validaHasta) &&
+      !nueva.validaHasta.isAfter(guardada.validaHasta.add(const Duration(days: 1)));
   if (igual) return;
   await repo.guardar(cruda);
   ref.invalidate(credencialGuardadaProvider);

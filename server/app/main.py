@@ -207,6 +207,15 @@ def crear_app() -> FastAPI:
         logging.getLogger("dsd.validacion").warning(
             "422 en %s %s: %s", peticion.method, peticion.url.path, fallos
         )
+        # Y si era un push, a la cuarentena: que la oficina lo vea (§172). Lo que
+        # falle aquí no cambia la respuesta, que es lo que el teléfono espera.
+        if peticion.url.path == "/v1/sync/push":
+            try:
+                await sync.apartar_push_ilegible(peticion, fallos)
+            except Exception:
+                logging.getLogger("dsd.validacion").exception(
+                    "no se pudo apartar el push ilegible"
+                )
         return await request_validation_exception_handler(peticion, exc)
 
     @app.exception_handler(SinSesionWeb)

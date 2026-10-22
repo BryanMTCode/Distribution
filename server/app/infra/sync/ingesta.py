@@ -33,6 +33,7 @@ import json
 import logging
 import uuid
 from datetime import timedelta
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -58,6 +59,7 @@ log = logging.getLogger("dsd.sync")
 RETRASO_TABLERO_SEG = 60
 
 __all__ = [
+    "apartar_mal_formados",
     "anotar_version_de_la_app",
     "cambios_de_sus_ventas",
     "procesar_lote",
@@ -205,6 +207,75 @@ async def _cuarentena(
             "msg": mensaje[:2000],
         },
     )
+
+
+async def apartar_mal_formados(
+    sesion: AsyncSession,
+    *,
+    dispositivo_id: uuid.UUID,
+    usuario_id: uuid.UUID | None,
+    sobres: list[Any],
+    motivo: str,
+) -> int:
+    """Lo que el servidor rechazó sin poder leerlo, a la cuarentena (ADR 0002 §172).
+
+    Un lote que no pasa la validación —422— no llega a `_procesar_sobre`, así
+    que no dejaba rastro: el teléfono lo apartaba como «con error» y la oficina
+    no lo encontraba en ninguna parte, y el corte podía cerrarse sin esas ventas.
+    Ahora cada sobre que se puede identificar —trae un `operacion_id`— queda en
+    la cuarentena, a la vista y frenando el corte como cualquier otro.
+
+    Si después entra —el teléfono reintenta sobre por sobre y los buenos pasan—,
+    `_procesar_sobre` lo da por resuelto. Devuelve cuántos apartó; no confirma.
+    """
+    apartados = 0
+    for crudo in sobres[:200]:
+        if not isinstance(crudo, dict):
+            continue
+        try:
+            operacion_id = uuid.UUID(str(crudo.get("operacion_id")))
+        except ValueError:
+            continue
+        operaciones = crudo.get("operaciones")
+        operaciones = operaciones if isinstance(operaciones, list) else []
+        tipos = "+".join(
+            str(o.get("tipo")) for o in operaciones if isinstance(o, dict) and o.get("tipo")
+        ) or "desconocido"
+        r = await sesion.execute(
+            text(
+                """
+                INSERT INTO sync_cuarentena (operacion_id, dispositivo_id, usuario_id, tipo,
+                                             payload, hash_payload, error_codigo,
+                                             error_mensaje)
+                SELECT :op, :dev, :usr, :tipo, CAST(:payload AS jsonb), :hash, :cod, :msg
+                 WHERE NOT EXISTS (SELECT 1 FROM sync_cuarentena
+                                    WHERE operacion_id = :op AND estado = 'pendiente')
+                   AND NOT EXISTS (SELECT 1 FROM sync_operaciones WHERE operacion_id = :op)
+                """
+            ),
+            {
+                "op": operacion_id,
+                "dev": dispositivo_id,
+                "usr": usuario_id,
+                "tipo": tipos[:200],
+                "payload": json.dumps(
+                    {
+                        "visita_id": crudo.get("visita_id"),
+                        "secuencia": crudo.get("secuencia"),
+                        "operaciones": operaciones,
+                    },
+                    default=str,
+                ),
+                "hash": str(crudo.get("hash_payload") or ""),
+                "cod": CodigoError.PAYLOAD_INVALIDO.value,
+                "msg": (
+                    "el teléfono mandó esta operación en un envío que el servidor no "
+                    f"pudo leer: {motivo}"
+                )[:2000],
+            },
+        )
+        apartados += r.rowcount or 0
+    return apartados
 
 
 async def procesar_lote(
@@ -372,6 +443,17 @@ async def _procesar_sobre(
                 manejador = obtener_manejador(operacion.tipo)
                 await manejador(sesion, ctx, operacion.entidad_id, operacion.datos)
             await _anotar(sesion, sobre, ctx, lote_id, Estado.ACEPTADA)
+            # Si se había apartado porque llegó en un envío mal formado (§172) y
+            # ahora entró —el teléfono lo reintentó solo—, deja de estar pendiente.
+            await sesion.execute(
+                text(
+                    "UPDATE sync_cuarentena "
+                    "   SET estado = 'reprocesada', resuelto_en = now(), "
+                    "       nota_resolucion = 'Entró sola en un envío posterior del teléfono.' "
+                    " WHERE operacion_id = :op AND estado = 'pendiente'"
+                ),
+                {"op": sobre.operacion_id},
+            )
     except ErrorDeManejador as e:
         # El savepoint ya revirtió lo del sobre; la sesión sigue usable.
         await _cuarentena(sesion, sobre, ctx, e.codigo, e.mensaje)
@@ -394,6 +476,25 @@ async def _procesar_sobre(
         return ResultadoSobre(
             sobre.operacion_id, Estado.RECHAZADA,
             error_codigo=CodigoError.CONFLICTO_DE_DATOS.value, error_mensaje=mensaje,
+        )
+    except Exception as e:
+        # UN ERROR NUESTRO NO FRENA AL TELÉFONO (ADR 0002 §172). Antes, cualquier
+        # falla que no fuera de reglas ni de la base —un bug en un manejador—
+        # salía del push como 500: el teléfono reintentaba el mismo lote cada dos
+        # minutos, no bajaba nada, y ese vendedor dejaba de sincronizar entero,
+        # con su corte y su pedido de carga detrás. Ahora ese sobre se va a la
+        # cuarentena con su error, el savepoint ya deshizo lo suyo, y los demás
+        # siguen. Arreglado el bug, la oficina lo reprocesa desde el panel.
+        log.exception("sobre %s falló con un error inesperado", sobre.operacion_id)
+        mensaje = f"error interno del servidor ({type(e).__name__}: {e})"[:2000]
+        await _cuarentena(sesion, sobre, ctx, CodigoError.ERROR_INTERNO, mensaje)
+        await _anotar(
+            sesion, sobre, ctx, lote_id, Estado.RECHAZADA,
+            error_codigo=CodigoError.ERROR_INTERNO.value, error_mensaje=mensaje,
+        )
+        return ResultadoSobre(
+            sobre.operacion_id, Estado.RECHAZADA,
+            error_codigo=CodigoError.ERROR_INTERNO.value, error_mensaje=mensaje,
         )
 
     return ResultadoSobre(
@@ -600,6 +701,11 @@ async def _reprocesar_una(
             codigo, mensaje = e.codigo.value, e.mensaje
         except (IntegrityError, DBAPIError) as e:
             codigo, mensaje = CodigoError.CONFLICTO_DE_DATOS.value, str(getattr(e, "orig", e))
+        except Exception as e:
+            # Como en el push (§172): un bug no tumba la pantalla de Cuarentena.
+            log.exception("reprocesar %s falló con un error inesperado", fila["operacion_id"])
+            codigo = CodigoError.ERROR_INTERNO.value
+            mensaje = f"error interno del servidor ({type(e).__name__}: {e})"
         else:
             codigo = mensaje = None
 

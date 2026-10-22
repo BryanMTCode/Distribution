@@ -112,6 +112,7 @@ from app.domain.liquidacion import (
     diferencia_de_efectivo,
     saldo_inicial,
 )
+from app.infra.cuarentena_que_frena import cuarentena_que_frena
 from app.infra.cuenta_vendedor import ORIGENES, cargar_el_corte
 from app.workers.cola import encolar
 
@@ -1351,22 +1352,16 @@ async def _bloqueos_para_cerrar(sesion, cabecera) -> list[str]:
     """
     bloqueos: list[str] = []
 
-    cuarentena = (
-        await sesion.execute(
-            text(
-                """
-                SELECT count(*) FROM sync_cuarentena c
-                  JOIN dispositivos dis ON dis.id = c.dispositivo_id
-                 WHERE dis.usuario_id = :v AND c.estado = 'pendiente'
-                """
-            ),
-            {"v": cabecera["vendedor_id"]},
-        )
-    ).scalar_one()
+    # Solo lo que puede explicar una diferencia, y desde el día de esta carga
+    # (§172): lo demás sigue en la cuarentena a la vista, sin frenar el corte.
+    cuarentena = await cuarentena_que_frena(
+        sesion, cabecera["vendedor_id"], desde=cabecera["fecha_operativa"]
+    )
     if cuarentena:
         bloqueos.append(
-            f"el equipo tiene {cuarentena} operación(es) en cuarentena, y cualquiera "
-            "puede ser la venta que explica una diferencia. Atiéndelas primero."
+            f"el equipo tiene {cuarentena} venta(s) o movimiento(s) de mercancía de "
+            "este día en cuarentena, y cualquiera puede explicar una diferencia. "
+            "Atiéndelos primero en Cuarentena (Reprocesar o Descartar)."
         )
 
     # ¿Sincronizó el equipo después de que la carga se confirmó? Si no, con

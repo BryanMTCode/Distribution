@@ -73,6 +73,7 @@ from app.api.admin.comun import (
 from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.importes import CantidadInvalida, cantidad_base
+from app.infra.cuarentena_que_frena import cuarentena_que_frena
 
 router = APIRouter(prefix="/panel/cargas", tags=["panel"], include_in_schema=False)
 
@@ -1126,22 +1127,24 @@ async def _bloqueos_para_cargar(sesion, vendedor_id, dia) -> list[str]:
     # 2. La cuarentena: documentos que el servidor no pudo aplicar. Son del día
     #    anterior por definición —llegaron y no entraron— y cualquiera puede ser
     #    la venta que falta en el cierre de ayer.
-    cuarentena = (
+    #    Solo lo que puede explicar una diferencia, y desde la carga anterior
+    #    (§172): lo de días ya cerrados no cambia ninguna cuenta.
+    anterior = (
         await sesion.execute(
             text(
-                """
-                SELECT count(*) FROM sync_cuarentena c
-                  JOIN dispositivos dis ON dis.id = c.dispositivo_id
-                 WHERE dis.usuario_id = :v AND c.estado = 'pendiente'
-                """
+                "SELECT max(fecha_operativa) FROM cargas "
+                " WHERE vendedor_id = :v AND fecha_operativa < :dia "
+                "   AND estado <> 'cancelada'"
             ),
-            {"v": vendedor_id},
+            {"v": vendedor_id, "dia": dia},
         )
     ).scalar_one()
+    cuarentena = await cuarentena_que_frena(sesion, vendedor_id, desde=anterior)
     if cuarentena:
         bloqueos.append(
-            f"el equipo tiene {cuarentena} operación(es) en cuarentena sin atender. "
-            "Resuélvelas antes de encimarle otro día."
+            f"el equipo tiene {cuarentena} venta(s) o movimiento(s) de mercancía en "
+            "cuarentena sin atender. Resuélvelos en Cuarentena antes de encimarle "
+            "otro día."
         )
 
     # 3. Una carga anterior sin su liquidación cerrada.

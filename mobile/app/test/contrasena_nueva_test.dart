@@ -153,6 +153,31 @@ void main() {
     expect(await _hashGuardado(almacen), _vectorNuevo['hash_phc']);
   });
 
+  test('al renovar con señal, el acceso sin señal vuelve a empezar (ADR 0002 §172)',
+      () async {
+    // Antes solo volvía a empezar al teclear la contraseña con señal: quien
+    // entraba siempre sin datos se quedaba fuera a los siete días.
+    final almacen = AlmacenSeguroEnMemoria();
+    await almacen.escribir(
+      'credencial_local_v1',
+      jsonEncode(credencialDelServidor(validaHasta: '2026-10-01T00:00:00.000Z')),
+    );
+    await almacen.escribir(claveRefreshToken, 'refresh-viejo');
+    final elRef = Provider<Ref>((ref) => ref);
+    final contenedor = ProviderContainer(overrides: [
+      almacenSeguroProvider.overrideWithValue(almacen),
+      transporteSinSesionProvider.overrideWithValue(_MismaContrasena()),
+    ]);
+    addTearDown(contenedor.dispose);
+
+    expect(await renovarAcceso(contenedor.read(elRef)), isTrue);
+
+    final guardada = await RepoCredencial(almacen).leer();
+    expect(guardada!.validaHasta, DateTime.utc(2026, 10, 8));
+    expect(guardada.passwordHash, credencialDelServidor()['password_hash'],
+        reason: 'la contraseña no cambió');
+  });
+
   test('un teléfono sin credencial no gana una al renovar', () async {
     final almacen = AlmacenSeguroEnMemoria();
     await almacen.escribir(claveRefreshToken, 'refresh-viejo');
@@ -166,4 +191,31 @@ void main() {
     expect(await renovarAcceso(contenedor.read(elRef)), isTrue);
     expect(await _hashGuardado(almacen), isNull);
   });
+}
+
+/// El servidor al renovar: la misma contraseña, la vigencia corrida siete días.
+class _MismaContrasena implements Transporte {
+  @override
+  Future<RespuestaHttp> post(String ruta, Map<String, Object?> cuerpo) async =>
+      RespuestaHttp(
+        200,
+        jsonEncode({
+          'access_token': 'token-nuevo',
+          'refresh_token': 'refresh-viejo',
+          'expira_en_seg': 900,
+          'perfil': {
+            'usuario_id': '019283a0-0001-7000-8000-000000000001',
+            'codigo': 'VEND01',
+            'nombre': 'Juan Pérez',
+            'rol': 'vendedor',
+            'permisos': ['ventas.crear'],
+          },
+          'credencial_local': credencialDelServidor(validaHasta: '2026-10-08T00:00:00.000Z'),
+          'dispositivo_id': _equipo,
+        }),
+      );
+
+  @override
+  Future<RespuestaHttp> obtener(String ruta, {Map<String, String>? parametros}) async =>
+      const RespuestaHttp(200, '{}');
 }

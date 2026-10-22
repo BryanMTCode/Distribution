@@ -166,19 +166,37 @@ void main() {
     expect(outbox.resumen().enCuarentena, equals(0));
   });
 
-  test('lote inválido (422): a cuarentena el lote completo', () async {
+  test('lote inválido (422): se reintenta de uno en uno, y el que sigue mal se aparta',
+      () async {
     // El único caso en que se descarta sin haber aplicado: reenviar lo mismo
     // fallaría igual, y reintentar para siempre dejaría al vendedor sin vender.
+    // Pero solo el que viene mal (ADR 0002 §172): antes se apartaba el lote
+    // completo, y las ventas buenas que iban junto se quedaban en el teléfono.
     encolarAlta(outbox, db, 'c1', secuencia: 0);
     encolarAlta(outbox, db, 'c2', secuencia: 1);
     final transporte = TransporteFalso([
-      const Responde(422, 'el lote repite un operacion_id'),
+      const Responde(422, 'el lote trae un sobre mal formado'),
+      const AceptaLoEnviado(),
+      const Responde(422, 'este es el mal formado'),
     ]);
 
     final r = await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
 
-    expect(r.sobresEnCuarentena, equals(2));
+    expect(r.sobresConfirmados, equals(1));
+    expect(r.sobresEnCuarentena, equals(1));
     expect(outbox.resumen().pendientes, equals(0));
+    final pushes = transporte.cuerposEnviados.where((c) => c.containsKey('sobres'));
+    expect([for (final c in pushes) (c['sobres']! as List).length], [2, 1, 1]);
+  });
+
+  test('lote inválido (422) de un solo sobre: a cuarentena sin más vueltas', () async {
+    encolarAlta(outbox, db, 'c1');
+    final transporte = TransporteFalso([const Responde(422, 'mal formado')]);
+
+    final r = await armarSincronizador(db, transporte).sincronizar(cursorActual: 0);
+
+    expect(r.sobresEnCuarentena, equals(1));
+    expect(transporte.cuerposEnviados.where((c) => c.containsKey('sobres')), hasLength(1));
   });
 
   test('servidor caído (500): sigue pendiente, se reintenta', () async {
@@ -190,6 +208,25 @@ void main() {
     expect(r.fin, equals(FinDeSync.servidorCaido));
     expect(outbox.resumen().pendientes, equals(1));
     expect(outbox.resumen().enCuarentena, equals(0));
+  });
+
+  test('si la subida falla, igual baja la carga y los precios (ADR 0002 §172)',
+      () async {
+    // Antes la corrida terminaba en el error del push: un solo sobre que hiciera
+    // fallar al servidor dejaba al vendedor sin su carga de la mañana.
+    encolarAlta(outbox, db, 'c1');
+    final transporte = TransporteFalso([
+      const Responde(500, 'Internal Server Error'),
+      Responde.pull(cambios: [deltaProducto(41, 'p1', 'FRIJOL-1KG')]),
+    ]);
+
+    final r = await armarSincronizador(db, transporte).sincronizar(cursorActual: 7);
+
+    expect(transporte.llamadas.where((l) => l.contains('pull')), isNotEmpty);
+    expect(r.deltasAplicados, equals(1), reason: 'lo que bajó cuenta');
+    expect(r.cursor, equals(41));
+    expect(r.fin, equals(FinDeSync.servidorCaido), reason: 'lo que no subió se dice');
+    expect(outbox.resumen().pendientes, equals(1), reason: 'y sigue en la cola');
   });
 
   test('un lote con aceptadas y rechazadas separa cada sobre', () async {

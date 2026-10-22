@@ -8,19 +8,25 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.api.deps import ActorDep, ActorQueEntregaDep, SesionDep
 from app.api.esquemas import EntradaBase
+from app.core.db import fijar_alcance, obtener_sesion
+from app.core.seguridad import TokenInvalido, decodificar_token
 from app.domain.sync.sobres import (
     MAX_SOBRES_POR_LOTE,
     LoteInvalido,
     Operacion,
     Sobre,
 )
-from app.infra.sync.ingesta import anotar_version_de_la_app, procesar_lote
+from app.infra.sync.ingesta import (
+    anotar_version_de_la_app,
+    apartar_mal_formados,
+    procesar_lote,
+)
 from app.infra.sync.manejadores import Contexto
 
 router = APIRouter(prefix="/sync", tags=["sincronización"])
@@ -196,6 +202,17 @@ async def push(
             contexto.dispositivo_id,
             e,
         )
+        # Y a la cuarentena, para que la oficina lo vea y frene el corte (§172).
+        # Lo que después entre solo —el teléfono reintenta de uno en uno— se da
+        # por resuelto al entrar.
+        await apartar_mal_formados(
+            sesion,
+            dispositivo_id=contexto.dispositivo_id,
+            usuario_id=contexto.usuario_id,
+            sobres=[s.model_dump(mode="json") for s in entrada.sobres],
+            motivo=str(e),
+        )
+        await sesion.commit()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
 
     return LoteSalida(
@@ -569,3 +586,47 @@ async def estado(actor: ActorDep, sesion: SesionDep) -> EstadoSync:
         if fila["ultima_sync_pull_en"] else None,
         operaciones_en_cuarentena=fila["cuarentena"],
     )
+
+
+async def apartar_push_ilegible(peticion: Request, fallos: list[dict]) -> int:
+    """Un push que ni siquiera encaja en el esquema, a la cuarentena (§172).
+
+    FastAPI lo contesta con 422 antes de que corra el endpoint, así que aquí no
+    hay actor ni sesión: se sacan del token y del cuerpo, que FastAPI ya leyó. La
+    sesión es la misma que la de cualquier petición —`obtener_sesion`, con el
+    alcance del vendedor del token—. Si el token no sirve o el cuerpo no es JSON,
+    no hay a quién atribuirlo y solo queda la bitácora. Nunca cambia la respuesta.
+    """
+    autorizacion = peticion.headers.get("authorization", "")
+    if not autorizacion.lower().startswith("bearer "):
+        return 0
+    try:
+        claims = decodificar_token(autorizacion[7:].strip(), "access")
+        dispositivo_id = uuid.UUID(str(claims.get("dispositivo_id")))
+        usuario_id = uuid.UUID(str(claims.get("sub")))
+        rutas = [uuid.UUID(str(r)) for r in claims.get("rutas") or []]
+    except (TokenInvalido, ValueError):
+        return 0
+    try:
+        cuerpo = json.loads(await peticion.body())
+    except ValueError:
+        return 0
+    sobres = cuerpo.get("sobres") if isinstance(cuerpo, dict) else None
+    if not isinstance(sobres, list):
+        return 0
+    motivo = "; ".join(f"{f['donde']} ({f['que']})" for f in fallos[:5])
+    proveedor = peticion.app.dependency_overrides.get(obtener_sesion, obtener_sesion)
+    async for sesion in proveedor():
+        await fijar_alcance(
+            sesion, rol=str(claims.get("rol") or ""), usuario_id=usuario_id, rutas=rutas
+        )
+        apartados = await apartar_mal_formados(
+            sesion,
+            dispositivo_id=dispositivo_id,
+            usuario_id=usuario_id,
+            sobres=sobres,
+            motivo=motivo or "el envío no tiene la forma esperada",
+        )
+        await sesion.commit()
+        return apartados
+    return 0

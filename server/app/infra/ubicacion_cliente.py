@@ -84,44 +84,72 @@ async def fijar_ubicacion(
     quien: uuid.UUID | None = None,
     dispositivo_id: uuid.UUID | None = None,
     momento: datetime | None = None,
+    sin_ruta: bool = False,
 ) -> dict:
     """Guarda la ubicación y deja constancia de la anterior. No confirma.
 
     Devuelve el cliente como quedó. La actualización publica el delta del
     cliente (0010), así que los teléfonos de su ruta reciben la ubicación nueva
     —y con ella la geocerca de la venta— en su siguiente sincronización.
+
+    `sin_ruta`: la tienda no tiene ruta y la corrige un vendedor desde su
+    teléfono. RLS no le deja verla ni cambiarla, así que se guarda por
+    `fn_ubicar_tienda_sin_ruta` (migración 0068, ADR 0002 §172).
     """
     if origen not in ORIGENES:
         raise UbicacionInvalida(f"Origen de ubicación desconocido: {origen!r}.")
-    antes = (
+    ahora = momento or datetime.now(UTC)
+    if sin_ruta:
+        fila = (
+            await sesion.execute(
+                text(
+                    "SELECT lat_antes AS lat, lng_antes AS lng, "
+                    "       origen_antes AS ubicacion_origen "
+                    "  FROM fn_ubicar_tienda_sin_ruta(:c, :lat, :lng, :origen, "
+                    "                                 :precision, :ahora)"
+                ),
+                {
+                    "c": cliente_id,
+                    "lat": lat,
+                    "lng": lng,
+                    "origen": origen,
+                    "precision": precision_m,
+                    "ahora": ahora,
+                },
+            )
+        ).mappings().first()
+        if fila is None:
+            raise UbicacionInvalida("Esa tienda ya no está sin ruta.")
+        antes = fila
+    else:
+        antes = (
+            await sesion.execute(
+                text(
+                    "SELECT lat, lng, ubicacion_origen FROM clientes WHERE id = :c FOR UPDATE"
+                ),
+                {"c": cliente_id},
+            )
+        ).mappings().first()
+        if antes is None:
+            raise UbicacionInvalida("Ese cliente no existe.")
+
         await sesion.execute(
             text(
-                "SELECT lat, lng, ubicacion_origen FROM clientes WHERE id = :c FOR UPDATE"
+                "UPDATE clientes "
+                "   SET lat = :lat, lng = :lng, ubicacion_origen = :origen, "
+                "       ubicacion_precision_m = :precision, ubicacion_capturada_en = :ahora, "
+                "       actualizado_en = now() "
+                " WHERE id = :c"
             ),
-            {"c": cliente_id},
+            {
+                "c": cliente_id,
+                "lat": lat,
+                "lng": lng,
+                "origen": origen,
+                "precision": precision_m,
+                "ahora": ahora,
+            },
         )
-    ).mappings().first()
-    if antes is None:
-        raise UbicacionInvalida("Ese cliente no existe.")
-
-    ahora = momento or datetime.now(UTC)
-    await sesion.execute(
-        text(
-            "UPDATE clientes "
-            "   SET lat = :lat, lng = :lng, ubicacion_origen = :origen, "
-            "       ubicacion_precision_m = :precision, ubicacion_capturada_en = :ahora, "
-            "       actualizado_en = now() "
-            " WHERE id = :c"
-        ),
-        {
-            "c": cliente_id,
-            "lat": lat,
-            "lng": lng,
-            "origen": origen,
-            "precision": precision_m,
-            "ahora": ahora,
-        },
-    )
     # La anterior queda escrita: una ubicación movida es la primera pregunta
     # cuando una venta sale «lejos del cliente».
     await sesion.execute(

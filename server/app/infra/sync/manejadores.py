@@ -2163,15 +2163,18 @@ async def ubicar_cliente(
     Solo de su ruta: dejar que un teléfono mueva la ubicación de cualquier cliente
     sería dejarle mover la geocerca de las ventas de otro vendedor. El reenvío no
     hace daño: escribir la misma coordenada dos veces deja la misma coordenada.
+
+    La tienda se busca como la venta (`_cliente_del_telefono`, §165): con un
+    SELECT común, RLS escondía la tienda SIN ruta y la corrección se iba a
+    cuarentena como «ese cliente no existe» (§172). La sin ruta se guarda —le
+    llega a todos y el vendedor está parado frente a ella—; la de otra ruta la
+    sigue moviendo la oficina.
     """
-    cliente = (
-        await sesion.execute(
-            text("SELECT ruta_id FROM clientes WHERE id = :c"), {"c": entidad_id}
-        )
-    ).mappings().first()
+    cliente = await _cliente_del_telefono(sesion, entidad_id)
     if cliente is None:
         raise ErrorDeManejador(CodigoError.CONFLICTO_DE_DATOS, "ese cliente no existe")
-    if cliente["ruta_id"] not in ctx.rutas:
+    sin_ruta = cliente["ruta_id"] is None
+    if not sin_ruta and cliente["ruta_id"] not in ctx.rutas:
         raise ErrorDeManejador(
             CodigoError.CONFLICTO_DE_DATOS,
             "ese cliente no es de la ruta de este vendedor: su ubicación la mueve la oficina",
@@ -2188,6 +2191,7 @@ async def ubicar_cliente(
             quien=ctx.usuario_id,
             dispositivo_id=ctx.dispositivo_id,
             momento=_instante_obligatorio(datos, "fecha_dispositivo"),
+            sin_ruta=sin_ruta,
         )
     except UbicacionInvalida as e:
         raise ErrorDeManejador(CodigoError.PAYLOAD_INVALIDO, str(e)) from e

@@ -220,10 +220,28 @@ class Sincronizador {
     // El orden importa. Si se trajeran los deltas primero, una actualización de
     // precios podría pisar el espejo mientras la venta que se hizo con el
     // precio viejo todavía está en la cola. Primero se entrega lo ocurrido.
-    while (tandas < maxTandas) {
-      final lote = _outbox.siguienteLote(limite: maxSobresPorLote);
-      if (lote.isEmpty) break;
-      tandas++;
+    //
+    // Dos cosas de §172 viven en este ciclo:
+    //
+    // · `deUnoEnUno`: un lote que el servidor no entiende (422) ya no se lleva a
+    //   la cuarentena a los otros 49. Se vuelve a mandar sobre por sobre, y solo
+    //   el que de verdad viene mal se aparta. Antes las ventas buenas que iban en
+    //   el mismo lote se quedaban en el teléfono, y el corte se cerraba sin ellas.
+    // · `falloLaSubida`: si el servidor contesta con un error (5xx), se deja de
+    //   subir pero NO se deja de bajar. Antes se cortaba aquí, y un solo sobre
+    //   que hiciera fallar al servidor dejaba al vendedor sin su carga, sin
+    //   precios y sin tiendas nuevas.
+    final deUnoEnUno = <List<SobreEnCola>>[];
+    String? falloLaSubida;
+    while (deUnoEnUno.isNotEmpty || tandas < maxTandas) {
+      final List<SobreEnCola> lote;
+      if (deUnoEnUno.isNotEmpty) {
+        lote = deUnoEnUno.removeAt(0);
+      } else {
+        lote = _outbox.siguienteLote(limite: maxSobresPorLote);
+        if (lote.isEmpty) break;
+        tandas++;
+      }
 
       // Cuántos sobres quedarán después de esta tanda.
       //
@@ -276,25 +294,19 @@ class Sincronizador {
           ordenes: ordenes,
         );
       } on LoteRechazado catch (e) {
-        // Reenviar lo mismo fallaría igual: a cuarentena y seguimos.
-        for (final sobre in lote) {
-          _outbox.aCuarentena(sobre.operacionId, 'lote_invalido: ${e.detalle}');
-          enCuarentena++;
+        // Con varios sobres, de uno en uno: el malo no se lleva a los demás.
+        if (lote.length > 1) {
+          deUnoEnUno.insertAll(0, [for (final sobre in lote) [sobre]]);
+          continue;
         }
+        // Solo, y otra vez rechazado: reenviarlo fallaría igual. A cuarentena.
+        _outbox.aCuarentena(lote.single.operacionId, 'lote_invalido: ${e.detalle}');
+        enCuarentena++;
         continue;
       } on ServidorConProblemas catch (e) {
         _marcarParaReintento(lote, e.toString());
-        return ResultadoSincronizacion(
-          fin: FinDeSync.servidorCaido,
-          sobresConfirmados: confirmados,
-          sobresEnCuarentena: enCuarentena,
-          cursor: cursorActual,
-          detalle: e.toString(),
-          // Las órdenes viajan aunque la corrida termine mal: el equipo con
-          // orden de borrado tiene que quedar bloqueado también cuando se
-          // cayó la red a media entrega, no solo cuando logró vaciarse.
-          ordenes: ordenes,
-        );
+        falloLaSubida = e.toString();
+        break;
       }
 
       try {
@@ -327,6 +339,21 @@ class Sincronizador {
       _outbox.marcarDocumentosConfirmados();
     } catch (_) {
       // Es una marca para la pantalla; nunca detiene la sincronización.
+    }
+
+    // Con la subida fallida, un equipo con orden de borrado o suspendido termina
+    // aquí, como antes: no hay nada que borrar todavía, y uno suspendido no baja.
+    if (falloLaSubida != null &&
+        ordenes != null &&
+        (ordenes.borrar || ordenes.soloEntrega)) {
+      return ResultadoSincronizacion(
+        fin: FinDeSync.servidorCaido,
+        sobresConfirmados: confirmados,
+        sobresEnCuarentena: enCuarentena,
+        cursor: cursorActual,
+        detalle: falloLaSubida,
+        ordenes: ordenes,
+      );
     }
 
     // ---- BORRADO: solo cuando ya no queda nada que entregar -------------
@@ -481,7 +508,13 @@ class Sincronizador {
     }
 
     return ResultadoSincronizacion(
-      fin: quedaCola ? FinDeSync.parcial : FinDeSync.completa,
+      // Lo que no subió se dice aunque haya bajado todo: sigue en la cola.
+      fin: falloLaSubida != null
+          ? FinDeSync.servidorCaido
+          : quedaCola
+              ? FinDeSync.parcial
+              : FinDeSync.completa,
+      detalle: falloLaSubida,
       sobresConfirmados: confirmados,
       sobresEnCuarentena: enCuarentena,
       deltasAplicados: aplicados,

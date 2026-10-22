@@ -7315,3 +7315,53 @@ necesita. Salieron tres cosas:
   era. Ahora leen la revisión de dentro del archivo.
 
 (versionCode 58)
+
+## 172. Nada que deje a un vendedor sin operar
+
+«Quiero que la app ya no vaya a tener problemas de sincronización, que ya puedan
+operar y que no vaya a haber errores que los deje sin operar.» De la revisión
+(§171) salieron seis cosas; los folios están en §171. Las otras cinco:
+
+- **Un error nuestro ya no frena al teléfono.** Si al aplicar una operación el
+  servidor fallaba con un error que no es de reglas ni de la base —un bug—,
+  contestaba 500 a todo el envío. El teléfono reintentaba el mismo lote cada dos
+  minutos y, como cortaba ahí, **tampoco bajaba nada**: ni la carga, ni precios,
+  ni tiendas. Ahora:
+  · en el servidor, esa operación se va a la cuarentena con «error interno del
+    servidor (…)» y las demás del lote entran; arreglado el bug, se reprocesa
+    desde el panel;
+  · en el teléfono, si la subida falla, igual baja lo nuevo; lo que no subió
+    sigue en la cola y la pantalla dice que el servidor no respondió.
+- **Corregir la ubicación de una tienda sin ruta ya no cae en cuarentena.** Era
+  el mismo hueco que tuvo la venta (§165): con RLS el vendedor no «ve» la tienda
+  sin ruta, y la corrección desde su ficha salía como «ese cliente no existe».
+  Ahora la tienda se busca como en la venta, y la ubicación de la sin ruta se
+  guarda (migración 0068, `fn_ubicar_tienda_sin_ruta`, con su auditoría). La de
+  otra ruta se sigue rechazando: su ubicación la mueve la oficina.
+- **La cuarentena solo frena lo que puede explicar una diferencia.** Antes
+  cualquier pendiente del vendedor, de cualquier día, frenaba su corte, y como
+  aceptar la carga cierra el corte (§169), también su carga del día siguiente.
+  Ahora frenan el corte y la carga solo:
+  · las ventas y sus cancelaciones o cambios, las mermas y devoluciones, lo que
+    el camión devuelve, el corte mismo, y lo que llegó sin poderse leer;
+  · recibidos desde el día de esa carga (para la carga nueva, desde la carga
+    anterior): lo de días ya cerrados no cambia ninguna cuenta.
+  Un alta de tienda, un no-drop o una ubicación siguen en la cuarentena a la
+  vista, sin frenar nada. El mensaje dice qué hacer: «Reprocesar o Descartar».
+- **Lo que el servidor no pudo leer queda a la vista.** Un envío que no pasaba la
+  validación (422) no dejaba rastro: el teléfono lo apartaba como «con error», la
+  oficina no lo veía en ninguna parte, y el corte podía cerrarse sin esas ventas.
+  Ahora:
+  · el teléfono reintenta un lote rechazado **sobre por sobre**, y solo aparta el
+    que de verdad viene mal; antes se llevaba a los otros 49;
+  · el servidor registra en la cuarentena cada operación de ese envío —también si
+    ni siquiera encajó en el esquema, tomando al vendedor y al teléfono del
+    token—, y la que después entra sola se da por resuelta.
+- **El acceso sin señal se renueva al sincronizar.** Duraba siete días
+  (`dias_max_offline`) desde la última vez que el vendedor entraba con su
+  contraseña y con señal: el que entraba siempre sin datos quedaba fuera aunque
+  sincronizara a diario. Ahora también vuelve a empezar al renovar el acceso con
+  señal —el servidor acaba de comprobar que el equipo sigue activo—, una vez al
+  día.
+
+(migración 0068; versionCode 58)
