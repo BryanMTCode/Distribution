@@ -50,6 +50,39 @@ TXT
 
 }
 
+# Las tiendas que le salen en el teléfono, ruta por ruta (ADR 0002 §174): las
+# de sus rutas que van en la lista —activas o prospecto, como las enseña la app—
+# y cuántas le tocan hoy, por su plan de visita o porque se le reagendaron. Con
+# el día de Mazatlán: la base cuenta en UTC y a las seis de la tarde ya sería
+# mañana. Un renglón por ruta: «R1107|273|47».
+tiendas_por_ruta() {
+    psql "$URL" -Atq -c "
+        WITH hoy AS (SELECT (now() AT TIME ZONE 'America/Mazatlan')::date AS d)
+        SELECT r.codigo, count(c.id),
+               count(c.id) FILTER (
+                   WHERE c.visita_reprogramada = hoy.d
+                      OR EXISTS (SELECT 1 FROM clientes_frecuencia f
+                                  WHERE f.cliente_id = c.id
+                                    AND toca_visita(hoy.d, f.dia_semana,
+                                                    f.semana_del_mes)))
+          FROM usuarios u
+          JOIN usuarios_rutas ur ON ur.usuario_id = u.id
+          JOIN rutas r ON r.id = ur.ruta_id
+          CROSS JOIN hoy
+          LEFT JOIN clientes c ON c.ruta_id = r.id
+                              AND c.estatus IN ('activo', 'prospecto')
+         WHERE u.codigo = '$(echo "$1" | tr -cd 'A-Za-z0-9_-')'
+         GROUP BY r.codigo ORDER BY r.codigo" 2>/dev/null
+}
+
+dia_de_hoy() {
+    psql "$URL" -Atq -c "
+        SELECT (ARRAY['domingo', 'lunes', 'martes', 'miércoles', 'jueves',
+                      'viernes', 'sábado'])
+               [extract(dow FROM now() AT TIME ZONE 'America/Mazatlan')::int + 1]" \
+        2>/dev/null
+}
+
 # `todos`: la misma revisión para cada vendedor activo, y al final quién está
 # listo y quién no, para no tener que leer veinte pantallas para saberlo.
 if [ "$VENDEDOR" = "todos" ]; then
@@ -63,16 +96,19 @@ if [ "$VENDEDOR" = "todos" ]; then
     RESUMEN=""
     MAL=0
     for codigo in $CODIGOS; do
+        # Junto a cada uno, sus tiendas: lo que debe decir su teléfono (§174).
+        TIENDAS="$(tiendas_por_ruta "$codigo" \
+            | awk -F'|' '{ printf "%s%s: %s tiendas, hoy %s", (NR > 1 ? " · " : ""), $1, $2, $3 }')"
         if DSD_SIN_RECORDATORIO=1 bash "${BASH_SOURCE[0]}" "$codigo"; then
-            RESUMEN="${RESUMEN}  listo        $codigo"$'\n'
+            RESUMEN="${RESUMEN}$(printf '  %-12s %-10s %s' listo "$codigo" "$TIENDAS")"$'\n'
         else
-            RESUMEN="${RESUMEN}  POR ARREGLAR $codigo"$'\n'
+            RESUMEN="${RESUMEN}$(printf '  %-12s %-10s %s' 'POR ARREGLAR' "$codigo" "$TIENDAS")"$'\n'
             MAL=$((MAL + 1))
         fi
         printf '\n\n'
     done
     printf '═══════════════════════════════════════════════════════════════\n'
-    printf 'Todos los vendedores\n\n%s' "$RESUMEN"
+    printf 'Todos los vendedores (hoy es %s)\n\n%s' "$(dia_de_hoy)" "$RESUMEN"
     recordatorio
     exit $(( MAL > 0 ? 1 : 0 ))
 fi
@@ -328,12 +364,17 @@ CUARENTENA="$(consultar "
 # ---------------------------------------------------------------------------
 titulo "Sus clientes y su catálogo"
 # ---------------------------------------------------------------------------
-CLIENTES="$(consultar "
-    SELECT count(*) FROM clientes c
-      JOIN usuarios_rutas ur ON ur.ruta_id = c.ruta_id
-     WHERE ur.usuario_id = '$ID' AND c.activo")"
+# Lo que debe enseñar su teléfono en «Todos» y en «Hoy» (ADR 0002 §174). Antes
+# contaba `c.activo`, una columna que no existe: la consulta fallaba callada y
+# la revisión decía siempre «sus rutas no tienen clientes».
+POR_RUTA="$(tiendas_por_ruta "$VENDEDOR")"
+CLIENTES="$(printf '%s\n' "$POR_RUTA" | awk -F'|' '{ s += $2 } END { print s + 0 }')"
+DE_HOY="$(printf '%s\n' "$POR_RUTA" | awk -F'|' '{ s += $3 } END { print s + 0 }')"
+DETALLE="$(printf '%s\n' "$POR_RUTA" \
+    | awk -F'|' 'NF == 3 { printf "%s%s: %s, hoy %s", (NR > 1 ? " · " : ""), $1, $2, $3 }')"
 if [ "${CLIENTES:-0}" -ge 5 ] 2>/dev/null; then
-    bien "$CLIENTES clientes activos en sus rutas"
+    bien "$CLIENTES tiendas en sus rutas; hoy ($(dia_de_hoy)) le tocan $DE_HOY"
+    printf '        %s%s%s\n' "$GRIS" "$DETALLE" "$FIN"
 elif [ "${CLIENTES:-0}" -ge 1 ] 2>/dev/null; then
     avisa "solo $CLIENTES cliente(s) en sus rutas: ¿está completa la cartera?"
 else
@@ -341,12 +382,23 @@ else
           "cárgalos en el panel → Clientes"
 fi
 
+# La tienda sin ruta le sale a TODOS los teléfonos, en «Todos». Si son muchas,
+# cada vendedor ve más tiendas de las que tiene.
+SIN_RUTA="$(consultar "
+    SELECT count(*) FROM clientes
+     WHERE ruta_id IS NULL AND estatus IN ('activo', 'prospecto') AND NOT mayoreo")"
+if [ "${SIN_RUTA:-0}" -gt 0 ] 2>/dev/null; then
+    avisa "$SIN_RUTA tienda(s) sin ruta: les salen a todos los vendedores" \
+          "asígnales su ruta en el panel → Clientes"
+fi
+
 # Sin coordenadas no hay mapa del día ni distancia al cliente, y el alta en
 # calle del piloto no se puede comparar contra nada.
 SIN_GPS="$(consultar "
     SELECT count(*) FROM clientes c
       JOIN usuarios_rutas ur ON ur.ruta_id = c.ruta_id
-     WHERE ur.usuario_id = '$ID' AND c.activo AND c.ubicacion IS NULL")"
+     WHERE ur.usuario_id = '$ID' AND c.estatus IN ('activo', 'prospecto')
+       AND c.ubicacion IS NULL")"
 # El `-ge 1` de los clientes no es una redundancia: con cero clientes, "todos
 # tienen coordenadas" es cierto y se lee como un OK justo debajo de la falla que
 # dice que no hay ninguno. Dos renglones que se contradicen hacen que nadie le
@@ -365,9 +417,7 @@ PRODUCTOS="$(consultar "SELECT count(*) FROM productos WHERE activo")"
 SIN_PRECIO="$(consultar "
     SELECT count(*) FROM productos p
      WHERE p.activo
-       AND NOT EXISTS (
-             SELECT 1 FROM precios pr
-              WHERE pr.producto_id = p.id AND pr.activo)")"
+       AND NOT EXISTS (SELECT 1 FROM precios pr WHERE pr.producto_id = p.id)")"
 if [ "${PRODUCTOS:-0}" -lt 1 ] 2>/dev/null; then
     falla "no hay productos activos: no hay nada que cargarle al camión" \
           "cárgalos en el panel → Productos"

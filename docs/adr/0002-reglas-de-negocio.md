@@ -7382,3 +7382,50 @@ todos entonces sí vengan todos los días.»
   el panel como «Fuera de su día» (§167).
 
 (versionCode 58)
+
+## 174. En el teléfono, solo las tiendas de sus rutas
+
+«Verifica cuántas tiendas aparecen a cada vendedor en la app, porque me aparecen
+90 y tantas para el que trae la ruta 1107.» El jueves de la 1107 son 47 (273 en
+toda la ruta). Y el caso de Luis (§165): le vendió a una tienda que su teléfono
+enseñaba como suya y que en el servidor era de la R1102.
+
+El teléfono no borra tiendas por su cuenta: solo suelta una cuando el servidor le
+manda la baja. Había tres caminos por donde esa baja no llegaba nunca:
+
+- **La tienda sin ruta que recibe ruta.** Sin ruta les llega a todos los
+  teléfonos. Al darle ruta solo se avisaba a la ruta que la perdía «si tenía
+  ruta», así que a los demás nadie les decía que ya no era suya. Así se quedaron
+  las tiendas que el panel dejó sin ruta (§166) y las que se cargaron sin ruta.
+- **El cliente de mayoreo.** Es de la oficina y va sin ruta (§105), y sin ruta
+  les llegaba a todos: salía en «Todos» de cada vendedor.
+- **El teléfono que se vincula de nuevo** se quedaba con las tiendas de su
+  vínculo anterior: otro vendedor, otras rutas, los de prueba que se fueron con
+  «empezar a operar» (§138).
+
+Ahora (migración 0069):
+
+- La tienda que cambia de ruta avisa siempre a quien la pierde; si no tenía ruta,
+  a todos. El teléfono de la ruta nueva recibe la baja y en seguida el alta, y se
+  queda con ella.
+- El cliente de mayoreo sin ruta viaja como baja: el teléfono que lo tenía lo
+  suelta.
+- Al registrar un teléfono, o al pasarlo a otro vendedor, se le manda la baja de
+  cada tienda que no es de sus rutas, de los clientes de mayoreo y de las tiendas
+  que ya no existen.
+- **Y una vez, al actualizar el servidor, a todos los teléfonos que hay.** Con la
+  siguiente sincronización cada uno suelta lo que no es suyo, también con la +53:
+  no hace falta APK nuevo. La baja de una tienda que el teléfono no tiene no le
+  hace nada.
+
+La baja solo lleva el identificador de la tienda, sin ningún dato: a un vendedor
+no le llega nada de una tienda de otra ruta.
+
+`piloto_listo.sh` dice ahora cuántas tiendas debe enseñar cada teléfono y
+cuántas le tocan hoy, ruta por ruta. Con `todos` va en el resumen, junto a cada
+vendedor («R1107: 273 tiendas, hoy 47»). Avisa también de las tiendas sin ruta,
+que les salen a todos. La revisión contaba con una columna que no existe
+(`clientes.activo`) y decía siempre «sus rutas no tienen clientes». Con la del
+precio (`precios.activo`) pasaba igual.
+
+(Servidor; migración 0069, esquema `0062_tiendas_ajenas`.)

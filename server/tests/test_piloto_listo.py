@@ -148,3 +148,50 @@ async def test_todos_revisa_a_cada_vendedor_y_dice_quien_falta(sesion, semilla, 
     assert "Todos los vendedores" in salida
     # Sin teléfono, sin carga y sin respaldo: le falta.
     assert "POR ARREGLAR VEND01" in salida
+
+
+async def test_dice_cuantas_tiendas_le_salen_y_cuantas_le_tocan_hoy(sesion, semilla, tmp_path):
+    """«Verifica cuántas tiendas aparecen a cada vendedor» (ADR 0002 §174).
+
+    Antes contaba `clientes.activo`, que no existe: la consulta fallaba callada y
+    la revisión decía siempre «sus rutas no tienen clientes».
+    """
+    hoy = (
+        await sesion.execute(
+            text("SELECT extract(dow FROM now() AT TIME ZONE 'America/Mazatlan')::int")
+        )
+    ).scalar_one()
+    for n in range(7):
+        tienda = uuid.uuid4()
+        await sesion.execute(
+            text(
+                "INSERT INTO clientes (id, codigo, nombre_comercial, ruta_id, "
+                "                      creado_en, actualizado_en) "
+                "VALUES (:c, :codigo, 'Abarrotes', :r, now(), now())"
+            ),
+            {"c": tienda, "codigo": f"PL-{n}", "r": semilla["ruta"]},
+        )
+        # Tres le tocan hoy; las otras cuatro, mañana.
+        await sesion.execute(
+            text("INSERT INTO clientes_frecuencia (cliente_id, dia_semana) VALUES (:c, :d)"),
+            {"c": tienda, "d": hoy if n < 3 else (hoy + 1) % 7},
+        )
+    await sesion.execute(
+        text(
+            "INSERT INTO clientes (id, codigo, nombre_comercial, creado_en, actualizado_en) "
+            "VALUES (gen_random_uuid(), 'PL-SR', 'Sin ruta', now(), now())"
+        )
+    )
+    await sesion.commit()
+
+    _, salida = _correr("VEND01", respaldos=tmp_path)
+    seccion = salida.split("Sus clientes", 1)[1].split("El respaldo", 1)[0]
+    assert "7 tiendas en sus rutas; hoy (" in seccion, seccion
+    assert "le tocan 3" in seccion
+    assert "R04: 7, hoy 3" in seccion
+    assert "1 tienda(s) sin ruta: les salen a todos los vendedores" in seccion
+    assert "sus rutas no tienen clientes" not in seccion
+
+    _, resumen = _correr("todos", respaldos=tmp_path)
+    renglon = next(r for r in resumen.splitlines() if "VEND01" in r and "tiendas" in r)
+    assert "R04: 7 tiendas, hoy 3" in renglon

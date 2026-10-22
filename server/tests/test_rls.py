@@ -723,12 +723,14 @@ async def test_el_pull_sigue_entregando_el_catalogo_bajo_rls(
     cambios = respuesta.json()["cambios"]
     assert cambios, "el pull no entregó nada: la política dejó al camión sin catálogo"
 
-    # Y nada de la otra ruta.
+    # Y nada de la otra ruta. Solo puede llegarle su baja, sin ningún dato: la que
+    # le quita la tienda si su teléfono la traía de antes (ADR 0002 §174).
     entidades_de_cliente = [
         c for c in cambios if c["entidad"] == "cliente"
     ]
     for cambio in entidades_de_cliente:
-        assert cambio["entidad_id"] != str(dos_rutas["cliente_a"])
+        if cambio["entidad_id"] == str(dos_rutas["cliente_a"]):
+            assert cambio["operacion"] == "delete" and cambio["payload"] is None, cambio
 
 
 async def test_sin_token_la_api_no_filtra_nada_bajo_rls(cliente_rls, dos_rutas):
@@ -1165,3 +1167,32 @@ async def test_el_vendedor_modifica_su_venta_con_el_rol_restringido(
     assert (
         await sesion.execute(text("SELECT total FROM ventas WHERE id = :v"), {"v": v})
     ).scalar_one() == 4500
+
+
+@pytest.mark.asyncio
+async def test_registrar_el_telefono_desde_el_panel_con_el_rol_restringido(
+    cliente_rls, sesion, semilla
+):
+    """Registrar un teléfono le quita las tiendas ajenas (ADR 0002 §174).
+
+    El panel registra con `dsd_api`, que no escribe en `change_log`: el
+    disparador tiene que poder por su cuenta (SECURITY DEFINER, como la 0029)."""
+    from tests.test_borrado_remoto import _entrar
+    from tests.test_clave_del_equipo import _vincular
+    from tests.test_tiendas_que_no_son_suyas import _otra_ruta, _tienda
+
+    await _tienda(sesion, ruta=await _otra_ruta(sesion))
+    await sesion.commit()
+    await _entrar(cliente_rls)
+
+    r = await _vincular(cliente_rls, semilla, "LUIS7")
+
+    assert r.status_code == 200, r.text[-2000:]
+    bajas = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE vendedor_id = :v "
+                 "   AND entidad = 'cliente' AND operacion = 'delete'"),
+            {"v": semilla["vendedor"]},
+        )
+    ).scalar_one()
+    assert bajas == 1
