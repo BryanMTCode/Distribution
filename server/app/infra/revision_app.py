@@ -167,6 +167,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+56",
             ),
             Punto(
+                "sincroniza_sola", "Se sincroniza sola",
+                "Haz una venta con señal y deja la app abierta dos minutos, sin tocar "
+                "«Sincronizar».",
+                "La barra «Por enviar» desaparece sola, sin ningún aviso. Haciendo el "
+                "corte y pidiendo la carga, «Mi día» trae «Sincronizar ahora» mientras "
+                "la oficina no responde (ADR 0002 §169).",
+                desde="+57",
+            ),
+            Punto(
                 "venderle_desde_el_mapa", "Venderle desde el mapa",
                 "Abre «Mapa», toca una tienda —también una que toque otro día— y toca "
                 "«Venderle».",
@@ -555,6 +564,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 "mapa_del_dia", "El mapa del día",
                 "En el Tablero, «Ver el mapa del día».",
                 "Las tiendas del día sobre el lienzo, con su leyenda.",
+            ),
+            Punto(
+                "aceptar_cierra_el_corte", "Aceptar la carga cierra el corte",
+                "Con la carga que pidió un vendedor y su corte todavía abierto: Almacén → "
+                "Cargas, ábrela y toca «Aceptar y confirmar la carga».",
+                "Dice «Su corte … se cierra al aceptar»; al aceptar se cierra el corte y "
+                "sale la carga, sin pasar por «Corte del día». Si algo del vendedor está "
+                "en cuarentena, no acepta y dice por qué (ADR 0002 §169).",
+                desde="+57",
             ),
             Punto(
                 "mapa_de_rutas", "El mapa de rutas",

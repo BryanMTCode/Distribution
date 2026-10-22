@@ -157,9 +157,13 @@ class SyncEnCurso extends EstadoSync {
 }
 
 class SyncTerminada extends EstadoSync {
-  const SyncTerminada(this.resultado);
+  const SyncTerminada(this.resultado, {this.silenciosa = false});
 
   final ResultadoSincronizacion resultado;
+
+  /// La automática, la de cada dos minutos (ADR 0002 §169): no se anuncia. Si
+  /// cada una dijera «Todo al día», el vendedor tendría un aviso encima siempre.
+  final bool silenciosa;
 }
 
 /// Sin token no se puede sincronizar: el vendedor entró offline y todavía no ha
@@ -211,14 +215,35 @@ class ControladorSync extends Notifier<EstadoSync> {
     return cuantos;
   }
 
-  Future<void> sincronizar() async {
+  /// La que va corriendo, si hay una: la automática y la del botón no se
+  /// enciman (ADR 0002 §169).
+  Future<void>? _enCurso;
+
+  /// [silenciosa] es la automática: no gira ni avisa al terminar, y si ya hay
+  /// una corriendo no hace nada. La del botón espera a la que va y corre la suya.
+  Future<void> sincronizar({bool silenciosa = false}) async {
+    final previa = _enCurso;
+    if (previa != null) {
+      if (silenciosa) return;
+      await previa;
+    }
+    final esta = _sincronizar(silenciosa: silenciosa);
+    _enCurso = esta;
+    try {
+      await esta;
+    } finally {
+      if (identical(_enCurso, esta)) _enCurso = null;
+    }
+  }
+
+  Future<void> _sincronizar({required bool silenciosa}) async {
     final transporte = ref.read(transporteProvider);
     if (transporte == null) {
-      state = const SyncSinSesionEnLinea();
+      if (!silenciosa) state = const SyncSinSesionEnLinea();
       return;
     }
 
-    state = const SyncEnCurso();
+    if (!silenciosa) state = const SyncEnCurso();
     final db = ref.read(baseLocalProvider).db;
     // El reloj se resuelve antes de entrar a la parte asíncrona: leerlo desde
     // un callback que corre a mitad de la sincronización lo ata al ciclo de
@@ -297,7 +322,11 @@ class ControladorSync extends Notifier<EstadoSync> {
       return;
     }
 
-    state = SyncTerminada(resultado);
+    state = SyncTerminada(
+      resultado,
+      // La sesión vencida sí se dice: sin volver a entrar ya no hay más envíos.
+      silenciosa: silenciosa && resultado.fin != FinDeSync.sesionInvalida,
+    );
   }
 
   /// Borra la base y la credencial, y recién entonces lo confirma.
@@ -340,6 +369,12 @@ class ControladorSync extends Notifier<EstadoSync> {
     return SyncEquipoBorrado(motivo);
   }
 }
+
+/// Cada cuánto se sincroniza sola la app mientras está abierta (ADR 0002 §169):
+/// «cada dos minutos». Nula, nunca (las pruebas la apagan para que no se cruce).
+final intervaloDeSyncAutomaticaProvider = Provider<Duration?>(
+  (_) => const Duration(minutes: 2),
+);
 
 final syncProvider = NotifierProvider<ControladorSync, EstadoSync>(
   ControladorSync.new,

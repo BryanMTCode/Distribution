@@ -82,9 +82,11 @@
     · sale de {{ c.solicitud.bodega or 'la bodega principal' }}</span></h3>
   {% if c.solicitud.observaciones %}<p class="sutil">«{{ c.solicitud.observaciones }}»</p>{% endif %}
   {% if c.corte_por_cerrar %}
-  <div class="aviso-caja error" id="espera_corte_{{ c.vendedor_codigo }}">
-    Primero cierra su corte del {{ c.corte_por_cerrar.fecha_operativa.strftime('%d/%m') }}
-    (arriba): con su día abierto, la carga de mañana no sale.
+  {# Aceptar la carga cierra también el corte (ADR 0002 §169). #}
+  <div class="aviso-caja" id="espera_corte_{{ c.vendedor_codigo }}">
+    Al aceptar se cierra también su corte del
+    {{ c.corte_por_cerrar.fecha_operativa.strftime('%d/%m') }}, con lo que declaró.
+    Si quieres registrar otro efectivo recibido, ciérralo antes arriba.
   </div>
   {% endif %}
   <form method="post" action="/panel/cierres/solicitudes/{{ c.solicitud.id }}/aceptar">
@@ -111,8 +113,7 @@
       </table>
     </div>
     <p class="sutil">Deja «Se carga» vacío para cargar lo que pidió; 0 lo quita.</p>
-    <button type="submit" id="aceptar_{{ c.vendedor_codigo }}"
-            {% if c.corte_por_cerrar %}disabled{% endif %}>Aceptar y confirmar la carga</button>
+    <button type="submit" id="aceptar_{{ c.vendedor_codigo }}">Aceptar y confirmar la carga</button>
   </form>
   <form method="post" action="/panel/cierres/solicitudes/{{ c.solicitud.id }}/rechazar"
         class="fila-forma" style="margin-top:12px">

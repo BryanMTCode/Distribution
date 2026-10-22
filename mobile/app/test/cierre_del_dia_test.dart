@@ -182,6 +182,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(textoQueContiene('Carga de mañana pedida'), findsOneWidget);
+      // Mientras espera a la oficina, el botón para no esperar a la automática
+      // (ADR 0002 §169).
+      expect(find.byKey(const Key('sincronizar_cierre')), findsOneWidget);
+      expect(textoQueContiene('Se sincroniza sola cada 2 minutos'), findsOneWidget);
 
       // Llega la respuesta de la oficina con la sincronización.
       final id = base.db.select('SELECT id FROM solicitudes_carga').single['id'] as String;
@@ -207,6 +211,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(textoQueContiene('Carga de mañana ACEPTADA: CG-000031'), findsOneWidget);
+      expect(find.byKey(const Key('sincronizar_cierre')), findsNothing,
+          reason: 'ya no espera nada');
       await verYTocar(tester, const Key('ver_ticket_carga'));
       final t = tester.widget<SelectableText>(find.byKey(const Key('texto_ticket'))).data!;
       expect(t, contains('*CARGA ACEPTADA*'));
@@ -332,19 +338,24 @@ void main() {
       expect(find.text('Cerrados esta semana'), findsNothing);
     });
 
-    testWidgets('en «Cargas», con el corte abierto la carga espera', (tester) async {
+    testWidgets('en «Cargas», con el corte abierto aceptar cierra también el corte '
+        '(ADR 0002 §169)', (tester) async {
       final servidor = _ServidorDeCierres(corteAbierto: true);
       await _montarGerente(tester, servidor, _CompartidorDePrueba());
       await abrirPestana(tester, const Key('pestana_cargas'));
 
-      expect(textoQueContiene('Espera su corte'), findsOneWidget);
+      expect(textoQueContiene('se cierra al aceptar'), findsOneWidget);
       await tester.tap(find.byKey(const Key('carga_pedida_VEND01')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('espera_corte')), findsOneWidget);
-      final boton = tester.widget<ButtonStyleButton>(
-        find.byKey(const Key('boton_aceptar_carga')),
-      );
-      expect(boton.onPressed, isNull);
+      expect(textoQueContiene('Al aceptar se cierra también su corte'), findsOneWidget);
+
+      // Ya no espera: el gerente acepta y ya.
+      await tester.ensureVisible(find.byKey(const Key('boton_aceptar_carga')));
+      await tester.tap(find.byKey(const Key('boton_aceptar_carga')));
+      await tester.pumpAndSettle();
+      expect(servidor.posts.single.$1,
+          '/v1/cierres/solicitudes/0198a2f4-aaaa-7000-8000-000000000001/aceptar');
     });
 
     testWidgets('en «Cargas» corrige un renglón, acepta y comparte el ticket',

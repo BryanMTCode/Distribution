@@ -271,13 +271,68 @@ async def test_la_carga_pedida_se_ve_aparte_y_dice_que_espera_al_corte(
     )
     assert pedido["en_bodega"] == "760.000"
 
-    # Con el corte abierto no sale, y se dice qué hacer.
-    r = await _aceptar(cliente, sid, cab)
-    assert r.status_code == 409
-    assert "Primero cierra el corte" in r.json()["detail"]
     await _cerrar(cliente, corte_id, cab)
     [cierre] = (await cliente.get("/v1/cierres/solicitudes", headers=cab)).json()["pendientes"]
     assert cierre["corte_por_cerrar"] is None
+
+
+async def test_aceptar_la_carga_cierra_tambien_el_corte(cliente, sesion, semilla, dia):
+    """«Que al aceptar la carga también acepte el cierre» (ADR 0002 §169): el
+    gerente acepta y ya; no tiene que ir antes a «Corte del día»."""
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
+    cab = await _cab(cliente, "GER01")
+
+    r = await _aceptar(cliente, sid, cab)
+
+    assert r.status_code == 200, r.text
+    await sesion.rollback()
+    corte = (
+        await sesion.execute(text("SELECT estado FROM cortes_vendedor WHERE id = :c"),
+                             {"c": corte_id})
+    ).scalar_one()
+    assert corte == "cerrado"
+    solicitud = (
+        await sesion.execute(text("SELECT estado FROM solicitudes_carga WHERE id = :s"),
+                             {"s": sid})
+    ).scalar_one()
+    assert solicitud == "aceptada"
+
+
+async def test_si_el_corte_no_se_puede_cerrar_no_se_acepta_y_dice_por_que(
+    cliente, sesion, semilla, dia
+):
+    """Algo del vendedor en cuarentena: su corte no se cierra, y la carga tampoco
+    sale. Se dice por qué, y nada queda a medias."""
+    corte_id = await _corte(sesion, dia, semilla)
+    sid = await _solicitud(sesion, dia, semilla, corte_id=corte_id)
+    await sesion.execute(
+        text(
+            "INSERT INTO sync_cuarentena (operacion_id, dispositivo_id, usuario_id, "
+            "        tipo, payload, hash_payload, error_codigo, error_mensaje, estado) "
+            "VALUES (:o, :d, :u, 'venta.crear', '{}'::jsonb, 'x', 'conflicto_de_datos', "
+            "        'la venta referencia un cliente que no existe', 'pendiente')"
+        ),
+        {"o": uuid.uuid4(), "d": dia["dispositivo"], "u": semilla["vendedor"]},
+    )
+    await sesion.commit()
+    cab = await _cab(cliente, "GER01")
+
+    r = await _aceptar(cliente, sid, cab)
+
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert detalle.startswith("No se aceptó: el corte de ")
+    assert "en cuarentena" in detalle
+    await sesion.rollback()
+    estados = (
+        await sesion.execute(
+            text("SELECT (SELECT estado FROM cortes_vendedor WHERE id = :c), "
+                 "       (SELECT estado FROM solicitudes_carga WHERE id = :s)"),
+            {"c": corte_id, "s": sid},
+        )
+    ).one()
+    assert tuple(estados) == ("pendiente", "pendiente")
 
 
 # ---------------------------------------------------------------------------
@@ -613,7 +668,8 @@ async def test_el_panel_cierra_el_corte_y_despues_acepta_la_carga(cliente, sesio
     assert "Juan" in plano or "VEND01" in plano
     assert "faltan $50.00" in plano
     assert "Atún en agua 140 g" in plano
-    assert "Primero cierra su corte" in plano
+    # Aceptar la carga también cerraría el corte (ADR 0002 §169).
+    assert "Al aceptar se cierra también su corte" in plano
 
     # El gerente escribe lo que contó; arranca en lo declarado.
     assert 'name="efectivo_recibido"' in r.text and 'value="2200.00"' in r.text
@@ -625,7 +681,7 @@ async def test_el_panel_cierra_el_corte_y_despues_acepta_la_carga(cliente, sesio
     assert r.status_code == 200
     assert "cerrada" in solo_texto(r)
     assert "Entregó $2,150.00 de $2,250.00 (declaró $2,200.00)" in solo_texto(r)
-    assert "Primero cierra su corte" not in solo_texto(r)
+    assert "Al aceptar se cierra también su corte" not in solo_texto(r)
 
     r = await cliente.post(
         f"/panel/cierres/solicitudes/{sid}/aceptar",

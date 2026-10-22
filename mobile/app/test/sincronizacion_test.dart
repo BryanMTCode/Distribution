@@ -105,6 +105,35 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('se sincroniza sola cada dos minutos, sin avisar (ADR 0002 §169)',
+      (tester) async {
+    // «Cada dos minutos, sin aviso.» El vendedor hace su corte, pide su carga y
+    // no tiene que acordarse de sincronizar.
+    final transporte = TransporteDePrueba();
+    await montarApp(
+      tester,
+      credencial: credencialDelServidor(),
+      sembrar: (base) => sembrarPendienteEnCola(base, cuantos: 2),
+      syncAutomatica: const Duration(minutes: 2),
+      extras: [
+        transporteProvider.overrideWithValue(transporte),
+        tokenProvider.overrideWith((_) => 'token-de-prueba'),
+      ],
+    );
+    await entrarCon(tester, pinCorrecto);
+    expect(textoQueContiene('Por enviar: 2'), findsOneWidget);
+    expect(transporte.llamadas, isEmpty, reason: 'nadie ha tocado sincronizar');
+
+    await tester.pump(const Duration(minutes: 2));
+    await tester.pumpAndSettle();
+
+    expect(transporte.llamadas, contains('/v1/sync/push'));
+    expect(find.byKey(const Key('barra_pendientes')), findsNothing,
+        reason: 'se envió lo pendiente');
+    expect(textoQueContiene('enviadas 2'), findsNothing, reason: 'sin aviso');
+    expect(find.text('Todo al día.'), findsNothing);
+  });
+
   testWidgets('una sincronización sin nada pendiente lo dice', (tester) async {
     await entrarYSincronizar(tester, transporte: TransporteDePrueba());
     expect(find.text('Todo al día.'), findsOneWidget);

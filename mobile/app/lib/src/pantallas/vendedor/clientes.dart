@@ -380,6 +380,8 @@ String? _mensajeDeSync(EstadoSync estado) => switch (estado) {
       // aviso: tienen pantalla propia, porque no hay nada más que hacer en esta.
       // Ver `PortalPorRol`.
       SyncEquipoBorrado() || SyncBorradoPendiente() => null,
+      // La automática, la de cada dos minutos, no se anuncia (ADR 0002 §169).
+      SyncTerminada(silenciosa: true) => null,
       SyncTerminada(:final resultado) => switch (resultado.fin) {
           FinDeSync.sinRed => 'Sin señal. Nada se perdió, se reintenta luego.',
           FinDeSync.sesionInvalida => 'Tu sesión venció. Vuelve a entrar.',

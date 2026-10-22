@@ -374,16 +374,14 @@ class _EstadoCargasPedidas extends _EstadoSeccion<SeccionCargasPedidas> {
           Card(
             child: ListTile(
               key: Key('carga_pedida_${cierre.vendedorCodigo}'),
-              leading: Icon(
-                Icons.local_shipping_outlined,
-                color: cierre.cortePorCerrar == null ? null : colores.error,
-              ),
+              leading: const Icon(Icons.local_shipping_outlined),
               title: Text(cierre.vendedor),
               subtitle: Text([
                 'Para el ${diaEnPalabras(cierre.solicitud!.fechaOperativa)}: '
                     '${cierre.solicitud!.renglones.length} producto(s)',
+                // Aceptar la carga cierra también el corte (ADR 0002 §169).
                 if (cierre.cortePorCerrar != null)
-                  'Espera su corte del ${diaEnPalabras(cierre.cortePorCerrar!)}',
+                  'Su corte del ${diaEnPalabras(cierre.cortePorCerrar!)} se cierra al aceptar',
               ].join('\n')),
               isThreeLine: cierre.cortePorCerrar != null,
               trailing: const Icon(Icons.chevron_right),
@@ -506,17 +504,20 @@ class _EstadoCargaPedida extends ConsumerState<PantallaCargaPedida> {
           if ((solicitud.observaciones ?? '').isNotEmpty) Text('«${solicitud.observaciones}»'),
           if (espera != null) ...[
             const SizedBox(height: 8),
+            // Aceptar la carga cierra también su corte (ADR 0002 §169): antes había
+            // que ir a «Corte del día», cerrarlo, y volver.
             Container(
               key: const Key('espera_corte'),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: colores.errorContainer,
+                color: colores.secondaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Primero cierra su corte del ${diaEnPalabras(espera)} (pestaña «Corte '
-                'del día»): con su día abierto, la carga de mañana no sale.',
-                style: TextStyle(color: colores.onErrorContainer),
+                'Al aceptar se cierra también su corte del ${diaEnPalabras(espera)}, con '
+                'lo que declaró. Si quieres registrar otro efectivo recibido, ciérralo '
+                'antes en «Corte del día».',
+                style: TextStyle(color: colores.onSecondaryContainer),
               ),
             ),
           ],
@@ -572,7 +573,7 @@ class _EstadoCargaPedida extends ConsumerState<PantallaCargaPedida> {
           if (solicitud.pendiente) ...[
             FilledButton.icon(
               key: const Key('boton_aceptar_carga'),
-              onPressed: _ocupado || espera != null ? null : _aceptar,
+              onPressed: _ocupado ? null : _aceptar,
               icon: const Icon(Icons.check),
               label: const Text('Aceptar y confirmar la carga'),
             ),

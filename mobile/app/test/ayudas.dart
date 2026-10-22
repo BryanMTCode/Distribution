@@ -11,6 +11,7 @@ import 'package:dsd_app/src/app.dart';
 import 'package:dsd_app/src/datos/almacen_seguro.dart';
 import 'package:dsd_app/src/datos/base_local.dart';
 import 'package:dsd_app/src/estado/sesion.dart';
+import 'package:dsd_app/src/estado/sincronizacion.dart';
 import 'package:dsd_core/dsd_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:flutter/material.dart';
@@ -357,6 +358,9 @@ Future<BaseLocal> montarApp(
   /// credencial y la llave de la base DESAPARECIERON, y con el almacén interno
   /// no hay forma de mirarlo desde fuera.
   AlmacenSeguroEnMemoria? almacenPropio,
+  /// Cada cuánto se sincroniza sola (ADR 0002 §169). Apagada si no se pide: una
+  /// prueba que deja correr el tiempo no debe sincronizar por su cuenta.
+  Duration? syncAutomatica,
 }) async {
   // Sin teléfono no hay de dónde leer la versión instalada.
   PackageInfo.setMockInitialValues(
@@ -390,6 +394,7 @@ Future<BaseLocal> montarApp(
         almacenSeguroProvider.overrideWithValue(almacen),
         baseLocalProvider.overrideWithValue(base),
         relojProvider.overrideWithValue(reloj ?? () => ahora ?? relojDePrueba()),
+        intervaloDeSyncAutomaticaProvider.overrideWithValue(syncAutomatica),
         ...extras,
       ],
       child: const AppDsd(),

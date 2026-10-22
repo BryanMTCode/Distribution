@@ -5,6 +5,8 @@
 /// maquinaria offline**. Son dos apps que comparten binario.
 library;
 
+import 'dart:async';
+
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,16 +33,41 @@ class _EstadoAppDsd extends ConsumerState<AppDsd> {
   /// en que se abrió.
   late final AppLifecycleListener _alVolver;
 
+  /// La sincronización automática (ADR 0002 §169): «cada dos minutos», mientras
+  /// la app está abierta, y al volver a ella. El vendedor hace su corte, pide su
+  /// carga y no tiene que acordarse de sincronizar: se envía sola, y la carga que
+  /// acepta la oficina le llega sola.
+  Timer? _cadaRato;
+
   @override
   void initState() {
     super.initState();
     _alVolver = AppLifecycleListener(
-      onResume: () => ref.read(diaOperativoProvider.notifier).revisar(),
+      onResume: () {
+        ref.read(diaOperativoProvider.notifier).revisar();
+        _sincronizarSola();
+      },
     );
+    final cada = ref.read(intervaloDeSyncAutomaticaProvider);
+    if (cada != null) {
+      _cadaRato = Timer.periodic(cada, (_) => _sincronizarSola());
+    }
+  }
+
+  /// En silencio, y solo con la app a la vista y una sesión con base en el
+  /// teléfono (la del vendedor, o la del gerente que entró con su PIN). Sin
+  /// señal no pasa nada: lo pendiente sale en la siguiente.
+  void _sincronizarSola() {
+    if (ref.read(intervaloDeSyncAutomaticaProvider) == null) return;
+    final ahora = WidgetsBinding.instance.lifecycleState;
+    if (ahora != null && ahora != AppLifecycleState.resumed) return;
+    if (ref.read(sesionProvider) is! SesionAbierta) return;
+    ref.read(syncProvider.notifier).sincronizar(silenciosa: true);
   }
 
   @override
   void dispose() {
+    _cadaRato?.cancel();
     _alVolver.dispose();
     super.dispose();
   }

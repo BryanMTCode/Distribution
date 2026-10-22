@@ -7180,3 +7180,35 @@ me permita elegir el conductor y día para ver la ruta.»
   reagendaran a otra— y las que visitó ese día fuera de su plan.
 
 (versionCode 56)
+
+## 169. El fin del día con menos actualizaciones
+
+«Cuando terminen la ruta quiero que el corte y la carga se puedan hacer seguidos
+sin necesidad de tantas actualizaciones: que los vendedores hagan corte, soliciten
+carga, actualicen, y el gerente solo acepte, actualice y ya.» Con sus
+respuestas: «cada dos minutos, sin aviso; que al aceptar la carga también acepte
+el cierre; que al terminar la solicitud les aparezca el botón de sincronizar, como
+está en las cargas; sin pedido sugerido».
+
+- **La app se sincroniza sola cada dos minutos** mientras está abierta, y al
+  volver a ella. En silencio: no gira ni dice «Todo al día»; solo avisa si la
+  sesión venció. Sin señal no pasa nada: sale en la siguiente. Si el vendedor toca
+  sincronizar mientras corre la automática, espera a que termine y corre la suya.
+  Así el corte y la solicitud se mandan solos, y la carga que acepta la oficina
+  le llega sola.
+- **El botón «Sincronizar ahora»** sigue en el ticket de la solicitud, y en
+  «Mi día» la tarjeta del cierre lo trae mientras algo del cierre falte por subir
+  o la carga pedida no tenga respuesta, para no esperar los dos minutos.
+- **Aceptar la carga cierra también el corte.** Antes, con el corte del vendedor
+  abierto, la carga no se podía aceptar («Primero cierra el corte…») y el gerente
+  tenía que ir a «Corte del día» y volver. Ahora, al aceptarla —en la app o en el
+  panel—, el corte que la detenía se cierra ahí mismo con lo que declaró el
+  vendedor, como cuando se cierra solo (§133), y después sale la carga. La lista
+  dice «Su corte del … se cierra al aceptar». Quien quiera registrar otro efectivo
+  recibido (§87) lo cierra antes en «Corte del día».
+- **Si el corte no se puede cerrar** —algo del vendedor en cuarentena, su teléfono
+  sin sincronizar—, no se acepta nada y se dice por qué: «No se aceptó: el corte
+  de … no se pudo cerrar…».
+- Sin pedido sugerido y sin notificaciones al teléfono.
+
+(versionCode 57)

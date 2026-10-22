@@ -155,6 +155,7 @@ la bodega sube cuando alguien la cuenta.
 | **Venderle desde el mapa** (§166): la ficha de la tienda trae «Venderle» | ✅ 1 de widget |
 | **Ventas fuera de su día** (§167): la venta a una tienda que no tocaba ese día —ni por su plan ni reagendada para él— entra marcada, con su pestaña en Ventas | ✅ 5 pruebas del servidor |
 | **Las reagendadas en morado y el mapa de rutas** (§168): en el mapa del vendedor la reagendada para hoy va aparte; en la app de gerencia, un vendedor y un día con sus tiendas en orden y cómo le fue a cada una | ✅ 1 prueba del servidor, 1 de Dart, 3 de widget |
+| **El fin del día con menos actualizaciones** (§169): la app se sincroniza sola cada dos minutos y en silencio; «Sincronizar ahora» en la tarjeta del cierre; aceptar la carga cierra también el corte | ✅ 2 pruebas del servidor, 3 de widget |
 | **La barra de avance de la app por Hoy, Semana o Mes**, contra la suma de los diarios (§116) | ✅ 2 de widget, 2 de Dart y 1 del servidor |
 | **Login en línea de Gerencia** — su teléfono NO guarda credencial offline | ✅ 18 pruebas de Dart |
 | **Logs estructurados** con `peticion_id`, y lo que NUNCA entra en uno | ✅ 28 pruebas, con las tres |

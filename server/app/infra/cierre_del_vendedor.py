@@ -652,19 +652,44 @@ async def aceptar_solicitud(
         raise CierreNoExiste("Esa solicitud de carga no existe.")
     if solicitud["estado"] != "pendiente":
         raise CierreRechazado(f"Esa solicitud ya está {solicitud['estado']}.")
-    debe = await _corte_por_cerrar(sesion, solicitud["vendedor_id"], solicitud["fecha_operativa"])
-    if debe is not None:
-        nombre = (
-            await sesion.execute(
-                text("SELECT nombre FROM usuarios WHERE id = :v"),
-                {"v": solicitud["vendedor_id"]},
-            )
-        ).scalar_one()
-        raise CierreRechazado(
-            f"Primero cierra el corte de {nombre} del {debe['fecha_operativa']:%d/%m} "
-            "(en «Corte del día»): con su día abierto, la carga de mañana no sale."
+
+    # «Que al aceptar la carga también acepte el cierre» (ADR 0002 §169). Con su
+    # día abierto la carga de mañana no sale; antes el gerente tenía que ir a
+    # cerrar el corte y volver. Ahora el corte que la detenía se cierra aquí, con
+    # lo que declaró el vendedor —como cuando se cierra solo (§133)—. Si no se
+    # puede, no se acepta nada y se dice por qué.
+    avisos: list[str] = []
+    intentados: set[uuid.UUID] = set()
+    while (
+        debe := await _corte_por_cerrar(
+            sesion, solicitud["vendedor_id"], solicitud["fecha_operativa"]
         )
-    return await _crear_la_carga(sesion, dict(solicitud), quien, bultos or {})
+    ) is not None:
+        if debe["id"] in intentados:
+            raise CierreRechazado("El corte no quedó cerrado: ciérralo en «Corte del día».")
+        intentados.add(debe["id"])
+        corte = (
+            await sesion.execute(
+                text("SELECT * FROM cortes_vendedor WHERE id = :c"), {"c": debe["id"]}
+            )
+        ).mappings().one()
+        try:
+            avisos.append(await _cerrar_el_corte(sesion, dict(corte), quien))
+        except CierreRechazado as e:
+            await sesion.rollback()
+            nombre = (
+                await sesion.execute(
+                    text("SELECT nombre FROM usuarios WHERE id = :v"),
+                    {"v": solicitud["vendedor_id"]},
+                )
+            ).scalar_one()
+            raise CierreRechazado(
+                f"No se aceptó: el corte de {nombre} del {debe['fecha_operativa']:%d/%m} "
+                "no se pudo cerrar, y con su día abierto la carga de mañana no sale. "
+                + str(e).removeprefix("El corte no se pudo cerrar: ")
+            ) from e
+    avisos.append(await _crear_la_carga(sesion, dict(solicitud), quien, bultos or {}))
+    return " ".join(avisos)
 
 
 async def aceptar(

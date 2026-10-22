@@ -10,8 +10,9 @@
 ///    día. Sale el ticket, para imprimirlo o mandarlo por WhatsApp.
 /// 2. **Solicitar carga.** Ahí mismo pide la carga de mañana. Solo hay una al
 ///    día y es para el día siguiente.
-/// 3. La oficina acepta la carga; le llega con la sincronización: «aceptada»,
-///    con el folio, y la mercancía arriba del camión.
+/// 3. La oficina acepta la carga —y con ella cierra el corte (ADR 0002 §169)—;
+///    le llega con la sincronización, que la app hace sola cada dos minutos:
+///    «aceptada», con el folio, y la mercancía arriba del camión.
 ///
 /// Todo funciona sin señal: el corte y la solicitud se guardan aquí y viajan
 /// por la cola.
@@ -313,9 +314,10 @@ class _EstadoSolicitud extends ConsumerState<PantallaSolicitarCarga>
           // «Que los vendedores puedan imprimir el ticket de la solicitud de
           // carga» (ADR 0002 §150), como el del corte.
           imprimible: true,
-          aviso: 'Tu solicitud quedó guardada. Se manda a la oficina al '
-              'sincronizar; cuando la acepten, aquí mismo vas a ver el folio de '
-              'tu carga. Imprímela o mándala por WhatsApp.',
+          aviso: 'Tu solicitud quedó guardada. Se manda sola a la oficina en '
+              'menos de 2 minutos si hay señal, o ahora con «Sincronizar ahora»; '
+              'cuando la acepten, en «Mi día» vas a ver el folio de tu carga. '
+              'Imprímela o mándala por WhatsApp.',
           etiquetaSiguiente: 'Sincronizar ahora',
           iconoSiguiente: Icons.sync,
           siguiente: sync.sincronizar,
@@ -583,10 +585,47 @@ class TarjetaDelCierre extends ConsumerWidget {
                 ],
               ),
             ],
+            // Mientras la carga espera a la oficina, el botón para no esperar los
+            // dos minutos de la automática (ADR 0002 §169).
+            if (_esperaRespuesta(cierre)) ...[
+              const SizedBox(height: 8),
+              Consumer(
+                builder: (context, ref, _) {
+                  final sincronizando = ref.watch(syncProvider) is SyncEnCurso;
+                  return FilledButton.tonalIcon(
+                    key: const Key('sincronizar_cierre'),
+                    onPressed: sincronizando
+                        ? null
+                        : () => ref.read(syncProvider.notifier).sincronizar(),
+                    icon: sincronizando
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.sync),
+                    label: const Text('Sincronizar ahora'),
+                  );
+                },
+              ),
+              const Text(
+                'Se sincroniza sola cada 2 minutos mientras la app está abierta; '
+                'tócalo para no esperar.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Hay algo del cierre sin subir, o la carga pedida no tiene respuesta.
+  static bool _esperaRespuesta(CierreDeHoy cierre) {
+    final corte = cierre.corte;
+    final solicitud = cierre.solicitud;
+    return (corte != null && !corte.sincronizado) ||
+        (solicitud != null && !solicitud.aceptada && !solicitud.rechazada);
   }
 
   static String _hora(String momento) {
