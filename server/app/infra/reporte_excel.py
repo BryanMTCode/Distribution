@@ -40,6 +40,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, HASTA_LA_SIGUIENTE_CARGA
 from app.infra.cuenta_vendedor import ORIGENES
 from app.infra.valor_de_inventario import precio_de_venta
 
@@ -70,6 +71,7 @@ class Reporte:
     hasta: object
     descripcion: str
     ventas: list[dict] = field(default_factory=list)
+    por_articulo: list[dict] = field(default_factory=list)
     mayoreo: list[dict] = field(default_factory=list)
     cortes: list[dict] = field(default_factory=list)
     inventario: list[dict] = field(default_factory=list)
@@ -98,6 +100,63 @@ SELECT v.fecha_operativa AS fecha, u.nombre AS vendedor,
  WHERE v.fecha_operativa BETWEEN :desde AND :hasta AND v.estado = 'confirmada'
  GROUP BY v.fecha_operativa, u.nombre
  ORDER BY v.fecha_operativa, u.nombre
+"""
+
+# «Quiero que aparezcan las ventas de cada día de cada vendedor: vendió tantos de
+# este artículo, tantos de estos», «y que en el mismo día venga la carga que hizo,
+# para llevar un control del inventario día a día» (ADR 0002 §177). Las mismas
+# ventas que la hoja de Ventas —confirmadas—, las mermas del camión y la carga,
+# artículo por artículo.
+SQL_VENDIDO_POR_ARTICULO = """
+SELECT v.fecha_operativa AS fecha, u.nombre AS vendedor, p.id AS producto,
+       sum(vp.cantidad_base) AS vendidas, sum(vp.importe) AS importe
+  FROM ventas v
+  JOIN venta_partidas vp ON vp.venta_id = v.id
+  JOIN productos p ON p.id = vp.producto_id
+  JOIN usuarios u ON u.id = v.vendedor_id
+ WHERE v.fecha_operativa BETWEEN :desde AND :hasta AND v.estado = 'confirmada'
+ GROUP BY v.fecha_operativa, u.nombre, p.id
+"""
+
+SQL_MERMA_POR_ARTICULO = """
+SELECT m.fecha_operativa AS fecha, u.nombre AS vendedor, d.producto_id AS producto,
+       sum(d.cantidad_base) AS merma
+  FROM mermas m
+  JOIN merma_detalle d ON d.merma_id = m.id
+  JOIN usuarios u ON u.id = m.vendedor_id
+ WHERE m.fecha_operativa BETWEEN :desde AND :hasta AND m.estado = 'confirmada'
+   AND m.tipo IN ('merma', 'cambio')
+ GROUP BY m.fecha_operativa, u.nombre, d.producto_id
+"""
+
+# La carga va el día en que se vendió con ella: el primero con ventas de los que
+# cuenta su corte (§176), o su propio día si no vendió. La del sábado queda «para
+# el domingo» y se vende el lunes: sale el lunes.
+SQL_CARGADO_POR_ARTICULO = f"""
+WITH sus_dias AS (
+    SELECT c.id, c.vendedor_id,
+           COALESCE((SELECT min(v.fecha_operativa) FROM ventas v
+                      WHERE v.vendedor_id = c.vendedor_id AND v.estado = 'confirmada'
+                        AND v.fecha_operativa >= {DESDE_LA_CARGA}
+                        AND v.fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}),
+                    c.fecha_operativa) AS fecha
+      FROM cargas c
+     WHERE c.estado IN ('confirmada', 'en_ruta', 'liquidada')
+)
+SELECT k.fecha, u.nombre AS vendedor, d.producto_id AS producto, sum(d.cantidad) AS cargadas
+  FROM sus_dias k
+  JOIN carga_detalle d ON d.carga_id = k.id
+  JOIN usuarios u ON u.id = k.vendedor_id
+ WHERE k.fecha BETWEEN :desde AND :hasta
+ GROUP BY k.fecha, u.nombre, d.producto_id
+"""
+
+SQL_ARTICULOS = """
+SELECT p.id AS producto, COALESCE(c.nombre, 'Sin familia') AS familia, c.orden,
+       p.sku, p.nombre AS articulo
+  FROM productos p
+  LEFT JOIN categorias c ON c.id = p.categoria_id
+ WHERE p.id = ANY(:ids)
 """
 
 SQL_MAYOREO = """
@@ -204,6 +263,36 @@ SELECT m.fecha, u.nombre AS vendedor, m.tipo, m.origen, m.concepto, m.importe
 """
 
 
+async def _por_articulo(filas, rango) -> list[dict]:
+    """Por día, vendedor y artículo: lo que cargó, vendió y mermó (§177)."""
+    juntos: dict[tuple, dict] = {}
+    for sql, campos in ((SQL_CARGADO_POR_ARTICULO, ("cargadas",)),
+                        (SQL_VENDIDO_POR_ARTICULO, ("vendidas", "importe")),
+                        (SQL_MERMA_POR_ARTICULO, ("merma",))):
+        for f in await filas(sql, rango):
+            r = juntos.setdefault(
+                (f["fecha"], f["vendedor"], f["producto"]),
+                {"fecha": f["fecha"], "vendedor": f["vendedor"], "producto": f["producto"],
+                 "cargadas": Decimal(0), "vendidas": Decimal(0), "merma": Decimal(0),
+                 "importe": Decimal(0)},
+            )
+            for campo in campos:
+                r[campo] += Decimal(f[campo] or 0)
+    articulos = {
+        f["producto"]: f
+        for f in await filas(SQL_ARTICULOS, {"ids": list({k[2] for k in juntos})})
+    }
+    renglones = []
+    for r in juntos.values():
+        a = articulos[r["producto"]]
+        renglones.append({**r, "familia": a["familia"], "sku": a["sku"],
+                          "articulo": a["articulo"], "orden": a["orden"]})
+    renglones.sort(key=lambda r: (r["fecha"], r["vendedor"],
+                                  r["orden"] is None, r["orden"] or 0, r["familia"],
+                                  r["articulo"]))
+    return renglones
+
+
 async def datos_del_reporte(sesion, periodo) -> Reporte:
     """Todo lo que lleva el reporte, del periodo que se eligió."""
     rango = {"desde": periodo.inicio, "hasta": periodo.fin}
@@ -217,6 +306,7 @@ async def datos_del_reporte(sesion, periodo) -> Reporte:
         hasta=periodo.fin,
         descripcion=periodo.descripcion,
         ventas=await filas(SQL_VENTAS, rango),
+        por_articulo=await _por_articulo(filas, rango),
         mayoreo=await filas(SQL_MAYOREO, rango),
         cortes=await filas(SQL_CORTES, rango),
         inventario=await filas(SQL_INVENTARIO),
@@ -428,8 +518,8 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
              f"{len({(m['folio'], m['fecha']) for m in reporte.mermas})} registro(s)"],
         ],
     )
-    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, Inventario, "
-                 "Cargas y mermas, y Cuenta de vendedores.")
+    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, Día por día, "
+                 "Inventario, Cargas y mermas, y Cuenta de vendedores.")
     if sin_precio:
         resumen.nota(f"Ojo: {len(sin_precio)} artículo(s) sin precio de venta no suman "
                      f"en el inventario: {', '.join(sin_precio[:6])}"
@@ -497,6 +587,32 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
          for m in reporte.mayoreo],
         totales=["Total", "", "", "", mayoreo_importe],
     )
+    hoja.terminar()
+
+    # --- Día por día --------------------------------------------------------------
+    # Un cuadro por día y vendedor: lo que cargó, vendió y mermó de cada artículo
+    # (§177), para llevar el inventario día a día.
+    hoja = _Hoja(libro, "Día por día")
+    hoja.titulo("Lo que cargó y vendió cada vendedor, día por día", periodo)
+    cuadros = list(dict.fromkeys((r["fecha"], r["vendedor"]) for r in reporte.por_articulo))
+    if not cuadros:
+        hoja.nota("No hubo ventas en este periodo.")
+    for fecha, vendedor in cuadros:
+        suyos = [r for r in reporte.por_articulo
+                 if r["fecha"] == fecha and r["vendedor"] == vendedor]
+        hoja.tabla(
+            f"{_con_dia(fecha)} · {vendedor}",
+            [("Familia", "texto"), ("Clave", "texto"), ("Artículo", "texto"),
+             ("Cargó", "entero"), ("Vendió", "entero"), ("Merma", "entero"),
+             ("Importe", "dinero")],
+            [[r["familia"], r["sku"], r["articulo"], r["cargadas"], r["vendidas"],
+              r["merma"], r["importe"]] for r in suyos],
+            totales=["Total", "", "", _suma(suyos, "cargadas"), _suma(suyos, "vendidas"),
+                     _suma(suyos, "merma"), _suma(suyos, "importe")],
+        )
+    if cuadros:
+        hoja.nota("Piezas sueltas. La carga sale el día en que se vendió con ella; "
+                  "la merma es la del camión (merma y cambio).")
     hoja.terminar()
 
     # --- Inventario -------------------------------------------------------------

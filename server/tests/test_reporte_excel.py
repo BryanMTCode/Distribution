@@ -31,8 +31,8 @@ from tests.test_panel_liquidacion import _entrar
 
 pytestmark = pytest.mark.asyncio
 
-HOJAS = ["Resumen", "Ventas y efectivo", "Inventario", "Cargas y mermas",
-         "Cuenta de vendedores"]
+HOJAS = ["Resumen", "Ventas y efectivo", "Día por día", "Inventario",
+         "Cargas y mermas", "Cuenta de vendedores"]
 
 
 async def _bajar(cliente, periodo="hoy"):
@@ -90,6 +90,14 @@ async def test_el_reporte_trae_sus_hojas_con_las_cifras_del_dashboard(
     ventas = libro["Ventas y efectivo"]
     fila = _con(ventas, "Juan Pérez")
     assert fila[2:5] == [1, 180, 2250]
+
+    # Lo que cargó y vendió cada vendedor cada día, artículo por artículo (§177).
+    from app.infra.reporte_excel import _con_dia
+
+    dia_a_dia = libro["Día por día"]
+    assert _con(dia_a_dia, f"{_con_dia(hoy)} · Juan Pérez")
+    atun = _con(dia_a_dia, "ATUN-140")
+    assert atun[2:7] == ["Atún en agua 140 g", 240, 180, 0, 2250]
     corte = _con(ventas, "Faltaron $50.00")
     assert corte[3:6] == [2250, 2200, -50]
 

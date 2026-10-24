@@ -30,6 +30,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, SIGUIENTE_CARGA
+
 CENTAVO = Decimal("0.01")
 
 # Cómo se le dice a una persona cada origen. Lo usan la pantalla de la cuenta y
@@ -146,10 +148,11 @@ async def cargar_el_corte(
     corte = (
         await sesion.execute(
             text(
-                """
+                f"""
                 SELECT l.folio, l.vendedor_id, l.fecha_operativa, l.arqueo_en,
                        l.efectivo_esperado, l.efectivo_entregado,
-                       l.diferencia_efectivo, c.almacen_destino_id AS camion
+                       l.diferencia_efectivo, c.almacen_destino_id AS camion,
+                       {DESDE_LA_CARGA} AS desde, {SIGUIENTE_CARGA} AS hasta
                   FROM liquidaciones l JOIN cargas c ON c.id = l.carga_id
                  WHERE l.id = :l
                 """
@@ -203,7 +206,7 @@ async def cargar_el_corte(
     # Mermas que el catálogo de motivos dice que son del vendedor.
     # ------------------------------------------------------------------
     # La misma atadura que el Corte usa para la columna «merma»: vendedor,
-    # camión y día operativo. Una caja rota que el vendedor declaró no es un
+    # camión y los días de su carga (§176). Una caja rota que el vendedor declaró no es un
     # faltante —el conteo la explica—, pero si el motivo dice `afecta_vendedor`,
     # la pérdida es suya.
     mermas = (
@@ -223,7 +226,8 @@ async def cargar_el_corte(
                    AND me.estado = 'confirmada'
                    AND me.vendedor_id = :v
                    AND me.almacen_id = :camion
-                   AND me.fecha_operativa = :f
+                   AND me.fecha_operativa >= :desde
+                   AND (CAST(:hasta AS date) IS NULL OR me.fecha_operativa < :hasta)
                  GROUP BY md.producto_id, p.sku, p.nombre, mm.nombre, pc.costo_promedio
                  ORDER BY p.nombre
                 """
@@ -231,7 +235,8 @@ async def cargar_el_corte(
             {
                 "v": corte["vendedor_id"],
                 "camion": corte["camion"],
-                "f": corte["fecha_operativa"],
+                "desde": corte["desde"],
+                "hasta": corte["hasta"],
             },
         )
     ).mappings().all()

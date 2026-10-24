@@ -7495,3 +7495,40 @@ un día para otro día».
   sábado no llega.
 
 (Migración 0070, esquema `0063_recorrer_los_dias`.)
+
+## 176. El corte de una carga cuenta desde su día hasta la siguiente carga
+
+«En la app, en el corte, me aparece que vendió 0 de todo», «el sistema espera 0,
+y entregó 2,992: diferencia 2,992», «y en el Excel también aparece como que sobró
+ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
+
+- **Qué pasaba.** El corte de la oficina contaba las ventas, mermas y efectivo
+  del día **exacto** de su carga. Pero la carga se hace con la fecha de mañana
+  (§82): la que se acepta el sábado queda «para el domingo», y el lunes se vende
+  con fecha del lunes. El lunes, a todos les habría salido «vendió 0» y lo
+  entregado como sobrante. A este vendedor le pasó el sábado: vendió antes de
+  subir el corte del viernes, y su carga quedó con otra fecha que sus ventas.
+  La pantalla de Cortes del dashboard decía «cuadra» porque compara contra el día
+  del corte del vendedor, no el de la carga.
+- **Ahora.** El corte de una carga cuenta desde su día hasta antes de la
+  siguiente carga del vendedor. Hacia atrás, también los días que quedaron
+  sueltos desde su carga anterior ya cortada: el que hizo el corte de ayer hoy en
+  la mañana pidió la carga «para mañana», y lo que vendió hoy cuenta en ella.
+  Como un vendedor no tiene dos cargas el mismo día, cada día cae en un solo
+  corte. Igual lo vendido, las mermas, el efectivo esperado, lo que se le carga
+  a su cuenta por mermas y la lista de cargas por cortar.
+- **Lo que ya se cerró con 0** se rehace: en Operaciones se elimina ese corte, el
+  del vendedor vuelve a «por cerrar», y se cierra otra vez con lo que entregó.
+
+## 177. En el Excel, lo que cargó y vendió cada vendedor día por día
+
+«En el Excel del dashboard quiero que aparezcan las ventas de cada día de cada
+vendedor: vendió tantos de este artículo, tantos de estos», «y que en el mismo
+día venga la carga que hizo, para llevar un control del inventario día a día».
+
+- Hoja nueva, **«Día por día»**: un cuadro por día y vendedor, con cada artículo
+  —familia, clave y nombre—, lo que **cargó**, lo que **vendió**, la **merma** del
+  camión (merma y cambio) y el **importe**, con su total.
+- La carga sale el día en que se vendió con ella (§176): la del sábado, «para el
+  domingo», sale el lunes.
+

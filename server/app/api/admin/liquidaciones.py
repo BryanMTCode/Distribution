@@ -112,6 +112,7 @@ from app.domain.liquidacion import (
     diferencia_de_efectivo,
     saldo_inicial,
 )
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, HASTA_LA_SIGUIENTE_CARGA
 from app.infra.cuarentena_que_frena import cuarentena_que_frena
 from app.infra.cuenta_vendedor import ORIGENES, cargar_el_corte
 from app.workers.cola import encolar
@@ -183,7 +184,7 @@ async def cargas_por_cortar(sesion) -> list:
         (
             await sesion.execute(
             text(
-                """
+                f"""
                 SELECT c.id, c.folio, c.fecha_operativa, c.estado,
                        u.nombre AS vendedor, u.codigo AS vendedor_codigo,
                        a.nombre AS camion,
@@ -195,14 +196,15 @@ async def cargas_por_cortar(sesion) -> list:
                   JOIN almacenes a ON a.id = c.almacen_destino_id
                   LEFT JOIN LATERAL (
                         -- Las mismas que contará su corte: del vendedor, de ese
-                        -- camión y del día de la carga (ver
+                        -- camión, desde el día de la carga hasta la siguiente (ver
                         -- `_renglones_calculados`). Por `carga_id` salían otras:
                         -- la venta lleva la carga que el teléfono conocía.
                         SELECT count(*) AS ventas, sum(total) AS importe
                           FROM ventas
                          WHERE vendedor_id = c.vendedor_id
                            AND almacen_id = c.almacen_destino_id
-                           AND fecha_operativa = c.fecha_operativa
+                           AND fecha_operativa >= {DESDE_LA_CARGA}
+                           AND fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}
                            AND estado = 'confirmada'
                   ) v ON true
                  WHERE c.estado IN ('confirmada', 'en_ruta')
@@ -348,8 +350,7 @@ async def abrir_corte(sesion, carga: uuid.UUID) -> uuid.UUID:
         await sesion.execute(text("SELECT nextval('seq_folio_liquidacion')"))
     ).scalar_one()
 
-    esperado = await _efectivo_esperado(sesion, cabecera["vendedor_id"],
-                                        cabecera["fecha_operativa"])
+    esperado = await _efectivo_de_la_carga(sesion, carga)
 
     await sesion.execute(
         text(
@@ -480,9 +481,7 @@ async def datos_del_corte(sesion, liquidacion_id: uuid.UUID) -> dict | None:
     # camión del panel no baja». Lo contado no se toca.
     if cabecera["estado"] not in ("cerrada", "anulada"):
         await _refrescar_cifras(sesion, liquidacion_id, cabecera["carga_id"])
-        esperado = await _efectivo_esperado(
-            sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
-        )
+        esperado = await _efectivo_de_la_carga(sesion, cabecera["carga_id"])
         await sesion.execute(
             text(
                 "UPDATE liquidaciones SET efectivo_esperado = :e "
@@ -689,7 +688,7 @@ async def guardar_arqueo(
     cabecera = (
         await sesion.execute(
             text(
-                "SELECT estado, vendedor_id, fecha_operativa "
+                "SELECT estado, vendedor_id, fecha_operativa, carga_id "
                 "  FROM liquidaciones WHERE id = :l"
             ),
             {"l": liquidacion_id},
@@ -704,9 +703,7 @@ async def guardar_arqueo(
 
     entregado = leer_dinero(efectivo_entregado, campo="El efectivo entregado")
 
-    esperado = await _efectivo_esperado(
-        sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
-    )
+    esperado = await _efectivo_de_la_carga(sesion, cabecera["carga_id"])
 
     await sesion.execute(
         text(
@@ -859,9 +856,7 @@ async def cerrar_corte(
     await sesion.execute(
         text("UPDATE liquidaciones SET efectivo_esperado = :e WHERE id = :l"),
         {
-            "e": await _efectivo_esperado(
-                sesion, cabecera["vendedor_id"], cabecera["fecha_operativa"]
-            ),
+            "e": await _efectivo_de_la_carga(sesion, cabecera["carga_id"]),
             "l": liquidacion_id,
         },
     )
@@ -1185,11 +1180,13 @@ async def _mover(
 async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
     """Inicial, cargado, vendido, merma y devuelto por producto, de los documentos.
 
-    Las tres de en medio salen de las operaciones del **día operativo de esa carga
-    y ese vendedor**, no de la carga: una merma no trae `carga_id`, y amarrarla por
-    fecha y vendedor es lo que el modelo permite. Si un vendedor llegara a tener dos
-    cargas el mismo día el índice `uq_carga_vendedor_dia` lo impide, así que la
-    atadura es única.
+    Las tres de en medio salen de las operaciones **de ese vendedor desde el día de
+    esa carga hasta antes de su siguiente carga** (§176), no de la carga: una merma
+    no trae `carga_id`, y amarrarla por fecha y vendedor es lo que el modelo
+    permite. Antes era solo el día exacto de la carga, y la del sábado —hecha con
+    la fecha de mañana, el domingo— no contaba nada de lo vendido el lunes. Como
+    un vendedor no tiene dos cargas el mismo día (`uq_carga_vendedor_dia`), cada
+    día cae en un solo corte.
 
     ───────────────────────────────────────────────────────────────────────────
     LOS RENGLONES SON LOS DEL CAMIÓN, NO LOS DE LA CARGA
@@ -1213,10 +1210,12 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
         for f in (
             await sesion.execute(
                 text(
-                    """
+                    f"""
                     WITH la_carga AS (
-                        SELECT id, vendedor_id, fecha_operativa, almacen_destino_id
-                          FROM cargas WHERE id = :c
+                        SELECT c.id, c.vendedor_id, c.almacen_destino_id,
+                               {DESDE_LA_CARGA} AS desde,
+                               {HASTA_LA_SIGUIENTE_CARGA} AS hasta
+                          FROM cargas c WHERE c.id = :c
                     ),
                     cargado AS (
                         SELECT producto_id, sum(cantidad) AS cargada
@@ -1247,9 +1246,9 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                       LEFT JOIN cargado g ON g.producto_id = pc.producto_id
                       LEFT JOIN arriba  a ON a.producto_id = pc.producto_id
                       LEFT JOIN LATERAL (
-                            -- Las ventas del DÍA de este camión: mismo vendedor,
-                            -- mismo camión, misma fecha operativa. Igual que las
-                            -- mermas de abajo.
+                            -- Las ventas de este camión: mismo vendedor, mismo
+                            -- camión, desde el día de la carga hasta antes de la
+                            -- siguiente (§176). Igual que las mermas de abajo.
                             --
                             -- Antes se buscaban por `carga_id`, y con el camión
                             -- rodante eso dejó de ser cierto: el teléfono pone en
@@ -1262,10 +1261,10 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                             -- silencio. El esperado seguía bien, porque sale del
                             -- saldo vivo; lo que mentía era la explicación.
                             --
-                            -- Una venta tiene un solo día operativo y
-                            -- `uq_carga_vendedor_dia` impide dos cargas del mismo
-                            -- vendedor el mismo día: no hay forma de contarla en
-                            -- dos cortes.
+                            -- Una venta tiene un solo día operativo, y las cargas
+                            -- de un vendedor no se enciman —una por día
+                            -- (`uq_carga_vendedor_dia`), cada una hasta la
+                            -- siguiente—: no hay forma de contarla en dos cortes.
                             SELECT sum(vp.cantidad_base) AS vendida
                               FROM venta_partidas vp
                               JOIN ventas ve ON ve.id = vp.venta_id
@@ -1273,7 +1272,8 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                                AND ve.estado = 'confirmada'
                                AND ve.vendedor_id = c.vendedor_id
                                AND ve.almacen_id = c.almacen_destino_id
-                               AND ve.fecha_operativa = c.fecha_operativa
+                               AND ve.fecha_operativa >= c.desde
+                               AND ve.fecha_operativa < c.hasta
                       ) v ON true
                       LEFT JOIN LATERAL (
                             SELECT
@@ -1290,7 +1290,8 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                              WHERE md.producto_id = pc.producto_id
                                AND me.vendedor_id = c.vendedor_id
                                AND me.almacen_id = c.almacen_destino_id
-                               AND me.fecha_operativa = c.fecha_operativa
+                               AND me.fecha_operativa >= c.desde
+                               AND me.fecha_operativa < c.hasta
                                AND me.estado = 'confirmada'
                       ) m ON true
                     """
@@ -1316,6 +1317,29 @@ def _con_inicial(renglones: list[dict]) -> list[dict]:
             Decimal(r["devuelta"]),
         )
     return renglones
+
+
+async def _efectivo_de_la_carga(sesion, carga_id) -> Decimal:
+    """Las ventas en efectivo que cuenta el corte de esa carga (§176)."""
+    return Decimal(
+        (
+            await sesion.execute(
+                text(
+                    f"""
+                    SELECT COALESCE(sum(v.total), 0)
+                      FROM cargas c
+                      JOIN ventas v ON v.vendedor_id = c.vendedor_id
+                     WHERE c.id = :c
+                       AND v.fecha_operativa >= {DESDE_LA_CARGA}
+                       AND v.fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}
+                       AND v.estado = 'confirmada' AND v.tipo = 'contado'
+                       AND v.forma_pago = 'efectivo'
+                    """  # noqa: S608 — el tope es una constante del código
+                ),
+                {"c": carga_id},
+            )
+        ).scalar_one()
+    )
 
 
 async def _efectivo_esperado(sesion, vendedor_id, fecha_operativa) -> Decimal:
