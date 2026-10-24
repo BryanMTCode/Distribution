@@ -322,6 +322,29 @@ if [ "${EQUIPOS:-0}" -ge 1 ] 2>/dev/null; then
     else
         bien "última sincronización: $ULTIMA"
     fi
+
+    # ¿Ya bajó todo? Para salir a una ruta sin señal: el plan de visita, la
+    # carga y las tiendas tienen que estar ya en el teléfono (ADR 0002 §175).
+    # Lo que el servidor tiene para él contra lo último que bajó.
+    IFS='|' read -r FALTAN BAJO <<<"$(consultar "
+        SELECT (SELECT count(*) FROM change_log l
+                 WHERE l.cursor > d.ultimo_cursor_pull
+                   AND (l.ruta_id IS NULL OR l.ruta_id IN (
+                          SELECT ruta_id FROM usuarios_rutas WHERE usuario_id = d.usuario_id))
+                   AND (l.vendedor_id IS NULL OR l.vendedor_id = d.usuario_id)),
+               COALESCE(to_char(d.ultima_sync_pull_en AT TIME ZONE 'America/Mazatlan',
+                                'DD/MM HH24:MI'), '')
+          FROM dispositivos d
+         WHERE d.usuario_id = '$ID' AND d.estado = 'activo'
+         ORDER BY d.ultima_sync_pull_en DESC NULLS LAST LIMIT 1")"
+    if [ -z "$FALTAN" ]; then
+        :
+    elif [ "$FALTAN" -eq 0 ] 2>/dev/null; then
+        bien "su teléfono ya bajó todo (a las $BAJO): puede salir sin señal"
+    else
+        falla "a su teléfono le faltan $FALTAN cambio(s) por bajar: plan de visita, carga o tiendas" \
+              "que abra la app con señal y toque «Sincronizar ahora» antes de irse"
+    fi
 fi
 
 CORTES_VIEJOS="$(consultar "

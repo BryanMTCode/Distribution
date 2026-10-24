@@ -1060,6 +1060,18 @@ abre **«Cambiar los días»**.
 **✅ Debes ver** «Listo: N tienda(s) cambian de día a partir del …». Con señal, en
 unos minutos cada teléfono enseña en «Todos» los días nuevos.
 
+> **Si al día siguiente salen sin señal**, cada teléfono tiene que sincronizar
+> HOY, después del cambio de días y de que se le acepte la carga. Para saber
+> que ya bajó todo:
+>
+> ```bash
+> bash scripts/en_el_servidor.sh piloto_listo.sh todos
+> ```
+>
+> Cada vendedor debe decir «su teléfono ya bajó todo: puede salir sin señal». Si
+> dice «le faltan N cambio(s) por bajar», que abra la app con señal y toque
+> «Sincronizar ahora».
+
 **Desde el servidor**, el recorrido de todas las rutas un día para atrás desde el
 lunes que sigue:
 

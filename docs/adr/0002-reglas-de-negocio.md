@@ -7489,5 +7489,9 @@ un día para otro día».
 - **El comando** `recorrer-dias` hace el recorrido para atrás de todas las rutas
   desde el lunes que sigue, con resumen y la palabra RECORRER. No recorre dos
   veces.
+- **Para salir sin señal**: `piloto_listo.sh` dice de cada teléfono si ya bajó
+  todo lo que el servidor tiene para él —el plan nuevo, la carga, las tiendas—
+  o cuántos cambios le faltan. «El lunes no tendrán señal»: lo que no bajó el
+  sábado no llega.
 
 (Migración 0070, esquema `0063_recorrer_los_dias`.)

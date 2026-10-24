@@ -109,6 +109,9 @@ async def test_dice_lo_que_le_falta_para_vender_hoy(sesion, semilla, tmp_path):
     assert "1 corte(s) de días anteriores sin cerrar" in salida
     assert "su camión está vacío y no tiene carga" in salida
     assert "1 operación(es) suya(s) en cuarentena" in salida
+    # El lunes sin señal: lo que no ha bajado se dice antes de que se vaya.
+    assert "a su teléfono le faltan" in salida
+    assert "cambio(s) por bajar: plan de visita, carga o tiendas" in salida
 
 
 async def test_el_vendedor_listo_sale_en_verde(sesion, semilla, tmp_path):
@@ -130,6 +133,12 @@ async def test_el_vendedor_listo_sale_en_verde(sesion, semilla, tmp_path):
         {"b": semilla["bodega"], "c": semilla["camion"], "v": semilla["vendedor"],
          "r": semilla["ruta"]},
     )
+    # Ya bajó todo lo que hay para él.
+    await sesion.execute(
+        text("UPDATE dispositivos SET ultimo_cursor_pull = (SELECT max(cursor) FROM change_log), "
+             "       ultima_sync_pull_en = now() WHERE id = :d"),
+        {"d": dispositivo},
+    )
     await sesion.commit()
 
     _, salida = _correr("VEND01", respaldos=tmp_path)
@@ -139,6 +148,7 @@ async def test_el_vendedor_listo_sale_en_verde(sesion, semilla, tmp_path):
     assert f"app {version}" in seccion
     assert "carga CG-0001 (en el camión)" in seccion
     assert "nada suyo en cuarentena" in seccion
+    assert "su teléfono ya bajó todo" in seccion and "puede salir sin señal" in seccion
 
 
 async def test_todos_revisa_a_cada_vendedor_y_dice_quien_falta(sesion, semilla, tmp_path):
