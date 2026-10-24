@@ -143,13 +143,14 @@ async def listar(
     dia_elegido = None
     if dia == "sin":
         condiciones.append(
-            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f WHERE f.cliente_id = c.id)"
+            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f "
+            "             WHERE f.cliente_id = c.id AND f.hasta IS NULL)"
         )
     elif dia.isdigit() and int(dia) in NOMBRE_DEL_DIA:
         dia_elegido = int(dia)
         condiciones.append(
             "EXISTS (SELECT 1 FROM clientes_frecuencia f "
-            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia)"
+            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia AND f.hasta IS NULL)"
         )
         parametros["dia"] = dia_elegido
     else:
@@ -188,7 +189,8 @@ async def listar(
                                u.nombre AS vendedor, l.nombre AS lista_precios,
                                COALESCE((SELECT array_agg(DISTINCT f.dia_semana)
                                            FROM clientes_frecuencia f
-                                          WHERE f.cliente_id = c.id), '{{}}') AS dias
+                                          WHERE f.cliente_id = c.id
+                                            AND f.hasta IS NULL), '{{}}') AS dias
                           FROM clientes c
                           LEFT JOIN rutas r ON r.id = c.ruta_id
                           LEFT JOIN usuarios u ON u.id = r.vendedor_id
@@ -240,7 +242,8 @@ async def rutas_por_dia(sesion, del_estado: str) -> dict:
                 f"""
                 SELECT c.ruta_id, f.dia_semana, count(DISTINCT c.id) AS tiendas
                   FROM clientes c
-                  LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
+                  LEFT JOIN clientes_frecuencia f
+                         ON f.cliente_id = c.id AND f.hasta IS NULL
                  WHERE {del_estado}
                  GROUP BY c.ruta_id, f.dia_semana
                 """  # noqa: S608 — la condición es una constante del código

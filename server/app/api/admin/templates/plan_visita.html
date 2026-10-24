@@ -39,6 +39,51 @@
   {% endif %}
 </nav>
 
+{% if puede_editar and total %}
+{# Mover, intercambiar o recorrer los días de una vez (ADR 0002 §175): primero se
+   ve cómo queda cada día, y solo al confirmar se cambia. #}
+<details class="familia" id="cambiar_dias" style="margin:10px 0">
+  <summary>Cambiar los días</summary>
+  <form method="post" action="/panel/plan-visita/{{ ruta.id }}/dias" id="forma_dias"
+        style="padding:10px 12px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="campo">
+      <label for="operacion">Qué cambio</label>
+      <select name="operacion" id="operacion">
+        {% for clave, texto in operaciones.items() %}
+        <option value="{{ clave }}">{{ texto }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="dia_de">Del día</label>
+      <select name="de" id="dia_de">
+        {% for dow, corto, largo in dias %}<option value="{{ dow }}">{{ largo|capitalize }}</option>{% endfor %}
+      </select>
+      <label for="dia_a" style="margin-left:8px">al día</label>
+      <select name="a" id="dia_a">
+        {% for dow, corto, largo in dias %}<option value="{{ dow }}" {% if loop.index == 2 %}selected{% endif %}>{{ largo|capitalize }}</option>{% endfor %}
+      </select>
+      <div class="ayuda">Para mover o intercambiar. Al recorrer se mueven todos los días.</div>
+    </div>
+    <div class="campo">
+      <label><input type="radio" name="alcance" value="ruta" checked> Solo {{ ruta.codigo }}</label>
+      <label style="margin-left:12px"><input type="radio" name="alcance" value="todas"> Todas las rutas</label>
+    </div>
+    <div class="campo">
+      <label for="dias_desde">A partir del</label>
+      <input type="date" id="dias_desde" name="desde" value="{{ manana.isoformat() }}"
+             min="{{ manana.isoformat() }}">
+      <div class="ayuda">
+        Lo trabajado antes de ese día se sigue midiendo con el plan de antes. El
+        teléfono recibe el plan nuevo al sincronizar: hazlo al terminar el día.
+      </div>
+    </div>
+    <button type="submit" id="boton_ver_dias" class="secundario">Ver cómo queda</button>
+  </form>
+</details>
+{% endif %}
+
 {% if clientes %}
 <form method="post" action="/panel/plan-visita/{{ ruta.id }}" id="forma_plan">
   <input type="hidden" name="csrf" value="{{ csrf }}">

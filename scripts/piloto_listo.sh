@@ -64,7 +64,9 @@ tiendas_por_ruta() {
                       OR EXISTS (SELECT 1 FROM clientes_frecuencia f
                                   WHERE f.cliente_id = c.id
                                     AND toca_visita(hoy.d, f.dia_semana,
-                                                    f.semana_del_mes)))
+                                                    f.semana_del_mes)
+                                    AND frecuencia_vigente(f.cliente_id, f.desde,
+                                                           f.hasta, hoy.d)))
           FROM usuarios u
           JOIN usuarios_rutas ur ON ur.usuario_id = u.id
           JOIN rutas r ON r.id = ur.ruta_id

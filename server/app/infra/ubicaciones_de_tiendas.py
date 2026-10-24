@@ -293,7 +293,8 @@ async def _tiendas(sesion, rutas: dict[str, uuid.UUID]) -> list[Tienda]:
                                   WHERE f.dia_semana IS NOT NULL), '{}') AS dias
                   FROM clientes c
                   LEFT JOIN rutas r ON r.id = c.ruta_id
-                  LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
+                  LEFT JOIN clientes_frecuencia f
+                         ON f.cliente_id = c.id AND f.hasta IS NULL
                  WHERE c.estatus <> 'baja'
                  GROUP BY c.id, r.codigo
                  ORDER BY c.codigo NULLS LAST, c.nombre_comercial

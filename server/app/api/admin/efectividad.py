@@ -368,7 +368,9 @@ async def listar(
 #   · Solo días COMPLETOS: hasta ayer. Hoy a las once no se le reclama al
 #     vendedor lo que va a visitar a las cinco.
 #   · Solo desde que el plan existe (`clientes_frecuencia.desde`): capturar el plan
-#     hoy no convierte el mes pasado en un mes de visitas perdidas.
+#     hoy no convierte el mes pasado en un mes de visitas perdidas. Y solo hasta
+#     que se cerró (`hasta`, ADR 0002 §175): al recorrer los días, lo de antes se
+#     sigue midiendo con el plan que había.
 #   · Cuenta como visita CUALQUIER papel de ese cliente ese día: venta (aunque
 #     después se cancelara), no-drop, cobro o devolución. El vendedor estuvo ahí.
 #   · La visita REPROGRAMADA («ven el jueves», ADR 0002 §103) también toca ese
@@ -384,6 +386,7 @@ plan AS (
       FROM dias d
       JOIN clientes_frecuencia f
         ON toca_visita(d.fecha, f.dia_semana, f.semana_del_mes) AND d.fecha >= f.desde
+       AND (f.hasta IS NULL OR d.fecha <= f.hasta)
       JOIN clientes c ON c.id = f.cliente_id AND c.estatus <> 'baja'
     UNION
     SELECT n.reprogramada_para, n.cliente_id, c.ruta_id

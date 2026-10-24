@@ -33,6 +33,7 @@ teléfono ya sabe aplicar. No hay entidad nueva en la sincronización.
 from __future__ import annotations
 
 import uuid
+from datetime import date, timedelta
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, status
@@ -41,6 +42,17 @@ from sqlalchemy import text
 
 from app.api.admin.comun import CapturaInvalida, SesionDep, auditar, leer_entero, render
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
+from app.infra.recorrer_dias import (
+    CORTO,
+    OPERACIONES,
+    ORDEN,
+    aplicar,
+    describir,
+    fecha,
+    hoy_en_mazatlan,
+    mapa_de,
+    planear,
+)
 
 router = APIRouter(prefix="/panel/plan-visita", tags=["panel"], include_in_schema=False)
 
@@ -78,14 +90,17 @@ def _volver(
 
 
 async def plan_de(sesion, cliente_ids: list[uuid.UUID]) -> dict[uuid.UUID, set]:
-    """El plan actual de cada cliente: {cliente: {(dia, semana), ...}}."""
+    """El plan actual de cada cliente: {cliente: {(dia, semana), ...}}.
+
+    Solo el vigente (`hasta` nulo): el que se cerró al recorrer los días (ADR
+    0002 §175) es historia de Efectividad, y no se edita."""
     if not cliente_ids:
         return {}
     filas = (
         await sesion.execute(
             text(
                 "SELECT cliente_id, dia_semana, semana_del_mes FROM clientes_frecuencia "
-                " WHERE cliente_id = ANY(:ids)"
+                " WHERE cliente_id = ANY(:ids) AND hasta IS NULL"
             ),
             {"ids": cliente_ids},
         )
@@ -108,7 +123,7 @@ async def reemplazar_plan(sesion, cliente_id: uuid.UUID, deseado: set) -> tuple[
         await sesion.execute(
             text(
                 "DELETE FROM clientes_frecuencia WHERE cliente_id = :c AND dia_semana = :d "
-                "   AND semana_del_mes IS NOT DISTINCT FROM :s"
+                "   AND semana_del_mes IS NOT DISTINCT FROM :s AND hasta IS NULL"
             ),
             {"c": cliente_id, "d": dia, "s": semana},
         )
@@ -219,6 +234,8 @@ async def ver(
             "puede_editar": actor.puede(PERMISO),
             "guardado": guardado,
             "error": error,
+            "operaciones": OPERACIONES,
+            "manana": hoy_en_mazatlan() + timedelta(days=1),
         },
         actor=actor,
         seccion="Clientes",
@@ -305,4 +322,103 @@ async def guardar(peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id
         guardado=f"Plan guardado: {cambiados} cliente(s) con cambios. El teléfono de la "
         "ruta lo recibe en su siguiente sincronización.",
         dia=dia,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cambiar los días de una vez (ADR 0002 §175)
+# ---------------------------------------------------------------------------
+# «Que desde el dashboard sea fácil intercambiar los días de las rutas, con una
+# opción de mover todas las de un día para otro día.» Mover, intercambiar o
+# recorrer, en una ruta o en todas, a partir de una fecha. Primero se ve cómo
+# queda cada día; al confirmar, la huella del plan que se vio impide que un doble
+# clic lo aplique dos veces —intercambiar dos veces lo dejaría como estaba—.
+
+
+def _el_cambio(formulario) -> tuple[str, dict[int, int], str, date, list[str]]:
+    """Lo que pide el formulario. ValueError con el porqué."""
+    operacion = str(formulario.get("operacion", ""))
+
+    def dia(nombre):
+        crudo = str(formulario.get(nombre, ""))
+        return int(crudo) if crudo.isdigit() else None
+
+    mapa = mapa_de(operacion, dia("de"), dia("a"))
+    alcance = "todas" if formulario.get("alcance") == "todas" else "ruta"
+    try:
+        desde = date.fromisoformat(str(formulario.get("desde", "")))
+    except ValueError:
+        raise ValueError("Escribe desde qué día cuenta el cambio.") from None
+    return operacion, mapa, alcance, desde, [str(formulario.get("de", "")),
+                                            str(formulario.get("a", ""))]
+
+
+@router.post("/{ruta_id}/dias", response_class=HTMLResponse)
+async def ver_cambio_de_dias(
+    peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id: uuid.UUID
+):
+    """Cómo queda cada día con el cambio, sin tocar nada."""
+    actor.exigir(PERMISO)
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+    try:
+        operacion, mapa, alcance, desde, (de, a) = _el_cambio(formulario)
+    except ValueError as e:
+        return _volver(ruta_id, error=str(e))
+    codigo = (
+        await sesion.execute(text("SELECT codigo FROM rutas WHERE id = :r"), {"r": ruta_id})
+    ).scalar_one_or_none()
+    if codigo is None:
+        return _volver(ruta_id, error="Esa ruta no existe.")
+    plan = await planear(
+        sesion, mapa=mapa, desde=desde, hoy=hoy_en_mazatlan(),
+        rutas=None if alcance == "todas" else [ruta_id],
+    )
+    hay_domingo = any(antes[0] or despues[0] for antes, despues in plan.rutas.values())
+    return render(
+        peticion,
+        "plan_dias.html",
+        {
+            "plan": plan,
+            "ruta_id": ruta_id,
+            "operacion": operacion,
+            "de": de,
+            "a": a,
+            "alcance": alcance,
+            "desde": desde.isoformat(),
+            "descripcion": describir(mapa),
+            "desde_txt": fecha(desde),
+            "ayer_txt": fecha(desde - timedelta(days=1)),
+            "alcance_txt": "todas las rutas" if alcance == "todas" else codigo,
+            "orden": [d for d in ORDEN if d or hay_domingo],
+            "corto": CORTO,
+        },
+        actor=actor,
+        seccion="Clientes",
+    )
+
+
+@router.post("/{ruta_id}/dias/confirmar")
+async def confirmar_cambio_de_dias(
+    peticion: Request, actor: ActorWeb, sesion: SesionDep, ruta_id: uuid.UUID
+):
+    actor.exigir(PERMISO)
+    formulario = await peticion.form()
+    exigir_csrf(peticion, str(formulario.get("csrf", "")))
+    try:
+        _, mapa, alcance, desde, _ = _el_cambio(formulario)
+        resultado = await aplicar(
+            sesion, mapa=mapa, desde=desde, hoy=hoy_en_mazatlan(), quien=actor.usuario_id,
+            rutas=None if alcance == "todas" else [ruta_id],
+            huella=str(formulario.get("huella", "")),
+        )
+    except ValueError as e:
+        await sesion.rollback()
+        mensaje = str(e)
+        return _volver(ruta_id, error=mensaje[:1].upper() + mensaje[1:] + ".")
+    return _volver(
+        ruta_id,
+        guardado=f"Listo: {resultado.tiendas} tienda(s) cambian de día a partir del "
+        f"{fecha(desde)}; {describir(mapa)}. El teléfono de cada ruta lo recibe en su "
+        "siguiente sincronización.",
     )

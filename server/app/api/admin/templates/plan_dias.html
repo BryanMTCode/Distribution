@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Cambiar los días{% endblock %}
+{% block contenido %}
+<h1>Cambiar los días del plan</h1>
+<p class="subtitulo">
+  {{ descripcion|capitalize }}, a partir del <strong>{{ desde_txt }}</strong>, en
+  {{ alcance_txt }}. Lo trabajado hasta el {{ ayer_txt }} se sigue midiendo con el
+  plan de antes.
+</p>
+
+{% for p in plan.problemas %}<div class="aviso-caja error">No se puede: {{ p }}.</div>{% endfor %}
+{% for a in plan.avisos %}<div class="aviso-caja">{{ a }}</div>{% endfor %}
+
+<div class="tabla-marco">
+  <table id="tabla_cambio_dias">
+    <thead>
+      <tr>
+        <th>Ruta</th><th></th>
+        {% for d in orden %}<th class="numero">{{ corto[d] }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for ruta, par in plan.rutas.items() %}
+      <tr>
+        <td rowspan="2"><strong>{{ ruta }}</strong></td>
+        <td class="sutil">Ahora</td>
+        {% for d in orden %}<td class="numero">{{ par[0][d] or '·' }}</td>{% endfor %}
+      </tr>
+      <tr>
+        <td class="sutil">Después</td>
+        {% for d in orden %}
+        <td class="numero">{% if par[1][d] != par[0][d] %}<strong>{{ par[1][d] or '·' }}</strong>{% else %}{{ par[1][d] or '·' }}{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if plan.se_puede %}
+<p>{{ plan.tiendas }} tienda(s) cambian de día.</p>
+<form method="post" action="/panel/plan-visita/{{ ruta_id }}/dias/confirmar" id="forma_confirmar_dias">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="operacion" value="{{ operacion }}">
+  <input type="hidden" name="de" value="{{ de }}">
+  <input type="hidden" name="a" value="{{ a }}">
+  <input type="hidden" name="alcance" value="{{ alcance }}">
+  <input type="hidden" name="desde" value="{{ desde }}">
+  <input type="hidden" name="huella" value="{{ plan.huella }}">
+  <button type="submit" id="boton_confirmar_dias">Confirmar el cambio</button>
+  <a class="boton-chico" href="/panel/plan-visita?ruta={{ ruta_id }}" style="margin-left:8px">Cancelar</a>
+</form>
+{% else %}
+{% if not plan.problemas %}<div class="vacio">Ninguna tienda tiene ese día: no hay nada que cambiar.</div>{% endif %}
+<p><a href="/panel/plan-visita?ruta={{ ruta_id }}">Volver al plan de visita</a></p>
+{% endif %}
+{% endblock %}

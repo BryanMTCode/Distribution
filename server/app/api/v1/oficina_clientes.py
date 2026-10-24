@@ -186,12 +186,13 @@ async def lista(
             condiciones.append("c.ruta_id = :ruta")
     if dia == "sin":
         condiciones.append(
-            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f WHERE f.cliente_id = c.id)"
+            "NOT EXISTS (SELECT 1 FROM clientes_frecuencia f "
+            "             WHERE f.cliente_id = c.id AND f.hasta IS NULL)"
         )
     elif dia.isdigit() and 0 <= int(dia) <= 6:
         condiciones.append(
             "EXISTS (SELECT 1 FROM clientes_frecuencia f "
-            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia)"
+            "         WHERE f.cliente_id = c.id AND f.dia_semana = :dia AND f.hasta IS NULL)"
         )
         parametros["dia"] = int(dia)
     else:
@@ -220,7 +221,8 @@ async def lista(
                              AS ultima_compra,
                            COALESCE((SELECT array_agg(DISTINCT f.dia_semana ORDER BY f.dia_semana)
                                        FROM clientes_frecuencia f
-                                      WHERE f.cliente_id = c.id), '{{}}') AS dias
+                                      WHERE f.cliente_id = c.id
+                                        AND f.hasta IS NULL), '{{}}') AS dias
                       FROM clientes c
                       LEFT JOIN rutas r ON r.id = c.ruta_id
                      WHERE {" AND ".join(condiciones)}

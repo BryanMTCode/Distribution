@@ -1038,6 +1038,15 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+33",
             ),
             Punto(
+                "cambiar_dias", "Cambiar los días de una ruta",
+                "Clientes → Plan de visita → «Cambiar los días»: mueve todas las de un día a "
+                "otro, a partir de mañana → «Ver cómo queda» → «Confirmar el cambio».",
+                "La tabla enseña cada día antes y después; al confirmar, el plan queda así "
+                "desde esa fecha. Efectividad de los días anteriores no cambia (ADR 0002 "
+                "§175).",
+                desde="+59",
+            ),
+            Punto(
                 "panel_productos", "Productos, precios y familias",
                 "Catálogos → Productos: «Nuevo producto», cambia un precio («Guardar "
                 "precios») y una familia («Agregar familia», «Renombrar»).",

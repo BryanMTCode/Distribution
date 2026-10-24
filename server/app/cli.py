@@ -1,6 +1,6 @@
 """Comandos de línea: el primer usuario de oficina, los recálculos, la base en blanco,
-los camiones al sábado, las tiendas de las rutas, el mapa de Mazatlán y la base
-para empezar a operar.
+los camiones al sábado, las tiendas de las rutas, el mapa de Mazatlán, la base
+para empezar a operar y recorrer los días del plan de visita.
 
 ────────────────────────────────────────────────────────────────────────────
 EL PROBLEMA DEL HUEVO Y LA GALLINA
@@ -764,6 +764,80 @@ async def empezar_a_operar(argumentos: list[str]) -> int:
           "Almacén → Entradas → «Inventario inicial».")
     return 0
 
+async def recorrer_dias(argumentos: list[str]) -> int:
+    """Recorre el plan de visita un día para atrás desde el lunes que sigue (ADR 0002
+    §175): lo del martes al lunes, …, lo del sábado al viernes y lo del lunes al
+    sábado. Lo trabajado hasta el domingo se sigue midiendo con el plan de antes.
+
+    `--resumen` solo dice lo que haría; `--confirmado` no pregunta; `--desde
+    AAAA-MM-DD` cambia el día en que empieza (por omisión, el lunes que sigue).
+    """
+    from datetime import date, timedelta
+
+    from app.core.db import CrearSesion
+    from app.infra.base_en_blanco import quien_registra
+    from app.infra.recorrer_dias import (
+        ATRAS,
+        PALABRA,
+        aplicar,
+        describir,
+        fecha,
+        hoy_en_mazatlan,
+        planear,
+        por_dia,
+        proximo_lunes,
+    )
+
+    opciones = set(argumentos)
+    hoy = hoy_en_mazatlan()
+    desde = proximo_lunes(hoy)
+    if "--desde" in argumentos:
+        i = argumentos.index("--desde")
+        try:
+            desde = date.fromisoformat(argumentos[i + 1])
+        except (IndexError, ValueError):
+            print("ERROR: --desde lleva la fecha así: 2026-10-26.")
+            return 2
+        opciones -= {"--desde", argumentos[i + 1]}
+    if opciones - {"--resumen", "--confirmado"}:
+        print(f"Opciones que no conozco: {' '.join(sorted(opciones))}")
+        return 2
+
+    async with CrearSesion() as sesion:
+        plan = await planear(sesion, mapa=ATRAS, desde=desde, hoy=hoy, una_vez=True)
+        print(f"RECORRER EL PLAN DE VISITA UN DÍA PARA ATRÁS, desde el {fecha(desde)}\n")
+        print(f"  {describir(ATRAS).capitalize()}.")
+        print(f"  Lo trabajado hasta el {fecha(desde - timedelta(days=1))} se sigue midiendo "
+              "con el plan de antes.\n")
+        for ruta, (antes, despues) in plan.rutas.items():
+            print(f"  {ruta}")
+            print(f"    hoy:       {por_dia(antes)}")
+            print(f"    recorrido: {por_dia(despues)}")
+        print(f"\n{plan.tiendas:,} tiendas, {plan.renglones:,} días de visita.")
+        for aviso in plan.avisos:
+            print(f"OJO: {aviso}")
+        for problema in plan.problemas:
+            print(f"NO SE PUEDE: {problema}")
+        print()
+        if not plan.se_puede:
+            print("No se cambió nada." if plan.problemas else "No hay plan que recorrer.")
+            return 1 if plan.problemas else 0
+        if "--resumen" in opciones:
+            return 0
+        if "--confirmado" not in opciones and input(
+            f"Para seguir escribe {PALABRA}: "
+        ).strip().upper() != PALABRA:
+            print("No se cambió nada.")
+            return 1
+        resultado = await aplicar(sesion, mapa=ATRAS, desde=desde, hoy=hoy, una_vez=True,
+                                  quien=await quien_registra(sesion))
+
+    print(f"Listo. {resultado.tiendas:,} tiendas recorridas: desde el {fecha(desde)} "
+          f"cada una se visita un día antes. Cada teléfono recibe el plan nuevo en su "
+          "próxima sincronización.")
+    return 0
+
+
 def main() -> int:
     comandos = {
         "crear-usuario": crear_usuario_de_oficina,
@@ -776,6 +850,7 @@ def main() -> int:
         "compra-zuko": compra_zuko,
         "mapa-mazatlan": mapa_mazatlan,
         "empezar-a-operar": empezar_a_operar,
+        "recorrer-dias": recorrer_dias,
     }
     if len(sys.argv) < 2 or sys.argv[1] not in comandos:
         print(f"Uso: python -m app.cli {{{'|'.join(comandos)}}}")
@@ -785,6 +860,8 @@ def main() -> int:
         return asyncio.run(mapa_mazatlan(sys.argv[2:]))
     if comando == "empezar-a-operar":
         return asyncio.run(empezar_a_operar(sys.argv[2:]))
+    if comando == "recorrer-dias":
+        return asyncio.run(recorrer_dias(sys.argv[2:]))
     if comando in (
         "base-en-blanco", "camiones-al-sabado", "tiendas-de-rutas", "ubicar-tiendas",
         "compra-zuko",

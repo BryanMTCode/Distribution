@@ -1036,6 +1036,44 @@ tiendas y su ubicación en su siguiente sincronización. Correrlo otra vez dice 
 estaban todas».
 
 
+## Anexo · Cambiar los días de las rutas
+
+**CUÁNDO:** al **terminar el día**, cuando ya hicieron su corte y el supervisor
+aceptó la carga del día siguiente. El teléfono recibe el plan nuevo en cuanto se
+cambia, y si alguien sigue en la calle vería su lista de «Hoy» cambiada.
+
+Lo trabajado no cambia: Efectividad, «fuera de su día» y el mapa de la ruta miden
+los días anteriores con el plan de antes (ADR 0002 §175).
+
+**Desde el panel** (lo más fácil): *Clientes → Plan de visita*, escoge una ruta y
+abre **«Cambiar los días»**.
+
+1. En **Qué cambio**, escoge mover todas las de un día a otro, intercambiar dos
+   días, o recorrer todos uno para atrás o para adelante.
+2. Escoge los días, si es mover o intercambiar.
+3. Escoge **solo esa ruta o todas las rutas**, y **a partir de qué día**. Por
+   omisión es mañana; para que empiece el lunes, escoge el lunes.
+4. Toca **«Ver cómo queda»**: cada ruta, día por día, antes y después, con los
+   avisos.
+5. Toca **«Confirmar el cambio»**.
+
+**✅ Debes ver** «Listo: N tienda(s) cambian de día a partir del …». Con señal, en
+unos minutos cada teléfono enseña en «Todos» los días nuevos.
+
+**Desde el servidor**, el recorrido de todas las rutas un día para atrás desde el
+lunes que sigue:
+
+```bash
+cd ~/Distribution
+bash scripts/en_el_servidor.sh respaldar.sh
+docker compose run --rm --no-deps api python -m app.cli recorrer-dias --resumen
+docker compose run --rm --no-deps api python -m app.cli recorrer-dias
+```
+
+El primero solo enseña cómo queda cada ruta. El segundo pide escribir
+`RECORRER`; con cualquier otra cosa no cambia nada, y no recorre dos veces.
+
+
 ## Anexo · Los ZUKO de la factura del 16 de octubre
 
 **DÓNDE:** en el **servidor**, por SSH, con el código ya actualizado y la imagen

@@ -7449,3 +7449,45 @@ preguntó: cuántas tiendas enseñaba y cuántas soltó. La revisión contaba co
 precio (`precios.activo`) pasaba igual.
 
 (Migración 0069, esquema `0062_tiendas_ajenas`; versionCode 59.)
+
+## 175. Cambiar los días de las rutas sin tocar lo trabajado
+
+«Quiero cambiar las rutas que tienen asignadas, recorrerlas un día para atrás: lo
+que iban a visitar el martes que lo visiten el lunes, lo del miércoles el martes,
+y así. Que todo lo que han trabajado estos días siga como tal; solo que a partir
+del lunes trabajen con las rutas actualizadas.» Y: «que desde el dashboard sea
+fácil intercambiar los días de las rutas, con una opción de mover todas las de
+un día para otro día».
+
+- **El plan tiene fin.** Cada día del plan de una tienda dice desde cuándo cuenta
+  (`desde`, §41) y ahora también hasta cuándo (`hasta`, migración 0070). Cambiar
+  días no borra nada: lo vigente se cierra el día anterior a la fecha y lo nuevo
+  empieza en la fecha.
+- **Lo trabajado se mide con el plan que tenía.** Efectividad, la venta «fuera de
+  su día» (§167) y el mapa de la ruta en la app de gerencia (§168) usan el plan
+  que valía cada día. Una venta del sábado que sube el domingo, ya cambiados los
+  días, se mide contra el sábado de antes. Las ventas, los cortes, las cargas y
+  las visitas reagendadas para una fecha no dependen del plan.
+- **El teléfono, la lista de clientes y la pantalla del plan** usan el plan
+  vigente. El teléfono lo recibe en su siguiente sincronización, en cuanto se
+  cambia —no sabe de fechas en el plan—, así que el cambio se hace al terminar
+  el día. A cada tienda le llega un solo cambio.
+- **En el panel**, Clientes → Plan de visita → «Cambiar los días», en esa ruta o
+  en todas, a partir de la fecha que se escoja (mañana o después):
+  - mover todas las tiendas de un día a otro;
+  - intercambiar dos días;
+  - recorrer todos los días uno para atrás: el martes al lunes … el sábado al
+    viernes, y el lunes al sábado;
+  - recorrer uno para adelante: el lunes al martes … y el sábado al lunes.
+
+  Primero enseña cada ruta día por día, antes y después, con los avisos: la
+  tienda que ya tenía los dos días se queda con uno, y al juntar dos días el
+  orden de visita se mezcla. Solo al confirmar se cambia, y un doble clic no lo
+  aplica dos veces: confirma contra el plan que enseñó.
+- **Dos cambios para la misma fecha se suman**: lo que todavía no empezaba se
+  reacomoda sin dejar historia.
+- **El comando** `recorrer-dias` hace el recorrido para atrás de todas las rutas
+  desde el lunes que sigue, con resumen y la palabra RECORRER. No recorre dos
+  veces.
+
+(Migración 0070, esquema `0063_recorrer_los_dias`.)

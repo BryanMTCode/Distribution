@@ -435,7 +435,13 @@ SELECT c.id, c.codigo, c.nombre_comercial AS nombre, c.calle, c.numero, c.coloni
   FROM clientes c
   LEFT JOIN sus_rutas sr ON sr.id = c.ruta_id
   LEFT JOIN rutas r ON r.id = c.ruta_id
-  LEFT JOIN clientes_frecuencia f ON f.cliente_id = c.id
+  -- Cada día de su plan, el que vale la próxima vez que toque a partir de hoy: hoy
+  -- sábado se ve el sábado de siempre, y el lunes ya el plan recorrido (§175).
+  LEFT JOIN clientes_frecuencia f
+         ON f.cliente_id = c.id
+        AND frecuencia_vigente(f.cliente_id, f.desde, f.hasta,
+                               CAST(:hoy AS date)
+                               + (f.dia_semana - extract(dow FROM CAST(:hoy AS date))::int + 7) % 7)
  WHERE (sr.id IS NOT NULL AND c.estatus IN ('activo', 'prospecto') AND NOT c.mayoreo)
     -- Y las que visitó ese día aunque no sean de sus rutas (ADR 0002 §168).
     OR c.id = ANY(CAST(:visitadas AS uuid[]))
@@ -502,7 +508,7 @@ async def ruta(
     filas = (
         await sesion.execute(
             text(SQL_SUS_TIENDAS),
-            {"v": vendedor_id, "dia": dia, "visitadas": [str(c) for c in visitas]},
+            {"v": vendedor_id, "dia": dia, "visitadas": [str(c) for c in visitas], "hoy": hoy},
         )
     ).mappings().all()
 
