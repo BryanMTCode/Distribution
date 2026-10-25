@@ -187,7 +187,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1615 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
+**1618 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
 
 ## Stack
 
