@@ -7,8 +7,9 @@ import uuid
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from app.core.config import obtener_config
 
@@ -74,6 +75,31 @@ CrearSesionApi = async_sessionmaker(motor_api, expire_on_commit=False, class_=As
 # sin esto una petición sin token heredaría el alcance de la anterior.
 ROL_ANONIMO = "anonimo"
 
+_FIJAR_ALCANCE = text(
+    "SELECT set_config('dsd.rol', :rol, false),"
+    "       set_config('dsd.usuario_id', :usuario, false),"
+    "       set_config('dsd.rutas', :rutas, false)"
+)
+
+
+@event.listens_for(Session, "after_begin")
+def _alcance_en_cada_conexion(session, transaction, connection) -> None:  # noqa: ARG001
+    """El alcance de la sesión, otra vez, en cada conexión que toma (ADR 0002 §178).
+
+    Después de un `commit()` la sesión devuelve su conexión al pool, y lo
+    siguiente sale de OTRA: la que dejó la petición anterior, con el alcance de
+    otro. Cerrar un corte guarda a medias, así que el corte que cerró el gerente
+    a las 15:14 —con los teléfonos de los demás sincronizando— se recalculó con
+    el alcance de otro vendedor: sus ventas no se veían, y quedó «vendió 0».
+
+    Así que el alcance vive en la SESIÓN (`info`) y baja a cada conexión al
+    empezar su transacción. Una sesión que nunca fijó alcance —los workers y el
+    CLI, con el dueño— no pone nada.
+    """
+    alcance = session.info.get("alcance")
+    if alcance is not None:
+        connection.execute(_FIJAR_ALCANCE, alcance)
+
 
 async def fijar_alcance(
     sesion: AsyncSession,
@@ -93,23 +119,21 @@ async def fijar_alcance(
     El riesgo de ensuciar la conexión del pool se cierra en el otro extremo:
     `obtener_sesion` fija el alcance anónimo ANTES de cualquier consulta, así
     que lo que dejó la petición anterior siempre queda sobreescrito.
+
+    Y como un `commit()` cambia de conexión, el alcance se guarda también en la
+    sesión: `_alcance_en_cada_conexion` lo vuelve a poner en cada una.
     """
-    await sesion.execute(
-        text(
-            "SELECT set_config('dsd.rol', :rol, false),"
-            "       set_config('dsd.usuario_id', :usuario, false),"
-            "       set_config('dsd.rutas', :rutas, false)"
-        ),
-        {
-            "rol": rol,
-            "usuario": str(usuario_id) if usuario_id else "",
-            # Lista separada por comas: PostgreSQL no tiene un parámetro de
-            # arreglo para `set_config`, y la política la parte con
-            # `string_to_array`. Vacía significa «ninguna ruta», que para un
-            # vendedor es no ver nada — el fallo cerrado otra vez.
-            "rutas": ",".join(str(r) for r in rutas),
-        },
-    )
+    alcance = {
+        "rol": rol,
+        "usuario": str(usuario_id) if usuario_id else "",
+        # Lista separada por comas: PostgreSQL no tiene un parámetro de
+        # arreglo para `set_config`, y la política la parte con
+        # `string_to_array`. Vacía significa «ninguna ruta», que para un
+        # vendedor es no ver nada — el fallo cerrado otra vez.
+        "rutas": ",".join(str(r) for r in rutas),
+    }
+    sesion.info["alcance"] = alcance
+    await sesion.execute(_FIJAR_ALCANCE, alcance)
 
 
 async def obtener_sesion() -> AsyncIterator[AsyncSession]:

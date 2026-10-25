@@ -7552,3 +7552,30 @@ día venga la carga que hizo, para llevar un control del inventario día a día�
 - La carga sale el día en que se vendió con ella (§176): la del sábado, «para el
   domingo», sale el lunes.
 
+## 178. Después de guardar, la petición sigue viendo lo que ve quien la hizo
+
+El corte de VEND02 del 24 de octubre, LQ-000015, se cerró «vendió 0, esperaba
+$0» y $2,882 de sobrante. §176 no era la causa: la carga era del 24, sus 9
+ventas del 24 ya estaban en el servidor —las últimas llegaron a las 15:09—, el
+corte llegó a las 15:11 amarrado a esa carga, y no hubo nada en cuarentena. Lo
+cerró el gerente a las 15:14, al aceptar la carga del día siguiente.
+
+- **Qué pasaba.** Quién pide —su rol, su usuario y sus rutas— se le decía a
+  PostgreSQL en la conexión, para que la seguridad por renglón (Fase 9) le
+  enseñe solo lo suyo. Pero cerrar un corte guarda a medias (`abrir_corte` hace
+  `commit`), y después de un `commit` la sesión toma del pool otra conexión: la
+  que dejó la petición anterior, con el alcance de otro. A las 15:14 los
+  teléfonos de los demás vendedores estaban sincronizando: el corte se recalculó
+  con el alcance de otro vendedor, las ventas de VEND02 no se veían, y quedó en
+  cero. Los cortes que se cierran solos no tenían el problema: el worker no usa
+  la seguridad por renglón.
+- **Ahora.** El alcance vive en la sesión y se vuelve a poner en cada conexión
+  que toma, al empezar su transacción. Vale para todo lo que guarda a medias y
+  sigue leyendo —el corte, aceptar la carga, eliminar—, no solo para el corte.
+- **Las pruebas** usan el rol restringido de verdad, como `test_rls.py`: el
+  resto de la suite corre como el dueño de las tablas, que salta la seguridad
+  por renglón, y por eso ninguna lo veía. Una deja en el pool conexiones de
+  otro vendedor y el gerente acepta la carga: antes salía «vendió 0», ahora
+  salen sus 180 piezas y sus $2,250.
+- **LQ-000015** se rehace como dice §176: se elimina en Operaciones y se vuelve
+  a cerrar con lo que entregó, $2,882, ya con el servidor actualizado.
