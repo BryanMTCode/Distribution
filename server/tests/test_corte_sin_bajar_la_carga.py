@@ -297,3 +297,69 @@ async def test_si_se_elimina_y_se_cierra_hasta_despues_del_lunes(
     rehecho = await _volver_a_cerrar(sesion, corte["corte_id"])
     assert rehecho["vendida"] == Decimal("100.000")
     assert rehecho["efectivo_esperado"] == Decimal("1250.00")
+
+
+async def test_rehacer_el_corte_no_mueve_el_inventario_ni_la_cuenta(
+    cliente, sesion, semilla, dia  # noqa: F811
+):
+    """«¿No habrá errores en el inventario si modifica el corte así como tal?» No:
+    el corte se cierra con el conteo del sistema, que no escribe ajustes, y lo
+    que el teléfono resta al eliminar se lo vuelve a sumar."""
+    corte, _ = await _el_sabado_salio_en_cero(cliente, sesion, semilla, dia)
+
+    async def como_esta() -> tuple:
+        existencias = (
+            await sesion.execute(
+                text("SELECT almacen_id, producto_id, cantidad FROM existencias "
+                     " ORDER BY almacen_id, producto_id")
+            )
+        ).all()
+        movimientos = (
+            await sesion.execute(
+                text("SELECT almacen_origen_id, almacen_destino_id, producto_id, "
+                     "       sum(cantidad) FROM movimientos_inventario "
+                     " GROUP BY 1, 2, 3 ORDER BY 1, 2, 3")
+            )
+        ).all()
+        cuenta = (
+            await sesion.execute(
+                text("SELECT count(*), COALESCE(sum(importe), 0) FROM cuenta_vendedor "
+                     " WHERE vendedor_id = :v"),
+                {"v": semilla["vendedor"]},
+            )
+        ).one()
+        return existencias, cuenta, movimientos
+
+    existencias, cuenta, movimientos = await como_esta()
+    desde = (await sesion.execute(text("SELECT max(cursor) FROM change_log"))).scalar_one()
+
+    await _eliminar(sesion, corte["liquidacion_id"])
+    rehecho = await _volver_a_cerrar(sesion, corte["corte_id"])
+
+    assert rehecho["efectivo_esperado"] == Decimal("1250.00")
+    despues, cuenta_despues, movimientos_despues = await como_esta()
+    assert despues == existencias
+    assert movimientos_despues == movimientos
+    assert cuenta_despues == cuenta
+    sin_ajustes = (
+        await sesion.execute(
+            text("SELECT count(*) FROM liquidacion_detalle "
+                 " WHERE liquidacion_id = (SELECT liquidacion_id FROM cortes_vendedor "
+                 "                          WHERE id = :k) AND diferencia <> 0"),
+            {"k": corte["corte_id"]},
+        )
+    ).scalar_one()
+    assert sin_ajustes == 0
+
+    # El teléfono: lo que resta con «cancelada» lo vuelve a sumar con
+    # «confirmada», y el cierre de nuevo no le manda ajustes.
+    estados = (
+        await sesion.execute(
+            text("SELECT payload->>'estado', payload->'ajustes' FROM change_log "
+                 " WHERE entidad = 'carga' AND entidad_id = :c AND cursor > :d "
+                 " ORDER BY cursor"),
+            {"c": corte["carga_id"], "d": desde},
+        )
+    ).all()
+    assert [e for e, _ in estados] == ["cancelada", "confirmada", "en_ruta", "liquidada"]
+    assert not estados[-1][1]

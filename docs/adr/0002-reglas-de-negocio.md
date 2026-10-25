@@ -7535,6 +7535,11 @@ ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
     volver a cerrar, la carga vieja se publicaba otra vez «en ruta» y el
     teléfono la tomaba como activa; ahora detrás se vuelve a publicar la más
     nueva, como ya lo hacía eliminar.
+  - «¿No habrá errores en el inventario?» Tampoco. El corte del vendedor se
+    cierra con el conteo del sistema, que no escribe ajustes: ni el que salió
+    en 0 ni el que se vuelve a cerrar mueven la bodega o el camión, ni le
+    cargan nada a su cuenta. Al teléfono, lo que le resta «cancelada» se lo
+    vuelve a sumar «confirmada», en el mismo cambio.
   - Aunque se elimine y no se vuelva a cerrar antes, el corte del lunes no se
     lleva lo del sábado. La ventana mira la carga inmediata anterior: si su
     corte está eliminado, esos días siguen siendo de ella. Antes se brincaba
