@@ -238,9 +238,11 @@ Razonamiento y alternativas descartadas en el [ADR 0001](docs/adr/0001-stack-tec
 - [`docs/SEGURIDAD-OPERATIVA.md`](docs/SEGURIDAD-OPERATIVA.md) — qué hacer cuando un teléfono se pierde
   o un vendedor se va, el borrado remoto paso a paso, los tres roles de PostgreSQL, rotación de
   secretos y qué resuelve MDM (y qué no).
+- [`docs/PLAY-STORE.md`](docs/PLAY-STORE.md) — **la app en la Play Store**: la cuenta, la firma para
+  pasar los teléfonos de hoy sin desinstalar, lo que pide Google, las pruebas, las actualizaciones,
+  la verificación de desarrolladores, los costos y la lista para tachar.
 - [`docs/PRODUCTO-COMERCIAL.md`](docs/PRODUCTO-COMERCIAL.md) — **venderla como producto**: lo que
-  tiene a favor, lo que le falta, cómo se vendería, el plan por etapas y todo lo de la Play Store
-  (la cuenta, la firma sin desinstalar, lo que pide Google y la verificación de desarrolladores).
+  tiene a favor, lo que le falta, cómo se vendería y el plan por etapas.
 - [`docs/adr/`](docs/adr/) — decisiones de arquitectura registradas.
 
 ## Estructura
