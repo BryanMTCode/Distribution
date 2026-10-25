@@ -7609,3 +7609,38 @@ cuadro a otro, y no decía con cuánto empezó ni con cuánto terminó el camió
   de cada día cierra siempre: traía + cargó − vendió − merma + otros = quedó.
   Cuando no es cero va en amarillo, para que se vea.
 - Solo salen los días en que el camión se movió: el domingo no ocupa columnas.
+
+## 180. El costo del inventario y la ganancia, solo en el dashboard
+
+«En el dashboard quiero que me aparezca el costo del inventario, así como la
+ganancia que se obtendrá en cada artículo.» «Quiero también la ganancia de lo que
+ya se vendió.» «Los que no tienen precio, que no aparezca la ganancia.» «Todo
+esto solo en el dashboard; solo yo tengo acceso.»
+
+- **Quién lo ve.** Un permiso nuevo, `costos.ver`, que no tiene ningún rol: solo
+  el administrador, que tiene todos. El gerente y el supervisor no lo ven aunque
+  entren al panel, y a los teléfonos no les llega nada (migración 0071).
+- **El costo** es el de `producto_costos` (migración 0027): el promedio de lo que se
+  compró, que se mueve solo con cada entrada que trae costo.
+- **En Inventario**, cada almacén, cada familia, cada artículo y el total dicen
+  lo que vale a costo y la ganancia que dejaría venderlo: precio de venta menos
+  costo. Cada artículo dice también su ganancia por pieza y el porcentaje, de cada
+  $100 que se venden. Sin precio o sin costo no hay ganancia, y no suma. Arriba
+  van dos cifras más: todo el inventario a costo y la ganancia al venderlo.
+- **Productos → Costos** pone el costo de todos los artículos de un jalón: por
+  pieza, o por caja y el sistema lo divide. Sirve para los que entraron sin costo
+  —el conteo de arranque, un ajuste— o para corregirlo. Todo o nada, y cada
+  cambio queda en la auditoría con el de antes y el de después. «Solo los que no
+  tienen costo» los deja a la vista.
+- **Desempeño → Ganancia**, del periodo que se elija: lo vendido, lo que costó,
+  la ganancia y el margen, por vendedor, por día y por artículo. El mayoreo de la
+  oficina va en su renglón. Lo que se vendió sin costo no entra en la ganancia y
+  se dice cuánto fue.
+- **Con el costo de cuando se vendió.** Cada renglón de venta, de la ruta y de
+  mayoreo, guarda el costo que tenía su artículo al venderse: lo escribe la base
+  de datos al insertarlo, en tablas aparte de la venta (`costo_de_lo_vendido`),
+  porque la venta viaja al teléfono y el costo no. Si después entra una compra
+  más cara, la ganancia de lo ya vendido no se mueve. Lo vendido antes de esto,
+  o sin costo en su momento, usa el de hoy.
+- **IVA.** La ganancia sale del precio y del costo como están capturados: si uno
+  lleva IVA y el otro no, hay que capturarlos igual.

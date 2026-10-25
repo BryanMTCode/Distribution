@@ -120,7 +120,14 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/desempeno", "Del día"),
         ("/panel/efectividad", "Visitas"),
         ("/panel/objetivos", "Objetivos"),
+        # Lo vendido menos lo que costó (ADR 0002 §180): solo el administrador.
+        ("/panel/ganancia", "Ganancia"),
         ("/panel/piloto", "Piloto"),
+    ],
+    "Productos": [
+        ("/panel/productos", "Productos"),
+        # El costo de cada artículo, de un jalón (§180): solo el administrador.
+        ("/panel/costos", "Costos"),
     ],
     "Cortes y cargas": [
         ("/panel/cierres", "Por aceptar"),
@@ -188,6 +195,7 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel/vendedores/cuenta": "vendedores.cuenta_ver",
     "/panel/clientes": "clientes.ver",
     "/panel/productos": "catalogo.ver",
+    "/panel/costos": "costos.ver",
     "/panel/inventario": "inventario.ver",
     # Ver lo que hay y moverlo: los dos.
     "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),
@@ -197,6 +205,7 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel/compras": "inventario.ver",
     "/panel/efectividad": "ventas.ver_todas",
     "/panel/objetivos": "tablero.ver",
+    "/panel/ganancia": "costos.ver",
     "/panel/equipo": None,
     "/panel/equipos": "inventario.ver",
     "/panel/sincronizaciones": None,

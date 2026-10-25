@@ -16,6 +16,7 @@ from app.api.admin import cargas as panel_cargas
 from app.api.admin import cierres as panel_cierres
 from app.api.admin import clientes as panel_clientes
 from app.api.admin import compras as panel_compras
+from app.api.admin import costos as panel_costos
 from app.api.admin import cuenta_vendedores as panel_cuenta_vendedores
 from app.api.admin import desempeno as panel_desempeno
 from app.api.admin import efectividad as panel_efectividad
@@ -24,6 +25,7 @@ from app.api.admin import entradas as panel_entradas
 from app.api.admin import equipo as panel_equipo
 from app.api.admin import equipo_fichas as panel_equipo_fichas
 from app.api.admin import equipos as panel_equipos
+from app.api.admin import ganancia as panel_ganancia
 from app.api.admin import inventario as panel_inventario
 from app.api.admin import liquidaciones as panel_liquidaciones
 from app.api.admin import mayoreo as panel_mayoreo
@@ -145,6 +147,7 @@ def crear_app() -> FastAPI:
     # cambie una pantalla, que es justo lo que no se quiere de una UI.
     app.include_router(panel.router)
     app.include_router(panel_productos.router)
+    app.include_router(panel_costos.router)
     app.include_router(panel_clientes.router)
     app.include_router(panel_cargas.router)
     app.include_router(panel_cierres.router)
@@ -166,6 +169,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_empresa.router)
     app.include_router(panel_sincronizaciones.router)
     app.include_router(panel_desempeno.router)
+    app.include_router(panel_ganancia.router)
     app.include_router(panel_efectividad.router)
     app.include_router(panel_motivos.router)
     app.include_router(panel_arranque.router)

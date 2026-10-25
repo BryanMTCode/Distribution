@@ -98,8 +98,9 @@ SE_QUEDAN_Y_SE_LIMPIAN = (
 
 SE_VACIAN = (
     # Ventas, cobros y lo que cuelga de ellas
-    "venta_mayoreo_partidas", "ventas_mayoreo",
-    "ventas_cancelaciones", "venta_partidas", "cobros_aplicaciones", "cobros",
+    "costo_de_lo_vendido_mayoreo", "venta_mayoreo_partidas", "ventas_mayoreo",
+    "ventas_cancelaciones", "costo_de_lo_vendido", "venta_partidas",
+    "cobros_aplicaciones", "cobros",
     "cuentas_por_cobrar", "ventas", "no_drops", "anulaciones",
     # El cierre del vendedor y el corte
     "solicitud_carga_detalle", "solicitudes_carga", "corte_vendedor_conteo",

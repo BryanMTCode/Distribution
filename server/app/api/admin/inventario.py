@@ -80,7 +80,10 @@ async def listar(
                        COALESCE(e.renglones, 0) AS renglones,
                        COALESCE(e.piezas, 0) AS piezas,
                        COALESCE(e.negativos, 0) AS negativos,
-                       COALESCE(e.valor, 0) AS valor
+                       COALESCE(e.valor, 0) AS valor,
+                       COALESCE(e.costo, 0) AS costo,
+                       COALESCE(e.ganancia, 0) AS ganancia,
+                       COALESCE(e.valor_con_costo, 0) AS valor_con_costo
                   FROM almacenes a
                   LEFT JOIN usuarios u ON u.id = a.responsable_id
                   LEFT JOIN LATERAL (
@@ -89,8 +92,19 @@ async def listar(
                                count(*) FILTER (WHERE x.cantidad < 0) AS negativos,
                                -- Lo que vale, a precio de venta (lo negativo no resta).
                                sum(round(x.cantidad * pv.precio, 2))
-                                 FILTER (WHERE x.cantidad > 0) AS valor
+                                 FILTER (WHERE x.cantidad > 0) AS valor,
+                               -- Y a costo, y lo que se ganaría al venderlo
+                               -- (§180): sin costo o sin precio no suma.
+                               sum(round(x.cantidad * pc.costo_promedio, 2))
+                                 FILTER (WHERE x.cantidad > 0) AS costo,
+                               sum(round(x.cantidad * (pv.precio - pc.costo_promedio), 2))
+                                 FILTER (WHERE x.cantidad > 0) AS ganancia,
+                               sum(round(x.cantidad * pv.precio, 2))
+                                 FILTER (WHERE x.cantidad > 0
+                                           AND pc.costo_promedio IS NOT NULL)
+                                 AS valor_con_costo
                           FROM existencias x
+                          LEFT JOIN producto_costos pc ON pc.producto_id = x.producto_id
                           {precio_de_venta("x.producto_id")}
                          WHERE x.almacen_id = a.id
                   ) e ON true
@@ -153,6 +167,13 @@ async def listar(
                        e.cantidad, e.actualizado_en,
                        pu.presentaciones,
                        pv.precio, round(e.cantidad * pv.precio, 2) AS valor,
+                       pc.costo_promedio AS costo,
+                       round(e.cantidad * pc.costo_promedio, 2) AS costo_total,
+                       pv.precio - pc.costo_promedio AS ganancia_pieza,
+                       round(e.cantidad * (pv.precio - pc.costo_promedio), 2) AS ganancia,
+                       CASE WHEN pv.precio > 0
+                            THEN (pv.precio - pc.costo_promedio) * 100 / pv.precio
+                       END AS margen,
                        cat.id AS familia_id, cat.nombre AS familia,
                        -- La suma del libro mayor para este almacén y producto.
                        -- Si no cuadra con la caché, alguna transacción escribió
@@ -161,6 +182,7 @@ async def listar(
                   FROM existencias e
                   JOIN productos p ON p.id = e.producto_id
                   LEFT JOIN categorias cat ON cat.id = p.categoria_id
+                  LEFT JOIN producto_costos pc ON pc.producto_id = p.id
                   LEFT JOIN LATERAL (
                         SELECT json_agg(json_build_object(
                                  'unidad', u.unidad_codigo, 'factor', u.factor::text)
@@ -197,11 +219,9 @@ async def listar(
     grupos = agrupar_por_familia(filas)
     for g in grupos:
         g["piezas"] = sum((Decimal(f["cantidad"]) for f in g["filas"]), Decimal(0))
-        g["valor"] = sum(
-            (Decimal(f["valor"]) for f in g["filas"]
-             if f["valor"] is not None and f["cantidad"] > 0),
-            Decimal(0),
-        )
+        g["valor"] = _suma_positiva(g["filas"], "valor")
+        g["costo"] = _suma_positiva(g["filas"], "costo_total")
+        g["ganancia"] = _suma_positiva(g["filas"], "ganancia")
 
     return render(
         peticion,
@@ -225,12 +245,14 @@ async def listar(
             # almacén: lo negativo no suma. Lo que no tiene precio tampoco, y se
             # dice cuántos son: un total que parece completo y no lo está es peor
             # que uno que avisa.
-            "total_valor": sum(
-                (Decimal(f["valor"]) for f in filas
-                 if f["valor"] is not None and f["cantidad"] > 0),
-                Decimal(0),
-            ),
+            "total_valor": _suma_positiva(filas, "valor"),
             "sin_precio": sum(1 for f in filas if f["precio"] is None),
+            # El costo y la ganancia, solo para quien los ve (§180). Lo que no
+            # tiene costo no suma, y se dice cuántos son, igual que sin precio.
+            "ver_costos": actor.puede("costos.ver"),
+            "total_costo": _suma_positiva(filas, "costo_total"),
+            "total_ganancia": _suma_positiva(filas, "ganancia"),
+            "sin_costo": sum(1 for f in filas if f["costo"] is None),
             "puede_ajustar": (
                 elegido["tipo"] in TIPOS_AJUSTABLES
                 and actor.puede("inventario.ajustar")
@@ -238,6 +260,15 @@ async def listar(
         },
         actor=actor,
         seccion="Inventario",
+    )
+
+
+def _suma_positiva(filas, campo: str) -> Decimal:
+    """La suma de una columna de lo que hay: lo negativo no suma, y lo que no
+    tiene la cifra —sin precio, sin costo— tampoco."""
+    return sum(
+        (Decimal(f[campo]) for f in filas if f[campo] is not None and f["cantidad"] > 0),
+        Decimal(0),
     )
 
 

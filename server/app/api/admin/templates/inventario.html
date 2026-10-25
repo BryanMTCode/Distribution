@@ -2,10 +2,16 @@
 {% block titulo %}Inventario{% endblock %}
 {% macro columnas_inventario() %}
   <colgroup>
+  {% if ver_costos %}
+    <col style="width:20%"><col style="width:10%"><col style="width:8%"><col style="width:11%">
+    <col style="width:11%"><col style="width:15%"><col style="width:9%"><col style="width:7%">{% if puede_ajustar %}<col style="width:9%">{% endif %}
+  {% else %}
     <col style="width:30%"><col style="width:13%"><col style="width:9%"><col style="width:13%">
     <col style="width:13%"><col style="width:10%">{% if puede_ajustar %}<col style="width:12%">{% endif %}
+  {% endif %}
   </colgroup>
 {% endmacro %}
+{% macro margen(ganancia, valor) %}{% if valor and valor > 0 %}{{ '%.1f'|format(ganancia * 100 / valor) }} %{% endif %}{% endmacro %}
 {% block contenido %}
 <h1>Inventario</h1>
 <p class="subtitulo">
@@ -49,6 +55,20 @@
     <div class="etiqueta">todo el inventario, a precio de venta</div>
   </div>
 </div>
+{% if ver_costos %}
+{# Lo que costó y lo que se ganaría al venderlo (ADR 0002 §180). Solo los que
+   tienen costo y precio suman a la ganancia. #}
+<div class="tarjetas" id="costo_inventario" style="margin-bottom:16px">
+  <div class="tarjeta">
+    <div class="numero">{{ almacenes|sum(attribute='costo')|dinero }}</div>
+    <div class="etiqueta">todo el inventario, a costo</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero" id="ganancia_inventario">{{ almacenes|sum(attribute='ganancia')|dinero }}</div>
+    <div class="etiqueta">ganancia al venderlo · {{ margen(almacenes|sum(attribute='ganancia'), almacenes|sum(attribute='valor_con_costo')) }} de lo que se vende</div>
+  </div>
+</div>
+{% endif %}
 
 <form class="barra" method="get" action="/panel/inventario" id="elegir_almacen">
   <input type="hidden" name="filtro" value="{{ filtro }}">
@@ -73,7 +93,8 @@
   <table id="tabla_almacenes" style="table-layout:auto">
     <thead>
       <tr><th>Almacén</th><th>Quién lo trae</th><th class="numero">Artículos</th>
-          <th class="numero">Piezas</th><th class="numero">Vale</th><th></th></tr>
+          <th class="numero">Piezas</th><th class="numero">Vale</th>
+          {% if ver_costos %}<th class="numero">A costo</th><th class="numero">Ganancia</th>{% endif %}<th></th></tr>
     </thead>
     <tbody>
       {% for a in almacenes %}
@@ -84,6 +105,10 @@
         <td class="numero">{{ a.renglones }}</td>
         <td class="numero">{{ a.piezas|entero }}</td>
         <td class="numero" id="valor_{{ a.codigo }}">{{ a.valor|dinero }}</td>
+        {% if ver_costos %}
+        <td class="numero" id="costo_{{ a.codigo }}">{{ a.costo|dinero }}</td>
+        <td class="numero" id="ganancia_{{ a.codigo }}">{{ a.ganancia|dinero }}</td>
+        {% endif %}
         <td>{% if a.negativos %}<span class="etiqueta-motivo" style="background:var(--alerta-suave);color:var(--alerta)">{{ a.negativos }} en negativo</span>{% endif %}</td>
       </tr>
       {% endfor %}
@@ -93,7 +118,8 @@
 
 <h2>{{ elegido.nombre }}{% if elegido.responsable and elegido.tipo == 'camion' %} <span class="sutil">· {{ elegido.responsable }}</span>{% endif %}</h2>
 <p class="sutil" id="resumen_elegido" style="margin-top:-6px">
-  {{ elegido.renglones }} artículo(s) · {{ elegido.piezas|entero }} piezas · {{ elegido.valor|dinero }} a precio de venta
+  {{ elegido.renglones }} artículo(s) · {{ elegido.piezas|entero }} piezas · {{ elegido.valor|dinero }} a precio de venta{% if ver_costos %}
+  · {{ elegido.costo|dinero }} a costo · <strong>{{ elegido.ganancia|dinero }}</strong> de ganancia{% endif %}
 </p>
 
 <form class="barra" method="get" action="/panel/inventario">
@@ -144,6 +170,7 @@
       <th class="numero">Existencia</th>
       <th class="numero">Precio</th>
       <th class="numero">Valor</th>
+      {% if ver_costos %}<th class="numero">Costo</th><th class="numero">Ganancia</th>{% endif %}
       <th>Equivale a</th>
       <th class="numero">Actualizado</th>
       {% if puede_ajustar %}<th></th>{% endif %}
@@ -155,7 +182,8 @@
   <summary>
     {{ g.familia }} <span class="sutil">· {{ g.filas|length }} artículo(s)</span>
     <span class="resumen">{{ g.piezas|entero }} piezas ·
-      <span id="subtotal_{{ loop.index }}">{{ g.valor|dinero }}</span></span>
+      <span id="subtotal_{{ loop.index }}">{{ g.valor|dinero }}</span>{% if ver_costos %}
+      · {{ g.costo|dinero }} a costo · {{ g.ganancia|dinero }} de ganancia{% endif %}</span>
   </summary>
   <table>
     {{ columnas_inventario() }}
@@ -186,6 +214,19 @@
         <td class="numero" id="valor_{{ f.sku }}">
           {% if f.valor is not none %}<strong>{{ f.valor|dinero }}</strong>{% else %}—{% endif %}
         </td>
+        {% if ver_costos %}
+        <td class="numero" id="costo_{{ f.sku }}">
+          {% if f.costo is not none %}${{ f.costo|precio }}
+            {% if f.cantidad > 0 %}<div class="sutil">{{ f.costo_total|dinero }}</div>{% endif %}
+          {% else %}<a href="/panel/costos?buscar={{ f.sku|urlencode }}" style="color:var(--alerta)">sin costo</a>{% endif %}
+        </td>
+        <td class="numero" id="ganancia_{{ f.sku }}">
+          {% if f.ganancia_pieza is not none %}
+            {% if f.cantidad > 0 %}<strong>{{ f.ganancia|dinero }}</strong>{% endif %}
+            <div class="sutil" style="white-space:nowrap">${{ f.ganancia_pieza|precio }} c/u{% if f.margen is not none %} · {{ '%.1f'|format(f.margen) }}&nbsp;%{% endif %}</div>
+          {% else %}—{% endif %}
+        </td>
+        {% endif %}
         <td class="sutil">
           {% if f.presentaciones %}
             {% for p in f.presentaciones %}
@@ -220,6 +261,12 @@
         <td class="numero" id="total_valor"><strong>{{ total_valor|dinero }}</strong>
           {% if sin_precio %}<div class="sutil" style="color:var(--alerta)">{{ sin_precio }} sin precio no suman</div>{% endif %}
         </td>
+        {% if ver_costos %}
+        <td class="numero" id="total_costo"><strong>{{ total_costo|dinero }}</strong>
+          {% if sin_costo %}<div class="sutil" style="color:var(--alerta)">{{ sin_costo }} sin costo no suman</div>{% endif %}
+        </td>
+        <td class="numero" id="total_ganancia"><strong>{{ total_ganancia|dinero }}</strong></td>
+        {% endif %}
         <td colspan="{% if puede_ajustar %}3{% else %}2{% endif %}"></td>
       </tr>
     </tbody>
@@ -227,7 +274,11 @@
 </div>
 <p class="sutil">
   El <strong>valor</strong> es la existencia por el precio de venta de la pieza en
-  la lista de precios por omisión. Lo que está en negativo no suma al total.
+  la lista de precios por omisión. Lo que está en negativo no suma al total.{% if ver_costos %}
+  El <strong>costo</strong> es el de la pieza en <a href="/panel/costos">Costos</a>,
+  y la <strong>ganancia</strong>, lo que dejaría venderlo todo: precio menos costo.
+  Sin costo o sin precio no hay ganancia que decir. El porcentaje es de cada $100
+  que se venden.{% endif %}
 </p>
 <p class="sutil">
   Un número en <strong>negativo</strong> no es un error del sistema: es un conteo

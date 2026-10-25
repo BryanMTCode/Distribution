@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block titulo %}Ganancia{% endblock %}
+{% macro margen(m) %}{% if m is not none %}{{ '%.1f'|format(m) }} %{% else %}—{% endif %}{% endmacro %}
+{% block contenido %}
+<h1>Ganancia</h1>
+<p class="subtitulo">
+  Lo vendido menos lo que costó, con el costo que tenía cada artículo cuando se
+  vendió. Lo que se vendió sin costo capturado no entra en la ganancia: captúralo
+  en <a href="/panel/costos">Productos → Costos</a>.
+</p>
+
+{% include "_periodo.html" %}
+
+<div class="tarjetas" id="resumen_ganancia" style="margin-bottom:16px">
+  <div class="tarjeta">
+    <div class="numero">{{ total.vendido|dinero }}</div>
+    <div class="etiqueta">vendido</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero">{{ total.costo|dinero }}</div>
+    <div class="etiqueta">lo que costó</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero" id="ganancia_total">{{ total.ganancia|dinero }}</div>
+    <div class="etiqueta">ganancia · {{ margen(total.margen) }} de lo vendido</div>
+  </div>
+</div>
+
+{% if total.sin_costo > 0 %}
+<div class="aviso-caja error" id="aviso_sin_costo">
+  <strong>{{ total.sin_costo|dinero }} se vendieron de {{ articulos_sin_costo }} artículo(s)
+  sin costo</strong> y no entran en la ganancia. Captura su costo en
+  <a href="/panel/costos?faltan=1">Productos → Costos</a>.
+</div>
+{% endif %}
+
+{% if not por_articulo %}
+<div class="vacio">No hubo ventas en este periodo.</div>
+{% else %}
+<h2>Por vendedor</h2>
+<div class="tabla-marco">
+<table id="ganancia_por_vendedor">
+  <thead><tr><th>Vendedor</th><th class="numero">Vendido</th><th class="numero">Costó</th>
+    <th class="numero">Ganancia</th><th class="numero">Margen</th>
+    {% if total.sin_costo > 0 %}<th class="numero">Sin costo</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for v in por_vendedor %}
+    <tr><td>{{ v.vendedor }}</td><td class="numero">{{ v.vendido|dinero }}</td>
+      <td class="numero">{{ v.costo|dinero }}</td>
+      <td class="numero"><strong>{{ v.ganancia|dinero }}</strong></td>
+      <td class="numero">{{ margen(v.margen) }}</td>
+      {% if total.sin_costo > 0 %}<td class="numero sutil">{{ v.sin_costo|dinero if v.sin_costo else '' }}</td>{% endif %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Por día</h2>
+<div class="tabla-marco">
+<table id="ganancia_por_dia">
+  <thead><tr><th>Día</th><th class="numero">Vendido</th><th class="numero">Costó</th>
+    <th class="numero">Ganancia</th><th class="numero">Margen</th>
+    {% if total.sin_costo > 0 %}<th class="numero">Sin costo</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for d in por_dia %}
+    <tr><td>{{ d.dia|dia_en_palabras }}</td><td class="numero">{{ d.vendido|dinero }}</td>
+      <td class="numero">{{ d.costo|dinero }}</td>
+      <td class="numero"><strong>{{ d.ganancia|dinero }}</strong></td>
+      <td class="numero">{{ margen(d.margen) }}</td>
+      {% if total.sin_costo > 0 %}<td class="numero sutil">{{ d.sin_costo|dinero if d.sin_costo else '' }}</td>{% endif %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Por artículo</h2>
+<p class="sutil" style="margin-top:-6px">Del que más dejó al que menos.</p>
+<div class="tabla-marco">
+<table id="ganancia_por_articulo">
+  <thead><tr><th>Artículo</th><th>Familia</th><th class="numero">Piezas</th>
+    <th class="numero">Vendido</th><th class="numero">Costó</th>
+    <th class="numero">Ganancia</th><th class="numero">Margen</th></tr></thead>
+  <tbody>
+  {% for a in por_articulo %}
+    <tr id="ganancia_{{ a.sku }}"><td><strong>{{ a.articulo }}</strong> <span class="sutil mono">{{ a.sku }}</span></td>
+      <td class="sutil">{{ a.familia }}</td>
+      <td class="numero">{{ a.piezas|entero }}</td>
+      <td class="numero">{{ a.vendido|dinero }}</td>
+      {% if a.tiene_costo %}
+      <td class="numero">{{ a.costo|dinero }}</td>
+      <td class="numero"><strong>{{ a.ganancia|dinero }}</strong></td>
+      <td class="numero">{{ margen(a.margen) }}</td>
+      {% else %}
+      <td class="numero" colspan="3"><a href="/panel/costos?faltan=1" style="color:var(--alerta)">sin costo</a></td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="sutil">
+  El <strong>margen</strong> es de cada $100 que se vendieron, cuánto fue ganancia.
+  Lo vendido es lo de cada renglón de las ventas, ya con su descuento; las de
+  mayoreo de la oficina van aparte, en su renglón. Lo eliminado en Operaciones no
+  cuenta. Lo vendido antes de que se guardara el costo de cada venta usa el costo
+  de hoy.
+</p>
+{% endif %}
+{% endblock %}

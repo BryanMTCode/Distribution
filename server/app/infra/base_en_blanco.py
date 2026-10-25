@@ -67,8 +67,9 @@ ARTICULOS = (
 # sola sentencia no depende del orden.
 TABLAS_QUE_SE_VACIAN = (
     # Ventas, cobros y lo que cuelga de ellas
-    "venta_mayoreo_partidas", "ventas_mayoreo",
-    "ventas_cancelaciones", "venta_partidas", "cobros_aplicaciones", "cobros",
+    "costo_de_lo_vendido_mayoreo", "venta_mayoreo_partidas", "ventas_mayoreo",
+    "ventas_cancelaciones", "costo_de_lo_vendido", "venta_partidas",
+    "cobros_aplicaciones", "cobros",
     "cuentas_por_cobrar", "ventas", "no_drops",
     # Las anulaciones (ADR 0002 §119): de operaciones que ya no van a existir.
     "anulaciones",

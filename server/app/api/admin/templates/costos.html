@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "_familias.html" import botones_plegar, familia %}
+{% macro columnas_costos() %}
+  <colgroup><col style="width:28%"><col style="width:11%"><col style="width:12%">
+    <col style="width:12%"><col style="width:37%"></colgroup>
+{% endmacro %}
+{% block titulo %}Costos{% endblock %}
+{% block contenido %}
+<h1>Costos</h1>
+<p class="subtitulo">
+  Lo que te cuesta cada artículo, <strong>por pieza</strong>. Con él salen el
+  costo del <a href="/panel/inventario">inventario</a> y la
+  <a href="/panel/ganancia">ganancia</a>. Se mueve solo con cada
+  <a href="/panel/entradas">entrada</a> que trae costo (es el promedio de lo
+  comprado); aquí se escribe el de los que no lo tienen, o se corrige. Escríbelo
+  por pieza o por caja, y el sistema lo divide. Solo lo ves tú.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="aviso_error">{{ error }}</div>{% endif %}
+{% if sin_costo %}
+<div class="aviso-caja neutro" id="aviso_sin_costo">
+  <strong>{{ sin_costo }} artículo(s) sin costo.</strong> No entran en el costo del
+  inventario ni en la ganancia hasta que lo tengan.
+  {% if not faltan %}<a href="/panel/costos?faltan=1">Ver solo esos</a>{% endif %}
+</div>
+{% endif %}
+
+<form class="barra" method="get" action="/panel/costos" id="buscar_costos">
+  <input type="search" name="buscar" value="{{ buscar }}"
+         placeholder="Filtrar por nombre, SKU o código de barras" style="min-width:260px">
+  <label style="white-space:nowrap"><input type="checkbox" name="faltan" value="1" {% if faltan %}checked{% endif %}> Solo los que no tienen costo</label>
+  <button type="submit" class="secundario">Ver</button>
+  {% if buscar or faltan %}<a href="/panel/costos">ver todos</a>{% endif %}
+</form>
+
+{% if grupos %}
+<form method="post" action="/panel/costos" id="formulario_costos">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="buscar" value="{{ buscar }}">
+  {% if faltan %}<input type="hidden" name="faltan" value="1">{% endif %}
+  {% if grupos|length > 1 %}{{ botones_plegar() }}{% endif %}
+  <table class="columnas-fijas" style="background:transparent">
+    {{ columnas_costos() }}
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th class="numero">Precio de venta</th>
+        <th class="numero">Costo hoy</th>
+        <th class="numero">Ganancia</th>
+        <th class="numero">Costo nuevo</th>
+      </tr>
+    </thead>
+  </table>
+  {% for g in grupos %}
+  {% call familia(g, loop.index) %}
+  <table>
+  {{ columnas_costos() }}
+  <tbody>
+    {% for f in g.filas %}
+    <tr id="costo_{{ f.sku }}">
+      <td><strong>{{ f.nombre }}</strong>
+        <div class="sutil"><span class="mono">{{ f.sku }}</span></div></td>
+      <td class="numero">{% if f.precio is not none %}${{ f.precio|precio }}{% else %}<span class="sutil">sin precio</span>{% endif %}</td>
+      <td class="numero">
+        {% if f.costo is not none %}<strong>${{ f.costo|precio }}</strong>
+          <div class="sutil">{% if f.ultima_compra_en %}compra del {{ f.ultima_compra_en.strftime('%d/%m/%Y') }}{% else %}capturado{% endif %}</div>
+        {% else %}<span style="color:var(--alerta)">sin costo</span>{% endif %}
+      </td>
+      <td class="numero">
+        {% if f.ganancia is not none %}${{ f.ganancia|precio }}
+          {% if f.margen is not none %}<div class="sutil">{{ '%.1f'|format(f.margen) }} %</div>{% endif %}
+        {% else %}<span class="sutil">—</span>{% endif %}
+      </td>
+      <td class="numero" style="white-space:nowrap">
+        <span class="sutil">$</span><input type="text" name="pieza_{{ f.producto_id }}" inputmode="decimal"
+               value="{{ capturado.get('pieza_' ~ f.producto_id, '') }}"
+               style="width:72px; text-align:right" aria-label="Costo de la pieza de {{ f.nombre }}">
+        <span class="sutil">{{ f.unidad_base }}</span>
+        {% if f.caja %}
+        <span class="sutil">o $</span><input type="text" name="caja_{{ f.producto_id }}" inputmode="decimal"
+               value="{{ capturado.get('caja_' ~ f.producto_id, '') }}"
+               style="width:72px; text-align:right" aria-label="Costo de la caja de {{ f.nombre }}">
+        <span class="sutil">{{ f.caja }} de {{ f.factor_caja|entero }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  </table>
+  {% endcall %}
+  {% endfor %}
+  <button type="submit" id="boton_guardar_costos" style="margin-top:12px">Guardar los costos</button>
+  <span class="sutil" style="margin-left:8px">
+    Deja en blanco lo que no cambia. Si un renglón trae un error, no se guarda nada
+    y se te dice cuál. La ganancia es el precio de venta menos el costo, por pieza;
+    el porcentaje, de cada $100 que vendes.
+  </span>
+</form>
+{% else %}
+<div class="vacio">
+  {% if buscar %}Ningún artículo coincide con «{{ buscar }}».
+  {% elif faltan %}Todos los artículos tienen costo.
+  {% else %}El catálogo no tiene artículos activos.{% endif %}
+</div>
+{% endif %}
+{% endblock %}
