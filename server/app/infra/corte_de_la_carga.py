@@ -29,13 +29,18 @@ SIGUIENTE_CARGA = """
 """
 
 # Desde cuándo cuenta, en SQL con la carga como `c`: su día, o el siguiente de la
-# carga anterior ya cortada si ése es antes.
+# carga anterior si ésa ya está cortada y es antes. La anterior es la inmediata:
+# la que tiene su corte eliminado y espera a que se vuelva a cerrar sigue
+# siendo dueña de sus días, aunque haya otra cortada más atrás.
 DESDE_LA_CARGA = """
     LEAST(c.fecha_operativa,
-          COALESCE((SELECT max(s.fecha_operativa) + 1 FROM cargas s
+          COALESCE((SELECT CASE WHEN s.estado = 'liquidada' THEN s.fecha_operativa + 1
+                                ELSE c.fecha_operativa END
+                      FROM cargas s
                      WHERE s.vendedor_id = c.vendedor_id
                        AND s.fecha_operativa < c.fecha_operativa
-                       AND s.estado = 'liquidada'),
+                       AND s.estado IN ('confirmada', 'en_ruta', 'liquidada')
+                     ORDER BY s.fecha_operativa DESC LIMIT 1),
                    c.fecha_operativa))
 """
 

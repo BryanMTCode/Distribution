@@ -398,6 +398,23 @@ async def abrir_corte(sesion, carga: uuid.UUID) -> uuid.UUID:
         await sesion.execute(
             text("UPDATE cargas SET estado = 'en_ruta' WHERE id = :c"), {"c": carga}
         )
+        # El teléfono toma como activa la carga que le llegó al último. Si ésta
+        # es una de antes —su corte se eliminó y se vuelve a cerrar con la del
+        # día siguiente ya en el teléfono (ADR 0002 §176)—, la más nueva se
+        # vuelve a publicar después, para que sus ventas sigan amarradas a ésa.
+        await sesion.execute(
+            text(
+                """
+                UPDATE cargas SET estado = estado
+                 WHERE id = (SELECT id FROM cargas
+                              WHERE vendedor_id = :v AND estado IN ('confirmada', 'en_ruta')
+                              ORDER BY fecha_operativa DESC, confirmada_en DESC NULLS LAST
+                              LIMIT 1)
+                   AND id <> :c
+                """
+            ),
+            {"v": cabecera["vendedor_id"], "c": carga},
+        )
 
     await sesion.commit()
     return liquidacion_id

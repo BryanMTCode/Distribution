@@ -7528,6 +7528,17 @@ ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
   teléfono vale solo si no hay otra más nueva sin cortar hasta el día del corte.
 - **Lo que ya se cerró con 0** se rehace: en Operaciones se elimina ese corte, el
   del vendedor vuelve a «por cerrar», y se cierra otra vez con lo que entregó.
+  «¿No le afectará para la operación del lunes? Él se conectará hasta la tarde.»
+  No:
+  - Al teléfono le llega todo junto cuando se conecta, después de subir lo suyo.
+    El camión queda igual, y su carga activa sigue siendo la más nueva. Al
+    volver a cerrar, la carga vieja se publicaba otra vez «en ruta» y el
+    teléfono la tomaba como activa; ahora detrás se vuelve a publicar la más
+    nueva, como ya lo hacía eliminar.
+  - Aunque se elimine y no se vuelva a cerrar antes, el corte del lunes no se
+    lleva lo del sábado. La ventana mira la carga inmediata anterior: si su
+    corte está eliminado, esos días siguen siendo de ella. Antes se brincaba
+    hasta la última cortada, y el lunes habría contado lo del sábado otra vez.
 
 ## 177. En el Excel, lo que cargó y vendió cada vendedor día por día
 
