@@ -442,15 +442,35 @@ async def _carga_del_corte(sesion, corte: dict) -> dict | None:
     La que dijo el teléfono, si es del camión y sigue viva; si no —el teléfono
     no supo qué carga traía, o la de su payload no sirve—, la última que el
     camión tiene sin cortar hasta ese día.
+
+    La que dijo el teléfono ya cortada vale solo si no hay otra más nueva sin
+    cortar (ADR 0002 §176): «el gerente ya le había aceptado la carga, solo faltó
+    actualizar para que le subiera al camión». El teléfono que hace el corte sin
+    haber bajado la carga nueva manda la de ayer —sube antes de bajar—, y el
+    corte de hoy se quedaba con el de ayer: la carga de hoy, sin cortar, y la de
+    mañana ya no salía.
     """
     carga = None
     if corte["carga_id"] is not None:
         carga = (
             await sesion.execute(
-                text("SELECT id, folio, estado FROM cargas WHERE id = :c"),
+                text("SELECT id, folio, estado, fecha_operativa FROM cargas WHERE id = :c"),
                 {"c": corte["carga_id"]},
             )
         ).mappings().first()
+    if carga is not None and carga["estado"] == "liquidada":
+        carga = (
+            await sesion.execute(
+                text(
+                    "SELECT id, folio, estado FROM cargas "
+                    " WHERE vendedor_id = :v AND estado IN ('confirmada', 'en_ruta') "
+                    "   AND fecha_operativa > :ya AND fecha_operativa <= :d "
+                    " ORDER BY fecha_operativa DESC LIMIT 1"
+                ),
+                {"v": corte["vendedor_id"], "ya": carga["fecha_operativa"],
+                 "d": corte["fecha_operativa"]},
+            )
+        ).mappings().first() or carga
     if carga is None or carga["estado"] not in ("confirmada", "en_ruta", "liquidada"):
         carga = (
             await sesion.execute(

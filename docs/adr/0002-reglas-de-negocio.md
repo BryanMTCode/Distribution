@@ -7506,10 +7506,9 @@ ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
   del día **exacto** de su carga. Pero la carga se hace con la fecha de mañana
   (§82): la que se acepta el sábado queda «para el domingo», y el lunes se vende
   con fecha del lunes. El lunes, a todos les habría salido «vendió 0» y lo
-  entregado como sobrante. A este vendedor le pasó el sábado: vendió antes de
-  subir el corte del viernes, y su carga quedó con otra fecha que sus ventas.
-  La pantalla de Cortes del dashboard decía «cuadra» porque compara contra el día
-  del corte del vendedor, no el de la carga.
+  entregado como sobrante: basta con que la carga quede con otra fecha que las
+  ventas. La pantalla de Cortes del dashboard decía «cuadra» porque compara
+  contra el día del corte del vendedor, no el de la carga.
 - **Ahora.** El corte de una carga cuenta desde su día hasta antes de la
   siguiente carga del vendedor. Hacia atrás, también los días que quedaron
   sueltos desde su carga anterior ya cortada: el que hizo el corte de ayer hoy en
@@ -7517,6 +7516,16 @@ ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
   Como un vendedor no tiene dos cargas el mismo día, cada día cae en un solo
   corte. Igual lo vendido, las mermas, el efectivo esperado, lo que se le carga
   a su cuenta por mermas y la lista de cargas por cortar.
+- **El corte sin la carga bajada.** «El vendedor el viernes hizo su corte; solo
+  faltó actualizar para que le subiera al camión, porque el gerente ya lo había
+  aceptado.» El sábado vendió con el teléfono sin la carga nueva: cada venta
+  lleva la carga que el teléfono conocía, la del viernes. Eso no cambia nada,
+  porque el corte cuenta por días, no por la carga que trae cada venta. Pero si
+  hace el corte antes de sincronizar, el teléfono —que sube antes de bajar— lo
+  manda también con la del viernes, ya cortada. El corte del sábado se quedaba
+  con el del viernes, la carga del sábado se quedaba sin cortar, y la del domingo
+  ya no salía («se quedó sin liquidación»). Ahora la carga ya cortada que dice el
+  teléfono vale solo si no hay otra más nueva sin cortar hasta el día del corte.
 - **Lo que ya se cerró con 0** se rehace: en Operaciones se elimina ese corte, el
   del vendedor vuelve a «por cerrar», y se cierra otra vez con lo que entregó.
 
