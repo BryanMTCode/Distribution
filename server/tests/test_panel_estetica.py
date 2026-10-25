@@ -33,8 +33,10 @@ async def test_el_inventario_es_una_tabla_de_almacenes(cliente, semilla, con_inv
     # Un renglón por almacén, el que se ve marcado.
     assert tabla.count("<tr") == 1 + 2   # el encabezado, la bodega y el camión
     assert 'class="elegido"' in tabla
-    # Ya no hay un recuadro por almacén.
-    assert r.text.count('class="tarjeta"') == 3
+    # Ya no hay un recuadro por almacén: tres cifras, y al administrador dos más,
+    # el costo y la ganancia (§180), que tampoco crecen con los almacenes.
+    assert r.text.count('class="tarjeta"') == 3 + 2
+    assert 'id="costo_inventario"' in r.text
 
 
 async def test_el_plan_se_filtra_por_dia_y_guardar_no_toca_a_los_demas(
