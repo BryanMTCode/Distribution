@@ -31,8 +31,9 @@ La cuenta del vendedor es su saldo de hoy, y sus movimientos del periodo.
 from __future__ import annotations
 
 import io
+from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from openpyxl import Workbook
@@ -71,7 +72,7 @@ class Reporte:
     hasta: object
     descripcion: str
     ventas: list[dict] = field(default_factory=list)
-    por_articulo: list[dict] = field(default_factory=list)
+    camiones: list[dict] = field(default_factory=list)
     mayoreo: list[dict] = field(default_factory=list)
     cortes: list[dict] = field(default_factory=list)
     inventario: list[dict] = field(default_factory=list)
@@ -104,51 +105,93 @@ SELECT v.fecha_operativa AS fecha, u.nombre AS vendedor,
 
 # «Quiero que aparezcan las ventas de cada día de cada vendedor: vendió tantos de
 # este artículo, tantos de estos», «y que en el mismo día venga la carga que hizo,
-# para llevar un control del inventario día a día» (ADR 0002 §177). Las mismas
-# ventas que la hoja de Ventas —confirmadas—, las mermas del camión y la carga,
-# artículo por artículo.
-SQL_VENDIDO_POR_ARTICULO = """
-SELECT v.fecha_operativa AS fecha, u.nombre AS vendedor, p.id AS producto,
-       sum(vp.cantidad_base) AS vendidas, sum(vp.importe) AS importe
-  FROM ventas v
-  JOIN venta_partidas vp ON vp.venta_id = v.id
-  JOIN productos p ON p.id = vp.producto_id
-  JOIN usuarios u ON u.id = v.vendedor_id
- WHERE v.fecha_operativa BETWEEN :desde AND :hasta AND v.estado = 'confirmada'
- GROUP BY v.fecha_operativa, u.nombre, p.id
-"""
-
-SQL_MERMA_POR_ARTICULO = """
-SELECT m.fecha_operativa AS fecha, u.nombre AS vendedor, d.producto_id AS producto,
-       sum(d.cantidad_base) AS merma
-  FROM mermas m
-  JOIN merma_detalle d ON d.merma_id = m.id
-  JOIN usuarios u ON u.id = m.vendedor_id
- WHERE m.fecha_operativa BETWEEN :desde AND :hasta AND m.estado = 'confirmada'
-   AND m.tipo IN ('merma', 'cambio')
- GROUP BY m.fecha_operativa, u.nombre, d.producto_id
-"""
+# para llevar un control del inventario día a día» (ADR 0002 §177). Y después:
+# «quiero poder comparar por vendedor día a día, ver cómo se comporta su
+# inventario» (§179). Así que va por camión, que es donde está la mercancía: lo
+# que traía cada día, lo que cargó, vendió y mermó, lo demás, y lo que le quedó.
 
 # La carga va el día en que se vendió con ella: el primero con ventas de los que
 # cuenta su corte (§176), o su propio día si no vendió. La del sábado queda «para
 # el domingo» y se vende el lunes: sale el lunes.
-SQL_CARGADO_POR_ARTICULO = f"""
-WITH sus_dias AS (
-    SELECT c.id, c.vendedor_id,
+_DIAS_DE_LA_CARGA = f"""
+    SELECT c.id, c.almacen_destino_id AS camion,
            COALESCE((SELECT min(v.fecha_operativa) FROM ventas v
                       WHERE v.vendedor_id = c.vendedor_id AND v.estado = 'confirmada'
                         AND v.fecha_operativa >= {DESDE_LA_CARGA}
                         AND v.fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}),
-                    c.fecha_operativa) AS fecha
+                    c.fecha_operativa) AS dia
       FROM cargas c
      WHERE c.estado IN ('confirmada', 'en_ruta', 'liquidada')
-)
-SELECT k.fecha, u.nombre AS vendedor, d.producto_id AS producto, sum(d.cantidad) AS cargadas
-  FROM sus_dias k
+"""
+
+SQL_CAMIONES = """
+SELECT a.id AS camion, a.nombre, u.nombre AS vendedor
+  FROM almacenes a
+  LEFT JOIN usuarios u ON u.id = a.responsable_id
+ WHERE a.tipo = 'camion'
+"""
+
+SQL_CARGADO_AL_CAMION = f"""
+WITH dias AS ({_DIAS_DE_LA_CARGA})
+SELECT k.camion, k.dia, d.producto_id AS producto, sum(d.cantidad) AS cantidad
+  FROM dias k
   JOIN carga_detalle d ON d.carga_id = k.id
-  JOIN usuarios u ON u.id = k.vendedor_id
- WHERE k.fecha BETWEEN :desde AND :hasta
- GROUP BY k.fecha, u.nombre, d.producto_id
+ WHERE k.dia BETWEEN :desde AND :hasta
+ GROUP BY k.camion, k.dia, d.producto_id
+"""
+
+# Las mismas ventas que la hoja de Ventas —confirmadas—, del camión de donde
+# salieron.
+SQL_VENDIDO_DEL_CAMION = """
+SELECT v.almacen_id AS camion, v.fecha_operativa AS dia, vp.producto_id AS producto,
+       sum(vp.cantidad_base) AS cantidad
+  FROM ventas v
+  JOIN venta_partidas vp ON vp.venta_id = v.id
+ WHERE v.fecha_operativa BETWEEN :desde AND :hasta AND v.estado = 'confirmada'
+ GROUP BY v.almacen_id, v.fecha_operativa, vp.producto_id
+"""
+
+SQL_MERMA_DEL_CAMION = """
+SELECT m.almacen_id AS camion, m.fecha_operativa AS dia, d.producto_id AS producto,
+       sum(d.cantidad_base) AS cantidad
+  FROM mermas m
+  JOIN merma_detalle d ON d.merma_id = m.id
+ WHERE m.fecha_operativa BETWEEN :desde AND :hasta AND m.estado = 'confirmada'
+   AND m.tipo IN ('merma', 'cambio')
+ GROUP BY m.almacen_id, m.fecha_operativa, d.producto_id
+"""
+
+# Todo lo que entró o salió de cada camión desde el primer día, del libro de
+# movimientos, en el día de su documento: la venta y la merma en el suyo, la
+# carga en el día en que se vendió con ella; lo demás —ajustes, devoluciones,
+# lo que regresó a la bodega— el día en que se hizo. Con lo que el camión tiene
+# hoy, de aquí sale con cuánto terminó cada día.
+SQL_MOVIMIENTO_DEL_CAMION = f"""
+WITH dias AS ({_DIAS_DE_LA_CARGA}),
+efectos AS (
+    SELECT a.id AS camion, m.producto_id AS producto,
+           COALESCE(v.fecha_operativa, me.fecha_operativa, k.dia,
+                    CAST(m.fecha_servidor AS date)) AS dia,
+           CASE WHEN m.almacen_destino_id = a.id THEN m.cantidad
+                ELSE -m.cantidad END AS efecto
+      FROM movimientos_inventario m
+      JOIN almacenes a ON a.tipo = 'camion'
+                      AND a.id IN (m.almacen_origen_id, m.almacen_destino_id)
+      LEFT JOIN ventas v ON m.documento_tipo IN ('venta', 'venta_modificada')
+                        AND v.id = m.documento_id
+      LEFT JOIN mermas me ON m.documento_tipo = 'merma' AND me.id = m.documento_id
+      LEFT JOIN dias k ON m.documento_tipo = 'carga' AND k.id = m.documento_id
+)
+SELECT camion, producto, dia, sum(efecto) AS cantidad
+  FROM efectos
+ WHERE dia >= :desde
+ GROUP BY camion, producto, dia
+"""
+
+SQL_EN_LOS_CAMIONES = """
+SELECT e.almacen_id AS camion, e.producto_id AS producto, e.cantidad
+  FROM existencias e
+  JOIN almacenes a ON a.id = e.almacen_id AND a.tipo = 'camion'
 """
 
 SQL_ARTICULOS = """
@@ -263,34 +306,94 @@ SELECT m.fecha, u.nombre AS vendedor, m.tipo, m.origen, m.concepto, m.importe
 """
 
 
-async def _por_articulo(filas, rango) -> list[dict]:
-    """Por día, vendedor y artículo: lo que cargó, vendió y mermó (§177)."""
-    juntos: dict[tuple, dict] = {}
-    for sql, campos in ((SQL_CARGADO_POR_ARTICULO, ("cargadas",)),
-                        (SQL_VENDIDO_POR_ARTICULO, ("vendidas", "importe")),
-                        (SQL_MERMA_POR_ARTICULO, ("merma",))):
-        for f in await filas(sql, rango):
-            r = juntos.setdefault(
-                (f["fecha"], f["vendedor"], f["producto"]),
-                {"fecha": f["fecha"], "vendedor": f["vendedor"], "producto": f["producto"],
-                 "cargadas": Decimal(0), "vendidas": Decimal(0), "merma": Decimal(0),
-                 "importe": Decimal(0)},
-            )
-            for campo in campos:
-                r[campo] += Decimal(f[campo] or 0)
+async def _camiones(filas, rango) -> list[dict]:
+    """Cada camión, día por día y artículo por artículo (§179).
+
+    «Quedó» sale de lo que el camión tiene hoy, quitándole lo que se movió
+    después de ese día; «Traía» es lo que quedó el día anterior. «Otros» es lo
+    que no es carga, venta ni merma, así que la cuenta de cada día cierra
+    siempre: traía + cargó − vendió − merma + otros = quedó. Solo salen los días
+    en que el camión se movió.
+    """
+    desde, hasta = rango["desde"], rango["hasta"]
+
+    async def por_dia(sql: str, parametros: dict) -> dict[tuple, Decimal]:
+        juntos: dict[tuple, Decimal] = defaultdict(Decimal)
+        for f in await filas(sql, parametros):
+            juntos[(f["camion"], f["producto"], f["dia"])] += Decimal(f["cantidad"] or 0)
+        return juntos
+
+    cargado = await por_dia(SQL_CARGADO_AL_CAMION, rango)
+    vendido = await por_dia(SQL_VENDIDO_DEL_CAMION, rango)
+    merma = await por_dia(SQL_MERMA_DEL_CAMION, rango)
+    movido = await por_dia(SQL_MOVIMIENTO_DEL_CAMION, rango)
+    ahora = {
+        (f["camion"], f["producto"]): Decimal(f["cantidad"])
+        for f in await filas(SQL_EN_LOS_CAMIONES)
+    }
+
+    dias_del_camion: dict = defaultdict(set)
+    for juntos in (cargado, vendido, merma, movido):
+        for (camion, _, dia), cantidad in juntos.items():
+            if desde <= dia <= hasta and cantidad:
+                dias_del_camion[camion].add(dia)
+    if not dias_del_camion:
+        return []
+
+    productos_del_camion: dict = defaultdict(set)
+    for juntos in (cargado, vendido, merma, movido, ahora):
+        for clave in juntos:
+            if clave[0] in dias_del_camion:
+                productos_del_camion[clave[0]].add(clave[1])
     articulos = {
         f["producto"]: f
-        for f in await filas(SQL_ARTICULOS, {"ids": list({k[2] for k in juntos})})
+        for f in await filas(
+            SQL_ARTICULOS,
+            {"ids": list({p for ps in productos_del_camion.values() for p in ps})},
+        )
     }
-    renglones = []
-    for r in juntos.values():
-        a = articulos[r["producto"]]
-        renglones.append({**r, "familia": a["familia"], "sku": a["sku"],
-                          "articulo": a["articulo"], "orden": a["orden"]})
-    renglones.sort(key=lambda r: (r["fecha"], r["vendedor"],
-                                  r["orden"] is None, r["orden"] or 0, r["familia"],
-                                  r["articulo"]))
-    return renglones
+    nombres = {f["camion"]: f for f in await filas(SQL_CAMIONES)}
+    # Lo que se movió después del periodo, para llegar de hoy a su último día.
+    despues: dict[tuple, Decimal] = defaultdict(Decimal)
+    for (camion, producto, dia), cantidad in movido.items():
+        if dia > hasta:
+            despues[(camion, producto)] += cantidad
+
+    camiones = []
+    for camion, dias in dias_del_camion.items():
+        dias = sorted(dias)
+        renglones = []
+        for producto in productos_del_camion[camion]:
+            quedo = ahora.get((camion, producto), Decimal(0)) - despues[(camion, producto)]
+            por_dia_del_articulo = {}
+            dia = hasta
+            while dia >= desde:
+                clave = (camion, producto, dia)
+                traia = quedo - movido.get(clave, Decimal(0))
+                if dia in dias:
+                    cargo = cargado.get(clave, Decimal(0))
+                    vendio = vendido.get(clave, Decimal(0))
+                    mermo = merma.get(clave, Decimal(0))
+                    por_dia_del_articulo[dia] = {
+                        "traia": traia, "cargo": cargo, "vendio": vendio,
+                        "merma": mermo, "otros": quedo - traia - cargo + vendio + mermo,
+                        "quedo": quedo,
+                    }
+                quedo = traia
+                dia -= timedelta(days=1)
+            if not any(any(v.values()) for v in por_dia_del_articulo.values()):
+                continue
+            a = articulos[producto]
+            renglones.append({"familia": a["familia"], "sku": a["sku"],
+                              "articulo": a["articulo"], "orden": a["orden"],
+                              "dias": por_dia_del_articulo})
+        renglones.sort(key=lambda r: (r["orden"] is None, r["orden"] or 0, r["familia"],
+                                      r["articulo"]))
+        nombre = nombres.get(camion) or {"nombre": "Camión", "vendedor": None}
+        camiones.append({"camion": nombre["nombre"], "vendedor": nombre["vendedor"],
+                         "dias": dias, "articulos": renglones})
+    camiones.sort(key=lambda c: (c["vendedor"] is None, c["vendedor"] or "", c["camion"]))
+    return camiones
 
 
 async def datos_del_reporte(sesion, periodo) -> Reporte:
@@ -306,7 +409,7 @@ async def datos_del_reporte(sesion, periodo) -> Reporte:
         hasta=periodo.fin,
         descripcion=periodo.descripcion,
         ventas=await filas(SQL_VENTAS, rango),
-        por_articulo=await _por_articulo(filas, rango),
+        camiones=await _camiones(filas, rango),
         mayoreo=await filas(SQL_MAYOREO, rango),
         cortes=await filas(SQL_CORTES, rango),
         inventario=await filas(SQL_INVENTARIO),
@@ -451,6 +554,103 @@ def _suma(renglones: list[dict], clave: str) -> Decimal:
     return sum((Decimal(r[clave] or 0) for r in renglones), Decimal(0))
 
 
+DEL_DIA = (("Traía", "traia"), ("Cargó", "cargo"), ("Vendió", "vendio"),
+           ("Merma", "merma"), ("Otros", "otros"), ("Quedó", "quedo"))
+AMARILLO = "FFF2CC"
+
+
+def _nombre_de_hoja(libro: Workbook, nombre: str) -> str:
+    """Lo que Excel deja: sin []:*?/\\, hasta 31 letras y sin repetir."""
+    limpio = "".join(c for c in nombre if c not in "[]:*?/\\").strip()[:31] or "Camión"
+    propuesto, n = limpio, 2
+    while propuesto in libro.sheetnames:
+        sufijo = f" ({n})"
+        propuesto, n = limpio[: 31 - len(sufijo)] + sufijo, n + 1
+    return propuesto
+
+
+def _hoja_del_camion(libro: Workbook, camion: dict, periodo: str) -> None:
+    """Los artículos hacia abajo y, por cada día, lo que traía, cargó, vendió,
+    mermó, lo demás y lo que le quedó (§179)."""
+    hoja = libro.create_sheet(_nombre_de_hoja(libro, camion["vendedor"] or camion["camion"]))
+    quien = camion["vendedor"] or camion["camion"]
+    hoja.cell(1, 1, f"El camión de {quien}, día por día").font = Font(
+        bold=True, size=16, color=ROJO
+    )
+    hoja.cell(2, 1, f"{camion['camion']} · {periodo}").font = Font(italic=True,
+                                                                  color="666666")
+    dias = camion["dias"]
+    arriba, abajo = 4, 5
+    blanco = Font(bold=True, color="FFFFFF")
+    for n, encabezado in enumerate(("Familia", "Clave", "Artículo"), start=1):
+        hoja.merge_cells(start_row=arriba, start_column=n, end_row=abajo, end_column=n)
+        celda = hoja.cell(arriba, n, encabezado)
+        celda.font, celda.fill = blanco, PatternFill("solid", fgColor=ROJO)
+        celda.alignment = Alignment(vertical="center")
+    for i, dia in enumerate(dias):
+        primera = 4 + i * len(DEL_DIA)
+        hoja.merge_cells(start_row=arriba, start_column=primera,
+                         end_row=arriba, end_column=primera + len(DEL_DIA) - 1)
+        celda = hoja.cell(arriba, primera, _con_dia(dia))
+        celda.font = blanco
+        celda.fill = PatternFill("solid", fgColor=ROJO if i % 2 == 0 else "A61E22")
+        celda.alignment = Alignment(horizontal="center")
+        for j, (encabezado, _) in enumerate(DEL_DIA):
+            celda = hoja.cell(abajo, primera + j, encabezado)
+            celda.font = Font(bold=True)
+            celda.fill = PatternFill("solid", fgColor=GRIS)
+            celda.alignment = Alignment(horizontal="center")
+
+    fila = abajo + 1
+    totales = {(dia, clave): Decimal(0) for dia in dias for _, clave in DEL_DIA}
+    for r in camion["articulos"]:
+        for n, valor in enumerate((r["familia"], r["sku"], r["articulo"]), start=1):
+            hoja.cell(fila, n, valor)
+        for i, dia in enumerate(dias):
+            cifras = r["dias"][dia]
+            for j, (_, clave) in enumerate(DEL_DIA):
+                celda = hoja.cell(fila, 4 + i * len(DEL_DIA) + j, float(cifras[clave]))
+                celda.number_format = ENTERO
+                if clave == "quedo":
+                    celda.font = Font(bold=True)
+                # Lo que el camión ganó o perdió sin carga, venta ni merma: que se vea.
+                if clave == "otros" and cifras[clave]:
+                    celda.fill = PatternFill("solid", fgColor=AMARILLO)
+                totales[(dia, clave)] += cifras[clave]
+        fila += 1
+    hoja.cell(fila, 1, "Total").font = Font(bold=True)
+    for n in range(1, 4 + len(dias) * len(DEL_DIA)):
+        hoja.cell(fila, n).fill = PatternFill("solid", fgColor=GRIS)
+    for i, dia in enumerate(dias):
+        for j, (_, clave) in enumerate(DEL_DIA):
+            celda = hoja.cell(fila, 4 + i * len(DEL_DIA) + j, float(totales[(dia, clave)]))
+            celda.number_format, celda.font = ENTERO, Font(bold=True)
+    fila += 2
+    for texto in (
+        "Piezas sueltas. Traía: con lo que empezó el día. Quedó: con lo que lo terminó.",
+        "La carga sale el día en que se vendió con ella; la merma es la del camión "
+        "(merma y cambio).",
+        "Otros, en amarillo: lo que entró o salió sin ser carga, venta ni merma —ajustes "
+        "de la oficina, devoluciones de clientes, lo que regresó a la bodega o una "
+        "venta eliminada—.",
+        "Solo salen los días en que el camión se movió.",
+    ):
+        hoja.cell(fila, 1, texto).font = Font(italic=True, color="666666")
+        fila += 1
+
+    hoja.column_dimensions["A"].width = 16
+    hoja.column_dimensions["B"].width = 12
+    hoja.column_dimensions["C"].width = 32
+    for n in range(4, 4 + len(dias) * len(DEL_DIA)):
+        hoja.column_dimensions[get_column_letter(n)].width = 8
+    # Al moverse a la derecha, el artículo y los días se quedan a la vista.
+    hoja.freeze_panes = hoja.cell(abajo + 1, 4)
+    hoja.page_setup.orientation = "landscape"
+    hoja.sheet_properties.pageSetUpPr.fitToPage = True
+    hoja.page_setup.fitToWidth = 1
+    hoja.page_setup.fitToHeight = 0
+
+
 def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -> bytes:
     """El archivo .xlsx, listo para mandarlo."""
     libro = Workbook()
@@ -518,8 +718,9 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
              f"{len({(m['folio'], m['fecha']) for m in reporte.mermas})} registro(s)"],
         ],
     )
-    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, Día por día, "
-                 "Inventario, Cargas y mermas, y Cuenta de vendedores.")
+    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, una por cada "
+                 "vendedor con el inventario de su camión día por día, Inventario, "
+                 "Cargas y mermas, y Cuenta de vendedores.")
     if sin_precio:
         resumen.nota(f"Ojo: {len(sin_precio)} artículo(s) sin precio de venta no suman "
                      f"en el inventario: {', '.join(sin_precio[:6])}"
@@ -589,31 +790,17 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     )
     hoja.terminar()
 
-    # --- Día por día --------------------------------------------------------------
-    # Un cuadro por día y vendedor: lo que cargó, vendió y mermó de cada artículo
-    # (§177), para llevar el inventario día a día.
-    hoja = _Hoja(libro, "Día por día")
-    hoja.titulo("Lo que cargó y vendió cada vendedor, día por día", periodo)
-    cuadros = list(dict.fromkeys((r["fecha"], r["vendedor"]) for r in reporte.por_articulo))
-    if not cuadros:
-        hoja.nota("No hubo ventas en este periodo.")
-    for fecha, vendedor in cuadros:
-        suyos = [r for r in reporte.por_articulo
-                 if r["fecha"] == fecha and r["vendedor"] == vendedor]
-        hoja.tabla(
-            f"{_con_dia(fecha)} · {vendedor}",
-            [("Familia", "texto"), ("Clave", "texto"), ("Artículo", "texto"),
-             ("Cargó", "entero"), ("Vendió", "entero"), ("Merma", "entero"),
-             ("Importe", "dinero")],
-            [[r["familia"], r["sku"], r["articulo"], r["cargadas"], r["vendidas"],
-              r["merma"], r["importe"]] for r in suyos],
-            totales=["Total", "", "", _suma(suyos, "cargadas"), _suma(suyos, "vendidas"),
-                     _suma(suyos, "merma"), _suma(suyos, "importe")],
-        )
-    if cuadros:
-        hoja.nota("Piezas sueltas. La carga sale el día en que se vendió con ella; "
-                  "la merma es la del camión (merma y cambio).")
-    hoja.terminar()
+    # --- El camión de cada vendedor, día por día -----------------------------
+    # «Quiero poder comparar por vendedor día a día, ver cómo se comporta su
+    # inventario» (§179): una hoja por camión, los artículos hacia abajo y los
+    # días hacia la derecha.
+    if not reporte.camiones:
+        hoja = _Hoja(libro, "Camiones")
+        hoja.titulo("El camión de cada vendedor, día por día", periodo)
+        hoja.nota("Los camiones no se movieron en este periodo.")
+        hoja.terminar()
+    for camion in reporte.camiones:
+        _hoja_del_camion(libro, camion, periodo)
 
     # --- Inventario -------------------------------------------------------------
     hoja = _Hoja(libro, "Inventario")

@@ -132,8 +132,8 @@ async def test_en_el_excel_la_carga_sale_el_dia_en_que_se_vendio(
 
     _, libro = await _bajar(cliente, "semana")
 
-    dia_a_dia = libro["Día por día"]
-    titulos = [f[0] for f in dia_a_dia.iter_rows(values_only=True) if f and f[0]]
-    assert f"{_con_dia(hoy)} · Juan Pérez" in titulos
-    assert f"{_con_dia(hoy - timedelta(days=1))} · Juan Pérez" not in titulos
-    assert _con(dia_a_dia, "ATUN-140")[2:7] == ["Atún en agua 140 g", 240, 180, 0, 2250]
+    camion = libro["Juan Pérez"]
+    dias = [c.value for c in camion[4] if c.value]
+    assert _con_dia(hoy) in dias
+    assert _con_dia(hoy - timedelta(days=1)) not in dias
+    assert _con(camion, "ATUN-140")[2:9] == ["Atún en agua 140 g", 0, 240, 180, 0, 0, 60]

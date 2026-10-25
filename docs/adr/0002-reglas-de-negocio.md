@@ -7551,7 +7551,8 @@ ese dinero». En el dashboard, en Cortes, el mismo vendedor decía «cuadra».
 vendedor: vendió tantos de este artículo, tantos de estos», «y que en el mismo
 día venga la carga que hizo, para llevar un control del inventario día a día».
 
-- Hoja nueva, **«Día por día»**: un cuadro por día y vendedor, con cada artículo
+- Hoja nueva, **«Día por día»** (§179 la cambió por una hoja por vendedor): un
+  cuadro por día y vendedor, con cada artículo
   —familia, clave y nombre—, lo que **cargó**, lo que **vendió**, la **merma** del
   camión (merma y cambio) y el **importe**, con su total.
 - La carga sale el día en que se vendió con ella (§176): la del sábado, «para el
@@ -7584,3 +7585,27 @@ cerró el gerente a las 15:14, al aceptar la carga del día siguiente.
   salen sus 180 piezas y sus $2,250.
 - **LQ-000015** se rehace como dice §176: se elimina en Operaciones y se vuelve
   a cerrar con lo que entregó, $2,882, ya con el servidor actualizado.
+
+## 179. En el Excel, el camión de cada vendedor día por día, para compararlo
+
+«En el reporte de Excel quiero poder comparar por vendedor día a día; así como lo
+acomodaste no me permite. O sea, quiero día a día poder ver cómo se comporta su
+inventario.» La hoja «Día por día» de §177 traía un cuadro por día y vendedor,
+uno debajo del otro: para comparar el lunes con el martes había que ir de un
+cuadro a otro, y no decía con cuánto empezó ni con cuánto terminó el camión.
+
+- **Una hoja por vendedor**, con su nombre, en lugar de «Día por día». Los
+  artículos van hacia abajo y los días hacia la derecha, cada uno con **Traía,
+  Cargó, Vendió, Merma, Otros y Quedó**. En el mismo renglón se ve cómo se mueve
+  cada artículo de un día a otro. Al moverse a la derecha, el artículo y los días
+  se quedan a la vista, y abajo va el total de cada columna.
+- **Quedó** sale de lo que el camión tiene hoy, quitándole lo que se movió
+  después de ese día, del libro de movimientos. **Traía** es lo que quedó el día
+  anterior. Cada movimiento cuenta en el día de su documento: la venta y la
+  merma en el suyo, y la carga en el día en que se vendió con ella (§177). Lo
+  demás —ajustes, devoluciones, lo que regresó a la bodega— cuenta el día en
+  que se hizo.
+- **Otros** es lo que entró o salió sin ser carga, venta ni merma. Así la cuenta
+  de cada día cierra siempre: traía + cargó − vendió − merma + otros = quedó.
+  Cuando no es cero va en amarillo, para que se vea.
+- Solo salen los días en que el camión se movió: el domingo no ocupa columnas.
