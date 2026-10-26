@@ -12,6 +12,8 @@ de efectivo.» Desde la +28 no hay transferencias (§81), y las columnas «Impor
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from sqlalchemy import text
 
@@ -23,11 +25,18 @@ pytestmark = pytest.mark.asyncio
 COLUMNA_EFECTIVO = '<th class="numero">Efectivo</th>'
 
 
+def _siete_dias() -> str:
+    """Los últimos siete días. No «esta semana»: el lunes es un solo día, y con un
+    día el Tablero no trae la tabla por día. La prueba fallaba cada lunes."""
+    hoy = date.today()
+    return f"/panel?periodo=rango&desde={hoy - timedelta(days=6)}&hasta={hoy}"
+
+
 async def test_todo_en_efectivo_no_hay_columna_de_efectivo(cliente, sesion, semilla):
     await sembrar_dia_de_trabajo(sesion, semilla)  # una venta de $2,250, en efectivo
     await _entrar(cliente)
 
-    tablero = (await cliente.get("/panel?periodo=semana")).text
+    tablero = (await cliente.get(_siete_dias())).text
     assert 'id="tabla_por_vendedor"' in tablero and 'id="tabla_por_dia"' in tablero
     assert '<th class="numero">Importe</th>' in tablero
     assert COLUMNA_EFECTIVO not in tablero
@@ -51,7 +60,7 @@ async def test_con_una_transferencia_vieja_se_separan(cliente, sesion, semilla):
     await sesion.commit()
     await _entrar(cliente)
 
-    tablero = (await cliente.get("/panel?periodo=semana")).text
+    tablero = (await cliente.get(_siete_dias())).text
     # Por vendedor y por día.
     assert tablero.count(COLUMNA_EFECTIVO) == 2
     assert '<th class="numero">Transferencia</th>' in tablero
