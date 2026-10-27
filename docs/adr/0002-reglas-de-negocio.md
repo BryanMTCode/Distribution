@@ -7685,3 +7685,34 @@ cuenta del vendedor?» Fue JOSE ENRIQUE, en LQ-000025 del martes 27 de octubre:
   Los cortes del martes que se cerraron antes de actualizar el servidor se
   rehacen igual. Los que todavía no se aceptaban se aceptan ya con el servidor
   actualizado.
+
+## 182. El corte sin carga también se cuadra contra lo vendido
+
+«También puede pasar que no soliciten carga.» El vendedor corta, no pide carga y
+al día siguiente sale a vender con lo que le quedó arriba.
+
+- **Qué pasaba.** Ese día no tenía carga que cortar. Su corte se quedaba de
+  constancia —«no había carga abierta» o «la carga ya estaba cortada»—, sin
+  comparar el efectivo contra lo vendido. Y el corte de su siguiente carga
+  contaba ese día (§181, hacia atrás) sin el efectivo que ya había entregado: se
+  le cargaba de faltante lo de ese día. Lo mismo el primer día de un vendedor
+  nuevo, que sale con el conteo de arranque y todavía sin carga: su corte nunca
+  se cuadraba, y por eso en el Excel «Efectivo que entregaron» no daba con
+  «Ventas de los vendedores».
+- **Ahora.** Si el vendedor corta sin carga abierta y quedan días sin cortar, el
+  sistema le hace la carga de ese día **sin mercancía** —ya confirmada; no saca
+  nada de la bodega, y el teléfono no le cambia el camión— y su corte la cierra
+  como a cualquiera: espera lo que vendió desde el último día cortado, lo compara
+  con lo que recibió el gerente, y lo que falte va a su cuenta. El siguiente
+  corte arranca el día después.
+- **Dónde se ve.** En Cargas sale como una carga de 0 piezas, ya cortada: ese día
+  no cargó. El corte del vendedor dice «no traía carga: se cortó lo del camión»,
+  y el aviso al cerrarlo, lo mismo.
+- **Lo que no cambia.** Si la oficina ya cortó ese día a mano, ese corte manda y
+  no se hace otra carga. Si el camión está vacío y no vendió nada, el corte se
+  queda de constancia, como antes.
+- **El artículo que se acabó.** El corte ya explica también lo que se vendió
+  aunque no quede nada arriba: antes, un artículo que no se cargó ese día y se
+  agotó no salía en sus renglones.
+- **Los primeros días que ya pasaron** (los del 21 de octubre) no se rehacen
+  solos: siguen de constancia.

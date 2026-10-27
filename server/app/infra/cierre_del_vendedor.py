@@ -436,6 +436,103 @@ async def _con_nombres(sesion, filas: list[dict]) -> list[dict]:
     return sorted(renglones, key=lambda r: r["nombre"])
 
 
+async def _carga_sin_mercancia(sesion, corte: dict, quien: uuid.UUID) -> dict | None:
+    """La carga del día que no cargó, para cortarlo como cualquier otro (§182).
+
+    «También puede pasar que no soliciten carga.» El vendedor corta, no pide
+    carga y al día siguiente sale a vender con lo que le quedó. Ese día no tenía
+    carga que cortar: su corte se quedaba de constancia, sin cuadrar contra lo
+    vendido, y el corte de su siguiente carga contaba ese día sin el efectivo que
+    ya había entregado —se le cargaba de faltante—. Lo mismo el primer día de un
+    vendedor nuevo, que sale con el conteo de arranque.
+
+    Así que, si quedan días sin cortar, el sistema le hace la carga de ese día sin
+    mercancía —ya confirmada: no mueve nada, y el teléfono no le cambia el
+    camión— y el corte la cierra como a cualquiera: lo esperado es lo que vendió,
+    y lo que falte va a su cuenta.
+
+    `None` si no hay nada que cortar —todo está cortado hasta ese día, o ni hay
+    mercancía arriba ni ventas— o si ese día ya tiene una carga.
+    """
+    dia, vendedor_id = corte["fecha_operativa"], corte["vendedor_id"]
+    cortado_hasta = (
+        await sesion.execute(
+            text(
+                "SELECT max(COALESCE(l.cuenta_hasta, c.fecha_operativa)) "
+                "  FROM liquidaciones l JOIN cargas c ON c.id = l.carga_id "
+                " WHERE l.vendedor_id = :v AND l.estado = 'cerrada'"
+            ),
+            {"v": vendedor_id},
+        )
+    ).scalar_one()
+    if cortado_hasta is not None and cortado_hasta >= dia:
+        return None
+
+    camion = (
+        await sesion.execute(
+            text(
+                "SELECT u.almacen_id FROM usuarios u "
+                "  JOIN almacenes a ON a.id = u.almacen_id AND a.tipo = 'camion' "
+                " WHERE u.id = :v"
+            ),
+            {"v": vendedor_id},
+        )
+    ).scalar_one_or_none()
+    bodega = await bodega_principal(sesion)
+    if camion is None or bodega is None:
+        return None
+
+    hay_que_cortar = (
+        await sesion.execute(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM existencias "
+                "                WHERE almacen_id = :camion AND cantidad <> 0) "
+                "    OR EXISTS (SELECT 1 FROM ventas "
+                "                WHERE vendedor_id = :v AND estado = 'confirmada' "
+                "                  AND fecha_operativa <= :d "
+                "                  AND (CAST(:ya AS date) IS NULL OR fecha_operativa > :ya))"
+            ),
+            {"camion": camion, "v": vendedor_id, "d": dia, "ya": cortado_hasta},
+        )
+    ).scalar_one()
+    ya_tiene = (
+        await sesion.execute(
+            text(
+                "SELECT 1 FROM cargas WHERE vendedor_id = :v AND fecha_operativa = :d "
+                "   AND estado <> 'cancelada'"
+            ),
+            {"v": vendedor_id, "d": dia},
+        )
+    ).first()
+    if not hay_que_cortar or ya_tiene is not None:
+        return None
+
+    consecutivo = (
+        await sesion.execute(text("SELECT nextval('seq_folio_carga')"))
+    ).scalar_one()
+    ruta = (
+        await sesion.execute(
+            text("SELECT ruta_id FROM usuarios_rutas WHERE usuario_id = :v LIMIT 1"),
+            {"v": vendedor_id},
+        )
+    ).scalar_one_or_none()
+    carga_id, folio = uuid.uuid4(), f"CG-{consecutivo:06d}"
+    await sesion.execute(
+        text(
+            """
+            INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id,
+                                vendedor_id, ruta_id, fecha_operativa, estado,
+                                confirmada_en, confirmada_por)
+            VALUES (:id, :folio, :origen, :destino, :v, :r, :d, 'confirmada',
+                    now(), :quien)
+            """
+        ),
+        {"id": carga_id, "folio": folio, "origen": bodega["id"], "destino": camion,
+         "v": vendedor_id, "r": ruta, "d": dia, "quien": quien},
+    )
+    return {"id": carga_id, "folio": folio, "estado": "confirmada"}
+
+
 async def _carga_del_corte(sesion, corte: dict) -> dict | None:
     """La carga que el corte cierra.
 
@@ -776,6 +873,12 @@ async def _cerrar_el_corte(
     if recibido is None:
         recibido = declarado
     carga = await _carga_del_corte(sesion, corte)
+    sin_mercancia = None
+    if carga is None or carga["estado"] == "liquidada":
+        # Cortó sin carga abierta: ayer no pidió carga, o es su primer día. Si
+        # quedan días sin cortar, se cortan como cualquier otro (§182).
+        sin_mercancia = await _carga_sin_mercancia(sesion, corte, quien)
+        carga = sin_mercancia or carga
     if carga is None:
         await _marcar_corte(sesion, corte["id"], quien, None, recibido=recibido,
                             nota="no había carga abierta que liquidar")
@@ -832,14 +935,21 @@ async def _cerrar_el_corte(
         raise CierreRechazado(f"El corte no se pudo cerrar: {e}") from e
 
     no_coincide = recibido != declarado
+    notas = []
+    if sin_mercancia is not None:
+        notas.append(f"no traía carga: se cortó lo del camión ({sin_mercancia['folio']})")
+    if no_coincide:
+        notas.append(f"declaró {dinero(declarado)} y el gerente recibió {dinero(recibido)}")
     await _marcar_corte(
         sesion, corte["id"], quien, liquidacion_id, recibido=recibido,
-        nota=(
-            f"declaró {dinero(declarado)} y el gerente recibió {dinero(recibido)}"
-            if no_coincide else None
-        ),
+        nota="; ".join(notas) or None,
     )
     await sesion.commit()
+    if sin_mercancia is not None:
+        aviso = (
+            "No traía carga abierta: se cortó con lo que ya traía el camión, en la "
+            f"carga {sin_mercancia['folio']}, sin mercancía. " + aviso
+        )
     if no_coincide:
         diferencia = recibido - declarado
         cuanto = (

@@ -1227,9 +1227,9 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
     que lleva tres días arriba y hoy no se cargó no aparecería en el cierre, así
     que nadie lo contaría y nadie notaría si desapareció.
 
-    Así que los renglones son la UNIÓN de dos conjuntos: lo que se cargó hoy y lo
-    que el camión tiene con saldo distinto de cero. Un producto en los dos sale
-    una vez.
+    Así que los renglones son la UNIÓN de lo que se cargó hoy, lo que el camión
+    tiene con saldo distinto de cero y lo que se vendió aunque ya no quede (§182).
+    Un producto en varios sale una vez.
 
     `inicial` se deduce del saldo vivo del camión, no de un snapshot. El por qué
     está en `saldo_inicial`, y la consecuencia es la que importa: `esperado` acaba
@@ -1261,10 +1261,26 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                          WHERE e.almacen_id = c.almacen_destino_id
                            AND e.cantidad <> 0
                     ),
+                    -- Y lo que se vendió aunque ya no quede: el día que no cargó
+                    -- y se le acabó un artículo, el corte también lo explica
+                    -- (§182).
+                    vendido AS (
+                        SELECT DISTINCT vp.producto_id
+                          FROM venta_partidas vp
+                          JOIN ventas ve ON ve.id = vp.venta_id
+                          CROSS JOIN la_carga c
+                         WHERE ve.estado = 'confirmada'
+                           AND ve.vendedor_id = c.vendedor_id
+                           AND ve.almacen_id = c.almacen_destino_id
+                           AND ve.fecha_operativa >= c.desde
+                           AND ve.fecha_operativa < c.hasta
+                    ),
                     productos_del_cierre AS (
                         SELECT producto_id FROM cargado
                         UNION
                         SELECT producto_id FROM arriba
+                        UNION
+                        SELECT producto_id FROM vendido
                     )
                     SELECT pc.producto_id,
                            COALESCE(g.cargada, 0) AS cargada,
