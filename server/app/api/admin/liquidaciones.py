@@ -112,7 +112,7 @@ from app.domain.liquidacion import (
     diferencia_de_efectivo,
     saldo_inicial,
 )
-from app.infra.corte_de_la_carga import DESDE_LA_CARGA, HASTA_LA_SIGUIENTE_CARGA
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, SIGUIENTE_CARGA, TOPE_DEL_CORTE
 from app.infra.cuarentena_que_frena import cuarentena_que_frena
 from app.infra.cuenta_vendedor import ORIGENES, cargar_el_corte
 from app.workers.cola import encolar
@@ -204,7 +204,7 @@ async def cargas_por_cortar(sesion) -> list:
                          WHERE vendedor_id = c.vendedor_id
                            AND almacen_id = c.almacen_destino_id
                            AND fecha_operativa >= {DESDE_LA_CARGA}
-                           AND fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}
+                           AND fecha_operativa < {TOPE_DEL_CORTE}
                            AND estado = 'confirmada'
                   ) v ON true
                  WHERE c.estado IN ('confirmada', 'en_ruta')
@@ -842,6 +842,20 @@ async def cerrar_corte(
     ahora = datetime.now(UTC)
     camion = cabecera["almacen_destino_id"]
 
+    # Hasta qué día cuenta, ya para siempre (§181): el siguiente corte arranca el
+    # día después. El del vendedor ya lo trae —el día de su corte—; el de la
+    # oficina, hasta antes de la siguiente carga, sin pasar de hoy. Antes de las
+    # cifras, para que lo contado sea exactamente lo que dice ese día.
+    await sesion.execute(
+        text(
+            f"UPDATE liquidaciones l SET cuenta_hasta = LEAST({SIGUIENTE_CARGA} - 1, "
+            "                                             CURRENT_DATE) "
+            "  FROM cargas c "
+            " WHERE c.id = l.carga_id AND l.id = :l AND l.cuenta_hasta IS NULL"
+        ),
+        {"l": liquidacion_id},
+    )
+
     # ------------------------------------------------------------------
     # Las cifras calculadas, otra vez, justo antes de declarar.
     # ------------------------------------------------------------------
@@ -1231,7 +1245,7 @@ async def _renglones_calculados(sesion, carga_id: uuid.UUID) -> list[dict]:
                     WITH la_carga AS (
                         SELECT c.id, c.vendedor_id, c.almacen_destino_id,
                                {DESDE_LA_CARGA} AS desde,
-                               {HASTA_LA_SIGUIENTE_CARGA} AS hasta
+                               {TOPE_DEL_CORTE} AS hasta
                           FROM cargas c WHERE c.id = :c
                     ),
                     cargado AS (
@@ -1348,7 +1362,7 @@ async def _efectivo_de_la_carga(sesion, carga_id) -> Decimal:
                       JOIN ventas v ON v.vendedor_id = c.vendedor_id
                      WHERE c.id = :c
                        AND v.fecha_operativa >= {DESDE_LA_CARGA}
-                       AND v.fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}
+                       AND v.fecha_operativa < {TOPE_DEL_CORTE}
                        AND v.estado = 'confirmada' AND v.tipo = 'contado'
                        AND v.forma_pago = 'efectivo'
                     """  # noqa: S608 — el tope es una constante del código

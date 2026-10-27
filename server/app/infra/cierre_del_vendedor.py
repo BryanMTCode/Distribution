@@ -806,6 +806,13 @@ async def _cerrar_el_corte(
 
     try:
         liquidacion_id = await abrir_corte(sesion, carga["id"])
+        # Cuenta hasta el día de su corte (§181): es lo que el teléfono le dice
+        # que entregue —lo vendido ese día—, y la venta de mañana que ya subió
+        # cuando el gerente acepta en la mañana es del corte de mañana.
+        await sesion.execute(
+            text("UPDATE liquidaciones SET cuenta_hasta = :d WHERE id = :l"),
+            {"d": corte["fecha_operativa"], "l": liquidacion_id},
+        )
         # Nadie cuenta el camión: lo que le queda es lo que el sistema calcula
         # (`conteo_automatico`). El efectivo sí se cuenta, y lo cuenta quien lo
         # recibe: el arqueo es con lo recibido, no con lo declarado (§87).

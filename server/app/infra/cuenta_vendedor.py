@@ -30,7 +30,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.corte_de_la_carga import DESDE_LA_CARGA, SIGUIENTE_CARGA
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, HASTA_DEL_CORTE
 
 CENTAVO = Decimal("0.01")
 
@@ -152,7 +152,7 @@ async def cargar_el_corte(
                 SELECT l.folio, l.vendedor_id, l.fecha_operativa, l.arqueo_en,
                        l.efectivo_esperado, l.efectivo_entregado,
                        l.diferencia_efectivo, c.almacen_destino_id AS camion,
-                       {DESDE_LA_CARGA} AS desde, {SIGUIENTE_CARGA} AS hasta
+                       {DESDE_LA_CARGA} AS desde, {HASTA_DEL_CORTE} AS hasta
                   FROM liquidaciones l JOIN cargas c ON c.id = l.carga_id
                  WHERE l.id = :l
                 """

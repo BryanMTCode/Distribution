@@ -41,7 +41,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
-from app.infra.corte_de_la_carga import DESDE_LA_CARGA, HASTA_LA_SIGUIENTE_CARGA
+from app.infra.corte_de_la_carga import DESDE_LA_CARGA, TOPE_DEL_CORTE
 from app.infra.cuenta_vendedor import ORIGENES
 from app.infra.valor_de_inventario import precio_de_venta
 
@@ -118,7 +118,7 @@ _DIAS_DE_LA_CARGA = f"""
            COALESCE((SELECT min(v.fecha_operativa) FROM ventas v
                       WHERE v.vendedor_id = c.vendedor_id AND v.estado = 'confirmada'
                         AND v.fecha_operativa >= {DESDE_LA_CARGA}
-                        AND v.fecha_operativa < {HASTA_LA_SIGUIENTE_CARGA}),
+                        AND v.fecha_operativa < {TOPE_DEL_CORTE}),
                     c.fecha_operativa) AS dia
       FROM cargas c
      WHERE c.estado IN ('confirmada', 'en_ruta', 'liquidada')

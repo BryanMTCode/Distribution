@@ -7644,3 +7644,42 @@ esto solo en el dashboard; solo yo tengo acceso.»
   o sin costo en su momento, usa el de hoy.
 - **IVA.** La ganancia sale del precio y del costo como están capturados: si uno
   lleva IVA y el otro no, hay que capturarlos igual.
+
+## 181. El día que ya contó un corte no lo vuelve a contar el siguiente
+
+«¿Por qué con un vendedor me aparece en su corte que se cargaron 2,389 a la
+cuenta del vendedor?» Fue JOSE ENRIQUE, en LQ-000025 del martes 27 de octubre:
+«debía entregar $4,798, entregó $2,409, faltaron $2,389».
+
+- **Qué pasaba.** La carga que se le aceptó el sábado quedó «para el domingo»
+  (§82), y con ella vendió el lunes $2,389. Su corte del lunes contó el lunes y
+  no le faltó nada. La carga siguiente fue la del martes. El corte de una carga
+  cuenta también, hacia atrás, los días sueltos desde la carga anterior ya
+  cortada (§176), y arrancaba el día siguiente a la FECHA de esa carga: el
+  lunes. Eso solo es cierto si la anterior contó nada más su día, y la del
+  domingo había contado también el lunes. Así que el martes esperaba lo del
+  lunes, ya entregado, más lo del martes —los $2,409 que entregó—, y el lunes se
+  le cargó a su cuenta como faltante de efectivo. Les iba a pasar a todos con su
+  corte del martes, y a cualquiera con un día de por medio entre dos cargas.
+- **Ahora.** Cada corte guarda, al cerrarse, hasta qué día contó
+  (`liquidaciones.cuenta_hasta`, migración 0072), y el siguiente arranca el día
+  después:
+  - el corte del vendedor, hasta el día de su corte, que es lo que el teléfono
+    le dice que entregue: lo vendido ese día;
+  - el de la oficina, hasta antes de la siguiente carga, sin pasar del día en que
+    se cierra;
+  - los que ya estaban cerrados se llenan igual: con el día del corte del
+    vendedor que los cerró, o con la regla de la oficina.
+- **El corte que se acepta a la mañana siguiente.** Por lo mismo, el corte de
+  ayer que el gerente acepta hoy en la mañana ya no cuenta lo que el vendedor
+  vendió hoy antes de que se lo aceptaran. Antes, si esas ventas ya habían
+  subido, el corte de ayer las esperaba y salían de faltante. Son del corte de
+  hoy.
+- **En el Excel**, cada carga va en el primer día con ventas de los que cuenta su
+  corte (§177): la del martes ya sale el martes, y no el lunes.
+- **LQ-000025** se rehace como en §176: se elimina en Operaciones —lo que se le
+  cargó se compensa con una condonación de ese corte, y su cuenta queda en $0—,
+  su corte vuelve a «por cerrar» y se cierra otra vez: espera $2,409 y cuadra.
+  Los cortes del martes que se cerraron antes de actualizar el servidor se
+  rehacen igual. Los que todavía no se aceptaban se aceptan ya con el servidor
+  actualizado.
