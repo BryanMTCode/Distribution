@@ -7659,8 +7659,10 @@ cuenta del vendedor?» Fue JOSE ENRIQUE, en LQ-000025 del martes 27 de octubre:
   lunes. Eso solo es cierto si la anterior contó nada más su día, y la del
   domingo había contado también el lunes. Así que el martes esperaba lo del
   lunes, ya entregado, más lo del martes —los $2,409 que entregó—, y el lunes se
-  le cargó a su cuenta como faltante de efectivo. Les iba a pasar a todos con su
-  corte del martes, y a cualquiera con un día de por medio entre dos cargas.
+  le cargó a su cuenta como faltante de efectivo. Se trabaja de lunes a sábado,
+  y al terminar el día cortan y cargan para empezar el siguiente: la carga del
+  sábado siempre queda del domingo. Así que les iba a pasar a todos, cada
+  martes, y a cualquiera con un día de por medio entre dos cargas.
 - **Ahora.** Cada corte guarda, al cerrarse, hasta qué día contó
   (`liquidaciones.cuenta_hasta`, migración 0072), y el siguiente arranca el día
   después:
