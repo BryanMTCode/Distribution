@@ -7951,3 +7951,23 @@ quiera.»
   tarjeta, lo que vale la empresa y la ganancia **solo van en el archivo de quien
   los puede ver en el dashboard**: la gerencia y la supervisión bajan el mismo
   Excel de antes, sin la hoja Tarjeta y sin esas cifras.
+
+## 193. Las compras a proveedores y los gastos, sin abrir cada compra
+
+«Que en el dashboard se pueda llevar el control de los gastos y compras a
+proveedores, pero con una vista buena: no quiero tener que meterme a cada
+compra.»
+
+- **Dinero → Compras y gastos**, del periodo que se elija (el mes, por omisión):
+  arriba, cuánto se compró, cuánto ya se pagó y cuánto se debe de esas compras,
+  los gastos de la empresa, y compras más gastos.
+- **Cada compra en un renglón, con lo que trajo a la vista**: fecha y folio,
+  proveedor y factura, cada artículo con sus piezas (si son más de cuatro, los
+  demás se despliegan ahí mismo), el importe, lo pagado y cómo —la tarjeta de la
+  empresa se ve como tal—, y lo que se debe, que lleva a su cuenta para pagarla.
+  La compra sin proveedor del catálogo dice que no tiene cuenta por pagar.
+- **Por proveedor** (compras, importe, pagado y lo que se debe) y **por
+  artículo** (piezas, importe y lo que salió cada pieza), y los **gastos** por
+  tipo y uno por uno (§192).
+- Solo el administrador, como la tarjeta (`tarjeta.ver`). Desde Compras hay un
+  enlace para llegar.

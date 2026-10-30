@@ -9,6 +9,10 @@
   <a href="/panel/entradas">Entradas</a>; el costo se captura ahí y de ahí sale
   todo esto.
 </p>
+{# Lo comprado del periodo, sin abrir cada compra (§193): del administrador. #}
+{% if actor and actor.puede('tarjeta.ver') %}
+<p><a href="/panel/dinero/compras-y-gastos" id="ir_a_compras_y_gastos">Ver lo que se compró y se gastó por periodo →</a></p>
+{% endif %}
 
 {% if guardado %}<div class="aviso-caja bien">{{ guardado }}</div>{% endif %}
 {% if error %}<div class="aviso-caja error">{{ error }}</div>{% endif %}

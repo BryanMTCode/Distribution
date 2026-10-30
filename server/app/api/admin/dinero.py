@@ -4,7 +4,7 @@
 tarjeta de débito de la empresa: las tres visiones distintas y el total. Y las
 compras poder agregarlas de la tarjeta: a la tarjeta, la venta y las salidas.»
 
-Dos pestañas, solo para el administrador (`tarjeta.ver`):
+Tres pestañas, solo para el administrador (`tarjeta.ver`):
 
   · **Lo que vale la empresa**: la mercancía de las bodegas, la de los camiones y
     la tarjeta, cada una con su detalle, y el total.
@@ -12,6 +12,8 @@ Dos pestañas, solo para el administrador (`tarjeta.ver`):
     captura lo que no está en otro lado —con cuánto empezó, el dinero que entra o
     sale por otra cosa, y lo que dice el banco—. La compra pagada con la tarjeta
     se registra en su cuenta por pagar, eligiendo «tarjeta».
+  · **Compras y gastos** (§193): las compras a proveedores del periodo, cada una
+    con lo que trajo a la vista, por proveedor y por artículo, y los gastos.
 
 El cálculo está en `app/infra/tarjeta.py`.
 """
@@ -31,6 +33,7 @@ from app.api.admin.comun import CapturaInvalida, SesionDep, leer_dinero, render
 from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.infra import tarjeta
+from app.infra.compras_y_gastos import del_periodo as compras_y_gastos_del_periodo
 from app.infra.tarjeta import MovimientoInvalido
 
 router = APIRouter(prefix="/panel/dinero", tags=["panel"], include_in_schema=False)
@@ -55,6 +58,32 @@ async def lo_que_vale(peticion: Request, actor: ActorWeb, sesion: SesionDep) -> 
         peticion,
         "dinero.html",
         {"vale": await tarjeta.lo_que_vale(sesion)},
+        actor=actor,
+        seccion="Dinero",
+    )
+
+
+@router.get("/compras-y-gastos", response_class=HTMLResponse)
+async def compras_y_gastos(
+    peticion: Request,
+    actor: ActorWeb,
+    sesion: SesionDep,
+    periodo: str = "",
+    desde: str = "",
+    hasta: str = "",
+) -> HTMLResponse:
+    """«Llevar el control de los gastos y compras a proveedores con una vista
+    buena: no quiero tener que meterme a cada compra» (§193)."""
+    actor.exigir(PERMISO)
+    elegido = await periodo_pedido(sesion, periodo or "mes", desde, hasta or desde)
+    return render(
+        peticion,
+        "compras_y_gastos.html",
+        {
+            "periodo": elegido,
+            "periodos": PERIODOS,
+            **await compras_y_gastos_del_periodo(sesion, elegido.inicio, elegido.fin),
+        },
         actor=actor,
         seccion="Dinero",
     )

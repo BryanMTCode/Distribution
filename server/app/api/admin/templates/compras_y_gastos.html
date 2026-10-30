@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block titulo %}Compras y gastos{% endblock %}
+{% block contenido %}
+<h1>Compras y gastos</h1>
+<p class="subtitulo">
+  Todo lo que se les compró a los proveedores y todo lo que se gastó, del periodo
+  que elijas, sin abrir ninguna compra: cada una con lo que trajo, lo pagado y lo
+  que se debe.
+</p>
+
+{% include "_periodo.html" %}
+
+<div class="tarjetas" id="resumen_compras_y_gastos" style="margin-bottom:16px">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="#compras">
+    <div class="numero" id="total_compras">{{ importe|dinero }}</div>
+    <div class="etiqueta">compras · {{ compras|length }} a proveedores</div>
+  </a>
+  <div class="tarjeta">
+    <div class="numero" id="total_pagado">{{ pagado|dinero }}</div>
+    <div class="etiqueta">ya pagado de esas compras</div>
+  </div>
+  <div class="tarjeta {% if debe > 0 %}aviso{% endif %}">
+    <div class="numero" id="total_debe">{{ debe|dinero }}</div>
+    <div class="etiqueta">se debe de esas compras</div>
+  </div>
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="#gastos">
+    <div class="numero" id="total_gastos">{{ gastos.total|dinero }}</div>
+    <div class="etiqueta">gastos de la empresa</div>
+  </a>
+  <div class="tarjeta" style="border-color:var(--acento)">
+    <div class="numero" id="total_salio">{{ salio|dinero }}</div>
+    <div class="etiqueta">compras y gastos</div>
+  </div>
+</div>
+
+<h2 id="compras">Compras a proveedores</h2>
+{% if compras %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="tabla_compras">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Proveedor</th>
+        <th>Qué trajo</th>
+        <th class="numero">Piezas</th>
+        <th class="numero">Importe</th>
+        <th class="numero">Pagado</th>
+        <th class="numero">Debe</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in compras %}
+      <tr>
+        <td>
+          {{ c.fecha.strftime('%d/%m') }}
+          <div class="sutil"><a href="/panel/entradas/{{ c.id }}" class="mono">{{ c.folio }}</a></div>
+        </td>
+        <td>
+          {{ c.proveedor }}
+          {% if c.referencia %}<div class="sutil">factura {{ c.referencia }}</div>{% endif %}
+        </td>
+        <td>
+          {# Lo que trajo, a la vista; si son muchos, los primeros y los demás plegados. #}
+          {% for a in c.articulos[:4] %}
+            <div>{{ a.articulo }} <span class="sutil">· {{ a.piezas|entero }} pzas</span></div>
+          {% endfor %}
+          {% if c.articulos|length > 4 %}
+          <details>
+            <summary class="sutil">y {{ c.articulos|length - 4 }} más</summary>
+            {% for a in c.articulos[4:] %}
+              <div>{{ a.articulo }} <span class="sutil">· {{ a.piezas|entero }} pzas</span></div>
+            {% endfor %}
+          </details>
+          {% endif %}
+        </td>
+        <td class="numero">{{ c.piezas|entero }}</td>
+        <td class="numero"><strong>{{ c.importe|dinero }}</strong></td>
+        {% if c.con_cuenta %}
+        <td class="numero">
+          {{ c.pagado|dinero }}
+          {% if c.formas %}<div class="sutil">{{ c.formas|join(', ') }}</div>{% endif %}
+        </td>
+        <td class="numero" {% if c.debe > 0 %}style="color:var(--aviso)"{% endif %}>
+          {% if c.debe > 0 %}<a href="/panel/compras/cuenta/{{ c.id }}">{{ c.debe|dinero }}</a>{% else %}<span class="sutil">pagada</span>{% endif %}
+        </td>
+        {% else %}
+        <td colspan="2" class="sutil">sin cuenta por pagar</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr id="total_tabla_compras">
+        <td colspan="3"><strong>Total · {{ compras|length }} compra(s)</strong></td>
+        <td class="numero"><strong>{{ piezas|entero }}</strong></td>
+        <td class="numero"><strong>{{ importe|dinero }}</strong></td>
+        <td class="numero"><strong>{{ pagado|dinero }}</strong></td>
+        <td class="numero"><strong>{{ debe|dinero }}</strong></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;margin-top:8px">
+  <div style="flex:1 1 360px">
+    <h2>Por proveedor</h2>
+    <div class="tabla-marco">
+      <table id="compras_por_proveedor">
+        <thead><tr><th>Proveedor</th><th class="numero">Compras</th><th class="numero">Importe</th>
+          <th class="numero">Pagado</th><th class="numero">Debe</th></tr></thead>
+        <tbody>
+          {% for p in por_proveedor %}
+          <tr><td>{{ p.proveedor }}</td><td class="numero">{{ p.compras }}</td>
+            <td class="numero">{{ p.importe|dinero }}</td><td class="numero">{{ p.pagado|dinero }}</td>
+            <td class="numero">{{ p.debe|dinero }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="flex:1 1 420px">
+    <h2>Por artículo</h2>
+    <div class="tabla-marco">
+      <table id="compras_por_articulo">
+        <thead><tr><th>Artículo</th><th class="numero">Piezas</th><th class="numero">Importe</th>
+          <th class="numero">Por pieza</th></tr></thead>
+        <tbody>
+          {% for a in por_articulo %}
+          <tr><td>{{ a.articulo }} <div class="sutil mono">{{ a.sku }}</div></td>
+            <td class="numero">{{ a.piezas|entero }}</td><td class="numero">{{ a.importe|dinero }}</td>
+            <td class="numero">{% if a.por_pieza is not none %}{{ a.por_pieza|dinero }}{% else %}<span class="sutil">sin costo</span>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="vacio">No hubo compras a proveedores {{ periodo.descripcion }}.</div>
+{% endif %}
+
+<h2 id="gastos">Gastos de la empresa</h2>
+{% if gastos.renglones %}
+<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+  <div class="tabla-marco" style="flex:0 1 360px">
+    <table id="gastos_por_tipo">
+      <thead><tr><th>En qué</th><th class="numero">Cuánto</th></tr></thead>
+      <tbody>
+        {% for nombre, cuanto in gastos.por_categoria %}
+        <tr><td>{{ nombre }}</td><td class="numero">{{ cuanto|dinero }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total</strong></td><td class="numero"><strong>{{ gastos.total|dinero }}</strong></td></tr></tfoot>
+    </table>
+  </div>
+  <div class="tabla-marco" style="flex:1 1 420px">
+    <table id="gastos_uno_por_uno">
+      <thead><tr><th>Fecha</th><th>En qué</th><th>Detalle</th><th class="numero">Cuánto</th></tr></thead>
+      <tbody>
+        {% for g in gastos.renglones %}
+        <tr><td>{{ g.fecha.strftime('%d/%m') }}</td><td>{{ g.nombre }}</td>
+          <td>{{ g.concepto }}{% if g.quien %} <span class="sutil">· {{ g.quien }}</span>{% endif %}</td>
+          <td class="numero">{{ g.importe|dinero }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="vacio">No hay gastos capturados {{ periodo.descripcion }}.</div>
+{% endif %}
+<p class="sutil">
+  Los gastos se capturan en <a href="/panel/dinero/tarjeta">Dinero → Tarjeta</a>;
+  las compras, en <a href="/panel/entradas">Entradas</a>, y se pagan en
+  <a href="/panel/compras">Compras</a>. El retiro del dueño no es gasto.
+</p>
+{% endblock %}

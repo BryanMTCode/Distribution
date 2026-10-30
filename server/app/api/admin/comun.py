@@ -129,6 +129,8 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
     "Dinero": [
         ("/panel/dinero", "Lo que vale la empresa"),
         ("/panel/dinero/tarjeta", "Tarjeta"),
+        # Las compras a proveedores y los gastos, sin abrir cada compra (§193).
+        ("/panel/dinero/compras-y-gastos", "Compras y gastos"),
     ],
     "Productos": [
         ("/panel/productos", "Productos"),
@@ -207,6 +209,7 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     # Solo el administrador (§190).
     "/panel/dinero": "tarjeta.ver",
     "/panel/dinero/tarjeta": "tarjeta.ver",
+    "/panel/dinero/compras-y-gastos": "tarjeta.ver",
     "/panel/inventario": "inventario.ver",
     # Ver lo que hay y moverlo: los dos.
     "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),
