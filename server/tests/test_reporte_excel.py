@@ -31,7 +31,7 @@ from tests.test_panel_liquidacion import _entrar
 
 pytestmark = pytest.mark.asyncio
 
-HOJAS = ["Resumen", "Ventas y efectivo", "Juan Pérez", "Inventario",
+HOJAS = ["Resumen", "Ventas y efectivo", "Bodega", "Juan Pérez", "Inventario",
          "Día por día", "Cargas y mermas", "Cuenta de vendedores"]
 DEL_DIA = ["Traía", "Cargó", "Vendió", "Merma", "Otros", "Quedó"]
 
@@ -365,3 +365,15 @@ async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
     # Hasta hoy: de mañana no se sabe nada.
     assert not any(f and f[0] == _con_dia(hoy + timedelta(days=1))
                    for f in hoja.iter_rows(values_only=True))
+
+    # «Quiero una hoja del inventario de Mazatlán día por día» (§186): había 1,000,
+    # entraron 100, salieron 240 al camión y 24 a mayoreo, quedaron 836. Solo el
+    # día en que se movió.
+    bodega = libro["Bodega"]
+    assert bodega["A1"].value == "La bodega Bodega, día por día"
+    assert bodega["D4"].value == _con_dia(hoy)
+    assert [c.value for c in bodega[5]][3:10] == [
+        "Había", "Entró", "A camiones", "Mayoreo", "Merma", "Otros", "Quedó"]
+    assert _con(bodega, "ATUN-140")[3:10] == [1000, 100, 240, 24, 0, 0, 836]
+    assert _con(bodega, "En dinero")[3:10] == [12500, 1250, 3000, 300, 0, 0, 10450]
+    assert bodega["K4"].value is None

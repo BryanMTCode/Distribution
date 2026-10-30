@@ -7778,3 +7778,23 @@ la de los vendedores.»
   ella, así que «quedó» es con lo que terminó de vender, antes de subir la carga
   de mañana. En «Día por día» el camión cierra ya con esa carga, porque ahí se
   ve dónde está la mercancía al final del día.
+
+## 186. En el Excel, la bodega Mazatlán día por día
+
+«Te había dicho que también quiero una hoja del inventario de Mazatlán día por
+día.»
+
+- **Una hoja por bodega**, con su nombre, antes de las de los camiones y como
+  ellas (§179): los artículos hacia abajo y, por cada día en que la bodega se
+  movió, lo que **había**, lo que **entró** —compras y entradas—, lo que salió
+  **a camiones** —lo cargado o pasado a un camión menos lo que regresó de ellos—,
+  el **mayoreo**, la **merma** de la bodega, **otros** en amarillo —ajustes,
+  conteos o algo eliminado— y lo que **quedó**. Había + entró − a camiones −
+  mayoreo − merma + otros = quedó, artículo por artículo.
+- **Con el renglón «En dinero»**, como el camión (§185), a precio de venta de hoy.
+  El quedó en dinero de cada día es el de la bodega en «Día por día» (§183): las
+  dos salen de los mismos movimientos, con el mismo día para cada uno.
+- **La carga cuenta la tarde en que se acepta**, que es cuando sale de la bodega.
+  En la hoja del camión va el día en que se vende con ella.
+- Por dentro, el camión y la bodega usan la misma hoja con distintas columnas, y
+  «Día por día» y la bodega leen los mismos movimientos.
