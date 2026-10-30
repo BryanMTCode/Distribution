@@ -228,6 +228,17 @@
   <tbody>
   {% for e in entradas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_entradas(e) }}{% endfor %}
   </tbody>
+  {# El total sin abrir ninguna (§188); lo cancelado no entró. #}
+  {% set vivas = entradas|rejectattr('estado', 'in', ['cancelada'])|list %}
+  <tfoot>
+    <tr id="total_entradas">
+      <td colspan="5"><strong>Total · {{ vivas|length }} entrada(s)</strong></td>
+      <td class="numero"><strong>{{ vivas|sum(attribute='renglones') }}</strong></td>
+      <td class="numero"><strong>{{ vivas|sum(attribute='piezas')|entero }}</strong></td>
+      <td class="numero"><strong>{{ vivas|map(attribute='importe_total')|map('default', 0, true)|sum|dinero }}</strong></td>
+      <td></td><td></td>
+    </tr>
+  </tfoot>
 </table>
 </div>
 {# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}

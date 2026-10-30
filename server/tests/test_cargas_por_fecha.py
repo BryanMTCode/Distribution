@@ -84,7 +84,7 @@ async def test_el_panel_las_da_por_dia(cliente, semilla, tres_dias):  # noqa: AR
     assert html.index(f'id="dia_{sabado.isoformat()}"') < html.index("CA-000101")
     assert html.index("CA-000101") < html.index(f'id="dia_{viernes.isoformat()}"')
     assert "· 1 carga(s) · 120 piezas" in plano
-    assert "2 carga(s) en 2 día(s), 200 piezas." in plano
+    assert "2 carga(s) en 2 día(s), 200 piezas, que valen" in plano
     assert "CA-000103" not in plano
     assert html.index('id="cargas_canceladas"') < html.index("CA-000102")
 

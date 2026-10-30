@@ -98,7 +98,9 @@
       <tr>
         <th>Folio</th>
         <th>Vendedor</th>
-        <th class="numero">Efectivo</th>
+        <th class="numero">Debía entregar</th>
+        <th class="numero">Entregó</th>
+        <th class="numero">Diferencia</th>
         <th class="numero">Productos con diferencia</th>
         <th>Estado</th>
       </tr>
@@ -115,14 +117,17 @@
           </div>
         </td>
         <td>{{ l.vendedor }}</td>
+        {# Lo que había que entregar y lo que entregó, sin abrir el corte (§188). #}
+        <td class="numero">{{ l.efectivo_esperado|dinero }}</td>
+        <td class="numero">{{ l.efectivo_entregado|dinero }}</td>
         <td class="numero">
-          ${{ '%.2f'|format(l.efectivo_entregado) }}
           {% if l.diferencia_efectivo != 0 %}
-            <div class="sutil"
-                 style="color:{% if l.diferencia_efectivo < 0 %}var(--alerta){% else %}var(--aviso){% endif %}">
+            <span style="color:{% if l.diferencia_efectivo < 0 %}var(--alerta){% else %}var(--aviso){% endif %}">
               {% if l.diferencia_efectivo < 0 %}faltan{% else %}sobran{% endif %}
-              ${{ '%.2f'|format(l.diferencia_efectivo|abs) }}
-            </div>
+              {{ l.diferencia_efectivo|abs|dinero }}
+            </span>
+          {% else %}
+            <span class="sutil">cuadró</span>
           {% endif %}
         </td>
         <td class="numero">
@@ -144,6 +149,22 @@
       </tr>
       {% endfor %}
     </tbody>
+    {# La suma de los ya cerrados (§188): los abiertos todavía pueden cambiar. #}
+    {% set cerradas = liquidaciones|selectattr('estado', 'equalto', 'cerrada')|list %}
+    <tfoot>
+      <tr id="total_cortes">
+        <td colspan="2"><strong>Total de los {{ cerradas|length }} cerrado(s)</strong></td>
+        <td class="numero"><strong>{{ cerradas|sum(attribute='efectivo_esperado')|dinero }}</strong></td>
+        <td class="numero"><strong>{{ cerradas|sum(attribute='efectivo_entregado')|dinero }}</strong></td>
+        {% set diferencia = cerradas|sum(attribute='diferencia_efectivo') %}
+        <td class="numero"><strong>
+          {% if diferencia < 0 %}<span style="color:var(--alerta)">faltan {{ diferencia|abs|dinero }}</span>
+          {% elif diferencia > 0 %}<span style="color:var(--aviso)">sobran {{ diferencia|dinero }}</span>
+          {% else %}cuadró{% endif %}
+        </strong></td>
+        <td></td><td></td>
+      </tr>
+    </tfoot>
   </table>
 </div>
 {% else %}

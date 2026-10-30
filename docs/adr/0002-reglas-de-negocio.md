@@ -7817,3 +7817,24 @@ el dashboard.»
 - **Solo en el dashboard**: el teléfono no mueve mercancía (§135). En el Excel,
   el que la dio y el que la recibió la ven en «Otros», en amarillo, y la suma de
   «Día por día» no cambia: solo cambió de camión.
+
+## 188. Cada lista del panel dice su total sin abrir ningún folio
+
+«Ajusta las vistas del Dashboard, no quiero tener que entrar a un folio, o sea,
+poder ver el total. Hazlo todo más fácil de ver.»
+
+- **Cargas**: cada carga dice lo que **vale** a precio de venta (el mismo precio
+  del Inventario y del Excel, §183), el encabezado de cada día dice lo que valió
+  lo cargado ese día, el resumen de arriba la suma, y la tabla termina con su
+  renglón de **total**: cargas, renglones, piezas y dinero.
+- **Corte a mano**: en vez de una sola columna de efectivo, tres —**debía
+  entregar**, **entregó** y la **diferencia** («faltan», «sobran» o «cuadró»)—,
+  y abajo la suma de los cortes cerrados.
+- **Ventas**, **Entradas** y **Salidas** terminan con su renglón de total: en
+  Ventas el dinero de lo que se ve (en su pestaña, el de las canceladas); en
+  Entradas las piezas y el importe; en Salidas las piezas y lo que **valía** lo
+  que salió, que también se ve en cada una.
+- **Lo cancelado no suma** en ningún total: no salió, no entró, no se vendió. Se
+  sigue viendo aparte, plegado (§95).
+- **Operaciones no lleva total**: mezcla ventas, cargas y ajustes, y sumar sus
+  importes no daría ninguna cifra con sentido.

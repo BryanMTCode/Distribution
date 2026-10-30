@@ -91,6 +91,18 @@
       </tr>
       {% endfor %}
     </tbody>
+    {# El total de lo que se ve, sin abrir ninguna (§188). Las canceladas solo #}
+    {# vienen en su pestaña, así que aquí nunca se mezclan con las que cuentan. #}
+    <tfoot>
+      <tr id="total_ventas">
+        <td colspan="3"><strong>{% if viendo_canceladas %}Total cancelado{% else %}Total{% endif %}
+          · {{ filas|length }} venta(s)</strong>
+          {% if filas|length >= 200 %}<span class="sutil"> · de las últimas 200</span>{% endif %}</td>
+        <td class="numero"><strong>{{ filas|sum(attribute='total')|dinero }}</strong></td>
+        <td></td>
+        {% if puede_editar %}<td></td>{% endif %}
+      </tr>
+    </tfoot>
   </table>
 </div>
 {% else %}

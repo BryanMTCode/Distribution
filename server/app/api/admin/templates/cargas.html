@@ -14,6 +14,7 @@
         </td>
         <td class="numero">{{ f.renglones }}</td>
         <td class="numero">{{ f.piezas|entero }}</td>
+        <td class="numero">{{ f.vale|dinero }}</td>
         <td>
           {% if f.estado == 'borrador' %}
             <span class="etiqueta-motivo">Borrador · sin salir de bodega</span>
@@ -97,7 +98,8 @@
   {% include "_periodo.html" %}
   <p class="sutil" id="resumen_cargas">
     {{ dias|sum(attribute='cuantas') }} carga(s) en {{ dias|length }} día(s),
-    {{ dias|sum(attribute='piezas')|entero }} piezas.
+    {{ dias|sum(attribute='piezas')|entero }} piezas, que valen
+    {{ dias|sum(attribute='vale')|dinero }} a precio de venta.
   </p>
 {% endif %}
 
@@ -110,6 +112,7 @@
         <th>Vendedor</th>
         <th class="numero">Renglones</th>
         <th class="numero">Piezas</th>
+        <th class="numero">Vale</th>
         <th>Estado</th>
       </tr>
     </thead>
@@ -118,9 +121,10 @@
         {# Un encabezado por día: qué se cargó ese día y cuánto. #}
         {% for d in dias %}
         <tr class="dia" id="dia_{{ d.fecha.isoformat() }}">
-          <td colspan="5" style="background:var(--acento-suave);font-weight:700">
+          <td colspan="6" style="background:var(--acento-suave);font-weight:700">
             {{ d.fecha|dia_en_palabras|capitalize }}
-            <span class="sutil">· {{ d.cuantas }} carga(s) · {{ d.piezas|entero }} piezas</span>
+            <span class="sutil">· {{ d.cuantas }} carga(s) · {{ d.piezas|entero }} piezas
+              · {{ d.vale|dinero }}</span>
           </td>
         </tr>
         {% for f in d.filas %}{{ renglon_filas(f) }}{% endfor %}
@@ -129,6 +133,17 @@
         {% for f in filas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_filas(f) }}{% endfor %}
       {% endif %}
     </tbody>
+    {# El total sin abrir ninguna (§188); lo cancelado no salió de la bodega. #}
+    {% set vivas = filas|rejectattr('estado', 'in', ['cancelada'])|list %}
+    <tfoot>
+      <tr id="total_cargas">
+        <td colspan="2"><strong>Total · {{ vivas|length }} carga(s)</strong></td>
+        <td class="numero"><strong>{{ vivas|sum(attribute='renglones') }}</strong></td>
+        <td class="numero"><strong>{{ vivas|sum(attribute='piezas')|entero }}</strong></td>
+        <td class="numero"><strong>{{ vivas|sum(attribute='vale')|dinero }}</strong></td>
+        <td></td>
+      </tr>
+    </tfoot>
   </table>
 </div>
 {# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}
@@ -143,6 +158,7 @@
         <th>Vendedor</th>
         <th class="numero">Renglones</th>
         <th class="numero">Piezas</th>
+        <th class="numero">Vale</th>
         <th>Estado</th>
       </tr>
     </thead>

@@ -12,6 +12,7 @@
       </td>
       <td class="numero">{{ s.renglones }}</td>
       <td class="numero">{{ s.piezas | entero }}</td>
+      <td class="numero">{{ s.vale|dinero }}</td>
       <td>
         {% if s.estado == 'confirmada' %}
           <span style="color:var(--bien)">confirmada</span>
@@ -140,12 +141,24 @@
       <th>Motivo / nota</th>
       <th class="numero">Renglones</th>
       <th class="numero">Piezas</th>
+      <th class="numero">Vale</th>
       <th>Estado</th>
     </tr>
   </thead>
   <tbody>
   {% for s in salidas|rejectattr('estado', 'in', ['cancelada']) %}{{ renglon_salidas(s) }}{% endfor %}
   </tbody>
+  {# El total sin abrir ninguna (§188); lo cancelado no salió. #}
+  {% set vivas = salidas|rejectattr('estado', 'in', ['cancelada'])|list %}
+  <tfoot>
+    <tr id="total_salidas">
+      <td colspan="5"><strong>Total · {{ vivas|length }} salida(s)</strong></td>
+      <td class="numero"><strong>{{ vivas|sum(attribute='renglones') }}</strong></td>
+      <td class="numero"><strong>{{ vivas|sum(attribute='piezas')|entero }}</strong></td>
+      <td class="numero"><strong>{{ vivas|sum(attribute='vale')|dinero }}</strong></td>
+      <td></td>
+    </tr>
+  </tfoot>
 </table>
 </div>
 {# Lo cancelado no se mezcla con lo demás: va aquí, plegado (ADR 0002 §95). #}
@@ -163,6 +176,7 @@
       <th>Motivo / nota</th>
       <th class="numero">Renglones</th>
       <th class="numero">Piezas</th>
+      <th class="numero">Vale</th>
       <th>Estado</th>
     </tr>
   </thead>

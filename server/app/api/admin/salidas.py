@@ -82,6 +82,7 @@ from app.domain.entradas import (
     tipo_de_movimiento_de_salida,
 )
 from app.domain.importes import CantidadInvalida, cantidad_base
+from app.infra.valor_de_inventario import precio_de_venta
 
 router = APIRouter(prefix="/panel/salidas", tags=["panel"], include_in_schema=False)
 
@@ -202,21 +203,26 @@ async def listar(
     salidas = (
         await sesion.execute(
             text(
-                """
+                f"""
                 SELECT s.id, s.folio, s.tipo, s.estado, s.motivo_codigo,
                        s.fecha_operativa, s.confirmada_en, s.nota,
                        a.codigo AS bodega, a.nombre AS bodega_nombre,
                        m.nombre AS motivo,
                        u.nombre AS creado_por,
                        COALESCE(d.renglones, 0) AS renglones,
-                       COALESCE(d.piezas, 0)    AS piezas
+                       COALESCE(d.piezas, 0)    AS piezas,
+                       COALESCE(d.vale, 0)      AS vale
                   FROM salidas s
                   JOIN almacenes a ON a.id = s.almacen_origen_id
                   LEFT JOIN motivos_merma m ON m.codigo = s.motivo_codigo
                   LEFT JOIN usuarios u ON u.id = s.creado_por
+                  -- Lo que valía a precio de venta, para no tener que abrirla (§188).
                   LEFT JOIN LATERAL (
-                        SELECT count(*) AS renglones, sum(cantidad) AS piezas
-                          FROM salida_detalle WHERE salida_id = s.id
+                        SELECT count(*) AS renglones, sum(sd.cantidad) AS piezas,
+                               sum(sd.cantidad * pv.precio) AS vale
+                          FROM salida_detalle sd
+                          {precio_de_venta("sd.producto_id")}
+                         WHERE sd.salida_id = s.id
                   ) d ON true
                  ORDER BY s.fecha_operativa DESC, s.folio DESC
                  LIMIT 100

@@ -74,6 +74,7 @@ from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.importes import CantidadInvalida, cantidad_base
 from app.infra.cuarentena_que_frena import cuarentena_que_frena
+from app.infra.valor_de_inventario import precio_de_venta
 
 router = APIRouter(prefix="/panel/cargas", tags=["panel"], include_in_schema=False)
 
@@ -135,14 +136,19 @@ async def listar(
                        u.nombre AS vendedor, u.codigo AS vendedor_codigo,
                        a.nombre AS camion, r.codigo AS ruta,
                        COALESCE(d.renglones, 0) AS renglones,
-                       COALESCE(d.piezas, 0) AS piezas
+                       COALESCE(d.piezas, 0) AS piezas,
+                       COALESCE(d.vale, 0) AS vale
                   FROM cargas c
                   JOIN usuarios u ON u.id = c.vendedor_id
                   JOIN almacenes a ON a.id = c.almacen_destino_id
                   LEFT JOIN rutas r ON r.id = c.ruta_id
+                  -- Lo que vale a precio de venta, para no tener que abrirla (§188).
                   LEFT JOIN LATERAL (
-                        SELECT count(*) AS renglones, sum(cantidad) AS piezas
-                          FROM carga_detalle WHERE carga_id = c.id
+                        SELECT count(*) AS renglones, sum(cd.cantidad) AS piezas,
+                               sum(cd.cantidad * pv.precio) AS vale
+                          FROM carga_detalle cd
+                          {precio_de_venta("cd.producto_id")}
+                         WHERE cd.carga_id = c.id
                   ) d ON true
                  WHERE {condicion}
                  ORDER BY c.fecha_operativa DESC, c.folio DESC
@@ -161,11 +167,13 @@ async def listar(
             continue
         dia = dias.setdefault(
             f["fecha_operativa"],
-            {"fecha": f["fecha_operativa"], "filas": [], "cuantas": 0, "piezas": 0},
+            {"fecha": f["fecha_operativa"], "filas": [], "cuantas": 0, "piezas": 0,
+             "vale": Decimal(0)},
         )
         dia["filas"].append(f)
         dia["cuantas"] += 1
         dia["piezas"] += f["piezas"] or 0
+        dia["vale"] += Decimal(f["vale"] or 0)
 
     return render(
         peticion,
