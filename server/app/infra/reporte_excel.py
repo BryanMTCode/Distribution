@@ -51,6 +51,8 @@ from app.infra.valor_de_inventario import precio_de_venta
 ROJO = "E0282E"
 GRIS = "F2F2F2"
 DINERO = '"$"#,##0.00'
+# Sin centavos, donde las columnas son angostas.
+PESOS = '"$"#,##0'
 ENTERO = "#,##0"
 FECHA = "dd/mm/yyyy"
 
@@ -198,11 +200,13 @@ SELECT e.almacen_id AS camion, e.producto_id AS producto, e.cantidad
   JOIN almacenes a ON a.id = e.almacen_id AND a.tipo = 'camion'
 """
 
-SQL_ARTICULOS = """
+# Con su precio de venta de hoy, para el camión en dinero (§185).
+SQL_ARTICULOS = f"""
 SELECT p.id AS producto, COALESCE(c.nombre, 'Sin familia') AS familia, c.orden,
-       p.sku, p.nombre AS articulo
+       p.sku, p.nombre AS articulo, pv.precio
   FROM productos p
   LEFT JOIN categorias c ON c.id = p.categoria_id
+  {precio_de_venta("p.id")}
  WHERE p.id = ANY(:ids)
 """
 
@@ -477,6 +481,7 @@ async def _camiones(filas, rango) -> list[dict]:
             a = articulos[producto]
             renglones.append({"familia": a["familia"], "sku": a["sku"],
                               "articulo": a["articulo"], "orden": a["orden"],
+                              "precio": a["precio"],
                               "dias": por_dia_del_articulo})
         renglones.sort(key=lambda r: (r["orden"] is None, r["orden"] or 0, r["familia"],
                                       r["articulo"]))
@@ -764,15 +769,33 @@ def _hoja_del_camion(libro: Workbook, camion: dict, periodo: str) -> None:
         for j, (_, clave) in enumerate(DEL_DIA):
             celda = hoja.cell(fila, 4 + i * len(DEL_DIA) + j, float(totales[(dia, clave)]))
             celda.number_format, celda.font = ENTERO, Font(bold=True)
+    fila += 1
+
+    # «Que el Excel muestre el valor del carro del vendedor cada día» (§185): el
+    # mismo total, en pesos, a precio de venta de hoy como en Inventario.
+    hoja.cell(fila, 1, "En dinero").font = Font(bold=True)
+    for n in range(1, 4 + len(dias) * len(DEL_DIA)):
+        hoja.cell(fila, n).fill = PatternFill("solid", fgColor=GRIS)
+    con_precio = [r for r in camion["articulos"] if r["precio"] is not None]
+    for i, dia in enumerate(dias):
+        for j, (_, clave) in enumerate(DEL_DIA):
+            pesos = sum((r["dias"][dia][clave] * Decimal(r["precio"]) for r in con_precio),
+                        Decimal(0))
+            celda = hoja.cell(fila, 4 + i * len(DEL_DIA) + j, float(pesos))
+            celda.number_format, celda.font = PESOS, Font(bold=True)
     fila += 2
+    sin_precio = [r["articulo"] for r in camion["articulos"] if r["precio"] is None]
     for texto in (
         "Piezas sueltas. Traía: con lo que empezó el día. Quedó: con lo que lo terminó.",
+        "En dinero: lo mismo a precio de venta de hoy. Traía más cargó es con lo que "
+        "salió a vender; lo que cobró de verdad está en Ventas y efectivo.",
         "La carga sale el día en que se vendió con ella; la merma es la del camión "
         "(merma y cambio).",
         "Otros, en amarillo: lo que entró o salió sin ser carga, venta ni merma —ajustes "
         "de la oficina, devoluciones de clientes, lo que regresó a la bodega o una "
         "venta eliminada—.",
         "Solo salen los días en que el camión se movió.",
+        *([f"Sin precio, no suman en dinero: {', '.join(sin_precio)}."] if sin_precio else []),
     ):
         hoja.cell(fila, 1, texto).font = Font(italic=True, color="666666")
         fila += 1
@@ -780,8 +803,9 @@ def _hoja_del_camion(libro: Workbook, camion: dict, periodo: str) -> None:
     hoja.column_dimensions["A"].width = 16
     hoja.column_dimensions["B"].width = 12
     hoja.column_dimensions["C"].width = 32
+    # Lo bastante ancho para «$12,345» del renglón en dinero.
     for n in range(4, 4 + len(dias) * len(DEL_DIA)):
-        hoja.column_dimensions[get_column_letter(n)].width = 8
+        hoja.column_dimensions[get_column_letter(n)].width = 9
     # Al moverse a la derecha, el artículo y los días se quedan a la vista.
     hoja.freeze_panes = hoja.cell(abajo + 1, 4)
     hoja.page_setup.orientation = "landscape"

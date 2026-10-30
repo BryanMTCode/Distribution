@@ -7763,3 +7763,18 @@ la de los vendedores.»
 - **Los cortes, en el día que contaron** (§181): en «Ventas y efectivo» y en el
   dinero de cada día, el corte va en el último día que contó. El del lunes, con
   la carga «para el domingo», salía el domingo.
+
+## 185. En la hoja de cada vendedor, su camión también en dinero
+
+«También quiero que el Excel muestre el valor del carro del vendedor cada día.»
+
+- **Renglón «En dinero»**, debajo del total de piezas de la hoja de cada vendedor
+  (§179): por cada día, lo que traía, cargó, vendió, mermó, lo demás y lo que le
+  quedó, en pesos. Traía más cargó es con lo que salió a vender.
+- **A precio de venta de hoy**, como Inventario y «Día por día» (§183): lo que
+  cobró de verdad está en Ventas y efectivo. Un artículo sin precio no suma, y la
+  hoja lo dice.
+- **El día es el de la hoja del camión**: la carga va el día en que se vende con
+  ella, así que «quedó» es con lo que terminó de vender, antes de subir la carga
+  de mañana. En «Día por día» el camión cierra ya con esa carga, porque ahí se
+  ve dónde está la mercancía al final del día.

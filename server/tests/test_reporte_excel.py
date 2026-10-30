@@ -225,8 +225,11 @@ async def test_el_camion_de_cada_vendedor_dia_por_dia(cliente, sesion, semilla, 
     datos = {"carga": carga, "venta": venta, "merma": merma, "hoy": hoy,
              "b": semilla["bodega"], "c": semilla["camion"], "v": semilla["vendedor"],
              "r": semilla["ruta"], "p": dia["producto"], "d": dia["dispositivo"],
-             "cli": dia["cliente"]}
+             "cli": dia["cliente"], "l": semilla["lista_precios"]}
     for sql in (
+        # A $12.50 la pieza, para el camión en dinero (§185).
+        "INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio) "
+        "VALUES (:l, :p, 'PZA', 12.50)",
         "INSERT INTO cargas (id, folio, almacen_origen_id, almacen_destino_id, vendedor_id, "
         "  ruta_id, fecha_operativa, estado, confirmada_en) "
         "VALUES (:carga, 'CG-HOY', :b, :c, :v, :r, :hoy, 'confirmada', now())",
@@ -272,6 +275,11 @@ async def test_el_camion_de_cada_vendedor_dia_por_dia(cliente, sesion, semilla, 
     assert atun[3:9] == [0, 240, 180, 0, 0, 60]
     assert atun[9:15] == [60, 120, 100, 10, -5, 65]
     assert _con(camion, "Total")[9:15] == [60, 120, 100, 10, -5, 65]
+
+    # «Que el Excel muestre el valor del carro del vendedor cada día» (§185).
+    dinero = _con(camion, "En dinero")
+    assert dinero[3:9] == [0, 3000, 2250, 0, 0, 750]
+    assert dinero[9:15] == [750, 1500, 1250, 125, -62.5, 812.5]
 
 
 async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
