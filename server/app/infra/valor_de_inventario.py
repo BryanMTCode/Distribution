@@ -31,3 +31,24 @@ LEFT JOIN LATERAL (
 def precio_de_venta(producto: str, alias: str = "pv") -> str:
     """El fragmento de SQL, para la columna de producto que se le diga."""
     return _SQL_PRECIO_DE_VENTA.format(producto=producto, alias=alias)
+
+
+# El precio de venta de hoy de cada artículo, y lo que vale cada bodega y cada
+# camión con él (§183): lo negativo resta. Lo usan el Excel y la tarjeta (§190).
+SQL_PRECIO_DE_HOY = f"""
+    SELECT p.id AS producto_id, pv.precio
+      FROM productos p
+      {precio_de_venta("p.id")}
+"""
+
+SQL_VALOR_DE_LOS_ALMACENES = f"""
+WITH precio AS ({SQL_PRECIO_DE_HOY})
+SELECT a.id, a.nombre, a.tipo, r.nombre AS vendedor,
+       COALESCE(sum(e.cantidad * pr.precio), 0) AS valor
+  FROM almacenes a
+  LEFT JOIN usuarios r ON r.id = a.responsable_id
+  LEFT JOIN existencias e ON e.almacen_id = a.id
+  LEFT JOIN precio pr ON pr.producto_id = e.producto_id
+ WHERE a.tipo IN ('bodega', 'camion')
+ GROUP BY a.id, a.nombre, a.tipo, r.nombre
+"""

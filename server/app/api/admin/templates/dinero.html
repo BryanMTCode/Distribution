@@ -27,6 +27,16 @@
   </div>
 </div>
 
+{% set m = vale.mayoreo_del_mes %}
+{% if m.vendido %}
+<p id="mayoreo_abajo_de_la_lista">
+  <strong>Mayoreo de este mes:</strong> se vendió en {{ m.vendido|dinero }}; a precio de
+  lista eran {{ m.a_precio_de_lista|dinero }}.
+  {% if m.abajo > 0 %}<strong style="color:var(--alerta)">{{ m.abajo|dinero }} abajo de la lista</strong>:
+  es lo que la empresa deja de valer por vender en mayoreo en vez de en la calle.{% endif %}
+</p>
+{% endif %}
+
 {% if vale.sin_precio %}
 <p class="sutil" id="vale_sin_precio">
   {{ vale.sin_precio }} artículo(s) con existencia no tienen precio de venta y no suman.

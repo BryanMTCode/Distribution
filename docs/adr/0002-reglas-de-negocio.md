@@ -7895,3 +7895,33 @@ compras poder agregarlas de la tarjeta: a la tarjeta, la venta y las salidas.»
   va adelante del banco, y «Así está hoy» muestra exactamente cuánto falta.
 - **Solo el administrador** (`tarjeta.ver`, que no tiene ningún rol), como el
   costo y la ganancia (§180). Migración `0066_tarjeta_de_la_empresa`.
+
+## 191. El Excel para auditar toda la empresa, y lo que vale en la pantalla principal
+
+«Eso ponlo en la pantalla principal. Toma en cuenta que cuando venda en mayoreo
+se perderá dinero respecto al precio de venta. Y quiero también las compras que
+se hagan: que el Excel me sirva para auditar toda la empresa. Las compras de cada
+día, día por día, que pueda ver cuántos compré de cada artículo.»
+
+- **Lo que vale la empresa va hasta arriba del Tablero**, antes de los
+  pendientes: almacén, camiones, tarjeta y el total (§190).
+- **El mayoreo abajo de la lista**: la mercancía se valúa a precio de venta, así
+  que vender en mayoreo más barato baja lo que vale la empresa. Cuánto, se ve:
+  - en Dinero y en el Tablero, lo del mes: se vendió en tanto, a precio de lista
+    eran tanto, y la diferencia;
+  - en el Excel, cada venta de mayoreo con su «A precio de lista» y «Abajo de la
+    lista», y la columna «Mayoreo abajo de la lista» en el dinero de cada día.
+  A precio de lista de hoy, igual que la mercancía en todo el archivo, para que
+  las cuentas cuadren entre sí.
+- **Hoja «Compras»** en el Excel: cada compra del periodo (proveedor, factura, a
+  qué almacén entró, piezas e importe); **cuántas piezas se compraron de cada
+  artículo, día por día** (los artículos hacia abajo, los días con compras hacia
+  la derecha, con su total y su importe); cada renglón con su costo por pieza; y
+  lo que se les pagó a los proveedores y cómo —la «Tarjeta de la empresa» se ve
+  como tal—.
+- **Hoja «Tarjeta»**: con cuánto empezó el periodo, lo que entró, lo que salió,
+  con cuánto terminó y cada movimiento con su saldo.
+- **En «Día por día»**, la columna «Compras» en el dinero de cada día, y la tabla
+  «Lo que valía la empresa al cerrar cada día»: la mercancía, la tarjeta y el
+  total. En el Resumen, las compras, lo que hay en la tarjeta y lo que vale la
+  empresa hoy.

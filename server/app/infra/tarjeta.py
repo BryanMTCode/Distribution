@@ -34,7 +34,7 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.infra.reporte_excel import SQL_VALOR_DE_LOS_ALMACENES
+from app.infra.valor_de_inventario import SQL_VALOR_DE_LOS_ALMACENES, precio_de_venta
 
 
 class MovimientoInvalido(Exception):
@@ -119,6 +119,22 @@ ORDER BY x.cuando, x.ref
 """
 
 
+# «Cuando venda en mayoreo se perderá dinero respecto al precio de venta» (§191):
+# lo vendido en mayoreo en el mes, lo que valía a precio de lista de hoy —como se
+# valúa la mercancía—, y la diferencia. Lo que no tiene precio, a lo que se cobró.
+SQL_MAYOREO_DEL_MES = f"""
+SELECT COALESCE(sum(m.total), 0) AS vendido,
+       COALESCE(sum(COALESCE(
+           (SELECT sum(COALESCE(p.cantidad * pv.precio, p.importe))
+              FROM venta_mayoreo_partidas p
+              {precio_de_venta("p.producto_id")}
+             WHERE p.venta_id = m.id), m.total)), 0) AS a_precio_de_lista
+  FROM ventas_mayoreo m
+ WHERE m.estado = 'confirmada'
+   AND m.fecha >= date_trunc('month', CURRENT_DATE)::date AND m.fecha <= CURRENT_DATE
+"""
+
+
 async def movimientos(sesion) -> list[dict]:
     """Todo lo que movió la tarjeta desde su inicio, en orden, con el saldo que
     dejó cada uno."""
@@ -177,7 +193,13 @@ async def lo_que_vale(sesion) -> dict:
             )
         )
     ).scalar_one()
+    mayoreo = (await sesion.execute(text(SQL_MAYOREO_DEL_MES))).mappings().one()
     return {
+        "mayoreo_del_mes": {
+            "vendido": Decimal(mayoreo["vendido"]),
+            "a_precio_de_lista": Decimal(mayoreo["a_precio_de_lista"]),
+            "abajo": Decimal(mayoreo["a_precio_de_lista"]) - Decimal(mayoreo["vendido"]),
+        },
         "bodegas": bodegas,
         "camiones": camiones,
         "en_bodegas": en_bodegas,

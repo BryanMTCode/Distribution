@@ -44,9 +44,14 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
+from app.infra import tarjeta
 from app.infra.corte_de_la_carga import DESDE_LA_CARGA, TOPE_DEL_CORTE
 from app.infra.cuenta_vendedor import ORIGENES
-from app.infra.valor_de_inventario import precio_de_venta
+from app.infra.valor_de_inventario import (
+    SQL_PRECIO_DE_HOY,
+    SQL_VALOR_DE_LOS_ALMACENES,
+    precio_de_venta,
+)
 
 ROJO = "E0282E"
 GRIS = "F2F2F2"
@@ -87,6 +92,13 @@ class Reporte:
     saldos: list[dict] = field(default_factory=list)
     movimientos: list[dict] = field(default_factory=list)
     valor_por_dia: dict = field(default_factory=dict)
+    # Lo que se compró y se pagó, y la tarjeta de la empresa (§191).
+    compras: list[dict] = field(default_factory=list)
+    pagos: list[dict] = field(default_factory=list)
+    tarjeta: list[dict] = field(default_factory=list)
+    tarjeta_empezo: bool = False
+    # Lo que vale hoy la mercancía, con la misma cuenta que la pantalla Dinero.
+    mercancia_hoy: Decimal = Decimal(0)
 
 
 # ---------------------------------------------------------------------------
@@ -211,13 +223,54 @@ SELECT p.id AS producto, COALESCE(c.nombre, 'Sin familia') AS familia, c.orden,
  WHERE p.id = ANY(:ids)
 """
 
-SQL_MAYOREO = """
-SELECT m.fecha, m.folio, c.nombre_comercial AS cliente, u.nombre AS vendio, m.total
+# «Cuando venda en mayoreo se perderá dinero respecto al precio de venta» (§191):
+# lo que valía lo vendido a precio de lista de hoy —como se valúa la mercancía en
+# todo el Excel—, para ver cuánto se dejó abajo. Lo que no tiene precio se toma
+# como vendido a su precio.
+SQL_MAYOREO = f"""
+SELECT m.fecha, m.folio, c.nombre_comercial AS cliente, u.nombre AS vendio, m.total,
+       COALESCE((SELECT sum(COALESCE(p.cantidad * pv.precio, p.importe))
+                   FROM venta_mayoreo_partidas p
+                   {precio_de_venta("p.producto_id")}
+                  WHERE p.venta_id = m.id), m.total) AS a_precio_de_lista
   FROM ventas_mayoreo m
   LEFT JOIN clientes c ON c.id = m.cliente_id
   LEFT JOIN usuarios u ON u.id = m.vendida_por
  WHERE m.fecha BETWEEN :desde AND :hasta AND m.estado = 'confirmada'
  ORDER BY m.fecha, m.folio
+"""
+
+# «Las compras de cada día, día por día, que pueda ver cuántos compré de cada
+# artículo» (§191): cada renglón de cada compra confirmada, con su proveedor y su
+# costo. La del teléfono del gerente puede no traer costo (§83).
+SQL_COMPRAS = """
+SELECT e.id AS entrada, e.fecha_operativa AS fecha, e.folio,
+       COALESCE(pr.nombre, NULLIF(btrim(e.proveedor), ''), 'Sin proveedor') AS proveedor,
+       e.referencia, a.nombre AS almacen, d.producto_id AS producto,
+       COALESCE(cat.nombre, 'Sin familia') AS familia, cat.orden, p.sku,
+       p.nombre AS articulo, d.cantidad AS piezas, d.costo_unitario, d.importe
+  FROM entradas e
+  JOIN entrada_detalle d ON d.entrada_id = e.id
+  JOIN productos p ON p.id = d.producto_id
+  LEFT JOIN categorias cat ON cat.id = p.categoria_id
+  JOIN almacenes a ON a.id = e.almacen_destino_id
+  LEFT JOIN proveedores pr ON pr.id = e.proveedor_id
+ WHERE e.motivo = 'compra' AND e.estado = 'confirmada'
+   AND e.fecha_operativa BETWEEN :desde AND :hasta
+ ORDER BY e.fecha_operativa, e.folio, cat.orden NULLS LAST, p.nombre
+"""
+
+# Lo que se le pagó a los proveedores, y cómo: la «tarjeta» sale de la tarjeta de
+# la empresa (§190).
+SQL_PAGOS = """
+SELECT g.fecha_pago AS fecha, e.folio, pr.nombre AS proveedor, g.forma_pago,
+       g.referencia, g.importe
+  FROM pagos_proveedor g
+  JOIN entradas e ON e.id = g.entrada_id
+  LEFT JOIN cuentas_por_pagar cp ON cp.entrada_id = g.entrada_id
+  LEFT JOIN proveedores pr ON pr.id = cp.proveedor_id
+ WHERE g.fecha_pago BETWEEN :desde AND :hasta
+ ORDER BY g.fecha_pago, g.registrado_en
 """
 
 # El corte, en el último día que contó (§181): el del lunes, con la carga «para
@@ -315,23 +368,9 @@ SELECT u.nombre AS vendedor, u.activo,
 # Inventario: así lo que cambia de un día a otro es mercancía que entró o salió,
 # no precios. Lo de hoy, y lo que se movió cada día, valuado igual; de ahí sale
 # cuánto valía cada almacén al cerrar cada día.
-_PRECIO_DE_HOY = f"""
-    SELECT p.id AS producto_id, pv.precio
-      FROM productos p
-      {precio_de_venta("p.id")}
-"""
+# `SQL_PRECIO_DE_HOY` y `SQL_VALOR_DE_LOS_ALMACENES` viven en `valor_de_inventario`:
+# los usa también la tarjeta de la empresa (§190).
 
-SQL_VALOR_DE_LOS_ALMACENES = f"""
-WITH precio AS ({_PRECIO_DE_HOY})
-SELECT a.id, a.nombre, a.tipo, r.nombre AS vendedor,
-       COALESCE(sum(e.cantidad * pr.precio), 0) AS valor
-  FROM almacenes a
-  LEFT JOIN usuarios r ON r.id = a.responsable_id
-  LEFT JOIN existencias e ON e.almacen_id = a.id
-  LEFT JOIN precio pr ON pr.producto_id = e.producto_id
- WHERE a.tipo IN ('bodega', 'camion')
- GROUP BY a.id, a.nombre, a.tipo, r.nombre
-"""
 
 # Cada movimiento en cada bodega o camión que toca, en piezas con el signo de ese
 # almacén. El día es el de su documento si es venta, mayoreo o merma, y si no el
@@ -376,7 +415,7 @@ _EFECTOS = """
 """
 
 SQL_VALOR_MOVIDO = f"""
-WITH precio AS ({_PRECIO_DE_HOY}),
+WITH precio AS ({SQL_PRECIO_DE_HOY}),
 efectos AS ({_EFECTOS})
 SELECT e.almacen, e.dia, e.categoria, sum(e.cantidad * pr.precio) AS valor
   FROM efectos e
@@ -664,6 +703,12 @@ async def datos_del_reporte(sesion, periodo) -> Reporte:
         saldos=await filas(SQL_SALDOS),
         movimientos=await filas(SQL_MOVIMIENTOS, rango),
         valor_por_dia=await _valor_por_dia(filas, rango),
+        compras=await filas(SQL_COMPRAS, rango),
+        pagos=await filas(SQL_PAGOS, rango),
+        tarjeta=await tarjeta.movimientos(sesion),
+        tarjeta_empezo=await tarjeta.empezo(sesion),
+        mercancia_hoy=sum((Decimal(a["valor"]) for a in await filas(SQL_VALOR_DE_LOS_ALMACENES)),
+                          Decimal(0)),
     )
 
 
@@ -953,6 +998,139 @@ def _hoja_de_la_bodega(libro: Workbook, bodega: dict, periodo: str) -> None:
     )
 
 
+def _hoja_de_compras(libro: Workbook, reporte: Reporte, periodo: str) -> None:
+    """«Las compras de cada día, día por día, que pueda ver cuántos compré de cada
+    artículo» (§191): cada compra, lo que se compró de cada artículo cada día, cada
+    renglón con su costo, y lo que se le pagó a cada proveedor."""
+    hoja = _Hoja(libro, "Compras")
+    hoja.titulo("Compras", periodo)
+    compras = reporte.compras
+
+    por_compra: dict = {}
+    for c in compras:
+        x = por_compra.setdefault(
+            c["entrada"], {**c, "articulos": set(), "piezas": Decimal(0), "importe": Decimal(0)}
+        )
+        x["articulos"].add(c["producto"])
+        x["piezas"] += Decimal(c["piezas"])
+        x["importe"] += Decimal(c["importe"] or 0)
+    hoja.tabla(
+        "Las compras de cada día",
+        [("Fecha", "fecha"), ("Folio", "texto"), ("Proveedor", "texto"),
+         ("Factura", "texto"), ("Entró a", "texto"), ("Artículos", "entero"),
+         ("Piezas", "entero"), ("Importe", "dinero")],
+        [[x["fecha"], x["folio"], x["proveedor"], x["referencia"] or "", x["almacen"],
+          len(x["articulos"]), x["piezas"], x["importe"]] for x in por_compra.values()],
+        totales=["Total", "", "", "", "", None, _suma(compras, "piezas"),
+                 _suma(compras, "importe")],
+        vacio="No hubo compras en este periodo.",
+    )
+
+    # Los artículos hacia abajo y los días con compras hacia la derecha.
+    dias = sorted({c["fecha"] for c in compras})
+    articulos: dict = {}
+    for c in compras:
+        a = articulos.setdefault(
+            c["producto"],
+            {"orden": (c["orden"] is None, c["orden"] or 0, c["familia"], c["articulo"]),
+             "familia": c["familia"], "sku": c["sku"], "articulo": c["articulo"],
+             "por_dia": defaultdict(Decimal), "importe": Decimal(0)},
+        )
+        a["por_dia"][c["fecha"]] += Decimal(c["piezas"])
+        a["importe"] += Decimal(c["importe"] or 0)
+    filas = sorted(articulos.values(), key=lambda a: a["orden"])
+    hoja.tabla(
+        "Cuántas piezas se compraron de cada artículo, día por día",
+        [("Familia", "texto"), ("Clave", "texto"), ("Artículo", "texto"),
+         *[(_con_dia(d), "entero") for d in dias], ("Total", "entero"),
+         ("Importe", "dinero")],
+        [[a["familia"], a["sku"], a["articulo"], *[a["por_dia"].get(d) for d in dias],
+          sum(a["por_dia"].values(), Decimal(0)), a["importe"]] for a in filas],
+        totales=["Total", "", "",
+                 *[sum((a["por_dia"].get(d, Decimal(0)) for a in filas), Decimal(0))
+                   for d in dias],
+                 _suma(compras, "piezas"), _suma(compras, "importe")],
+        vacio="No hubo compras en este periodo.",
+    )
+
+    hoja.tabla(
+        "Cada renglón, con su costo",
+        [("Fecha", "fecha"), ("Folio", "texto"), ("Proveedor", "texto"),
+         ("Artículo", "texto"), ("Piezas", "entero"), ("Costo por pieza", "dinero"),
+         ("Importe", "dinero")],
+        [[c["fecha"], c["folio"], c["proveedor"], c["articulo"], c["piezas"],
+          c["costo_unitario"] if c["costo_unitario"] is not None else "sin costo",
+          c["importe"]] for c in compras],
+        totales=["Total", "", "", "", _suma(compras, "piezas"), None,
+                 _suma(compras, "importe")],
+        vacio="No hubo compras en este periodo.",
+    )
+
+    formas = {"efectivo": "Efectivo", "transferencia": "Transferencia",
+              "cheque": "Cheque", "tarjeta": "Tarjeta de la empresa"}
+    hoja.tabla(
+        "Lo que se les pagó a los proveedores",
+        [("Fecha", "fecha"), ("Compra", "texto"), ("Proveedor", "texto"),
+         ("Cómo", "texto"), ("Referencia", "texto"), ("Importe", "dinero")],
+        [[g["fecha"], g["folio"], g["proveedor"] or "", formas.get(g["forma_pago"],
+          g["forma_pago"]), g["referencia"] or "", g["importe"]] for g in reporte.pagos],
+        totales=["Total", "", "", "", "", _suma(reporte.pagos, "importe")],
+        vacio="No se les pagó a proveedores en este periodo.",
+    )
+    hoja.nota("Lo pagado con «Tarjeta de la empresa» sale de la hoja Tarjeta.")
+    hoja.terminar()
+
+
+def _saldo_de_la_tarjeta_al(movimientos: list[dict], dia) -> Decimal | None:
+    """Lo que debía haber en la tarjeta al cerrar ese día; `None` si todavía no
+    empezaba."""
+    saldo = None
+    for m in movimientos:
+        if m["cuando"].date() > dia:
+            break
+        saldo = m["saldo"]
+    return saldo
+
+
+def _hoja_de_la_tarjeta(libro: Workbook, reporte: Reporte, periodo: str) -> None:
+    """La tarjeta de la empresa (§190): con cuánto empezó el periodo, todo lo que
+    la movió, y con cuánto terminó."""
+    hoja = _Hoja(libro, "Tarjeta")
+    hoja.titulo("Tarjeta de la empresa", periodo)
+    if not reporte.tarjeta_empezo:
+        hoja.nota("La tarjeta todavía no tiene su saldo inicial: se captura en el "
+                  "dashboard, en Dinero → Tarjeta.")
+        hoja.terminar()
+        return
+    del_periodo = [m for m in reporte.tarjeta
+                   if reporte.desde <= m["cuando"].date() <= reporte.hasta]
+    antes = [m for m in reporte.tarjeta if m["cuando"].date() < reporte.desde]
+    al_empezar = antes[-1]["saldo"] if antes else Decimal(0)
+    entra = sum((m["importe"] for m in del_periodo if m["importe"] > 0), Decimal(0))
+    sale = sum((-m["importe"] for m in del_periodo if m["importe"] < 0), Decimal(0))
+    hoja.tabla(
+        "Cómo quedó",
+        [("Qué", "texto"), ("Cuánto", "dinero")],
+        [["Había al empezar el periodo", al_empezar], ["Entró", entra], ["Salió", sale],
+         ["Debe haber al terminar", al_empezar + entra - sale]],
+    )
+    hoja.tabla(
+        "Todo lo que movió la tarjeta",
+        [("Fecha", "fecha"), ("Qué", "texto"), ("Detalle", "texto"),
+         ("Entra", "dinero"), ("Sale", "dinero"), ("Saldo", "dinero")],
+        [[m["cuando"].date(), m["nombre_clase"],
+          m["concepto"] + (f" · {m['quien']}" if m["quien"] else ""),
+          m["importe"] if m["importe"] > 0 else None,
+          -m["importe"] if m["importe"] < 0 else None, m["saldo"]] for m in del_periodo],
+        totales=["Total", "", "", entra, sale, None],
+        vacio="La tarjeta no se movió en este periodo.",
+    )
+    hoja.nota("Entran solos el efectivo de cada corte, el mayoreo y lo que un vendedor "
+              "paga de su cuenta; sale sola la compra pagada con la tarjeta. Lo demás "
+              "se captura en el dashboard, con su concepto.")
+    hoja.terminar()
+
+
 def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -> bytes:
     """El archivo .xlsx, listo para mandarlo."""
     libro = Workbook()
@@ -972,6 +1150,12 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     camiones = [r for r in reporte.inventario if r["tipo_almacen"] == "camion"]
     sin_precio = sorted({r["articulo"] for r in reporte.inventario if r["precio"] is None})
     deben = _suma([s for s in reporte.saldos if Decimal(s["saldo"]) > 0], "saldo")
+    # Lo que se dejó abajo del precio de lista al vender en mayoreo (§191).
+    mayoreo_lista = _suma(reporte.mayoreo, "a_precio_de_lista")
+    compras_importe = _suma(reporte.compras, "importe")
+    compras_folios = len({c["entrada"] for c in reporte.compras})
+    en_tarjeta = reporte.tarjeta[-1]["saldo"] if reporte.tarjeta else Decimal(0)
+    en_mercancia = reporte.mercancia_hoy
 
     # --- Resumen ------------------------------------------------------------
     resumen = _Hoja(libro, "Resumen", primera=True)
@@ -1003,10 +1187,24 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
              "Negativo es lo que faltó; positivo, lo que sobró"],
             ["Ventas de mayoreo (bodega)", mayoreo_importe,
              f"{len(reporte.mayoreo)} venta(s) de la oficina"],
+            ["De eso, abajo del precio de lista", mayoreo_lista - mayoreo_importe,
+             f"A precio de lista eran {_pesos(mayoreo_lista)}: lo que el mayoreo deja "
+             "de valer respecto a la venta en la calle"],
+            ["Compras", compras_importe,
+             f"{compras_folios} compra(s) a proveedores; día por día en la hoja Compras"],
             ["Inventario en la bodega (hoy)", _suma(bodega, "valor"),
              "A precio de venta"],
             ["Inventario en los camiones (hoy)", _suma(camiones, "valor"),
              "A precio de venta"],
+            *(
+                [["En la tarjeta de la empresa (hoy)", en_tarjeta,
+                  "Lo que debe haber: hoja Tarjeta"],
+                 ["Lo que vale la empresa (hoy)", en_mercancia + en_tarjeta,
+                  "Bodega, camiones y tarjeta"]]
+                if reporte.tarjeta_empezo
+                else [["Lo que vale la empresa (hoy)", en_mercancia,
+                       "Bodega y camiones; la tarjeta todavía no tiene su saldo inicial"]]
+            ),
             ["Lo que deben los vendedores (hoy)", deben,
              "Faltantes y mermas a su cargo que no han pagado"],
         ],
@@ -1020,7 +1218,8 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
              f"{len({(m['folio'], m['fecha']) for m in reporte.mermas})} registro(s)"],
         ],
     )
-    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, la bodega día por "
+    resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, Compras —lo que se "
+                 "compró de cada artículo día por día—, Tarjeta, la bodega día por "
                  "día, una por cada vendedor con el inventario de su camión día por "
                  "día, Inventario, "
                  "Día por día —el dinero y la mercancía de cada día, para ver que todo "
@@ -1087,12 +1286,23 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     hoja.tabla(
         "Ventas de mayoreo (de la bodega)",
         [("Fecha", "fecha"), ("Folio", "texto"), ("Cliente", "texto"),
-         ("La hizo", "texto"), ("Importe", "dinero")],
-        [[m["fecha"], m["folio"], m["cliente"] or "", m["vendio"] or "", m["total"]]
+         ("La hizo", "texto"), ("Importe", "dinero"), ("A precio de lista", "dinero"),
+         ("Abajo de la lista", "dinero")],
+        [[m["fecha"], m["folio"], m["cliente"] or "", m["vendio"] or "", m["total"],
+          m["a_precio_de_lista"],
+          Decimal(m["a_precio_de_lista"]) - Decimal(m["total"])]
          for m in reporte.mayoreo],
-        totales=["Total", "", "", "", mayoreo_importe],
+        totales=["Total", "", "", "", mayoreo_importe, mayoreo_lista,
+                 mayoreo_lista - mayoreo_importe],
     )
+    if reporte.mayoreo:
+        hoja.nota("A precio de lista de hoy, como se valúa la mercancía en todo el "
+                  "archivo: «Abajo de la lista» es lo que la empresa deja de valer al "
+                  "vender en mayoreo en vez de en la calle.")
     hoja.terminar()
+
+    _hoja_de_compras(libro, reporte, periodo)
+    _hoja_de_la_tarjeta(libro, reporte, periodo)
 
     # --- El camión de cada vendedor, día por día -----------------------------
     # «Quiero poder comparar por vendedor día a día, ver cómo se comporta su
@@ -1149,27 +1359,37 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     for c in cerrados:
         entregado[c["fecha"]] += Decimal(c["entregado"] or 0)
     de_mayoreo: dict = defaultdict(Decimal)
+    abajo_de_la_lista: dict = defaultdict(Decimal)
     for m in reporte.mayoreo:
         de_mayoreo[m["fecha"]] += Decimal(m["total"])
+        abajo_de_la_lista[m["fecha"]] += Decimal(m["a_precio_de_lista"]) - Decimal(m["total"])
+    comprado: dict = defaultdict(Decimal)
+    for c in reporte.compras:
+        comprado[c["fecha"]] += Decimal(c["importe"] or 0)
     dinero = [
         [_con_dia(d["dia"]), vendido[d["dia"]], entregado[d["dia"]],
          entregado[d["dia"]] - vendido[d["dia"]], de_mayoreo[d["dia"]],
-         vendido[d["dia"]] + de_mayoreo[d["dia"]]]
+         abajo_de_la_lista[d["dia"]], vendido[d["dia"]] + de_mayoreo[d["dia"]],
+         comprado[d["dia"]]]
         for d in dias
     ]
     hoja.tabla(
         "El dinero de cada día",
         [("Día", "texto"), ("Vendieron los vendedores", "dinero"),
          ("Entregaron en sus cortes", "dinero"), ("Diferencia", "dinero"),
-         ("Venta de mayoreo", "dinero"), ("Total vendido", "dinero")],
+         ("Venta de mayoreo", "dinero"), ("Mayoreo abajo de la lista", "dinero"),
+         ("Total vendido", "dinero"), ("Compras", "dinero")],
         dinero,
-        totales=["Total", *[sum((r[n] for r in dinero), Decimal(0)) for n in range(1, 6)]]
+        totales=["Total", *[sum((r[n] for r in dinero), Decimal(0)) for n in range(1, 8)]]
         if dinero else None,
         vacio="El periodo todavía no empieza.",
     )
     hoja.nota("Diferencia: lo entregado menos lo vendido por los vendedores. Negativo es "
               "lo que falta por entregar: un corte que no se ha cerrado, o uno que no "
               "cuadró. El mayoreo lo cobra la oficina y va aparte.")
+    hoja.nota("Mayoreo abajo de la lista: lo que valía a precio de lista lo vendido en "
+              "mayoreo, menos lo que se cobró. Es lo que la empresa deja de valer por "
+              "vender en mayoreo; las compras, día por día, en la hoja Compras.")
     hoja.fila += 1
 
     mercancia = [
@@ -1209,6 +1429,26 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
               "mercancía que entró o salió, no precios. Por eso «Vendieron los vendedores» "
               "de la mercancía puede no ser lo mismo que lo que cobraron: el descuento o "
               "un precio que cambió.")
+    hoja.fila += 1
+
+    # «Que el Excel me sirva para auditar toda la empresa» (§191): la mercancía y
+    # la tarjeta, al cerrar cada día.
+    empresa = []
+    for d in dias:
+        en_la_tarjeta = _saldo_de_la_tarjeta_al(reporte.tarjeta, d["dia"])
+        empresa.append([_con_dia(d["dia"]), d["cerro"], en_la_tarjeta,
+                        d["cerro"] + (en_la_tarjeta or Decimal(0))])
+    hoja.tabla(
+        "Lo que valía la empresa al cerrar cada día",
+        [("Día", "texto"), ("Mercancía", "dinero"), ("Tarjeta", "dinero"),
+         ("Total", "dinero")],
+        empresa,
+        vacio="El periodo todavía no empieza.",
+    )
+    hoja.nota("La mercancía de las bodegas y los camiones, a precio de venta, y lo que "
+              "debía haber en la tarjeta. Antes de capturar el saldo inicial de la "
+              "tarjeta, el total es solo la mercancía. El efectivo que los vendedores "
+              "traen y todavía no entregan no está en ninguna de las dos.")
     if sin_precio:
         hoja.nota("Los que no tienen precio no suman: " + ", ".join(sin_precio))
     hoja.terminar()

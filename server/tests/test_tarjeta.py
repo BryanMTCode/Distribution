@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
@@ -225,3 +227,82 @@ async def test_solo_el_administrador_la_ve(cliente, sesion, semilla, dia):  # no
                            follow_redirects=False)
     assert r.status_code == 403
     assert (await sesion.execute(text("SELECT count(*) FROM movimientos_tarjeta"))).scalar() == 0
+
+
+async def test_el_excel_trae_las_compras_dia_por_dia_y_la_tarjeta(cliente, sesion, semilla):
+    """«Quiero también las compras, que el Excel me sirva para auditar toda la
+    empresa; las compras de cada día, día por día, que pueda ver cuántos compré
+    de cada artículo» (§191). Dos compras de hoy: 10 cajas de Coca ($2,960),
+    pagada con la tarjeta, y 5 de Pepsi ($600), sin pagar."""
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.infra.reporte_excel import _con_dia
+    from tests.test_reporte_excel import _con, _renglon
+
+    await _producto(sesion)
+    await _producto(sesion, sku="PEPSI600", factor=12)
+    await _entrar(cliente)
+    await _proveedor(cliente)
+    proveedor = await _id_proveedor(sesion)
+    await _post(cliente, "/panel/dinero/tarjeta/empezar", saldo="5000")
+    coca, _ = await _comprar(cliente, semilla, sesion, proveedor=proveedor, referencia="F-1")
+    await _comprar(cliente, semilla, sesion, sku="PEPSI600", bultos="5", costo="120.00",
+                   proveedor=proveedor, referencia="F-2")
+    r = await cliente.post(
+        f"/panel/compras/cuenta/{coca}/pago",
+        data={"csrf": _csrf(cliente), "importe": "2960", "forma_pago": "tarjeta",
+              "referencia": "", "fecha": "", "nota": ""},
+        follow_redirects=False,
+    )
+    assert "error" not in r.headers["location"]
+
+    r = await cliente.get("/panel/reporte/excel?periodo=hoy")
+    assert r.status_code == 200
+    libro = load_workbook(io.BytesIO(r.content))
+
+    compras = libro["Compras"]
+    assert _con(compras, "F-1")[2:8] == ["Abarrotes del Centro", "F-1", "Bodega", 1, 240, 2960]
+    assert _con(compras, "F-2")[6:8] == [60, 600]
+    # Cuántas piezas de cada artículo, día por día.
+    assert _con(compras, _con_dia(date.today()))[:4] == ["Familia", "Clave", "Artículo",
+                                                         _con_dia(date.today())]
+    assert _con(compras, "COCA600")[1:6] == ["COCA600", "Producto COCA600", 240, 240, 2960]
+    assert _con(compras, "PEPSI600")[1:6] == ["PEPSI600", "Producto PEPSI600", 60, 60, 600]
+    assert _con(compras, "Tarjeta de la empresa")[2:6] == [
+        "Abarrotes del Centro", "Tarjeta de la empresa", "", 2960]
+
+    tarjeta = libro["Tarjeta"]
+    assert _renglon(tarjeta, "Debe haber al terminar")[1] == 2040
+    assert _con(tarjeta, "Compra pagada con la tarjeta")[4:6] == [2960, 2040]
+
+    resumen = libro["Resumen"]
+    assert _renglon(resumen, "Compras")[1] == 3560
+    assert _renglon(resumen, "En la tarjeta de la empresa (hoy)")[1] == 2040
+    dia_por_dia = libro["Día por día"]
+    assert _con(dia_por_dia, "Compras")[7] == "Compras"
+    assert _renglon(dia_por_dia, _con_dia(date.today()))[7] == 3560
+
+
+async def test_el_mayoreo_abajo_de_la_lista_se_ve(cliente, sesion, semilla, dia):
+    """«Cuando venda en mayoreo se perderá dinero respecto al precio de venta»
+    (§191): una caja de 24 atunes ($300 de lista) vendida en $270."""
+    from app.infra import mayoreo
+
+    nuevo = await mayoreo.alta_de_cliente(sesion, nombre="Abarrotes El Mayorista",
+                                          quien=semilla["admin"])
+    await mayoreo.vender(
+        sesion, cliente_id=nuevo["id"], almacen_id=semilla["bodega"],
+        renglones=[mayoreo.RenglonPedido(producto_id=dia["producto"], unidad_codigo="CAJA",
+                                         bultos=Decimal(1), precio=Decimal(270))],
+        forma_pago="efectivo", referencia_pago=None, nota=None, quien=semilla["admin"],
+    )
+    await sesion.commit()
+    await _entrar(cliente)
+
+    plano = _plano((await cliente.get("/panel/dinero")).text)
+    assert ("Mayoreo de este mes: se vendió en $270.00; a precio de lista eran $300.00. "
+            "$30.00 abajo de la lista") in plano
+    tablero = _plano((await cliente.get("/panel")).text)
+    assert "El mayoreo de este mes se vendió $30.00 abajo del precio de lista." in tablero

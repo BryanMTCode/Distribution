@@ -174,6 +174,7 @@ la bodega sube cuando alguien la cuenta.
 | **Cada lista del panel dice su total sin abrir ningún folio** (§188): Cargas dice lo que vale cada una, cada día y el total; Corte a mano, lo que debía entregar, lo que entregó y la diferencia, con la suma; Ventas, Entradas y Salidas terminan con su renglón de total. Lo cancelado no suma | ✅ 7 pruebas del servidor |
 | **De cuánto estaba a cuánto pasó cada artículo** (§189): Inventario → Movimientos con lo que había, el cambio y lo que quedó en cada entrada, salida, ajuste, mover mercancía, carga, corte y merma, sin abrir folios; la misma tabla en el detalle de cada entrada, salida, carga y operación | ✅ 6 pruebas del servidor |
 | **Lo que vale la empresa: almacén, camiones y tarjeta** (§190): las tres por separado y el total, en Dinero y en el Tablero; la tarjeta empieza con lo que dice el banco, le entran solos los cortes, el mayoreo y los pagos de los vendedores, le salen las compras pagadas con «tarjeta», y a mano las demás entradas y salidas y el ajuste con el banco. Solo el administrador | ✅ 8 pruebas del servidor |
+| **El Excel para auditar toda la empresa** (§191): hoja Compras con cuántas piezas se compraron de cada artículo día por día, cada compra y lo pagado a proveedores; hoja Tarjeta; lo que valía la empresa (mercancía + tarjeta) al cerrar cada día; el mayoreo abajo del precio de lista en el Excel, en Dinero y en el Tablero, donde lo que vale la empresa va hasta arriba | ✅ 2 pruebas del servidor y la del día por día |
 | **Después de guardar, la petición sigue viendo lo que ve quien la hizo** (§178): el corte que cierra el gerente al aceptar la carga ya no se recalcula con el alcance de otro vendedor («vendió 0», «esperaba $0») | ✅ 2 pruebas con el rol restringido |
 | **Cambiar los días de las rutas sin tocar lo trabajado** (§175): en Plan de visita, mover todas las de un día a otro, intercambiar dos días o recorrerlos uno para atrás o para adelante, en una ruta o en todas, desde la fecha que se escoja; antes de confirmar se ve cada día antes y después. Efectividad, «fuera de su día» y el mapa de la ruta miden lo trabajado con el plan de antes | ✅ 8 pruebas del servidor |
 | **En el teléfono, solo las tiendas de sus rutas** (§174): la tienda sin ruta que recibe una, el cliente de mayoreo y lo que el teléfono traía de su vínculo anterior se le van con la siguiente sincronización; y el teléfono pregunta una vez al día cuáles son suyas, para soltar también las que se tiraron con la base en blanco. `piloto_listo.sh todos` dice cuántas tiendas debe enseñar cada vendedor, cuántas le tocan hoy y cuántas soltó su teléfono | ✅ 11 pruebas del servidor, 5 de Dart, 1 de widget |
@@ -200,7 +201,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1662 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
+**1664 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
 
 ## Stack
 

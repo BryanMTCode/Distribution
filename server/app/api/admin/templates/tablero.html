@@ -20,6 +20,32 @@
 </div>
 {% endif %}
 
+{# Lo que vale la empresa (ADR 0002 §190): las tres por separado y el total.
+   Lo primero de la pantalla principal, por pedido de la dirección (§191). #}
+{% if vale %}
+<h2 id="lo_que_vale_hoy"><a href="/panel/dinero">Lo que vale la empresa</a></h2>
+<div class="tarjetas" id="tablero_lo_que_vale">
+  <a class="tarjeta" href="/panel/dinero#almacen">
+    <div class="numero">{{ vale.en_bodegas|dinero }}</div><div class="etiqueta">Almacén</div>
+  </a>
+  <a class="tarjeta" href="/panel/dinero#camiones">
+    <div class="numero">{{ vale.en_camiones|dinero }}</div><div class="etiqueta">Camiones</div>
+  </a>
+  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" href="/panel/dinero/tarjeta">
+    <div class="numero">{% if vale.en_tarjeta is none %}—{% else %}{{ vale.en_tarjeta|dinero }}{% endif %}</div>
+    <div class="etiqueta">{% if vale.en_tarjeta is none %}Tarjeta: falta su saldo{% else %}Tarjeta{% endif %}</div>
+  </a>
+  <a class="tarjeta" href="/panel/dinero" style="border-color:var(--acento)">
+    <div class="numero">{{ vale.total|dinero }}</div><div class="etiqueta">Total</div>
+  </a>
+</div>
+{% if vale.mayoreo_del_mes.abajo > 0 %}
+<p class="sutil" id="tablero_mayoreo_abajo">
+  El mayoreo de este mes se vendió {{ vale.mayoreo_del_mes.abajo|dinero }} abajo del precio de lista.
+</p>
+{% endif %}
+{% endif %}
+
 {#
   Los pendientes van ANTES que las cifras: son lo que alguien tiene que hacer, y
   solo aparecen los que tienen algo. En el orden del día —lo de la mañana arriba—
@@ -50,25 +76,6 @@
 <div class="aviso-caja bien" id="sin_pendientes">Nada pendiente. Todo lo que llegó está registrado y cuadrado.</div>
 {% endif %}
 
-{# Lo que vale la empresa (ADR 0002 §190): las tres por separado y el total. #}
-{% if vale %}
-<h2 id="lo_que_vale_hoy"><a href="/panel/dinero">Lo que vale la empresa</a></h2>
-<div class="tarjetas" id="tablero_lo_que_vale">
-  <a class="tarjeta" href="/panel/dinero#almacen">
-    <div class="numero">{{ vale.en_bodegas|dinero }}</div><div class="etiqueta">Almacén</div>
-  </a>
-  <a class="tarjeta" href="/panel/dinero#camiones">
-    <div class="numero">{{ vale.en_camiones|dinero }}</div><div class="etiqueta">Camiones</div>
-  </a>
-  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" href="/panel/dinero/tarjeta">
-    <div class="numero">{% if vale.en_tarjeta is none %}—{% else %}{{ vale.en_tarjeta|dinero }}{% endif %}</div>
-    <div class="etiqueta">{% if vale.en_tarjeta is none %}Tarjeta: falta su saldo{% else %}Tarjeta{% endif %}</div>
-  </a>
-  <a class="tarjeta" href="/panel/dinero" style="border-color:var(--acento)">
-    <div class="numero">{{ vale.total|dinero }}</div><div class="etiqueta">Total</div>
-  </a>
-</div>
-{% endif %}
 
 {# El objetivo diario fijo contra lo vendido hoy (ADR 0002 §110). Es de hoy,
    como los pendientes: el selector de periodo de abajo no lo mueve. #}

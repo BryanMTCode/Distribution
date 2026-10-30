@@ -31,8 +31,8 @@ from tests.test_panel_liquidacion import _entrar
 
 pytestmark = pytest.mark.asyncio
 
-HOJAS = ["Resumen", "Ventas y efectivo", "Bodega", "Juan Pérez", "Inventario",
-         "Día por día", "Cargas y mermas", "Cuenta de vendedores"]
+HOJAS = ["Resumen", "Ventas y efectivo", "Compras", "Tarjeta", "Bodega", "Juan Pérez",
+         "Inventario", "Día por día", "Cargas y mermas", "Cuenta de vendedores"]
 DEL_DIA = ["Traía", "Cargó", "Vendió", "Merma", "Otros", "Quedó"]
 
 
@@ -338,13 +338,15 @@ async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
     hoja = libro["Día por día"]
 
     # El dinero: lo de los vendedores y su corte, y el mayoreo aparte.
-    assert _con(hoja, "Vendieron los vendedores")[:6] == [
+    # «Cuando venda en mayoreo se perderá dinero respecto al precio de venta»
+    # (§191): la caja de $300 de lista se vendió en $270.
+    assert _con(hoja, "Vendieron los vendedores")[:8] == [
         "Día", "Vendieron los vendedores", "Entregaron en sus cortes", "Diferencia",
-        "Venta de mayoreo", "Total vendido"]
+        "Venta de mayoreo", "Mayoreo abajo de la lista", "Total vendido", "Compras"]
     filas = [list(f) for f in hoja.iter_rows(values_only=True) if f and f[0] == _con_dia(hoy)]
-    dinero, mercancia, almacenes = filas
-    assert dinero[1:6] == [2500, 2400, -100, 270, 2770]
-    assert _renglon(hoja, _con_dia(ayer))[1:6] == [0, 0, 0, 0, 0]
+    dinero, mercancia, almacenes, empresa = filas
+    assert dinero[1:8] == [2500, 2400, -100, 270, 30, 2770, 0]
+    assert _renglon(hoja, _con_dia(ayer))[1:8] == [0, 0, 0, 0, 0, 0, 0]
 
     # La mercancía: se suma de izquierda a derecha.
     assert _con(hoja, "Valía al empezar")[:10] == [
@@ -353,7 +355,7 @@ async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
         "Eliminado en Operaciones", "Valía al cerrar"]
     assert mercancia[1:10] == [12500, 1250, -2500, -300, 0, 0, 0, 0, 10950]
     totales = [list(f) for f in hoja.iter_rows(values_only=True) if f and f[0] == "Total"]
-    assert totales[0][1:6] == [2500, 2400, -100, 270, 2770]
+    assert totales[0][1:8] == [2500, 2400, -100, 270, 30, 2770, 0]
     assert totales[1][1:10] == [12500, 1250, -2500, -300, 0, 0, 0, 0, 10950]
 
     # Cada almacén y la suma; la carga solo cambió de lugar.
@@ -362,6 +364,12 @@ async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
     del_anteayer = [list(f) for f in hoja.iter_rows(values_only=True)
                     if f and f[0] == _con_dia(anteayer)]
     assert del_anteayer[2][1:4] == [12500, 0, 12500]
+    # Lo que valía la empresa (§191): sin el saldo inicial de la tarjeta, solo la
+    # mercancía.
+    assert _con(hoja, "Mercancía")[:4] == ["Día", "Mercancía", "Tarjeta", "Total"]
+    assert empresa[1:4] == [10950, None, 10950]
+    ventas = libro["Ventas y efectivo"]
+    assert _con(ventas, "Abarrotes El Mayorista")[4:7] == [270, 300, 30]
     # Hasta hoy: de mañana no se sabe nada.
     assert not any(f and f[0] == _con_dia(hoy + timedelta(days=1))
                    for f in hoja.iter_rows(values_only=True))
