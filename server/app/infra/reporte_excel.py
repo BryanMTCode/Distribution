@@ -25,8 +25,9 @@ las columnas del efectivo salen solo si en el periodo hubo una transferencia
 de un teléfono anterior a la +28, porque entonces ya no son la misma cifra
 (§170). El inventario es el de hoy,
 valuado a precio de venta como en Inventario (§86): no depende del periodo. Lo
-que valía al cerrar cada día del periodo, la bodega y cada camión, está en
-«Valor día por día» (§183), a los mismos precios.
+que valía al cerrar cada día del periodo, la bodega y cada camión, y en qué se
+fue o de dónde vino lo que cambió, está en «Día por día» (§183, §184), a los
+mismos precios.
 La cuenta del vendedor es su saldo de hoy, y sus movimientos del periodo.
 """
 
@@ -214,13 +215,17 @@ SELECT m.fecha, m.folio, c.nombre_comercial AS cliente, u.nombre AS vendio, m.to
  ORDER BY m.fecha, m.folio
 """
 
+# El corte, en el último día que contó (§181): el del lunes, con la carga «para
+# el domingo», salía el domingo. El que todavía no se cierra, en el de su carga.
 SQL_CORTES = """
-SELECT l.fecha_operativa AS fecha, u.nombre AS vendedor, l.folio, l.estado,
+SELECT COALESCE(l.cuenta_hasta, l.fecha_operativa) AS fecha, u.nombre AS vendedor,
+       l.folio, l.estado,
        l.efectivo_esperado AS esperado, l.efectivo_entregado AS entregado,
        l.diferencia_efectivo AS diferencia, NULL::numeric AS declarado
   FROM liquidaciones l
   JOIN usuarios u ON u.id = l.vendedor_id
- WHERE l.fecha_operativa BETWEEN :desde AND :hasta AND l.estado <> 'anulada'
+ WHERE COALESCE(l.cuenta_hasta, l.fecha_operativa) BETWEEN :desde AND :hasta
+   AND l.estado <> 'anulada'
 UNION ALL
 -- El que mandó el vendedor y la oficina todavía no cierra.
 SELECT k.fecha_operativa, u.nombre, NULL, 'por_cerrar', NULL, NULL, NULL,
@@ -323,30 +328,65 @@ SELECT a.id, a.nombre, a.tipo, r.nombre AS vendedor,
  GROUP BY a.id, a.nombre, a.tipo, r.nombre
 """
 
-# El día de cada movimiento es el de su documento si es venta o merma, y si no
-# el día en que se hizo: la carga sale de la bodega la tarde en que se acepta,
-# y al cerrar ese día ya está arriba del camión.
+# El día de cada movimiento es el de su documento si es venta, mayoreo o merma, y
+# si no el día en que se hizo: la carga sale de la bodega la tarde en que se
+# acepta, y al cerrar ese día ya está arriba del camión.
+#
+# Y qué fue (§184), para ver día por día que todo cuadra: lo que entró a la
+# bodega, lo que vendieron los vendedores, el mayoreo, las mermas, las
+# devoluciones de clientes, los ajustes de la oficina y lo eliminado en
+# Operaciones. Lo que solo se movió de un almacén a otro —la carga, el traspaso,
+# lo que regresó a la bodega— es `entre_almacenes`: cambia cada almacén, pero no
+# la suma.
 SQL_VALOR_MOVIDO = f"""
 WITH precio AS ({_PRECIO_DE_HOY}),
 efectos AS (
     SELECT a.id AS almacen,
-           COALESCE(v.fecha_operativa, me.fecha_operativa,
+           COALESCE(v.fecha_operativa, me.fecha_operativa, vm.fecha,
                     CAST(m.fecha_servidor AS date)) AS dia,
+           CASE
+             WHEN ao.tipo IN ('bodega', 'camion') AND ad.tipo IN ('bodega', 'camion')
+               THEN 'entre_almacenes'
+             WHEN m.documento_tipo IN ('venta', 'venta_modificada', 'venta_cancelada',
+                                       'venta_corregida') THEN 'vendedores'
+             WHEN m.documento_tipo = 'venta_mayoreo' THEN 'mayoreo'
+             WHEN m.documento_tipo = 'merma' AND m.tipo = 'devolucion' THEN 'devoluciones'
+             WHEN m.documento_tipo = 'merma' OR m.tipo = 'merma' THEN 'mermas'
+             WHEN m.documento_tipo IN ('entrada', 'traspaso') OR m.tipo = 'compra'
+               THEN 'entradas'
+             WHEN m.documento_tipo = 'anulacion' THEN 'eliminado'
+             ELSE 'ajustes'
+           END AS categoria,
            CASE WHEN m.almacen_destino_id = a.id THEN m.cantidad
                 ELSE -m.cantidad END * pr.precio AS valor
       FROM movimientos_inventario m
       JOIN almacenes a ON a.tipo IN ('bodega', 'camion')
                       AND a.id IN (m.almacen_origen_id, m.almacen_destino_id)
       JOIN precio pr ON pr.producto_id = m.producto_id AND pr.precio IS NOT NULL
+      LEFT JOIN almacenes ao ON ao.id = m.almacen_origen_id
+      LEFT JOIN almacenes ad ON ad.id = m.almacen_destino_id
       LEFT JOIN ventas v ON m.documento_tipo IN ('venta', 'venta_modificada')
                         AND v.id = m.documento_id
       LEFT JOIN mermas me ON m.documento_tipo = 'merma' AND me.id = m.documento_id
+      LEFT JOIN ventas_mayoreo vm ON m.documento_tipo = 'venta_mayoreo'
+                                 AND vm.id = m.documento_id
 )
-SELECT almacen, dia, sum(valor) AS valor
+SELECT almacen, dia, categoria, sum(valor) AS valor
   FROM efectos
  WHERE dia >= :desde
- GROUP BY almacen, dia
+ GROUP BY almacen, dia, categoria
 """
+
+# Lo que cambió la mercancía de toda la empresa cada día, en el orden de la tabla.
+CAMBIOS_DEL_DIA = {
+    "entradas": "Entró a la bodega",
+    "vendedores": "Vendieron los vendedores",
+    "mayoreo": "Venta de mayoreo",
+    "mermas": "Mermas",
+    "devoluciones": "Devoluciones de clientes",
+    "ajustes": "Ajustes y conteos",
+    "eliminado": "Eliminado en Operaciones",
+}
 
 SQL_MOVIMIENTOS = """
 SELECT m.fecha, u.nombre AS vendedor, m.tipo, m.origen, m.concepto, m.importe
@@ -448,7 +488,8 @@ async def _camiones(filas, rango) -> list[dict]:
 
 
 async def _valor_por_dia(filas, rango) -> dict:
-    """Lo que valía cada almacén al cerrar cada día del periodo (§183).
+    """Lo que valía cada almacén al cerrar cada día del periodo (§183), y en qué
+    se fue o de dónde vino lo que cambió cada día (§184).
 
     Se parte de lo que vale hoy y se va hacia atrás quitando lo que se movió
     cada día, como el «Quedó» del camión. Hasta hoy: de mañana no se sabe nada.
@@ -461,16 +502,26 @@ async def _valor_por_dia(filas, rango) -> dict:
     almacenes = await filas(SQL_VALOR_DE_LOS_ALMACENES)
     valor = {a["id"]: Decimal(a["valor"]) for a in almacenes}
     movido: dict[tuple, Decimal] = defaultdict(Decimal)
+    por_que: dict[tuple, Decimal] = defaultdict(Decimal)
     for f in await filas(SQL_VALOR_MOVIDO, {"desde": desde}):
-        movido[(f["almacen"], f["dia"])] += Decimal(f["valor"] or 0)
+        if f["almacen"] not in valor:
+            continue
+        cuanto = Decimal(f["valor"] or 0)
+        movido[(f["almacen"], f["dia"])] += cuanto
+        por_que[(f["dia"], f["categoria"])] += cuanto
     for (almacen, dia), cuanto in movido.items():
-        if dia > ultimo and almacen in valor:
+        if dia > ultimo:
             valor[almacen] -= cuanto
 
     dias = []
     dia = ultimo
     while dia >= desde:
-        dias.append({"dia": dia, "valores": dict(valor)})
+        cerro = sum(valor.values(), Decimal(0))
+        cambios = {c: por_que.get((dia, c), Decimal(0)) for c in CAMBIOS_DEL_DIA}
+        dias.append({"dia": dia, "valores": dict(valor), "cerro": cerro,
+                     "cambios": cambios,
+                     # Lo que solo cambió de almacén no cambia la suma.
+                     "empezo": cerro - sum(cambios.values(), Decimal(0))})
         for almacen in valor:
             valor[almacen] -= movido.get((almacen, dia), Decimal(0))
         dia -= timedelta(days=1)
@@ -808,7 +859,8 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     )
     resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, una por cada "
                  "vendedor con el inventario de su camión día por día, Inventario, "
-                 "Valor día por día, Cargas y mermas, y Cuenta de vendedores.")
+                 "Día por día —el dinero y la mercancía de cada día, para ver que todo "
+                 "cuadra—, Cargas y mermas, y Cuenta de vendedores.")
     if sin_precio:
         resumen.nota(f"Ojo: {len(sin_precio)} artículo(s) sin precio de venta no suman "
                      f"en el inventario: {', '.join(sin_precio[:6])}"
@@ -912,29 +964,84 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
         hoja.nota("Los que no tienen precio no suman en «Vale»: " + ", ".join(sin_precio))
     hoja.terminar()
 
-    # --- Valor día por día -------------------------------------------------------
-    # «Cuánto hubo de dinero en todo el producto cada fecha», «por camión y por
-    # almacén, y la suma» (§183).
-    hoja = _Hoja(libro, "Valor día por día")
-    hoja.titulo("Lo que valía la mercancía al cerrar cada día",
-                f"{periodo} · a precio de venta de hoy")
+    # --- Día por día ----------------------------------------------------------------
+    # «Quiero en el Excel ser capaz de distinguir que todo va bien día a día;
+    # separa la venta a mayoreo de la de los vendedores» (§184). Y «cuánto hubo
+    # de dinero en todo el producto cada fecha, por camión y por almacén, y la
+    # suma» (§183).
+    hoja = _Hoja(libro, "Día por día")
+    hoja.titulo("Día por día: el dinero y la mercancía", periodo)
     valor = reporte.valor_por_dia
+    dias = valor.get("dias", [])
     almacenes = valor.get("almacenes", [])
+
+    vendido: dict = defaultdict(Decimal)
+    for r in reporte.ventas:
+        vendido[r["fecha"]] += Decimal(r["importe"])
+    entregado: dict = defaultdict(Decimal)
+    for c in cerrados:
+        entregado[c["fecha"]] += Decimal(c["entregado"] or 0)
+    de_mayoreo: dict = defaultdict(Decimal)
+    for m in reporte.mayoreo:
+        de_mayoreo[m["fecha"]] += Decimal(m["total"])
+    dinero = [
+        [_con_dia(d["dia"]), vendido[d["dia"]], entregado[d["dia"]],
+         entregado[d["dia"]] - vendido[d["dia"]], de_mayoreo[d["dia"]],
+         vendido[d["dia"]] + de_mayoreo[d["dia"]]]
+        for d in dias
+    ]
     hoja.tabla(
-        "La bodega, cada camión y la suma",
+        "El dinero de cada día",
+        [("Día", "texto"), ("Vendieron los vendedores", "dinero"),
+         ("Entregaron en sus cortes", "dinero"), ("Diferencia", "dinero"),
+         ("Venta de mayoreo", "dinero"), ("Total vendido", "dinero")],
+        dinero,
+        totales=["Total", *[sum((r[n] for r in dinero), Decimal(0)) for n in range(1, 6)]]
+        if dinero else None,
+        vacio="El periodo todavía no empieza.",
+    )
+    hoja.nota("Diferencia: lo entregado menos lo vendido por los vendedores. Negativo es "
+              "lo que falta por entregar: un corte que no se ha cerrado, o uno que no "
+              "cuadró. El mayoreo lo cobra la oficina y va aparte.")
+    hoja.fila += 1
+
+    mercancia = [
+        [_con_dia(d["dia"]), d["empezo"], *d["cambios"].values(), d["cerro"]]
+        for d in dias
+    ]
+    hoja.tabla(
+        "La mercancía de cada día, a precio de venta",
+        [("Día", "texto"), ("Valía al empezar", "dinero"),
+         *[(nombre, "dinero") for nombre in CAMBIOS_DEL_DIA.values()],
+         ("Valía al cerrar", "dinero")],
+        mercancia,
+        totales=["Total", dias[0]["empezo"],
+                 *[sum((d["cambios"][c] for d in dias), Decimal(0)) for c in CAMBIOS_DEL_DIA],
+                 dias[-1]["cerro"]] if dias else None,
+        vacio="El periodo todavía no empieza.",
+    )
+    hoja.nota("Cada renglón se suma de izquierda a derecha: lo que valía al empezar, más lo "
+              "que entró, menos lo que salió (va en negativo), es lo que valía al cerrar.")
+    hoja.nota("Lo que solo se movió de un almacén a otro —la carga, lo que regresó a la "
+              "bodega— no cambia la suma: se ve en la tabla de abajo.")
+    hoja.fila += 1
+
+    hoja.tabla(
+        "Lo que valía cada almacén al cerrar el día",
         [("Día", "texto"),
          *[(a["nombre"] + (f" · {a['vendedor']}" if a["vendedor"] else ""), "dinero")
            for a in almacenes],
          ("Total", "dinero")],
-        [[_con_dia(d["dia"]), *[d["valores"][a["id"]] for a in almacenes],
-          sum((d["valores"][a["id"]] for a in almacenes), Decimal(0))]
-         for d in valor.get("dias", [])] if almacenes else [],
+        [[_con_dia(d["dia"]), *[d["valores"][a["id"]] for a in almacenes], d["cerro"]]
+         for d in dias] if almacenes else [],
         vacio="No hubo mercancía en estos días, o el periodo todavía no empieza.",
     )
     hoja.nota("Al cerrar el día: el camión ya con la carga que se hizo en la tarde para el "
               "día siguiente, y sin lo que vendió.")
     hoja.nota("A los precios de hoy, como en Inventario: lo que cambia de un día a otro es "
-              "mercancía que entró o salió, no precios.")
+              "mercancía que entró o salió, no precios. Por eso «Vendieron los vendedores» "
+              "de la mercancía puede no ser lo mismo que lo que cobraron: el descuento o "
+              "un precio que cambió.")
     if sin_precio:
         hoja.nota("Los que no tienen precio no suman: " + ", ".join(sin_precio))
     hoja.terminar()

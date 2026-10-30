@@ -32,7 +32,7 @@ from tests.test_panel_liquidacion import _entrar
 pytestmark = pytest.mark.asyncio
 
 HOJAS = ["Resumen", "Ventas y efectivo", "Juan Pérez", "Inventario",
-         "Valor día por día", "Cargas y mermas", "Cuenta de vendedores"]
+         "Día por día", "Cargas y mermas", "Cuenta de vendedores"]
 DEL_DIA = ["Traía", "Cargó", "Vendió", "Merma", "Otros", "Quedó"]
 
 
@@ -274,15 +274,21 @@ async def test_el_camion_de_cada_vendedor_dia_por_dia(cliente, sesion, semilla, 
     assert _con(camion, "Total")[9:15] == [60, 120, 100, 10, -5, 65]
 
 
-async def test_lo_que_valia_la_mercancia_al_cerrar_cada_dia(
+async def test_dia_por_dia_el_dinero_y_la_mercancia_con_el_mayoreo_aparte(
     cliente, sesion, semilla, dia  # noqa: F811
 ):
-    """«Cuánto hubo de dinero en todo el producto cada fecha», «por camión y por
-    almacén, y la suma» (§183). Hasta ayer la bodega tenía 1,000 atunes; hoy se
-    cargaron 240 al camión y se vendieron 180 y luego 20 más. A $12.50 la pieza,
-    y nada de mañana."""
+    """«Quiero en el Excel ser capaz de distinguir que todo va bien día a día;
+    separa la venta a mayoreo de la de los vendedores» (§184), y «cuánto hubo de
+    dinero en todo el producto cada fecha, por camión y por almacén, y la suma»
+    (§183).
+
+    Hasta ayer la bodega tenía 1,000 atunes, a $12.50: $12,500. Hoy entraron 100
+    ($1,250), se cargaron 240 al camión, el vendedor vendió 200 ($2,500) y entregó
+    $2,400, y la oficina vendió una caja de 24 a mayoreo en $270 ($300 de lista)."""
+    import uuid
     from datetime import timedelta
 
+    from app.infra import mayoreo
     from app.infra.reporte_excel import _con_dia
     from tests.test_corte_sin_bajar_la_carga import _vende_el_sabado
 
@@ -293,18 +299,61 @@ async def test_lo_que_valia_la_mercancia_al_cerrar_cada_dia(
              "VALUES (:l, :p, 'PZA', 12.50)"),
         {"l": semilla["lista_precios"], "p": dia["producto"]},
     )
+    # La compra que llegó a la bodega.
+    await sesion.execute(
+        text("INSERT INTO movimientos_inventario (tipo, almacen_destino_id, producto_id, "
+             "  cantidad, documento_tipo, documento_id) "
+             "VALUES ('compra', :b, :p, 100, 'entrada', :doc)"),
+        {"b": semilla["bodega"], "p": dia["producto"], "doc": uuid.uuid4()},
+    )
+    await sesion.execute(
+        text("UPDATE existencias SET cantidad = cantidad + 100 "
+             " WHERE almacen_id = :b AND producto_id = :p"),
+        {"b": semilla["bodega"], "p": dia["producto"]},
+    )
     await sesion.commit()
     await _vende_el_sabado(sesion, semilla, dia, carga=dia["carga"], piezas=20)
+    corte = await _corte(sesion, dia, semilla, efectivo="2400.00")
+    await _cerrar(cliente, corte, await _cab(cliente, "GER01"))
+    nuevo = await mayoreo.alta_de_cliente(sesion, nombre="Abarrotes El Mayorista",
+                                          quien=semilla["admin"])
+    await mayoreo.vender(
+        sesion, cliente_id=nuevo["id"], almacen_id=semilla["bodega"],
+        renglones=[mayoreo.RenglonPedido(producto_id=dia["producto"], unidad_codigo="CAJA",
+                                         bultos=Decimal(1), precio=Decimal(270))],
+        forma_pago="efectivo", referencia_pago=None, nota=None, quien=semilla["admin"],
+    )
+    await sesion.commit()
     await _entrar(cliente)
 
     _, libro = await _bajar(cliente, f"rango&desde={anteayer}&hasta={hoy + timedelta(days=1)}")
+    hoja = libro["Día por día"]
 
-    hoja = libro["Valor día por día"]
-    assert _con(hoja, "Día")[:4] == ["Día", "Bodega", "Camión 01 · Juan Pérez", "Total"]
-    assert _renglon(hoja, _con_dia(anteayer))[1:4] == [12500, 0, 12500]
-    assert _renglon(hoja, _con_dia(ayer))[1:4] == [12500, 0, 12500]
-    assert _renglon(hoja, _con_dia(hoy))[1:4] == [9500, 500, 10000]
+    # El dinero: lo de los vendedores y su corte, y el mayoreo aparte.
+    assert _con(hoja, "Vendieron los vendedores")[:6] == [
+        "Día", "Vendieron los vendedores", "Entregaron en sus cortes", "Diferencia",
+        "Venta de mayoreo", "Total vendido"]
+    filas = [list(f) for f in hoja.iter_rows(values_only=True) if f and f[0] == _con_dia(hoy)]
+    dinero, mercancia, almacenes = filas
+    assert dinero[1:6] == [2500, 2400, -100, 270, 2770]
+    assert _renglon(hoja, _con_dia(ayer))[1:6] == [0, 0, 0, 0, 0]
+
+    # La mercancía: se suma de izquierda a derecha.
+    assert _con(hoja, "Valía al empezar")[:10] == [
+        "Día", "Valía al empezar", "Entró a la bodega", "Vendieron los vendedores",
+        "Venta de mayoreo", "Mermas", "Devoluciones de clientes", "Ajustes y conteos",
+        "Eliminado en Operaciones", "Valía al cerrar"]
+    assert mercancia[1:10] == [12500, 1250, -2500, -300, 0, 0, 0, 0, 10950]
+    totales = [list(f) for f in hoja.iter_rows(values_only=True) if f and f[0] == "Total"]
+    assert totales[0][1:6] == [2500, 2400, -100, 270, 2770]
+    assert totales[1][1:10] == [12500, 1250, -2500, -300, 0, 0, 0, 0, 10950]
+
+    # Cada almacén y la suma; la carga solo cambió de lugar.
+    assert _con(hoja, "Bodega")[:4] == ["Día", "Bodega", "Camión 01 · Juan Pérez", "Total"]
+    assert almacenes[1:4] == [10450, 500, 10950]
+    del_anteayer = [list(f) for f in hoja.iter_rows(values_only=True)
+                    if f and f[0] == _con_dia(anteayer)]
+    assert del_anteayer[2][1:4] == [12500, 0, 12500]
     # Hasta hoy: de mañana no se sabe nada.
-    dias = [f[0] for f in hoja.iter_rows(values_only=True)
-            if f and isinstance(f[0], str) and f[0].endswith(f"/{hoy:%Y}")]
-    assert dias == [_con_dia(anteayer), _con_dia(ayer), _con_dia(hoy)]
+    assert not any(f and f[0] == _con_dia(hoy + timedelta(days=1))
+                   for f in hoja.iter_rows(values_only=True))

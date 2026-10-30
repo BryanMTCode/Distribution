@@ -7735,3 +7735,31 @@ inicio del reporte.» «Que sea por camión y por almacén, y la suma.»
 - **A precio de venta de hoy**, como Inventario: lo que cambia de un día a otro
   es mercancía que entró o salió, no precios. Sin precio no suma, y se dice. El
   costo sigue solo en el dashboard (§180).
+
+## 184. En el Excel, el día por día para ver que todo cuadra, con el mayoreo aparte
+
+«Empecé a operar y he movido mercancía, creado y todo eso: quiero en el Excel
+ser capaz de distinguir que todo va bien día a día. Separa la venta a mayoreo de
+la de los vendedores.»
+
+- **La hoja de §183 se llama ahora «Día por día»** y trae tres tablas, un renglón
+  por día y su total:
+  - **El dinero de cada día**: lo que vendieron los vendedores, lo que
+    entregaron en sus cortes, la diferencia —negativa es lo que falta por
+    entregar: un corte sin cerrar o uno que no cuadró—, la venta de mayoreo
+    aparte, que la cobra la oficina, y el total vendido.
+  - **La mercancía de cada día**, a precio de venta: lo que valía al empezar, lo
+    que entró a la bodega, lo que vendieron los vendedores, el mayoreo, las
+    mermas, las devoluciones de clientes, los ajustes y conteos de la oficina y
+    lo eliminado en Operaciones, y lo que valía al cerrar. Lo que sale va en
+    negativo, así que el renglón se suma de izquierda a derecha. La carga y lo
+    que regresa a la bodega solo cambian de almacén: no cambian la suma.
+  - **Lo que valía cada almacén al cerrar el día**, la bodega y cada camión, y la
+    suma (§183).
+- **Lo vendido como mercancía y como dinero no tienen por qué ser iguales**: la
+  mercancía va a precio de lista de hoy, el dinero es lo que se cobró. La
+  diferencia es el descuento o un precio que cambió. Con el mayoreo se ve claro:
+  la caja que se vendió en $270 sale de la bodega en $300 de lista.
+- **Los cortes, en el día que contaron** (§181): en «Ventas y efectivo» y en el
+  dinero de cada día, el corte va en el último día que contó. El del lunes, con
+  la carga «para el domingo», salía el domingo.
