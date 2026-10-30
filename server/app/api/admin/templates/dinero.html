@@ -9,15 +9,15 @@
 </p>
 
 <div class="tarjetas" id="lo_que_vale">
-  <a class="tarjeta" href="#almacen" id="vale_almacen">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="#almacen" id="vale_almacen">
     <div class="numero">{{ vale.en_bodegas|dinero }}</div>
     <div class="etiqueta">Almacén</div>
   </a>
-  <a class="tarjeta" href="#camiones" id="vale_camiones">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="#camiones" id="vale_camiones">
     <div class="numero">{{ vale.en_camiones|dinero }}</div>
     <div class="etiqueta">Camiones</div>
   </a>
-  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" href="/panel/dinero/tarjeta" id="vale_tarjeta">
+  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" style="text-decoration:none;color:inherit" href="/panel/dinero/tarjeta" id="vale_tarjeta">
     <div class="numero">{% if vale.en_tarjeta is none %}—{% else %}{{ vale.en_tarjeta|dinero }}{% endif %}</div>
     <div class="etiqueta">{% if vale.en_tarjeta is none %}Tarjeta: falta su saldo inicial{% else %}Tarjeta{% endif %}</div>
   </a>

@@ -76,17 +76,19 @@ def test_liquidacion_se_llama_corte_del_dia():
     assert ("/panel/liquidaciones", "Corte a mano") in PESTANAS["Cortes y cargas"]
 
 
-def test_el_menu_tiene_quince_entradas_y_las_demas_son_pestanas():
+def test_el_menu_tiene_dieciseis_entradas_y_las_demas_son_pestanas():
     """«No quiero miles de secciones» (ADR 0002 §98): 26 entradas se volvieron
     12, y las pantallas hermanas son pestañas de su entrada. La decimotercera es
     la Revisión, que se pidió a la vista y no en una pestaña (§117); la
-    decimocuarta, Operaciones: todas juntas, para anular cualquiera (§119), y la
-    decimoquinta, el Reporte en Excel para el administrador (§127)."""
+    decimocuarta, Operaciones: todas juntas, para anular cualquiera (§119); la
+    decimoquinta, el Reporte en Excel para el administrador (§127), y la
+    decimosexta, Dinero: lo que vale la empresa y la tarjeta (§190)."""
     from app.api.admin.comun import PERMISO_DEL_MENU, PESTANAS
 
     NAVEGACION, _ = _menu()
     entradas = [e for _, enlaces in NAVEGACION for _, e in enlaces]
-    assert len(entradas) == 15
+    assert len(entradas) == 16
+    assert ("/panel/dinero", "Dinero") in dict(NAVEGACION)["Hoy"]
     assert ("/panel/revision-app", "Revisión") in dict(NAVEGACION)["Administración"]
     assert ("/panel/operaciones", "Operaciones") in dict(NAVEGACION)["Administración"]
     assert ("/panel/reporte", "Reporte en Excel") in dict(NAVEGACION)["Administración"]

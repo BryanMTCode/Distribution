@@ -180,10 +180,13 @@ async def test_movimientos_lo_dice_todo_sin_abrir_folios(cliente, sesion, semill
 
 
 async def test_el_libro_de_un_articulo_dice_cuanto_habia(cliente, sesion, semilla, dia):
+    # La carga y la venta del día de siempre se escribieron juntas; el conteo va
+    # después, en su propia operación: de 60 a 50.
+    await _conteo(sesion, semilla, semilla["camion"], dia["producto"], habia="60",
+                  contado="50")
     await _entrar(cliente)
     html = (await cliente.get(f"/panel/inventario/{semilla['camion']}/{dia['producto']}")).text
     plano = " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
     assert "Había Movimiento Quedó" in plano
-    # La venta: de 240 a 60.
-    assert "240 -180 60" in plano
+    assert "60 -10 50" in plano

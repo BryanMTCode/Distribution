@@ -270,8 +270,9 @@ async def test_el_excel_trae_las_compras_dia_por_dia_y_la_tarjeta(cliente, sesio
                                                          _con_dia(date.today())]
     assert _con(compras, "COCA600")[1:6] == ["COCA600", "Producto COCA600", 240, 240, 2960]
     assert _con(compras, "PEPSI600")[1:6] == ["PEPSI600", "Producto PEPSI600", 60, 60, 600]
+    # Sin referencia, la celda queda vacía.
     assert _con(compras, "Tarjeta de la empresa")[2:6] == [
-        "Abarrotes del Centro", "Tarjeta de la empresa", "", 2960]
+        "Abarrotes del Centro", "Tarjeta de la empresa", None, 2960]
 
     tarjeta = libro["Tarjeta"]
     assert _renglon(tarjeta, "Debe haber al terminar")[1] == 2040

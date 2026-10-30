@@ -25,17 +25,17 @@
 {% if vale %}
 <h2 id="lo_que_vale_hoy"><a href="/panel/dinero">Lo que vale la empresa</a></h2>
 <div class="tarjetas" id="tablero_lo_que_vale">
-  <a class="tarjeta" href="/panel/dinero#almacen">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/dinero#almacen">
     <div class="numero">{{ vale.en_bodegas|dinero }}</div><div class="etiqueta">Almacén</div>
   </a>
-  <a class="tarjeta" href="/panel/dinero#camiones">
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="/panel/dinero#camiones">
     <div class="numero">{{ vale.en_camiones|dinero }}</div><div class="etiqueta">Camiones</div>
   </a>
-  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" href="/panel/dinero/tarjeta">
+  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" style="text-decoration:none;color:inherit" href="/panel/dinero/tarjeta">
     <div class="numero">{% if vale.en_tarjeta is none %}—{% else %}{{ vale.en_tarjeta|dinero }}{% endif %}</div>
     <div class="etiqueta">{% if vale.en_tarjeta is none %}Tarjeta: falta su saldo{% else %}Tarjeta{% endif %}</div>
   </a>
-  <a class="tarjeta" href="/panel/dinero" style="border-color:var(--acento)">
+  <a class="tarjeta" href="/panel/dinero" style="text-decoration:none;color:inherit;border-color:var(--acento)">
     <div class="numero">{{ vale.total|dinero }}</div><div class="etiqueta">Total</div>
   </a>
 </div>
