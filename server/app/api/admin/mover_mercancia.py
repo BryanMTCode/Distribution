@@ -1,6 +1,8 @@
-"""Mover mercancía de la bodega a un camión, y de un camión a la bodega (ADR 0002 §135).
+"""Mover mercancía de la bodega a un camión, de un camión a la bodega, y de un
+camión a otro (ADR 0002 §135, §187).
 
-«Quiero en el dashboard poder mover mercancía a los camiones y viceversa.»
+«Quiero en el dashboard poder mover mercancía a los camiones y viceversa.» «Y
+entre camiones de ellos, solo en el dashboard»: el teléfono no lo hace.
 
 Una pestaña de Inventario: se elige el camión, hacia dónde y la bodega; abajo sale
 lo que hay en el origen, y se escribe cuánto se mueve de cada artículo, en cajas o
@@ -38,7 +40,8 @@ router = APIRouter(prefix="/panel/inventario/mover", tags=["panel"], include_in_
 
 # Ver lo que hay y moverlo: los dos (el mismo par que su renglón del menú).
 PERMISOS = ("inventario.ver", "inventario.ajustar")
-SENTIDOS = {"al_camion": "De la bodega al camión", "a_bodega": "Del camión a la bodega"}
+SENTIDOS = {"al_camion": "De la bodega al camión", "a_bodega": "Del camión a la bodega",
+            "entre_camiones": "De un camión a otro camión"}
 
 
 @router.get("", response_class=HTMLResponse)
@@ -49,6 +52,7 @@ async def pantalla(
     camion: str = "",
     bodega: str = "",
     sentido: str = "al_camion",
+    camion_destino: str = "",
     guardado: str = "",
     error: str = "",
 ) -> HTMLResponse:
@@ -56,7 +60,7 @@ async def pantalla(
         actor.exigir(permiso)
     return await _pintar(
         peticion, actor, sesion, camion=camion, bodega=bodega, sentido=sentido,
-        guardado=guardado, error=error,
+        camion_destino=camion_destino, guardado=guardado, error=error,
     )
 
 
@@ -71,6 +75,7 @@ async def mover(peticion: Request, actor: ActorWeb, sesion: SesionDep):
     camion = str(formulario.get("camion", ""))
     bodega = str(formulario.get("bodega", ""))
     sentido = str(formulario.get("sentido", "al_camion"))
+    camion_destino = str(formulario.get("camion_destino", ""))
     nota = str(formulario.get("nota", ""))
     capturado = {
         clave: str(valor)
@@ -81,15 +86,19 @@ async def mover(peticion: Request, actor: ActorWeb, sesion: SesionDep):
     async def de_regreso(error: str) -> HTMLResponse:
         return await _pintar(
             peticion, actor, sesion, camion=camion, bodega=bodega, sentido=sentido,
-            error=error, capturado=capturado, nota=nota,
+            camion_destino=camion_destino, error=error, capturado=capturado, nota=nota,
         )
 
     if sentido not in SENTIDOS:
         return await de_regreso("Elige hacia dónde se mueve.")
+    entre_camiones = sentido == "entre_camiones"
     try:
-        camion_id, bodega_id = uuid.UUID(camion), uuid.UUID(bodega)
+        camion_id = uuid.UUID(camion)
+        otro_id = uuid.UUID(camion_destino if entre_camiones else bodega)
     except ValueError:
-        return await de_regreso("Elige el camión y la bodega.")
+        return await de_regreso(
+            "Elige los dos camiones." if entre_camiones else "Elige el camión y la bodega."
+        )
 
     try:
         cantidades = await _leer_cantidades(sesion, capturado)
@@ -97,15 +106,21 @@ async def mover(peticion: Request, actor: ActorWeb, sesion: SesionDep):
         return await de_regreso(str(e))
 
     try:
-        hecho = await traspaso_camion.mover(
-            sesion,
-            camion_id=camion_id,
-            bodega_id=bodega_id,
-            al_camion=sentido == "al_camion",
-            cantidades=cantidades,
-            nota=nota,
-            quien=actor.usuario_id,
-        )
+        if entre_camiones:
+            hecho = await traspaso_camion.mover_entre_camiones(
+                sesion, origen_id=camion_id, destino_id=otro_id, cantidades=cantidades,
+                nota=nota, quien=actor.usuario_id,
+            )
+        else:
+            hecho = await traspaso_camion.mover(
+                sesion,
+                camion_id=camion_id,
+                bodega_id=otro_id,
+                al_camion=sentido == "al_camion",
+                cantidades=cantidades,
+                nota=nota,
+                quien=actor.usuario_id,
+            )
     except traspaso_camion.MovimientoRechazado as e:
         await sesion.rollback()
         return await de_regreso(str(e))
@@ -113,7 +128,8 @@ async def mover(peticion: Request, actor: ActorWeb, sesion: SesionDep):
 
     return RedirectResponse(
         "/panel/inventario/mover?"
-        + urlencode({"camion": camion, "bodega": bodega, "sentido": sentido})
+        + urlencode({"camion": camion, "bodega": bodega, "sentido": sentido,
+                     "camion_destino": camion_destino})
         + f"&guardado={quote(hecho.mensaje)}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
@@ -174,6 +190,7 @@ async def _pintar(
     camion: str,
     bodega: str,
     sentido: str,
+    camion_destino: str = "",
     guardado: str = "",
     error: str = "",
     capturado: dict[str, str] | None = None,
@@ -209,11 +226,19 @@ async def _pintar(
     la_bodega = elegir(bodegas, bodega, sola_si_hay_una=False)
     if sentido not in SENTIDOS:
         sentido = "al_camion"
+    # El camión al que va: se elige, nunca por omisión, y no puede ser el mismo.
+    otros_camiones = [c for c in camiones if not el_camion or c["id"] != el_camion["id"]]
+    el_otro = next((c for c in otros_camiones if str(c["id"]) == camion_destino), None)
 
     filas: list[dict] = []
-    origen = None
-    if el_camion and la_bodega:
-        origen = la_bodega if sentido == "al_camion" else el_camion
+    origen = destino = None
+    if sentido == "entre_camiones":
+        if el_camion and el_otro:
+            origen, destino = el_camion, el_otro
+    elif el_camion and la_bodega:
+        origen, destino = ((la_bodega, el_camion) if sentido == "al_camion"
+                           else (el_camion, la_bodega))
+    if origen:
         for f in await traspaso_camion.lo_que_hay(sesion, origen["id"]):
             presentaciones = f["presentaciones"] or []
             # La más grande por omisión, como en la carga: en la bodega se cuenta
@@ -248,7 +273,9 @@ async def _pintar(
             "sentido": sentido,
             "sentidos": SENTIDOS,
             "origen": origen,
-            "destino": (el_camion if origen is la_bodega else la_bodega) if origen else None,
+            "destino": destino,
+            "otros_camiones": otros_camiones,
+            "camion_destino": el_otro,
             "grupos": agrupar_por_familia(filas),
             "capturado": capturado or {},
             "nota": nota,

@@ -7798,3 +7798,22 @@ día.»
   En la hoja del camión va el día en que se vende con ella.
 - Por dentro, el camión y la bodega usan la misma hoja con distintas columnas, y
   «Día por día» y la bodega leen los mismos movimientos.
+
+## 187. Mover mercancía de un camión a otro, solo en el dashboard
+
+«También quiero que me permita mover mercancía entre camiones de ellos, solo en
+el dashboard.»
+
+- **En Inventario → Mover mercancía**, un tercer «hacia dónde»: **de un camión a
+  otro camión**. Se elige el camión de donde sale, se da «Ver lo que hay», sale
+  para elegir a qué camión va —nunca uno por omisión, y nunca el mismo—, y se
+  escribe cuánto de cada artículo, en cajas o piezas, como con la bodega.
+- **Igual que con la bodega** (§135): dos ajustes atados de tipo `traspaso`, uno
+  que baja en un camión y otro que sube en el otro, en una sola operación (§146).
+  A cada teléfono le llega su mitad como diferencia en su siguiente
+  sincronización, y se suma a lo que traiga aunque haya vendido en medio. No se
+  deja sacar más de lo que el sistema dice que hay, ni mover hacia o desde un
+  camión sin vendedor. Si estuvo mal, se anula en Operaciones y regresa todo.
+- **Solo en el dashboard**: el teléfono no mueve mercancía (§135). En el Excel,
+  el que la dio y el que la recibió la ven en «Otros», en amarillo, y la suma de
+  «Día por día» no cambia: solo cambió de camión.

@@ -1,6 +1,9 @@
-"""Mover mercancía de la bodega al camión, y de regreso, desde el panel (ADR 0002 §135).
+"""Mover mercancía de la bodega al camión, de regreso, y de un camión a otro, desde
+el panel (ADR 0002 §135, §187).
 
-«Quiero en el dashboard poder mover mercancía a los camiones y viceversa.»
+«Quiero en el dashboard poder mover mercancía a los camiones y viceversa.» Y
+después: «también quiero que me permita mover mercancía entre camiones de ellos,
+solo en el dashboard».
 
 ────────────────────────────────────────────────────────────────────────────
 POR QUÉ NO ES UN TRASPASO NI UNA CARGA
@@ -122,17 +125,51 @@ async def mover(
     commit: quien llama decide la transacción."""
     camion = await almacen(sesion, camion_id, "camion")
     bodega = await almacen(sesion, bodega_id, "bodega")
-    if camion["responsable_id"] is None:
-        raise MovimientoRechazado(
-            f"{camion['nombre']} no tiene vendedor: no hay teléfono al que llegue."
-        )
+    origen, destino = (bodega, camion) if al_camion else (camion, bodega)
+    return await _mover(sesion, origen=origen, destino=destino, cantidades=cantidades,
+                        nota=nota, quien=quien)
+
+
+async def mover_entre_camiones(
+    sesion,
+    *,
+    origen_id: uuid.UUID,
+    destino_id: uuid.UUID,
+    cantidades: dict[uuid.UUID, Decimal],
+    nota: str,
+    quien: uuid.UUID,
+) -> Movimiento:
+    """De un camión a otro (§187), igual que con la bodega: dos ajustes atados,
+    y cada mitad le llega a su teléfono. No hace commit."""
+    if origen_id == destino_id:
+        raise MovimientoRechazado("Elige dos camiones distintos.")
+    origen = await almacen(sesion, origen_id, "camion")
+    destino = await almacen(sesion, destino_id, "camion")
+    return await _mover(sesion, origen=origen, destino=destino, cantidades=cantidades,
+                        nota=nota, quien=quien)
+
+
+async def _mover(
+    sesion,
+    *,
+    origen: dict,
+    destino: dict,
+    cantidades: dict[uuid.UUID, Decimal],
+    nota: str,
+    quien: uuid.UUID,
+) -> Movimiento:
+    camiones = [a for a in (origen, destino) if a["tipo"] == "camion"]
+    for camion in camiones:
+        if camion["responsable_id"] is None:
+            raise MovimientoRechazado(
+                f"{camion['nombre']} no tiene vendedor: no hay teléfono al que llegue."
+            )
     pedidas = {p: c for p, c in cantidades.items() if c != 0}
     if not pedidas:
         raise MovimientoRechazado("Escribe cuánto mueves de al menos un artículo.")
     if any(c < 0 for c in pedidas.values()):
         raise MovimientoRechazado("Las cantidades van en positivo.")
 
-    origen, destino = (bodega, camion) if al_camion else (camion, bodega)
     nombres = {
         f.id: f.nombre
         for f in await sesion.execute(
@@ -187,17 +224,19 @@ async def mover(
         folios += [folio_sale, folio_entra]
 
     piezas = sum(pedidas.values(), Decimal(0))
-    sentido = (f"de {bodega['nombre']} a {camion['nombre']}" if al_camion
-               else f"de {camion['nombre']} a {bodega['nombre']}")
+    a_quien = (f"Al teléfono de {camiones[0]['responsable']} le llega"
+               if len(camiones) == 1 else
+               f"A los teléfonos de {camiones[0]['responsable']} y "
+               f"{camiones[1]['responsable']} les llega")
     return Movimiento(
         folio=operacion.folio,
         folios=folios,
         articulos=len(pedidas),
         piezas=piezas,
         mensaje=(
-            f"Se movieron {len(pedidas)} artículo(s), {_piezas(piezas)} piezas, {sentido}"
-            f", en una sola operación ({operacion.folio}). Al teléfono de "
-            f"{camion['responsable']} le llega al sincronizar, y se suma a lo que traiga."
+            f"Se movieron {len(pedidas)} artículo(s), {_piezas(piezas)} piezas, de "
+            f"{origen['nombre']} a {destino['nombre']}, en una sola operación "
+            f"({operacion.folio}). {a_quien} al sincronizar, y se suma a lo que traiga."
         ),
     )
 

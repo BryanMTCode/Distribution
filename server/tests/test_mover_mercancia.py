@@ -13,6 +13,8 @@
    anularla regresa las dos mitades.
 5. **Solo con permiso** de ver y de ajustar el inventario, y es una pestaña de
    Inventario.
+6. **De un camión a otro** (§187), solo en el dashboard: a cada teléfono le
+   llega su mitad; nunca al mismo camión ni más de lo que hay.
 """
 
 from __future__ import annotations
@@ -246,3 +248,93 @@ async def test_solo_con_permiso_y_es_pestana_de_inventario(cliente, sesion, semi
     pantalla = await cliente.get("/panel/inventario")
     assert pantalla.status_code == 200
     assert "/panel/inventario/mover" not in pantalla.text
+
+
+async def _otro_camion(sesion, semilla) -> dict:
+    """Pedro Gómez, con su Camión 02, vacío."""
+    vendedor, camion = uuid.uuid4(), uuid.uuid4()
+    await sesion.execute(
+        text(
+            "INSERT INTO usuarios (id, sucursal_id, codigo, nombre, password_hash, "
+            "                      rol_codigo, creado_en, actualizado_en) "
+            "VALUES (:u, :s, 'VEND02', 'Pedro Gómez', 'x', 'vendedor', now(), now())"
+        ),
+        {"u": vendedor, "s": semilla["sucursal"]},
+    )
+    await sesion.execute(
+        text("INSERT INTO almacenes (id, codigo, nombre, tipo, responsable_id) "
+             "VALUES (:a, 'CAMION_02', 'Camión 02', 'camion', :u)"),
+        {"a": camion, "u": vendedor},
+    )
+    await sesion.execute(
+        text("UPDATE usuarios SET almacen_id = :a WHERE id = :u"), {"a": camion, "u": vendedor}
+    )
+    await sesion.commit()
+    return {"vendedor": vendedor, "camion": camion}
+
+
+async def test_de_un_camion_a_otro_solo_en_el_dashboard(cliente, sesion, semilla, articulos):
+    """«También quiero que me permita mover mercancía entre camiones de ellos, solo
+    en el dashboard» (§187). Una caja de sopa de Juan a Pedro: a cada teléfono le
+    llega su mitad."""
+    otro = await _otro_camion(sesion, semilla)
+    await _entrar(cliente)
+    sopa = articulos["sopa"]
+
+    # Sin elegir a qué camión, no hay nada que mover todavía.
+    sin_destino = await cliente.get(
+        "/panel/inventario/mover",
+        params={"camion": str(semilla["camion"]), "sentido": "entre_camiones"},
+    )
+    assert 'id="elige_destino"' in sin_destino.text
+    assert 'id="formulario_mover"' not in sin_destino.text
+    # Y el camión de origen no sale para elegir como destino.
+    assert "A Camión 01" not in sin_destino.text and "A Camión 02" in sin_destino.text
+
+    pantalla = await cliente.get(
+        "/panel/inventario/mover",
+        params={"camion": str(semilla["camion"]), "sentido": "entre_camiones",
+                "camion_destino": str(otro["camion"])},
+    )
+    assert "de Camión 01 a Camión 02" in pantalla.text
+    assert "Hay en Camión 01" in pantalla.text
+    r = await cliente.post(
+        "/panel/inventario/mover",
+        data={"csrf": csrf_del_panel(cliente, pantalla), "camion": str(semilla["camion"]),
+              "camion_destino": str(otro["camion"]), "sentido": "entre_camiones",
+              "bodega": "", "nota": "", f"cantidad_{sopa}": "1", f"unidad_{sopa}": "CAJA"},
+        follow_redirects=True,
+    )
+    assert "Se movieron 1 artículo(s), 24 piezas, de Camión 01 a Camión 02" in r.text
+    assert "A los teléfonos de Juan Pérez y Pedro Gómez" in r.text
+    assert await _existencia(sesion, semilla["camion"], sopa) == 6
+    assert await _existencia(sesion, otro["camion"], sopa) == 24
+    assert await _existencia(sesion, semilla["bodega"], sopa) == 100
+    assert [(d["delta"], d["tipo"]) for d in
+            await _deltas_al_telefono(sesion, semilla["vendedor"])] == [("-24.000", "traspaso")]
+    assert [(d["delta"], d["tipo"]) for d in
+            await _deltas_al_telefono(sesion, otro["vendedor"])] == [("24.000", "traspaso")]
+
+
+async def test_entre_camiones_no_se_deja_mas_de_lo_que_hay_ni_el_mismo(
+    cliente, sesion, semilla, articulos
+):
+    otro = await _otro_camion(sesion, semilla)
+    await _entrar(cliente)
+    sopa = articulos["sopa"]
+    pantalla = await cliente.get(
+        "/panel/inventario/mover",
+        params={"camion": str(semilla["camion"]), "sentido": "entre_camiones",
+                "camion_destino": str(otro["camion"])},
+    )
+    datos = {"csrf": csrf_del_panel(cliente, pantalla), "camion": str(semilla["camion"]),
+             "sentido": "entre_camiones", "bodega": "", "nota": "",
+             f"cantidad_{sopa}": "2", f"unidad_{sopa}": "CAJA"}
+    mucho = await cliente.post("/panel/inventario/mover",
+                               data={**datos, "camion_destino": str(otro["camion"])})
+    assert "No alcanza en Camión 01" in mucho.text
+    mismo = await cliente.post("/panel/inventario/mover",
+                               data={**datos, "camion_destino": str(semilla["camion"])})
+    assert "Elige dos camiones distintos" in mismo.text
+    assert await _existencia(sesion, semilla["camion"], sopa) == 30
+    assert await _existencia(sesion, otro["camion"], sopa) == 0

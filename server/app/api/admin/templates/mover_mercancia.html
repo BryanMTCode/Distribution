@@ -7,10 +7,11 @@
 {% block contenido %}
 <h1>Mover mercancía</h1>
 <p class="subtitulo">
-  De la bodega a un camión, o de un camión a la bodega. Al teléfono del vendedor le
-  llega como diferencia —«súmale 24», «quítale 6»— en su siguiente
-  sincronización, y se suma a lo que traiga aunque haya vendido en medio. No es
-  la <a href="/panel/cargas">carga</a> del día: eso sigue igual.
+  De la bodega a un camión, de un camión a la bodega, o de un camión a otro. Al
+  teléfono de cada vendedor le llega como diferencia —«súmale 24», «quítale 6»— en
+  su siguiente sincronización, y se suma a lo que traiga aunque haya vendido en
+  medio. Solo desde aquí: el teléfono no mueve mercancía. No es la
+  <a href="/panel/cargas">carga</a> del día: eso sigue igual.
 </p>
 
 {% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
@@ -29,19 +30,31 @@
     <option value="{{ codigo }}" {% if codigo == sentido %}selected{% endif %}>{{ nombre }}</option>
     {% endfor %}
   </select>
-  <select name="camion" aria-label="Camión" style="min-width:240px">
+  <select name="camion" aria-label="{% if sentido == 'entre_camiones' %}De qué camión{% else %}Camión{% endif %}" style="min-width:240px">
     {% if not camion %}<option value="">Elige el camión</option>{% endif %}
     {% for c in camiones %}
-    <option value="{{ c.id }}" {% if camion and c.id == camion.id %}selected{% endif %}>{{ c.nombre }} · {{ c.responsable or 'sin vendedor' }}</option>
+    <option value="{{ c.id }}" {% if camion and c.id == camion.id %}selected{% endif %}>{% if sentido == 'entre_camiones' %}De {% endif %}{{ c.nombre }} · {{ c.responsable or 'sin vendedor' }}</option>
     {% endfor %}
   </select>
+  {% if sentido == 'entre_camiones' %}
+  <select name="camion_destino" aria-label="A qué camión" style="min-width:240px">
+    <option value="">Elige a qué camión</option>
+    {% for c in otros_camiones %}
+    <option value="{{ c.id }}" {% if camion_destino and c.id == camion_destino.id %}selected{% endif %}>A {{ c.nombre }} · {{ c.responsable or 'sin vendedor' }}</option>
+    {% endfor %}
+  </select>
+  <input type="hidden" name="bodega" value="{{ bodega.id if bodega else '' }}">
+  {% else %}
   <select name="bodega" aria-label="Bodega">
     {% for b in bodegas %}
     <option value="{{ b.id }}" {% if bodega and b.id == bodega.id %}selected{% endif %}>{{ b.nombre }}</option>
     {% endfor %}
   </select>
+  {% endif %}
   <button type="submit" class="secundario">Ver lo que hay</button>
 </form>
+<p class="sutil">Para mover de un camión a otro, elige «De un camión a otro camión» y
+  da clic en «Ver lo que hay»: sale para elegir a qué camión.</p>
 
 {% if origen %}
 <h2>{{ sentidos[sentido] }}: de {{ origen.nombre }} a {{ destino.nombre }}</h2>
@@ -51,7 +64,8 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <input type="hidden" name="sentido" value="{{ sentido }}">
   <input type="hidden" name="camion" value="{{ camion.id }}">
-  <input type="hidden" name="bodega" value="{{ bodega.id }}">
+  <input type="hidden" name="bodega" value="{{ bodega.id if bodega else '' }}">
+  <input type="hidden" name="camion_destino" value="{{ camion_destino.id if camion_destino else '' }}">
   {% if grupos|length > 1 %}{{ botones_plegar() }}{% endif %}
   <table class="columnas-fijas" id="tabla_mover" style="background:transparent">
     {{ columnas_mover() }}
@@ -120,6 +134,8 @@
   <a href="/panel/entradas">Entradas</a>.{% endif %}
 </div>
 {% endif %}
+{% elif sentido == 'entre_camiones' and camion %}
+<div class="vacio" id="elige_destino">Elige a qué camión va, y da clic en «Ver lo que hay».</div>
 {% else %}
 <div class="vacio">Elige el camión para ver lo que hay.</div>
 {% endif %}
