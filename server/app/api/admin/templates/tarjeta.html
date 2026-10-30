@@ -43,22 +43,40 @@
 </div>
 
 <div style="display:flex;flex-wrap:wrap;gap:16px;margin:18px 0">
-  <form method="post" action="/panel/dinero/tarjeta/movimiento" id="forma_movimiento"
+  {# Los gastos de la empresa se restan de la ganancia (§192); el retiro no. #}
+  <form method="post" action="/panel/dinero/tarjeta/movimiento" id="forma_gasto"
         style="flex:1 1 320px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:16px">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <h2 style="margin-top:0">Dinero que entra o sale</h2>
-    <label>Qué
-      <select name="tipo" id="tipo_movimiento">
-        <option value="salida">Sale (gasolina, sueldos, un retiro…)</option>
-        <option value="entrada">Entra (por otra cosa que una venta)</option>
+    <input type="hidden" name="tipo" value="salida">
+    <h2 style="margin-top:0">Un gasto o una salida</h2>
+    <label>Qué fue
+      <select name="categoria" id="categoria_gasto" required>
+        {% for clave, nombre in categorias.items() %}
+          <option value="{{ clave }}">{{ nombre }}</option>
+        {% endfor %}
       </select>
     </label>
     <label>Importe <input type="text" name="importe" inputmode="decimal" required style="max-width:160px"></label>
-    <label>En qué se fue o de dónde vino
+    <label>Detalle
       <input type="text" name="concepto" required minlength="3" maxlength="300" placeholder="Ej.: Gasolina del camión 2">
     </label>
     <label>Fecha <input type="date" name="fecha" value="{{ hoy }}" max="{{ hoy }}"></label>
-    <button type="submit" id="boton_movimiento">Guardar</button>
+    <button type="submit" id="boton_gasto">Guardar el gasto</button>
+    <p class="sutil" style="margin-bottom:0">Se resta de la ganancia de esa fecha, salvo el retiro del dueño.</p>
+  </form>
+
+  <form method="post" action="/panel/dinero/tarjeta/movimiento" id="forma_entrada"
+        style="flex:1 1 280px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:16px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="tipo" value="entrada">
+    <h2 style="margin-top:0">Dinero que entra</h2>
+    <p class="sutil">Por otra cosa que una venta: un préstamo, lo que puso el dueño.</p>
+    <label>Importe <input type="text" name="importe" inputmode="decimal" required style="max-width:160px"></label>
+    <label>De dónde vino
+      <input type="text" name="concepto" required minlength="3" maxlength="300">
+    </label>
+    <label>Fecha <input type="date" name="fecha" value="{{ hoy }}" max="{{ hoy }}"></label>
+    <button type="submit" class="secundario" id="boton_entrada">Guardar la entrada</button>
   </form>
 
   <form method="post" action="/panel/dinero/tarjeta/asi-esta" id="forma_asi_esta"

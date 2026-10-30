@@ -90,6 +90,7 @@ async def la_tarjeta(
             "periodo": elegido,
             "periodos": PERIODOS,
             "hoy": date.today().isoformat(),
+            "categorias": tarjeta.CATEGORIAS,
             "error": error,
             "guardado": guardado,
         },
@@ -129,6 +130,7 @@ async def movimiento(
     importe: Annotated[str, Form()] = "",
     concepto: Annotated[str, Form()] = "",
     fecha: Annotated[str, Form()] = "",
+    categoria: Annotated[str, Form()] = "",
     csrf: Annotated[str, Form()] = "",
 ):
     actor.exigir(PERMISO)
@@ -140,11 +142,16 @@ async def movimiento(
         except ValueError as e:
             raise MovimientoInvalido("La fecha no se entiende.") from e
         await tarjeta.registrar(sesion, tipo=tipo, importe=monto, concepto=concepto,
-                                fecha=cuando, quien=actor.usuario_id)
+                                fecha=cuando, quien=actor.usuario_id,
+                                categoria=categoria or None)
     except (CapturaInvalida, MovimientoInvalido) as e:
         return _a_la_tarjeta(error=str(e))
     await sesion.commit()
-    return _a_la_tarjeta(guardado=f"{tarjeta.A_MANO[tipo]} de ${monto:,.2f} guardada.")
+    if tipo == "salida":
+        return _a_la_tarjeta(
+            guardado=f"{tarjeta.CATEGORIAS[categoria]}: ${monto:,.2f} guardado."
+        )
+    return _a_la_tarjeta(guardado=f"Entrada de dinero de ${monto:,.2f} guardada.")
 
 
 @router.post("/tarjeta/asi-esta")

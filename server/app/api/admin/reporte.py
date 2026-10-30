@@ -59,7 +59,11 @@ async def bajar(
 ) -> Response:
     actor.exigir(PERMISO)
     elegido = await periodo_pedido(sesion, periodo or "semana", desde, hasta or desde)
-    datos = await reporte_excel.datos_del_reporte(sesion, elegido)
+    # La tarjeta y la ganancia, solo en el archivo de quien las ve (§192).
+    datos = await reporte_excel.datos_del_reporte(
+        sesion, elegido, ver_dinero=actor.puede("tarjeta.ver"),
+        ver_ganancia=actor.puede("costos.ver") and actor.puede("tarjeta.ver"),
+    )
     quien = (
         await sesion.execute(
             text("SELECT nombre FROM usuarios WHERE id = :u"), {"u": actor.usuario_id}

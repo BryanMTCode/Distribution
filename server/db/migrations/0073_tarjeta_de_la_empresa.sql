@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS movimientos_tarjeta (
     importe         numeric(14,2) NOT NULL,
     fecha           date NOT NULL,
     concepto        text NOT NULL CHECK (length(btrim(concepto)) >= 3),
+    -- Qué fue lo que salió (§192): un gasto de la empresa —que se resta de la
+    -- ganancia— o un retiro del dueño, que no es gasto.
+    categoria       text CHECK (categoria IN ('sueldos', 'gasolina', 'mantenimiento',
+                                              'renta', 'otro_gasto', 'retiro')),
     registrado_por  uuid NOT NULL REFERENCES usuarios(id),
     registrado_en   timestamptz NOT NULL DEFAULT now(),
 
@@ -49,6 +53,7 @@ CREATE TABLE IF NOT EXISTS movimientos_tarjeta (
      OR (tipo = 'inicial' AND importe >= 0)
      OR (tipo = 'ajuste' AND importe <> 0)
     ),
+    CONSTRAINT salida_con_categoria CHECK ((tipo = 'salida') = (categoria IS NOT NULL)),
     CONSTRAINT movimiento_tarjeta_quitado_con_motivo CHECK (
         quitado_en IS NULL
         OR (quitado_por IS NOT NULL AND length(btrim(coalesce(motivo_quitado, ''))) >= 3)

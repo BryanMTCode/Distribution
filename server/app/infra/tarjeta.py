@@ -44,6 +44,19 @@ class MovimientoInvalido(Exception):
 # Lo que se captura a mano, y cómo se dice.
 A_MANO = {"entrada": "Entrada de dinero", "salida": "Salida de dinero"}
 
+# Qué fue lo que salió (§192): los gastos de la empresa se restan de la ganancia;
+# el retiro del dueño no es gasto —el dinero sale de la empresa, pero no se gastó
+# en hacerla trabajar—.
+CATEGORIAS = {
+    "sueldos": "Sueldos",
+    "gasolina": "Gasolina",
+    "mantenimiento": "Mantenimiento de los camiones",
+    "renta": "Renta y servicios",
+    "otro_gasto": "Otro gasto",
+    "retiro": "Retiro del dueño (no es gasto)",
+}
+NO_ES_GASTO = {"retiro"}
+
 # Cómo se dice cada clase de movimiento en la lista.
 CLASES = {
     "inicial": "Saldo con que empezó",
@@ -65,7 +78,7 @@ SELECT * FROM (
     -- Lo capturado a mano.
     SELECT t.registrado_en AS cuando, t.fecha, t.tipo AS clase, t.concepto, t.importe,
            u.nombre AS quien, t.id AS ref, CAST(NULL AS text) AS enlace,
-           t.tipo IN ('entrada', 'salida', 'ajuste') AS se_quita
+           t.tipo IN ('entrada', 'salida', 'ajuste') AS se_quita, t.categoria
       FROM movimientos_tarjeta t
       LEFT JOIN usuarios u ON u.id = t.registrado_por
      WHERE t.quitado_en IS NULL
@@ -74,7 +87,7 @@ SELECT * FROM (
     UNION ALL
     SELECT l.cerrada_en, COALESCE(l.cuenta_hasta, l.fecha_operativa), 'corte',
            'Corte ' || l.folio || ' · ' || u.nombre, l.efectivo_entregado,
-           NULL, l.id, '/panel/liquidaciones/' || l.id, false
+           NULL, l.id, '/panel/liquidaciones/' || l.id, false, NULL
       FROM liquidaciones l
       JOIN usuarios u ON u.id = l.vendedor_id
       CROSS JOIN inicio i
@@ -85,7 +98,7 @@ SELECT * FROM (
     UNION ALL
     SELECT vm.creada_en, vm.fecha, 'mayoreo',
            'Mayoreo ' || vm.folio || COALESCE(' · ' || c.nombre_comercial, ''), vm.total,
-           NULL, vm.id, '/panel/mayoreo/' || vm.id, false
+           NULL, vm.id, '/panel/mayoreo/' || vm.id, false, NULL
       FROM ventas_mayoreo vm
       LEFT JOIN clientes c ON c.id = vm.cliente_id
       CROSS JOIN inicio i
@@ -96,7 +109,7 @@ SELECT * FROM (
     UNION ALL
     SELECT cv.registrado_en, cv.fecha, 'pago_vendedor',
            'Pagó de su cuenta · ' || u.nombre, cv.importe,
-           NULL, cv.id, '/panel/vendedores/cuenta/' || cv.vendedor_id, false
+           NULL, cv.id, '/panel/vendedores/cuenta/' || cv.vendedor_id, false, NULL
       FROM cuenta_vendedor cv
       JOIN usuarios u ON u.id = cv.vendedor_id
       CROSS JOIN inicio i
@@ -106,7 +119,7 @@ SELECT * FROM (
     UNION ALL
     SELECT g.registrado_en, g.fecha_pago, 'compra',
            'Pago de la compra ' || e.folio || COALESCE(' · ' || pr.nombre, ''), -g.importe,
-           u.nombre, g.id, '/panel/compras/cuenta/' || g.entrada_id, false
+           u.nombre, g.id, '/panel/compras/cuenta/' || g.entrada_id, false, NULL
       FROM pagos_proveedor g
       JOIN entradas e ON e.id = g.entrada_id
       LEFT JOIN cuentas_por_pagar cp ON cp.entrada_id = g.entrada_id
@@ -142,7 +155,8 @@ async def movimientos(sesion) -> list[dict]:
     filas = []
     for f in (await sesion.execute(text(SQL_MOVIMIENTOS))).mappings().all():
         saldo += Decimal(f["importe"])
-        filas.append({**dict(f), "saldo": saldo, "nombre_clase": CLASES[f["clase"]]})
+        nombre = CATEGORIAS[f["categoria"]] if f["categoria"] else CLASES[f["clase"]]
+        filas.append({**dict(f), "saldo": saldo, "nombre_clase": nombre})
     return filas
 
 
@@ -217,14 +231,47 @@ def _concepto(concepto: str) -> str:
     return limpio[:300]
 
 
-async def _insertar(sesion, *, tipo, importe, fecha, concepto, quien) -> None:
+async def _insertar(sesion, *, tipo, importe, fecha, concepto, quien, categoria=None) -> None:
     await sesion.execute(
         text(
-            "INSERT INTO movimientos_tarjeta (tipo, importe, fecha, concepto, registrado_por) "
-            "VALUES (:t, :i, :f, :c, :q)"
+            "INSERT INTO movimientos_tarjeta (tipo, importe, fecha, concepto, categoria, "
+            "                                 registrado_por) "
+            "VALUES (:t, :i, :f, :c, :cat, :q)"
         ),
-        {"t": tipo, "i": importe, "f": fecha, "c": concepto, "q": quien},
+        {"t": tipo, "i": importe, "f": fecha, "c": concepto, "cat": categoria, "q": quien},
     )
+
+
+async def gastos(sesion, desde: date, hasta: date) -> dict:
+    """Los gastos de la empresa del periodo (§192), por la fecha en que se hicieron:
+    el total, por categoría y cada uno. El retiro del dueño no es gasto."""
+    renglones = [
+        dict(f)
+        for f in (
+            await sesion.execute(
+                text(
+                    "SELECT t.fecha, t.categoria, t.concepto, -t.importe AS importe, "
+                    "       u.nombre AS quien "
+                    "  FROM movimientos_tarjeta t "
+                    "  LEFT JOIN usuarios u ON u.id = t.registrado_por "
+                    " WHERE t.tipo = 'salida' AND t.quitado_en IS NULL "
+                    "   AND t.categoria <> ALL(CAST(:no_es AS text[])) "
+                    "   AND t.fecha BETWEEN :desde AND :hasta "
+                    " ORDER BY t.fecha, t.registrado_en"
+                ),
+                {"desde": desde, "hasta": hasta, "no_es": sorted(NO_ES_GASTO)},
+            )
+        ).mappings().all()
+    ]
+    por_categoria: dict[str, Decimal] = {}
+    for g in renglones:
+        g["nombre"] = CATEGORIAS[g["categoria"]]
+        por_categoria[g["nombre"]] = por_categoria.get(g["nombre"], Decimal(0)) + g["importe"]
+    return {
+        "total": sum((g["importe"] for g in renglones), Decimal(0)),
+        "por_categoria": sorted(por_categoria.items(), key=lambda par: -par[1]),
+        "renglones": renglones,
+    }
 
 
 async def empezar(sesion, *, saldo_hoy: Decimal, quien: uuid.UUID) -> None:
@@ -242,11 +289,15 @@ async def empezar(sesion, *, saldo_hoy: Decimal, quien: uuid.UUID) -> None:
 
 
 async def registrar(
-    sesion, *, tipo: str, importe: Decimal, concepto: str, fecha: date, quien: uuid.UUID
+    sesion, *, tipo: str, importe: Decimal, concepto: str, fecha: date, quien: uuid.UUID,
+    categoria: str | None = None,
 ) -> None:
-    """Una entrada o una salida de dinero a mano. No hace commit."""
+    """Una entrada o una salida de dinero a mano; la salida, con qué fue. No hace
+    commit."""
     if tipo not in A_MANO:
         raise MovimientoInvalido("Elige si el dinero entra o sale.")
+    if tipo == "salida" and categoria not in CATEGORIAS:
+        raise MovimientoInvalido("Elige qué fue: sueldos, gasolina, otro gasto o un retiro.")
     if not await empezo(sesion):
         raise MovimientoInvalido("Primero escribe con cuánto empieza la tarjeta.")
     if importe <= 0:
@@ -254,7 +305,8 @@ async def registrar(
     if fecha > date.today():
         raise MovimientoInvalido("La fecha no puede ser futura.")
     await _insertar(sesion, tipo=tipo, importe=importe if tipo == "entrada" else -importe,
-                    fecha=fecha, concepto=_concepto(concepto), quien=quien)
+                    fecha=fecha, concepto=_concepto(concepto), quien=quien,
+                    categoria=categoria if tipo == "salida" else None)
 
 
 async def asi_esta(sesion, *, saldo_real: Decimal, quien: uuid.UUID) -> Decimal:

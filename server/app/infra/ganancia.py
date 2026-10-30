@@ -27,6 +27,8 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
+from app.infra import tarjeta
+
 MAYOREO = "Mayoreo (oficina)"
 
 # Por día, vendedor y artículo: piezas, lo vendido, lo que costó lo que tenía
@@ -120,3 +122,13 @@ async def ganancia_de_lo_vendido(sesion, desde, hasta) -> dict:
         "por_articulo": articulos,
         "articulos_sin_costo": sum(1 for a in articulos if a["sin_costo"] > 0),
     }
+
+
+async def ganancia_neta(sesion, desde, hasta) -> dict:
+    """«La ganancia del periodo que yo quiera; en la tarjeta meteré sueldos,
+    gasolina, todos los gastos de la empresa» (§192): la ganancia de lo vendido
+    menos los gastos que se capturaron en la tarjeta con fecha del periodo."""
+    vendido = await ganancia_de_lo_vendido(sesion, desde, hasta)
+    gastos = await tarjeta.gastos(sesion, desde, hasta)
+    return {**vendido, "gastos": gastos,
+            "neta": vendido["total"]["ganancia"] - gastos["total"]}

@@ -134,15 +134,19 @@ async def test_el_dinero_que_entra_o_sale_a_mano_y_se_quita(cliente, sesion, sem
     await _entrar(cliente)
     await _post(cliente, "/panel/dinero/tarjeta/empezar", saldo="1000")
     await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="salida", importe="300",
-                concepto="Gasolina del camión 1", fecha="")
+                categoria="gasolina", concepto="Gasolina del camión 1", fecha="")
     await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="entrada", importe="100",
                 concepto="Préstamo del dueño", fecha="")
     assert await _saldo(cliente) == "$800.00 debe haber hoy"
 
     # Sin concepto no se guarda.
     r = await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="salida",
-                    importe="50", concepto="", fecha="")
+                    importe="50", categoria="gasolina", concepto="", fecha="")
     assert "en qué se fue" in r.text
+    # Ni sin decir qué fue.
+    r = await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="salida",
+                    importe="50", concepto="Algo", fecha="")
+    assert "Elige qué fue" in r.text
     assert await _saldo(cliente) == "$800.00 debe haber hoy"
 
     # La entrada fue un error: se quita, y se queda con el motivo.
@@ -307,3 +311,74 @@ async def test_el_mayoreo_abajo_de_la_lista_se_ve(cliente, sesion, semilla, dia)
             "$30.00 abajo de la lista") in plano
     tablero = _plano((await cliente.get("/panel")).text)
     assert "El mayoreo de este mes se vendió $30.00 abajo del precio de lista." in tablero
+
+
+async def test_la_ganancia_neta_del_periodo_que_se_elija(cliente, sesion, semilla, dia):
+    """«Ganancia de la semana; en la tarjeta meteré sueldos, gasolina, todos los
+    gastos de la empresa», «por el periodo que yo quiera» (§192). El vendedor
+    vendió 180 atunes en $2,250 que costaron $10 cada uno: $450 de ganancia. Se
+    pagaron $300 de sueldos y $50 de gasolina, y el dueño retiró $1,000, que no es
+    gasto. De la semana pasada, un sueldo que no cuenta."""
+    from datetime import timedelta
+
+    await sesion.execute(
+        text("INSERT INTO producto_costos (producto_id, costo_promedio, ultimo_costo) "
+             "VALUES (:p, 10, 10)"),
+        {"p": dia["producto"]},
+    )
+    await sesion.execute(
+        text("INSERT INTO costo_de_lo_vendido (partida_id, costo_unitario) "
+             "SELECT id, 10 FROM venta_partidas WHERE venta_id = :v "
+             "ON CONFLICT (partida_id) DO UPDATE SET costo_unitario = 10"),
+        {"v": dia["venta"]},
+    )
+    await sesion.commit()
+    await _entrar(cliente)
+    await _post(cliente, "/panel/dinero/tarjeta/empezar", saldo="5000")
+    hace_ocho_dias = (date.today() - timedelta(days=8)).isoformat()
+    for categoria, importe, fecha in (("sueldos", "300", ""), ("gasolina", "50", ""),
+                                      ("retiro", "1000", ""),
+                                      ("sueldos", "700", hace_ocho_dias)):
+        await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="salida",
+                    importe=importe, categoria=categoria, concepto="Pago de la semana",
+                    fecha=fecha)
+    # En la tarjeta salen todos, el retiro también.
+    assert await _saldo(cliente) == "$2,950.00 debe haber hoy"
+    assert "Gasolina" in _plano((await cliente.get("/panel/dinero/tarjeta")).text)
+
+    html = (await cliente.get("/panel/ganancia?periodo=hoy")).text
+    assert re.search(r'id="ganancia_total">\$450.00<', html)
+    assert re.search(r'id="gastos_total"[^>]*>\$350.00<', html)
+    assert re.search(r'id="ganancia_neta">\$100.00<', html)
+    assert "Sueldos $300.00 Gasolina $50.00 Total $350.00" in _plano(html)
+    assert "Retiro" not in _plano(html.split('id="gastos"')[1])
+
+    # El periodo que se quiera: con el de hace ocho días, ganancia neta negativa.
+    desde = (date.today() - timedelta(days=10)).isoformat()
+    html = (await cliente.get(f"/panel/ganancia?periodo=rango&desde={desde}"
+                              f"&hasta={date.today().isoformat()}")).text
+    assert re.search(r'id="ganancia_neta">\$-600.00<', html)
+
+    # Y en la pantalla principal, la de la semana.
+    tablero = _plano((await cliente.get("/panel")).text)
+    assert "Ganancia de la semana" in tablero
+
+
+async def test_el_excel_del_administrador_trae_la_ganancia_neta(cliente, sesion, semilla, dia):
+    import io
+
+    from openpyxl import load_workbook
+
+    from tests.test_reporte_excel import _renglon
+
+    await _entrar(cliente)
+    await _post(cliente, "/panel/dinero/tarjeta/empezar", saldo="1000")
+    await _post(cliente, "/panel/dinero/tarjeta/movimiento", tipo="salida", importe="120",
+                categoria="gasolina", concepto="Gasolina", fecha="")
+    r = await cliente.get("/panel/reporte/excel?periodo=hoy")
+    libro = load_workbook(io.BytesIO(r.content))
+    resumen = libro["Resumen"]
+    assert _renglon(resumen, "Gastos de la empresa")[1] == 120
+    assert (_renglon(resumen, "Ganancia neta")[1]
+            == _renglon(resumen, "Ganancia de lo vendido")[1] - 120)
+    assert _renglon(libro["Tarjeta"], "Gasolina")[1] == 120

@@ -38,6 +38,13 @@
   <a class="tarjeta" href="/panel/dinero" style="text-decoration:none;color:inherit;border-color:var(--acento)">
     <div class="numero">{{ vale.total|dinero }}</div><div class="etiqueta">Total</div>
   </a>
+  {% if ganancia_semana %}
+  <a class="tarjeta {% if ganancia_semana.neta < 0 %}alerta{% endif %}" style="text-decoration:none;color:inherit"
+     href="/panel/ganancia?periodo=semana" id="tablero_ganancia_semana">
+    <div class="numero">{{ ganancia_semana.neta|dinero }}</div>
+    <div class="etiqueta">Ganancia de la semana (ya con {{ ganancia_semana.gastos.total|dinero }} de gastos)</div>
+  </a>
+  {% endif %}
 </div>
 {% if vale.mayoreo_del_mes.abajo > 0 %}
 <p class="sutil" id="tablero_mayoreo_abajo">

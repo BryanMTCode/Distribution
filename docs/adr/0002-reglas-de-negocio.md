@@ -7925,3 +7925,29 @@ día, día por día, que pueda ver cuántos compré de cada artículo.»
   «Lo que valía la empresa al cerrar cada día»: la mercancía, la tarjeta y el
   total. En el Resumen, las compras, lo que hay en la tarjeta y lo que vale la
   empresa hoy.
+
+## 192. La ganancia neta del periodo que se elija, con los gastos de la tarjeta
+
+«También quiero lo de ganancia de la semana: en la tarjeta yo meteré sueldos,
+gasolina, etc., todos los gastos de la empresa.» «Ganancia por el periodo que yo
+quiera.»
+
+- **Cada salida de la tarjeta dice qué fue**: sueldos, gasolina, mantenimiento de
+  los camiones, renta y servicios, otro gasto, o retiro del dueño. En Dinero →
+  Tarjeta, «Un gasto o una salida» la pide; el dinero que entra va en su propio
+  formulario.
+- **Desempeño → Ganancia**, del periodo que se elija (hoy, la semana, el mes, un
+  rango a mano): lo vendido, lo que costó, la ganancia de lo vendido, los
+  **gastos de la empresa** y la **ganancia neta** = ganancia de lo vendido −
+  gastos. Abajo, los gastos por tipo y uno por uno.
+- **Qué es gasto**: las salidas capturadas en la tarjeta, por la fecha que se les
+  puso. **No** lo son el retiro del dueño (el dinero sale, pero no se gastó en
+  hacer trabajar la empresa) ni las compras de mercancía: su costo ya se resta
+  cuando se vende, y restarlas otra vez contaría dos veces lo mismo.
+- **En la pantalla principal**, junto a lo que vale la empresa, la ganancia neta
+  de la semana, con cuánto de gastos lleva.
+- **En el Excel del administrador**, el Resumen trae la ganancia de lo vendido,
+  los gastos y la ganancia neta, y la hoja Tarjeta los gastos por tipo. La
+  tarjeta, lo que vale la empresa y la ganancia **solo van en el archivo de quien
+  los puede ver en el dashboard**: la gerencia y la supervisión bajan el mismo
+  Excel de antes, sin la hoja Tarjeta y sin esas cifras.

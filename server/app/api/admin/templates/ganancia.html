@@ -24,6 +24,15 @@
     <div class="numero" id="ganancia_total">{{ total.ganancia|dinero }}</div>
     <div class="etiqueta">ganancia · {{ margen(total.margen) }} de lo vendido</div>
   </div>
+  {# Los gastos de la empresa, de la tarjeta (§192). #}
+  <a class="tarjeta" style="text-decoration:none;color:inherit" href="#gastos">
+    <div class="numero" id="gastos_total" style="color:var(--alerta)">{{ gastos.total|dinero }}</div>
+    <div class="etiqueta">gastos de la empresa</div>
+  </a>
+  <div class="tarjeta {% if neta < 0 %}alerta{% endif %}" style="border-color:var(--acento)">
+    <div class="numero" id="ganancia_neta">{{ neta|dinero }}</div>
+    <div class="etiqueta">ganancia neta</div>
+  </div>
 </div>
 
 {% if total.sin_costo > 0 %}
@@ -106,4 +115,43 @@
   de hoy.
 </p>
 {% endif %}
+
+{# Los gastos de la empresa del periodo, de la tarjeta (ADR 0002 §192). #}
+<h2 id="gastos">Gastos de la empresa</h2>
+{% if gastos.renglones %}
+<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+  <div class="tabla-marco" style="flex:0 1 360px">
+  <table id="gastos_por_tipo">
+    <thead><tr><th>En qué</th><th class="numero">Cuánto</th></tr></thead>
+    <tbody>
+      {% for nombre, cuanto in gastos.por_categoria %}
+      <tr><td>{{ nombre }}</td><td class="numero">{{ cuanto|dinero }}</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td><strong>Total</strong></td><td class="numero"><strong>{{ gastos.total|dinero }}</strong></td></tr></tfoot>
+  </table>
+  </div>
+  <div class="tabla-marco" style="flex:1 1 420px">
+  <table id="gastos_uno_por_uno">
+    <thead><tr><th>Fecha</th><th>En qué</th><th>Detalle</th><th class="numero">Cuánto</th></tr></thead>
+    <tbody>
+      {% for g in gastos.renglones %}
+      <tr><td>{{ g.fecha.strftime('%d/%m') }}</td><td>{{ g.nombre }}</td>
+        <td>{{ g.concepto }}{% if g.quien %} <span class="sutil">· {{ g.quien }}</span>{% endif %}</td>
+        <td class="numero">{{ g.importe|dinero }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="vacio">No hay gastos capturados en este periodo.</div>
+{% endif %}
+<p class="sutil">
+  Los gastos son las salidas de dinero que se capturan en
+  <a href="/panel/dinero/tarjeta">Dinero → Tarjeta</a> —sueldos, gasolina,
+  mantenimiento, renta—, por la fecha que se les puso. Las compras de mercancía no
+  son gasto: su costo ya se resta cuando se vende. El retiro del dueño tampoco.
+  <strong>Ganancia neta</strong> = ganancia de lo vendido − gastos.
+</p>
 {% endblock %}

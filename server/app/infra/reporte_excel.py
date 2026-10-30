@@ -47,6 +47,7 @@ from sqlalchemy import text
 from app.infra import tarjeta
 from app.infra.corte_de_la_carga import DESDE_LA_CARGA, TOPE_DEL_CORTE
 from app.infra.cuenta_vendedor import ORIGENES
+from app.infra.ganancia import ganancia_neta
 from app.infra.valor_de_inventario import (
     SQL_PRECIO_DE_HOY,
     SQL_VALOR_DE_LOS_ALMACENES,
@@ -99,6 +100,12 @@ class Reporte:
     tarjeta_empezo: bool = False
     # Lo que vale hoy la mercancía, con la misma cuenta que la pantalla Dinero.
     mercancia_hoy: Decimal = Decimal(0)
+    # La tarjeta y la ganancia son del administrador (§190, §180): solo van en el
+    # archivo de quien las puede ver en el dashboard (§192).
+    ver_dinero: bool = False
+    ver_ganancia: bool = False
+    gastos: dict = field(default_factory=dict)
+    ganancia: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -680,8 +687,11 @@ async def _valor_por_dia(filas, rango) -> dict:
     return {"almacenes": con_mercancia, "dias": dias}
 
 
-async def datos_del_reporte(sesion, periodo) -> Reporte:
-    """Todo lo que lleva el reporte, del periodo que se eligió."""
+async def datos_del_reporte(
+    sesion, periodo, *, ver_dinero: bool = False, ver_ganancia: bool = False
+) -> Reporte:
+    """Todo lo que lleva el reporte, del periodo que se eligió. La tarjeta y la
+    ganancia, solo si quien lo baja las puede ver."""
     rango = {"desde": periodo.inicio, "hasta": periodo.fin}
 
     async def filas(sql: str, parametros: dict | None = None) -> list[dict]:
@@ -705,8 +715,13 @@ async def datos_del_reporte(sesion, periodo) -> Reporte:
         valor_por_dia=await _valor_por_dia(filas, rango),
         compras=await filas(SQL_COMPRAS, rango),
         pagos=await filas(SQL_PAGOS, rango),
-        tarjeta=await tarjeta.movimientos(sesion),
-        tarjeta_empezo=await tarjeta.empezo(sesion),
+        tarjeta=await tarjeta.movimientos(sesion) if ver_dinero else [],
+        tarjeta_empezo=await tarjeta.empezo(sesion) if ver_dinero else False,
+        ver_dinero=ver_dinero,
+        ver_ganancia=ver_ganancia,
+        gastos=await tarjeta.gastos(sesion, periodo.inicio, periodo.fin) if ver_dinero else {},
+        ganancia=await ganancia_neta(sesion, periodo.inicio, periodo.fin)
+        if ver_ganancia else {},
         mercancia_hoy=sum((Decimal(a["valor"]) for a in await filas(SQL_VALOR_DE_LOS_ALMACENES)),
                           Decimal(0)),
     )
@@ -1128,6 +1143,18 @@ def _hoja_de_la_tarjeta(libro: Workbook, reporte: Reporte, periodo: str) -> None
     hoja.nota("Entran solos el efectivo de cada corte, el mayoreo y lo que un vendedor "
               "paga de su cuenta; sale sola la compra pagada con la tarjeta. Lo demás "
               "se captura en el dashboard, con su concepto.")
+    hoja.fila += 1
+    # Los gastos de la empresa del periodo, por la fecha que se les puso (§192).
+    gastos = reporte.gastos
+    hoja.tabla(
+        "Gastos de la empresa, por tipo",
+        [("En qué", "texto"), ("Cuánto", "dinero")],
+        [[nombre, cuanto] for nombre, cuanto in gastos.get("por_categoria", [])],
+        totales=["Total", gastos.get("total", Decimal(0))],
+        vacio="No hay gastos capturados en este periodo.",
+    )
+    hoja.nota("El retiro del dueño no es gasto, y las compras de mercancía tampoco: su "
+              "costo se resta cuando se vende.")
     hoja.terminar()
 
 
@@ -1204,6 +1231,18 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
                 if reporte.tarjeta_empezo
                 else [["Lo que vale la empresa (hoy)", en_mercancia,
                        "Bodega y camiones; la tarjeta todavía no tiene su saldo inicial"]]
+                if reporte.ver_dinero
+                else []
+            ),
+            *(
+                [["Ganancia de lo vendido", reporte.ganancia["total"]["ganancia"],
+                  "Lo vendido menos lo que costó"],
+                 ["Gastos de la empresa", reporte.ganancia["gastos"]["total"],
+                  "Sueldos, gasolina y demás, capturados en la tarjeta"],
+                 ["Ganancia neta", reporte.ganancia["neta"],
+                  "La ganancia de lo vendido menos los gastos"]]
+                if reporte.ver_ganancia
+                else []
             ),
             ["Lo que deben los vendedores (hoy)", deben,
              "Faltantes y mermas a su cargo que no han pagado"],
@@ -1302,7 +1341,8 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     hoja.terminar()
 
     _hoja_de_compras(libro, reporte, periodo)
-    _hoja_de_la_tarjeta(libro, reporte, periodo)
+    if reporte.ver_dinero:
+        _hoja_de_la_tarjeta(libro, reporte, periodo)
 
     # --- El camión de cada vendedor, día por día -----------------------------
     # «Quiero poder comparar por vendedor día a día, ver cómo se comporta su
@@ -1432,23 +1472,24 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     hoja.fila += 1
 
     # «Que el Excel me sirva para auditar toda la empresa» (§191): la mercancía y
-    # la tarjeta, al cerrar cada día.
-    empresa = []
-    for d in dias:
-        en_la_tarjeta = _saldo_de_la_tarjeta_al(reporte.tarjeta, d["dia"])
-        empresa.append([_con_dia(d["dia"]), d["cerro"], en_la_tarjeta,
-                        d["cerro"] + (en_la_tarjeta or Decimal(0))])
-    hoja.tabla(
-        "Lo que valía la empresa al cerrar cada día",
-        [("Día", "texto"), ("Mercancía", "dinero"), ("Tarjeta", "dinero"),
-         ("Total", "dinero")],
-        empresa,
-        vacio="El periodo todavía no empieza.",
-    )
-    hoja.nota("La mercancía de las bodegas y los camiones, a precio de venta, y lo que "
-              "debía haber en la tarjeta. Antes de capturar el saldo inicial de la "
-              "tarjeta, el total es solo la mercancía. El efectivo que los vendedores "
-              "traen y todavía no entregan no está en ninguna de las dos.")
+    # la tarjeta, al cerrar cada día. La tarjeta es del administrador (§192).
+    if reporte.ver_dinero:
+        empresa = []
+        for d in dias:
+            en_la_tarjeta = _saldo_de_la_tarjeta_al(reporte.tarjeta, d["dia"])
+            empresa.append([_con_dia(d["dia"]), d["cerro"], en_la_tarjeta,
+                            d["cerro"] + (en_la_tarjeta or Decimal(0))])
+        hoja.tabla(
+            "Lo que valía la empresa al cerrar cada día",
+            [("Día", "texto"), ("Mercancía", "dinero"), ("Tarjeta", "dinero"),
+             ("Total", "dinero")],
+            empresa,
+            vacio="El periodo todavía no empieza.",
+        )
+        hoja.nota("La mercancía de las bodegas y los camiones, a precio de venta, y lo "
+                  "que debía haber en la tarjeta. Antes de capturar el saldo inicial de "
+                  "la tarjeta, el total es solo la mercancía. El efectivo que los "
+                  "vendedores traen y todavía no entregan no está en ninguna de las dos.")
     if sin_precio:
         hoja.nota("Los que no tienen precio no suman: " + ", ".join(sin_precio))
     hoja.terminar()

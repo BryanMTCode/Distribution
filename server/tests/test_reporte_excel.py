@@ -142,14 +142,22 @@ async def test_lo_baja_la_oficina_y_sin_entrar_nadie(cliente, sesion, semilla, d
     r = await cliente.get("/panel/reporte/excel?periodo=hoy", follow_redirects=False)
     assert r.status_code != 200 and not r.content.startswith(b"PK")
 
+    # La tarjeta y la ganancia son del administrador (§192): no van en el archivo
+    # de la gerencia ni de la supervisión.
+    de_la_oficina = [h for h in HOJAS if h != "Tarjeta"]
     await _entrar(cliente, "GER01")
     _, libro = await _bajar(cliente, "semana")
-    assert libro.sheetnames == HOJAS
+    assert libro.sheetnames == de_la_oficina
+    resumen = {f[0] for f in libro["Resumen"].iter_rows(values_only=True) if f}
+    assert not {"Lo que vale la empresa (hoy)", "Ganancia neta",
+                "Gastos de la empresa"} & resumen
+    assert "Mercancía" not in {c for f in libro["Día por día"].iter_rows(values_only=True)
+                               for c in f}
 
     await _usuario(sesion, semilla, "SUP01", "supervisor")
     await _entrar(cliente, "SUP01")
     _, libro = await _bajar(cliente, "hoy")
-    assert libro.sheetnames == HOJAS
+    assert libro.sheetnames == de_la_oficina
 
 
 # ---------------------------------------------------------------------------

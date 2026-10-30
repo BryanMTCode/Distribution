@@ -44,6 +44,7 @@ from app.api.admin.sesion_web import (
 )
 from app.core.seguridad import verificar_password
 from app.infra import tarjeta
+from app.infra.ganancia import ganancia_neta
 from app.infra.models import Usuario
 from app.infra.objetivos_diarios import de_toda_la_empresa, objetivos_diarios
 
@@ -250,6 +251,10 @@ async def tablero(
             # Lo que vale la empresa: almacén, camiones y tarjeta (§190). Solo
             # para quien ve la tarjeta.
             "vale": await tarjeta.lo_que_vale(sesion) if actor.puede("tarjeta.ver") else None,
+            # La ganancia neta de la semana (§192): lo vendido menos lo que costó y
+            # menos los gastos de la tarjeta. Solo para quien ve la ganancia.
+            "ganancia_semana": await _ganancia_de_la_semana(sesion)
+            if actor.puede("costos.ver") else None,
             # El objetivo diario de cada vendedor contra lo vendido hoy, y la
             # empresa como su suma (§110, §115). Es de hoy, como los pendientes:
             # el selector de periodo no lo mueve.
@@ -261,6 +266,11 @@ async def tablero(
         actor=actor,
         seccion="Tablero",
     )
+
+
+async def _ganancia_de_la_semana(sesion) -> dict:
+    semana = await periodo_pedido(sesion, "semana")
+    return {"periodo": semana, **await ganancia_neta(sesion, semana.inicio, semana.fin)}
 
 
 async def _objetivo_de_hoy(sesion, actor) -> dict:
