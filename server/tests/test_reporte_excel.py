@@ -32,7 +32,7 @@ from tests.test_panel_liquidacion import _entrar
 pytestmark = pytest.mark.asyncio
 
 HOJAS = ["Resumen", "Ventas y efectivo", "Juan Pérez", "Inventario",
-         "Cargas y mermas", "Cuenta de vendedores"]
+         "Valor día por día", "Cargas y mermas", "Cuenta de vendedores"]
 DEL_DIA = ["Traía", "Cargó", "Vendió", "Merma", "Otros", "Quedó"]
 
 
@@ -272,3 +272,39 @@ async def test_el_camion_de_cada_vendedor_dia_por_dia(cliente, sesion, semilla, 
     assert atun[3:9] == [0, 240, 180, 0, 0, 60]
     assert atun[9:15] == [60, 120, 100, 10, -5, 65]
     assert _con(camion, "Total")[9:15] == [60, 120, 100, 10, -5, 65]
+
+
+async def test_lo_que_valia_la_mercancia_al_cerrar_cada_dia(
+    cliente, sesion, semilla, dia  # noqa: F811
+):
+    """«Cuánto hubo de dinero en todo el producto cada fecha», «por camión y por
+    almacén, y la suma» (§183). Hasta ayer la bodega tenía 1,000 atunes; hoy se
+    cargaron 240 al camión y se vendieron 180 y luego 20 más. A $12.50 la pieza,
+    y nada de mañana."""
+    from datetime import timedelta
+
+    from app.infra.reporte_excel import _con_dia
+    from tests.test_corte_sin_bajar_la_carga import _vende_el_sabado
+
+    hoy = dia["dia"]
+    ayer, anteayer = hoy - timedelta(days=1), hoy - timedelta(days=2)
+    await sesion.execute(
+        text("INSERT INTO precios (lista_id, producto_id, unidad_codigo, precio) "
+             "VALUES (:l, :p, 'PZA', 12.50)"),
+        {"l": semilla["lista_precios"], "p": dia["producto"]},
+    )
+    await sesion.commit()
+    await _vende_el_sabado(sesion, semilla, dia, carga=dia["carga"], piezas=20)
+    await _entrar(cliente)
+
+    _, libro = await _bajar(cliente, f"rango&desde={anteayer}&hasta={hoy + timedelta(days=1)}")
+
+    hoja = libro["Valor día por día"]
+    assert _con(hoja, "Día")[:4] == ["Día", "Bodega", "Camión 01 · Juan Pérez", "Total"]
+    assert _renglon(hoja, _con_dia(anteayer))[1:4] == [12500, 0, 12500]
+    assert _renglon(hoja, _con_dia(ayer))[1:4] == [12500, 0, 12500]
+    assert _renglon(hoja, _con_dia(hoy))[1:4] == [9500, 500, 10000]
+    # Hasta hoy: de mañana no se sabe nada.
+    dias = [f[0] for f in hoja.iter_rows(values_only=True)
+            if f and isinstance(f[0], str) and f[0].endswith(f"/{hoy:%Y}")]
+    assert dias == [_con_dia(anteayer), _con_dia(ayer), _con_dia(hoy)]

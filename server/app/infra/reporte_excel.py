@@ -24,7 +24,9 @@ efectivo (§81, §154), lo vendido no se repite como «en efectivo»: el rengló
 las columnas del efectivo salen solo si en el periodo hubo una transferencia
 de un teléfono anterior a la +28, porque entonces ya no son la misma cifra
 (§170). El inventario es el de hoy,
-valuado a precio de venta como en Inventario (§86): no depende del periodo.
+valuado a precio de venta como en Inventario (§86): no depende del periodo. Lo
+que valía al cerrar cada día del periodo, la bodega y cada camión, está en
+«Valor día por día» (§183), a los mismos precios.
 La cuenta del vendedor es su saldo de hoy, y sus movimientos del periodo.
 """
 
@@ -80,6 +82,7 @@ class Reporte:
     mermas: list[dict] = field(default_factory=list)
     saldos: list[dict] = field(default_factory=list)
     movimientos: list[dict] = field(default_factory=list)
+    valor_por_dia: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +300,54 @@ SELECT u.nombre AS vendedor, u.activo,
  ORDER BY COALESCE(c.saldo, 0) DESC, u.nombre
 """
 
+# «Cuánto hubo en total de dinero en todo el producto cada fecha», «por camión
+# y por almacén, y la suma» (§183). A precio de venta de hoy, como la hoja de
+# Inventario: así lo que cambia de un día a otro es mercancía que entró o salió,
+# no precios. Lo de hoy, y lo que se movió cada día, valuado igual; de ahí sale
+# cuánto valía cada almacén al cerrar cada día.
+_PRECIO_DE_HOY = f"""
+    SELECT p.id AS producto_id, pv.precio
+      FROM productos p
+      {precio_de_venta("p.id")}
+"""
+
+SQL_VALOR_DE_LOS_ALMACENES = f"""
+WITH precio AS ({_PRECIO_DE_HOY})
+SELECT a.id, a.nombre, a.tipo, r.nombre AS vendedor,
+       COALESCE(sum(e.cantidad * pr.precio), 0) AS valor
+  FROM almacenes a
+  LEFT JOIN usuarios r ON r.id = a.responsable_id
+  LEFT JOIN existencias e ON e.almacen_id = a.id
+  LEFT JOIN precio pr ON pr.producto_id = e.producto_id
+ WHERE a.tipo IN ('bodega', 'camion')
+ GROUP BY a.id, a.nombre, a.tipo, r.nombre
+"""
+
+# El día de cada movimiento es el de su documento si es venta o merma, y si no
+# el día en que se hizo: la carga sale de la bodega la tarde en que se acepta,
+# y al cerrar ese día ya está arriba del camión.
+SQL_VALOR_MOVIDO = f"""
+WITH precio AS ({_PRECIO_DE_HOY}),
+efectos AS (
+    SELECT a.id AS almacen,
+           COALESCE(v.fecha_operativa, me.fecha_operativa,
+                    CAST(m.fecha_servidor AS date)) AS dia,
+           CASE WHEN m.almacen_destino_id = a.id THEN m.cantidad
+                ELSE -m.cantidad END * pr.precio AS valor
+      FROM movimientos_inventario m
+      JOIN almacenes a ON a.tipo IN ('bodega', 'camion')
+                      AND a.id IN (m.almacen_origen_id, m.almacen_destino_id)
+      JOIN precio pr ON pr.producto_id = m.producto_id AND pr.precio IS NOT NULL
+      LEFT JOIN ventas v ON m.documento_tipo IN ('venta', 'venta_modificada')
+                        AND v.id = m.documento_id
+      LEFT JOIN mermas me ON m.documento_tipo = 'merma' AND me.id = m.documento_id
+)
+SELECT almacen, dia, sum(valor) AS valor
+  FROM efectos
+ WHERE dia >= :desde
+ GROUP BY almacen, dia
+"""
+
 SQL_MOVIMIENTOS = """
 SELECT m.fecha, u.nombre AS vendedor, m.tipo, m.origen, m.concepto, m.importe
   FROM cuenta_vendedor m
@@ -396,6 +447,42 @@ async def _camiones(filas, rango) -> list[dict]:
     return camiones
 
 
+async def _valor_por_dia(filas, rango) -> dict:
+    """Lo que valía cada almacén al cerrar cada día del periodo (§183).
+
+    Se parte de lo que vale hoy y se va hacia atrás quitando lo que se movió
+    cada día, como el «Quedó» del camión. Hasta hoy: de mañana no se sabe nada.
+    Solo salen los almacenes que tuvieron mercancía en el periodo.
+    """
+    hoy = (await filas("SELECT CURRENT_DATE AS hoy"))[0]["hoy"]
+    desde, ultimo = rango["desde"], min(rango["hasta"], hoy)
+    if desde > ultimo:
+        return {"almacenes": [], "dias": []}
+    almacenes = await filas(SQL_VALOR_DE_LOS_ALMACENES)
+    valor = {a["id"]: Decimal(a["valor"]) for a in almacenes}
+    movido: dict[tuple, Decimal] = defaultdict(Decimal)
+    for f in await filas(SQL_VALOR_MOVIDO, {"desde": desde}):
+        movido[(f["almacen"], f["dia"])] += Decimal(f["valor"] or 0)
+    for (almacen, dia), cuanto in movido.items():
+        if dia > ultimo and almacen in valor:
+            valor[almacen] -= cuanto
+
+    dias = []
+    dia = ultimo
+    while dia >= desde:
+        dias.append({"dia": dia, "valores": dict(valor)})
+        for almacen in valor:
+            valor[almacen] -= movido.get((almacen, dia), Decimal(0))
+        dia -= timedelta(days=1)
+    dias.reverse()
+
+    con_mercancia = [a for a in almacenes if any(d["valores"][a["id"]] for d in dias)]
+    # La bodega primero y los camiones por quien los trae, como en Inventario.
+    con_mercancia.sort(key=lambda a: (a["tipo"] != "bodega", a["vendedor"] is None,
+                                      a["vendedor"] or "", a["nombre"]))
+    return {"almacenes": con_mercancia, "dias": dias}
+
+
 async def datos_del_reporte(sesion, periodo) -> Reporte:
     """Todo lo que lleva el reporte, del periodo que se eligió."""
     rango = {"desde": periodo.inicio, "hasta": periodo.fin}
@@ -417,6 +504,7 @@ async def datos_del_reporte(sesion, periodo) -> Reporte:
         mermas=await filas(SQL_MERMAS, rango),
         saldos=await filas(SQL_SALDOS),
         movimientos=await filas(SQL_MOVIMIENTOS, rango),
+        valor_por_dia=await _valor_por_dia(filas, rango),
     )
 
 
@@ -720,7 +808,7 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     )
     resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, una por cada "
                  "vendedor con el inventario de su camión día por día, Inventario, "
-                 "Cargas y mermas, y Cuenta de vendedores.")
+                 "Valor día por día, Cargas y mermas, y Cuenta de vendedores.")
     if sin_precio:
         resumen.nota(f"Ojo: {len(sin_precio)} artículo(s) sin precio de venta no suman "
                      f"en el inventario: {', '.join(sin_precio[:6])}"
@@ -822,6 +910,33 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
         )
     if sin_precio:
         hoja.nota("Los que no tienen precio no suman en «Vale»: " + ", ".join(sin_precio))
+    hoja.terminar()
+
+    # --- Valor día por día -------------------------------------------------------
+    # «Cuánto hubo de dinero en todo el producto cada fecha», «por camión y por
+    # almacén, y la suma» (§183).
+    hoja = _Hoja(libro, "Valor día por día")
+    hoja.titulo("Lo que valía la mercancía al cerrar cada día",
+                f"{periodo} · a precio de venta de hoy")
+    valor = reporte.valor_por_dia
+    almacenes = valor.get("almacenes", [])
+    hoja.tabla(
+        "La bodega, cada camión y la suma",
+        [("Día", "texto"),
+         *[(a["nombre"] + (f" · {a['vendedor']}" if a["vendedor"] else ""), "dinero")
+           for a in almacenes],
+         ("Total", "dinero")],
+        [[_con_dia(d["dia"]), *[d["valores"][a["id"]] for a in almacenes],
+          sum((d["valores"][a["id"]] for a in almacenes), Decimal(0))]
+         for d in valor.get("dias", [])] if almacenes else [],
+        vacio="No hubo mercancía en estos días, o el periodo todavía no empieza.",
+    )
+    hoja.nota("Al cerrar el día: el camión ya con la carga que se hizo en la tarde para el "
+              "día siguiente, y sin lo que vendió.")
+    hoja.nota("A los precios de hoy, como en Inventario: lo que cambia de un día a otro es "
+              "mercancía que entró o salió, no precios.")
+    if sin_precio:
+        hoja.nota("Los que no tienen precio no suman: " + ", ".join(sin_precio))
     hoja.terminar()
 
     # --- Cargas y mermas --------------------------------------------------------

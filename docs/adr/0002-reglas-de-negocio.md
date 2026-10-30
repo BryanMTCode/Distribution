@@ -7716,3 +7716,22 @@ al día siguiente sale a vender con lo que le quedó arriba.
   agotó no salía en sus renglones.
 - **Los primeros días que ya pasaron** (los del 21 de octubre) no se rehacen
   solos: siguen de constancia.
+
+## 183. En el Excel, lo que valía la mercancía al cerrar cada día
+
+«Dime cuánto hubo en total de dinero en todo el producto cada fecha desde el
+inicio del reporte.» «Que sea por camión y por almacén, y la suma.»
+
+- **Hoja nueva, «Valor día por día»**, después de Inventario: un renglón por día
+  del periodo y una columna por almacén —la bodega primero y cada camión con
+  quien lo trae— y el total. Solo salen los almacenes que tuvieron mercancía en
+  esos días, y solo hasta hoy.
+- **Al cerrar el día.** Se parte de lo que vale hoy y se va hacia atrás quitando
+  lo que se movió cada día, como el «Quedó» del camión (§179). La venta y la
+  merma cuentan en su día; lo demás, el día en que se hizo. La carga sale de la
+  bodega la tarde en que se acepta: ese día el camión ya cierra con ella. Por
+  eso aquí la carga cuenta un día antes que en la hoja del camión, que la pone
+  el día en que se vende.
+- **A precio de venta de hoy**, como Inventario: lo que cambia de un día a otro
+  es mercancía que entró o salió, no precios. Sin precio no suma, y se dice. El
+  costo sigue solo en el dashboard (§180).
