@@ -31,6 +31,7 @@ from app.api.admin import liquidaciones as panel_liquidaciones
 from app.api.admin import mayoreo as panel_mayoreo
 from app.api.admin import motivos as panel_motivos
 from app.api.admin import mover_mercancia as panel_mover_mercancia
+from app.api.admin import movimientos as panel_movimientos
 from app.api.admin import objetivos as panel_objetivos
 from app.api.admin import operaciones as panel_operaciones
 from app.api.admin import panel
@@ -158,6 +159,7 @@ def crear_app() -> FastAPI:
     app.include_router(panel_salidas.router)
     # Antes que Inventario: «/panel/inventario/mover» y «…/ajustar» son suyos.
     app.include_router(panel_mover_mercancia.router)
+    app.include_router(panel_movimientos.router)
     app.include_router(panel_ajustar_inventario.router)
     app.include_router(panel_inventario.router)
     app.include_router(panel_ventas.router)

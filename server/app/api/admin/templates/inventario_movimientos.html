@@ -168,8 +168,10 @@
       <tr>
         <th>Cuándo</th>
         <th>Qué</th>
+        {# De cuánto estaba a cuánto pasó (§189). #}
+        <th class="numero">Había</th>
         <th class="numero">Movimiento</th>
-        <th class="numero">Saldo después</th>
+        <th class="numero">Quedó</th>
       </tr>
     </thead>
     <tbody>
@@ -190,6 +192,7 @@
             {% if m.lote %} · lote {{ m.lote }}{% endif %}
           </div>
         </td>
+        <td class="numero">{{ (m.saldo - m.delta)|entero }}</td>
         <td class="numero" {% if not m.entra %}style="color:var(--alerta)"{% endif %}>
           {% if m.entra %}+{% endif %}{{ m.delta|entero }}
         </td>

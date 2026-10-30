@@ -82,6 +82,7 @@ from app.domain.entradas import (
     tipo_de_movimiento_de_salida,
 )
 from app.domain.importes import CantidadInvalida, cantidad_base
+from app.infra.antes_y_despues import de_los_documentos
 from app.infra.valor_de_inventario import precio_de_venta
 
 router = APIRouter(prefix="/panel/salidas", tags=["panel"], include_in_schema=False)
@@ -456,6 +457,8 @@ async def detalle(
         "salida_detalle.html",
         {
             "salida": salida,
+            # De cuánto estaba a cuánto pasó la bodega (§189).
+            "antes_y_despues": await de_los_documentos(sesion, [("salida", salida["id"])]),
             "grupos": agrupar_por_familia(surtido),
             "buscar": buscar.strip(),
             "tipo_etiqueta": etiqueta_de_salida(salida["tipo"]),

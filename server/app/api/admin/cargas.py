@@ -73,6 +73,7 @@ from app.api.admin.comun import (
 from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
 from app.domain.importes import CantidadInvalida, cantidad_base
+from app.infra.antes_y_despues import de_los_documentos
 from app.infra.cuarentena_que_frena import cuarentena_que_frena
 from app.infra.valor_de_inventario import precio_de_venta
 
@@ -422,6 +423,8 @@ async def detalle(
             "carga": carga,
             "renglones": renglones,
             "faltan": faltan,
+            # De cuánto estaba a cuánto pasó la bodega y el camión (§189).
+            "antes_y_despues": await de_los_documentos(sesion, [("carga", carga_id)]),
             "total_piezas": sum((Decimal(r["cantidad"]) for r in renglones), Decimal(0)),
             "editable": editable,
             "puede_editar": actor.puede(PERMISO),

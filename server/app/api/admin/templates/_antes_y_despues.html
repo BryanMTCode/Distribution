@@ -1,0 +1,37 @@
+{#
+  De cuánto estaba a cuánto pasó con este folio (ADR 0002 §189), para el detalle
+  de una entrada, una salida, una carga o cualquier operación. Espera
+  `antes_y_despues`: los renglones de `app/infra/antes_y_despues.py`.
+#}
+{% if antes_y_despues %}
+<h2 id="como_quedo">Cómo quedó el inventario</h2>
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="antes_y_despues">
+    <thead>
+      <tr>
+        <th>Artículo</th>
+        <th>Almacén</th>
+        <th class="numero">Había</th>
+        <th class="numero">Cambio</th>
+        <th class="numero">Quedó</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in antes_y_despues %}
+      <tr>
+        <td>
+          <a href="/panel/inventario/{{ f.almacen_id }}/{{ f.producto_id }}">{{ f.producto }}</a>
+          <div class="sutil mono">{{ f.sku }}</div>
+        </td>
+        <td>{{ f.almacen }}</td>
+        {% include "_antes_y_despues_celdas.html" %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">
+  En piezas. «Quedó» es lo que había justo después de este folio; lo que se movió
+  después no lo cambia.
+</p>
+{% endif %}

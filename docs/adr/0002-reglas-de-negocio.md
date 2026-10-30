@@ -7838,3 +7838,29 @@ poder ver el total. Hazlo todo más fácil de ver.»
   sigue viendo aparte, plegado (§95).
 - **Operaciones no lleva total**: mezcla ventas, cargas y ajustes, y sumar sus
   importes no daría ninguna cifra con sentido.
+
+## 189. De cuánto estaba a cuánto pasó cada artículo
+
+«En los ajustes y eso quiero ver de cuántos estaba a cuánto pasó: entradas,
+salidas, ajustes, todo eso.»
+
+- **Inventario → Movimientos**, una pestaña nueva: todo lo que movió la
+  mercancía en el periodo, un renglón por artículo y almacén, con qué fue (la
+  entrada, la salida, el ajuste, mover mercancía, la carga, el corte, la merma,
+  el mayoreo, lo eliminado), su folio para abrirlo si se quiere, quién, lo que
+  **había**, el **cambio** y lo que **quedó**. Lo más nuevo arriba. Se filtra por
+  qué fue y por almacén. Las ventas de los vendedores solo salen si se piden:
+  son la mayoría de los renglones y tienen su propia pantalla.
+- **En el detalle** de cada entrada, salida, carga y operación (Operaciones),
+  la misma tabla: «Cómo quedó el inventario». Mover mercancía entre camiones
+  dice los dos: lo que bajó en uno y lo que subió en el otro.
+- **En el libro de un artículo** (Existencias → el artículo), cada renglón dice
+  también lo que había antes, junto al movimiento y a lo que quedó.
+- **Cómo se calcula**: el libro mayor guarda lo que se movió, no la existencia
+  de antes ni la de después. Lo que **quedó** con un folio es lo que hay hoy en
+  ese almacén menos todo lo que se movió después; lo que **había**, lo que quedó
+  menos lo que movió el folio. Es la misma cuenta del Excel (§179, §183): había +
+  cambio = quedó en cada renglón, lo que se mueve después no cambia lo que quedó
+  con ese folio, y el último renglón de cada artículo dice lo mismo que
+  Existencias. No hace falta migración.
+- Los almacenes de merma y de tránsito son cuentas, no anaqueles: no salen.

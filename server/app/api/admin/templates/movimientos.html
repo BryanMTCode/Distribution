@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titulo %}Movimientos{% endblock %}
+{% block contenido %}
+<h1>Movimientos</h1>
+<p class="subtitulo">
+  De cuánto estaba a cuánto pasó cada artículo, sin abrir ningún folio: cada
+  entrada, salida, ajuste, carga, corte y merma, con lo que <strong>había</strong>,
+  el <strong>cambio</strong> y lo que <strong>quedó</strong> en ese almacén. Lo más
+  nuevo arriba; el último renglón de cada artículo dice lo mismo que Existencias.
+</p>
+
+{% set ocultos = {'que': que, 'almacen': almacen} %}
+{% include "_periodo.html" %}
+
+<form class="barra" method="get" id="filtros_movimientos">
+  <input type="hidden" name="periodo" value="{{ periodo.clave }}">
+  <input type="hidden" name="desde" value="{{ periodo.inicio.isoformat() }}">
+  <input type="hidden" name="hasta" value="{{ periodo.fin.isoformat() }}">
+  <select name="que" aria-label="Qué fue">
+    {% for clave, nombre in grupos %}
+      <option value="{{ clave }}" {% if clave == que %}selected{% endif %}>{{ nombre }}</option>
+    {% endfor %}
+  </select>
+  <select name="almacen" aria-label="Almacén">
+    <option value="">Todos los almacenes</option>
+    {% for a in almacenes %}
+      <option value="{{ a.id }}" {% if a.id|string == almacen %}selected{% endif %}>{{ a.nombre }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Filtrar</button>
+</form>
+
+{% if filas %}
+<p class="sutil" id="resumen_movimientos">
+  {{ filas|length }} renglón(es){% if filas|length >= limite %}, los últimos {{ limite }}: acorta el periodo o filtra para ver los demás{% endif %}.
+</p>
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="tabla_movimientos">
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Qué fue</th>
+        <th>Almacén</th>
+        <th>Artículo</th>
+        <th class="numero">Había</th>
+        <th class="numero">Cambio</th>
+        <th class="numero">Quedó</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td class="sutil">{{ f.cuando.strftime('%d/%m %H:%M') }}</td>
+        <td>
+          <strong>{{ f.que }}</strong>
+          {% if f.folio %}
+            · {% if f.enlace %}<a href="{{ f.enlace }}" class="mono">{{ f.folio }}</a>{% else %}<span class="mono">{{ f.folio }}</span>{% endif %}
+          {% endif %}
+          {% if f.quien %}<div class="sutil">{{ f.quien }}</div>{% endif %}
+        </td>
+        <td>{{ f.almacen }}</td>
+        <td>
+          <a href="/panel/inventario/{{ f.almacen_id }}/{{ f.producto_id }}">{{ f.producto }}</a>
+          <div class="sutil mono">{{ f.sku }}</div>
+        </td>
+        {% include "_antes_y_despues_celdas.html" %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">
+  Nada de esto se movió {{ periodo.descripcion }}.
+</div>
+{% endif %}
+{% endblock %}

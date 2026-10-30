@@ -29,7 +29,7 @@ from starlette import status
 from app.api.admin.comun import SesionDep, render
 from app.api.admin.periodo import PERIODOS, periodo_pedido
 from app.api.admin.sesion_web import ActorWeb, exigir_csrf
-from app.infra import operaciones
+from app.infra import antes_y_despues, operaciones
 from app.infra.operaciones import AnulacionRechazada, OperacionNoExiste
 
 router = APIRouter(prefix="/panel/operaciones", tags=["panel"], include_in_schema=False)
@@ -191,6 +191,8 @@ async def ver(
         {
             "op": op,
             "plan": plan,
+            # De cuánto estaba a cuánto pasó con ella (§189).
+            "antes_y_despues": await antes_y_despues.de_la_operacion(sesion, op.tipo, op.ref),
             "puede_anular": actor.puede(PERMISO_ANULAR),
             "error": error,
             "guardado": guardado,

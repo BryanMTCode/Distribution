@@ -98,6 +98,7 @@ from app.domain.entradas import (
     tipo_de_movimiento,
 )
 from app.domain.importes import CantidadInvalida, cantidad_base
+from app.infra.antes_y_despues import de_los_documentos
 
 router = APIRouter(prefix="/panel/entradas", tags=["panel"], include_in_schema=False)
 
@@ -531,6 +532,8 @@ async def detalle(
         "entrada_detalle.html",
         {
             "entrada": entrada,
+            # De cuánto estaba a cuánto pasó la bodega (§189).
+            "antes_y_despues": await de_los_documentos(sesion, [("entrada", entrada["id"])]),
             "motivo_etiqueta": etiqueta(entrada["motivo"]),
             "importes": datos["importes"],
             "importe_capturado": datos["importe_capturado"],

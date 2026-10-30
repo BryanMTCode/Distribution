@@ -172,6 +172,7 @@ la bodega sube cuando alguien la cuenta.
 | **En el Excel, la bodega Mazatlán día por día** (§186): artículo por artículo, lo que había, entró, salió a camiones y a mayoreo, la merma, otros y lo que quedó, con su renglón en dinero | ✅ en la prueba de «Día por día» |
 | **Mover mercancía de un camión a otro, solo en el dashboard** (§187): en Mover mercancía, «De un camión a otro camión»; a cada teléfono le llega su mitad como diferencia, y se anula en Operaciones | ✅ 2 pruebas del servidor |
 | **Cada lista del panel dice su total sin abrir ningún folio** (§188): Cargas dice lo que vale cada una, cada día y el total; Corte a mano, lo que debía entregar, lo que entregó y la diferencia, con la suma; Ventas, Entradas y Salidas terminan con su renglón de total. Lo cancelado no suma | ✅ 7 pruebas del servidor |
+| **De cuánto estaba a cuánto pasó cada artículo** (§189): Inventario → Movimientos con lo que había, el cambio y lo que quedó en cada entrada, salida, ajuste, mover mercancía, carga, corte y merma, sin abrir folios; la misma tabla en el detalle de cada entrada, salida, carga y operación | ✅ 6 pruebas del servidor |
 | **Después de guardar, la petición sigue viendo lo que ve quien la hizo** (§178): el corte que cierra el gerente al aceptar la carga ya no se recalcula con el alcance de otro vendedor («vendió 0», «esperaba $0») | ✅ 2 pruebas con el rol restringido |
 | **Cambiar los días de las rutas sin tocar lo trabajado** (§175): en Plan de visita, mover todas las de un día a otro, intercambiar dos días o recorrerlos uno para atrás o para adelante, en una ruta o en todas, desde la fecha que se escoja; antes de confirmar se ve cada día antes y después. Efectividad, «fuera de su día» y el mapa de la ruta miden lo trabajado con el plan de antes | ✅ 8 pruebas del servidor |
 | **En el teléfono, solo las tiendas de sus rutas** (§174): la tienda sin ruta que recibe una, el cliente de mayoreo y lo que el teléfono traía de su vínculo anterior se le van con la siguiente sincronización; y el teléfono pregunta una vez al día cuáles son suyas, para soltar también las que se tiraron con la base en blanco. `piloto_listo.sh todos` dice cuántas tiendas debe enseñar cada vendedor, cuántas le tocan hoy y cuántas soltó su teléfono | ✅ 11 pruebas del servidor, 5 de Dart, 1 de widget |
@@ -198,7 +199,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1648 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
+**1654 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **742 de Dart** y **398 de widget**, todas en verde.
 
 ## Stack
 

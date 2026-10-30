@@ -31,6 +31,9 @@
   </div>
 </div>
 
+{# De cuánto estaba a cuánto pasó con ella (§189). #}
+{% include "_antes_y_despues.html" %}
+
 {% if op.anulada %}
   {% set hecho = op.anulacion_datos %}
   {% if hecho.efectos %}

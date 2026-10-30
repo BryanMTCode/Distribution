@@ -1,0 +1,10 @@
+{#
+  Había · cambio · quedó, en tres celdas (ADR 0002 §189). Espera `f` con
+  `antes`, `cambio` y `despues`. Lo que baja va en rojo; lo que queda abajo de
+  cero, también.
+#}
+<td class="numero" {% if f.antes < 0 %}style="color:var(--alerta)"{% endif %}>{{ f.antes|entero }}</td>
+<td class="numero" style="font-weight:600;color:{% if f.cambio < 0 %}var(--alerta){% else %}var(--bien){% endif %}">
+  {% if f.cambio > 0 %}+{% endif %}{{ f.cambio|entero }}
+</td>
+<td class="numero" style="font-weight:600{% if f.despues < 0 %};color:var(--alerta){% endif %}">{{ f.despues|entero }}</td>
