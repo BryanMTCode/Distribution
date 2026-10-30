@@ -75,6 +75,8 @@ NAVEGACION: list[tuple[str, list[tuple[str, str]]]] = [
         # Con la Empresa al final y el aviso de Arranque cuando falta algo.
         ("/panel", "Tablero"),
         ("/panel/desempeno", "Desempeño"),
+        # Las bodegas, los camiones y la tarjeta, y el total (ADR 0002 §190).
+        ("/panel/dinero", "Dinero"),
     ]),
     ("Operación de rutas", [
         # Lo que mandan los vendedores al terminar el día —su corte y la carga de
@@ -123,6 +125,10 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         # Lo vendido menos lo que costó (ADR 0002 §180): solo el administrador.
         ("/panel/ganancia", "Ganancia"),
         ("/panel/piloto", "Piloto"),
+    ],
+    "Dinero": [
+        ("/panel/dinero", "Lo que vale la empresa"),
+        ("/panel/dinero/tarjeta", "Tarjeta"),
     ],
     "Productos": [
         ("/panel/productos", "Productos"),
@@ -198,6 +204,9 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel/clientes": "clientes.ver",
     "/panel/productos": "catalogo.ver",
     "/panel/costos": "costos.ver",
+    # Solo el administrador (§190).
+    "/panel/dinero": "tarjeta.ver",
+    "/panel/dinero/tarjeta": "tarjeta.ver",
     "/panel/inventario": "inventario.ver",
     # Ver lo que hay y moverlo: los dos.
     "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),

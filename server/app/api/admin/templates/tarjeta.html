@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block titulo %}Tarjeta de la empresa{% endblock %}
+{% block contenido %}
+<h1>Tarjeta de la empresa</h1>
+<p class="subtitulo">
+  Lo que debe haber en la tarjeta de débito. <strong>Entran solos</strong> el
+  efectivo que entrega cada vendedor en su corte, el mayoreo y lo que un vendedor
+  paga de su cuenta; <strong>sale solo</strong> el pago de una compra hecho con la
+  tarjeta (en Compras, al registrar el pago, elige «tarjeta»). Lo demás se escribe
+  aquí.
+</p>
+
+{% if error %}<div class="aviso-caja error" id="error_tarjeta">{{ error }}</div>{% endif %}
+{% if guardado %}<div class="aviso-caja bien" id="guardado_tarjeta">{{ guardado }}</div>{% endif %}
+
+{% if not empezo %}
+<form method="post" action="/panel/dinero/tarjeta/empezar" id="forma_empezar"
+      style="max-width:520px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2 style="margin-top:0">¿Cuánto hay hoy en la tarjeta?</h2>
+  <p class="sutil">Lo que dice el banco ahora. Desde este momento se suman solos los
+    cortes, el mayoreo y las compras pagadas con la tarjeta; lo de antes no.</p>
+  <label>Saldo de hoy
+    <input type="text" name="saldo" inputmode="decimal" required style="max-width:200px" placeholder="0.00">
+  </label>
+  <button type="submit" id="boton_empezar">Empezar la tarjeta</button>
+</form>
+{% else %}
+
+<div class="tarjetas">
+  <div class="tarjeta" id="saldo_tarjeta">
+    <div class="numero">{{ saldo|dinero }}</div>
+    <div class="etiqueta">debe haber hoy</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero" style="color:var(--bien)">{{ entro|dinero }}</div>
+    <div class="etiqueta">entró {{ periodo.descripcion }}</div>
+  </div>
+  <div class="tarjeta">
+    <div class="numero" style="color:var(--alerta)">{{ salio|dinero }}</div>
+    <div class="etiqueta">salió {{ periodo.descripcion }}</div>
+  </div>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;margin:18px 0">
+  <form method="post" action="/panel/dinero/tarjeta/movimiento" id="forma_movimiento"
+        style="flex:1 1 320px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:16px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h2 style="margin-top:0">Dinero que entra o sale</h2>
+    <label>Qué
+      <select name="tipo" id="tipo_movimiento">
+        <option value="salida">Sale (gasolina, sueldos, un retiro…)</option>
+        <option value="entrada">Entra (por otra cosa que una venta)</option>
+      </select>
+    </label>
+    <label>Importe <input type="text" name="importe" inputmode="decimal" required style="max-width:160px"></label>
+    <label>En qué se fue o de dónde vino
+      <input type="text" name="concepto" required minlength="3" maxlength="300" placeholder="Ej.: Gasolina del camión 2">
+    </label>
+    <label>Fecha <input type="date" name="fecha" value="{{ hoy }}" max="{{ hoy }}"></label>
+    <button type="submit" id="boton_movimiento">Guardar</button>
+  </form>
+
+  <form method="post" action="/panel/dinero/tarjeta/asi-esta" id="forma_asi_esta"
+        style="flex:1 1 280px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:16px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h2 style="margin-top:0">Así está hoy la tarjeta</h2>
+    <p class="sutil">Lo que dice el banco. Si no es lo mismo que «debe haber», se
+      guarda la diferencia como ajuste, con las dos cifras.</p>
+    <label>Lo que dice el banco <input type="text" name="saldo" inputmode="decimal" required style="max-width:160px"></label>
+    <button type="submit" class="secundario" id="boton_asi_esta">Ajustar al banco</button>
+  </form>
+</div>
+
+{% include "_periodo.html" %}
+
+{% if filas %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="movimientos_tarjeta">
+    <thead>
+      <tr>
+        <th>Cuándo</th>
+        <th>Qué</th>
+        <th class="numero">Entra</th>
+        <th class="numero">Sale</th>
+        <th class="numero">Saldo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in filas %}
+      <tr>
+        <td class="sutil">{{ m.cuando.strftime('%d/%m %H:%M') }}</td>
+        <td>
+          <strong>{{ m.nombre_clase }}</strong>
+          <div class="sutil">
+            {% if m.enlace %}<a href="{{ m.enlace }}">{{ m.concepto }}</a>{% else %}{{ m.concepto }}{% endif %}
+            {% if m.quien %} · {{ m.quien }}{% endif %}
+          </div>
+        </td>
+        <td class="numero" style="color:var(--bien)">{% if m.importe > 0 %}{{ m.importe|dinero }}{% endif %}</td>
+        <td class="numero" style="color:var(--alerta)">{% if m.importe < 0 %}{{ (-m.importe)|dinero }}{% endif %}</td>
+        <td class="numero"><strong>{{ m.saldo|dinero }}</strong></td>
+        <td>
+          {% if m.se_quita %}
+          <details>
+            <summary class="boton-chico">Quitar</summary>
+            <form method="post" action="/panel/dinero/tarjeta/{{ m.ref }}/quitar" style="margin-top:6px">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="text" name="motivo" required minlength="3" placeholder="Por qué se quita">
+              <button type="submit" class="peligro">Quitar</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="vacio">Nada movió la tarjeta {{ periodo.descripcion }}.</div>
+{% endif %}
+{% endif %}
+{% endblock %}

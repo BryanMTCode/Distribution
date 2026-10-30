@@ -70,7 +70,8 @@ router = APIRouter(prefix="/panel/compras", tags=["panel"], include_in_schema=Fa
 PERMISO = "compras.administrar"
 PERMISO_PAGAR = "compras.pagar"
 
-FORMAS_DE_PAGO = ("efectivo", "transferencia", "cheque")
+# «tarjeta» es la de la empresa: sale de su cuenta (ADR 0002 §190).
+FORMAS_DE_PAGO = ("efectivo", "transferencia", "cheque", "tarjeta")
 
 # Tope de días de crédito, igual que el CHECK de la tabla. Un año es generoso y
 # 3650 es un dedazo que haría que la cuenta nunca apareciera como vencida.

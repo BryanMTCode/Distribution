@@ -43,6 +43,7 @@ from app.api.admin.sesion_web import (
     exigir_csrf,
 )
 from app.core.seguridad import verificar_password
+from app.infra import tarjeta
 from app.infra.models import Usuario
 from app.infra.objetivos_diarios import de_toda_la_empresa, objetivos_diarios
 
@@ -246,6 +247,9 @@ async def tablero(
             "empresa": (
                 await resumen_de_la_empresa(sesion) if actor.puede("tablero.ver") else None
             ),
+            # Lo que vale la empresa: almacén, camiones y tarjeta (§190). Solo
+            # para quien ve la tarjeta.
+            "vale": await tarjeta.lo_que_vale(sesion) if actor.puede("tarjeta.ver") else None,
             # El objetivo diario de cada vendedor contra lo vendido hoy, y la
             # empresa como su suma (§110, §115). Es de hoy, como los pendientes:
             # el selector de periodo no lo mueve.

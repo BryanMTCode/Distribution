@@ -7864,3 +7864,34 @@ salidas, ajustes, todo eso.»
   con ese folio, y el último renglón de cada artículo dice lo mismo que
   Existencias. No hace falta migración.
 - Los almacenes de merma y de tránsito son cuentas, no anaqueles: no salen.
+
+## 190. Lo que vale la empresa: el almacén, los camiones y la tarjeta
+
+«Quiero en el dashboard tener la cuenta del almacén, más los camiones, más la
+tarjeta de débito de la empresa: las tres visiones distintas y el total. Y las
+compras poder agregarlas de la tarjeta: a la tarjeta, la venta y las salidas.»
+
+- **Hoy → Dinero → Lo que vale la empresa**: la mercancía de las bodegas, la de
+  los camiones (cada camión con su vendedor) y lo que debe haber en la tarjeta,
+  cada una por separado, y el **total**. La mercancía va a precio de venta, la
+  misma cuenta del Excel (§183): lo negativo resta, y lo que no tiene precio no
+  suma y se avisa cuántos son. Las cuatro cifras salen también en el Tablero.
+- **Dinero → Tarjeta**: se empieza escribiendo lo que dice el banco ese día.
+  Desde ese momento:
+  - **entra solo** el efectivo que entrega cada vendedor en su corte, la venta
+    de mayoreo y lo que un vendedor paga de su cuenta;
+  - **sale solo** el pago de una compra hecho con la tarjeta: en Compras, al
+    registrar el pago de la factura, se elige «tarjeta»;
+  - **a mano**, el dinero que entra o sale por otra cosa (gasolina, sueldos, un
+    retiro), con su concepto, y «Así está hoy la tarjeta»: se escribe lo que dice
+    el banco y se guarda la diferencia como ajuste, con las dos cifras.
+- **Nada de lo automático se copia**: se lee de donde ya está. Un corte o un
+  mayoreo que se elimina en Operaciones deja de contar solo, y lo que pasó antes
+  de capturar el saldo inicial no cuenta. Lo capturado a mano por error se
+  quita, y se queda con quién y por qué.
+- **El efectivo en la calle** —lo que los vendedores traen y todavía no entregan
+  en su corte— no está en ninguna de las tres: entra a la tarjeta con su corte.
+  Por eso, si el efectivo se deposita después del corte, la tarjeta del sistema
+  va adelante del banco, y «Así está hoy» muestra exactamente cuánto falta.
+- **Solo el administrador** (`tarjeta.ver`, que no tiene ningún rol), como el
+  costo y la ganancia (§180). Migración `0066_tarjeta_de_la_empresa`.

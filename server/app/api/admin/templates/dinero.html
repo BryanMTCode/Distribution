@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block titulo %}Lo que vale la empresa{% endblock %}
+{% block contenido %}
+<h1>Lo que vale la empresa</h1>
+<p class="subtitulo">
+  La mercancía de las bodegas, la de los camiones y el dinero de la tarjeta: cada
+  una por separado, y el total. La mercancía va a precio de venta, la misma cuenta
+  del Excel.
+</p>
+
+<div class="tarjetas" id="lo_que_vale">
+  <a class="tarjeta" href="#almacen" id="vale_almacen">
+    <div class="numero">{{ vale.en_bodegas|dinero }}</div>
+    <div class="etiqueta">Almacén</div>
+  </a>
+  <a class="tarjeta" href="#camiones" id="vale_camiones">
+    <div class="numero">{{ vale.en_camiones|dinero }}</div>
+    <div class="etiqueta">Camiones</div>
+  </a>
+  <a class="tarjeta {% if vale.en_tarjeta is none %}alerta{% endif %}" href="/panel/dinero/tarjeta" id="vale_tarjeta">
+    <div class="numero">{% if vale.en_tarjeta is none %}—{% else %}{{ vale.en_tarjeta|dinero }}{% endif %}</div>
+    <div class="etiqueta">{% if vale.en_tarjeta is none %}Tarjeta: falta su saldo inicial{% else %}Tarjeta{% endif %}</div>
+  </a>
+  <div class="tarjeta" id="vale_total" style="border-color:var(--acento)">
+    <div class="numero">{{ vale.total|dinero }}</div>
+    <div class="etiqueta">Total</div>
+  </div>
+</div>
+
+{% if vale.sin_precio %}
+<p class="sutil" id="vale_sin_precio">
+  {{ vale.sin_precio }} artículo(s) con existencia no tienen precio de venta y no suman.
+  <a href="/panel/productos">Ponles precio</a>.
+</p>
+{% endif %}
+
+<h2 id="almacen">Almacén</h2>
+<div class="tabla-marco">
+  <table id="tabla_bodegas">
+    <thead><tr><th>Bodega</th><th class="numero">Vale</th></tr></thead>
+    <tbody>
+      {% for a in vale.bodegas %}
+      <tr>
+        <td><a href="/panel/inventario?almacen={{ a.id }}">{{ a.nombre }}</a></td>
+        <td class="numero">{{ a.valor|dinero }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td><strong>Total del almacén</strong></td><td class="numero"><strong>{{ vale.en_bodegas|dinero }}</strong></td></tr></tfoot>
+  </table>
+</div>
+
+<h2 id="camiones">Camiones</h2>
+<div class="tabla-marco">
+  <table id="tabla_camiones">
+    <thead><tr><th>Camión</th><th>Vendedor</th><th class="numero">Vale</th></tr></thead>
+    <tbody>
+      {% for a in vale.camiones %}
+      <tr>
+        <td><a href="/panel/inventario?almacen={{ a.id }}">{{ a.nombre }}</a></td>
+        <td>{{ a.vendedor or '—' }}</td>
+        <td class="numero">{{ a.valor|dinero }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td colspan="2"><strong>Total de los camiones</strong></td><td class="numero"><strong>{{ vale.en_camiones|dinero }}</strong></td></tr></tfoot>
+  </table>
+</div>
+
+<h2>Tarjeta</h2>
+{% if vale.en_tarjeta is none %}
+<div class="aviso-caja aviso">
+  Todavía no se escribe con cuánto empieza la tarjeta.
+  <a href="/panel/dinero/tarjeta">Escríbelo aquí</a> y desde ese momento se suman
+  solos los cortes, el mayoreo y las compras pagadas con la tarjeta.
+</div>
+{% else %}
+<p>
+  Debe haber <strong>{{ vale.en_tarjeta|dinero }}</strong>.
+  <a href="/panel/dinero/tarjeta">Ver todo lo que la movió</a>.
+</p>
+{% endif %}
+<p class="sutil">
+  La mercancía a precio de venta de hoy: lo que esté en negativo resta, como en el
+  Excel. El efectivo que los vendedores traen y todavía no entregan en su corte no
+  está en ninguna de las tres.
+</p>
+{% endblock %}

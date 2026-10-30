@@ -104,6 +104,8 @@ TABLAS_VOLATILES = [
     "pagos_proveedor",
     "cuentas_por_pagar",
     "producto_costos",
+    # La tarjeta de la empresa (§190): cuelga de `usuarios`.
+    "movimientos_tarjeta",
     "proveedores",
     "salida_detalle",
     "salidas",

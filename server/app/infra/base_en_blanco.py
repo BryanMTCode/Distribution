@@ -80,6 +80,8 @@ TABLAS_QUE_SE_VACIAN = (
     "carga_detalle", "cargas", "merma_detalle", "mermas", "traspaso_detalle",
     "traspasos", "ajustes_camion", "salida_detalle", "salidas",
     "pagos_proveedor", "cuentas_por_pagar", "entrada_detalle", "entradas",
+    # La tarjeta de la empresa (§190): vuelve a empezar con su saldo.
+    "movimientos_tarjeta",
     "existencias", "movimientos_inventario",
     # Catálogo
     "promociones", "precios", "producto_costos", "producto_unidades", "productos",
