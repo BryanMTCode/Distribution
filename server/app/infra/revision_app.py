@@ -377,21 +377,14 @@ SECCIONES: tuple[Seccion, ...] = (
                 desde="+52",
             ),
             Punto(
-                "devolucion_cliente", "La tienda devuelve mercancía",
-                "En una tienda, menú ⋮ → «Me devolvió mercancía»: producto, motivo y "
-                "cuántas.",
-                "Queda registrada y se ve en el panel como devolución de cliente.",
-            ),
-            Punto(
-                "cambio_fisico", "Cambio físico (caducado o dañado, sin cobro)",
-                "En una tienda, menú ⋮ → «Cambio físico»: el producto malo y cuántos.",
-                "Sin cobro: del camión sale el bueno y el malo queda como merma.",
-            ),
-            Punto(
-                "merma_camion", "Merma del camión",
-                "En la lista, menú «Más» → «Registrar merma»: producto, motivo y "
-                "cuántas.",
-                "Baja la existencia del camión, y la merma aparece en el panel.",
+                "sin_merma_ni_devolucion", "Ya no hay merma, devolución ni cambio",
+                "En la lista, abre el menú «Más»; en una tienda, el menú ⋮; y abre «Mi "
+                "camión».",
+                "No aparecen «Registrar merma», «Me devolvió mercancía», «Cambio físico» "
+                "ni «Devolver a la bodega»: el vendedor lleva lo malo a la bodega y ahí se "
+                "le cambia por bueno (ADR 0002 §197). «Perfil y ubicación», «No me "
+                "compró», la impresora y salir siguen.",
+                desde="+61",
             ),
         ),
     ),
@@ -453,13 +446,6 @@ SECCIONES: tuple[Seccion, ...] = (
                 "de cinco, «Ver los N cambios» los enseña todos con su folio. Al día "
                 "siguiente el aviso ya no sale (ADR 0002 §145).",
                 desde="+48",
-            ),
-            Punto(
-                "devolver_a_bodega", "Devolver a la bodega",
-                "En «Mi camión», el botón de bodega → algunos productos o «Todo el "
-                "camión» → «Registrar la devolución».",
-                "Sale del camión y queda en tránsito hasta que la bodega lo recibe en el "
-                "panel.",
             ),
             Punto(
                 "ruta_en_el_titulo", "Su ruta arriba",
@@ -1131,8 +1117,9 @@ SECCIONES: tuple[Seccion, ...] = (
             ),
             Punto(
                 "panel_devolucion", "Recibir la devolución de un camión",
-                "Después de «Devolver a la bodega» en un teléfono, toca el pendiente del "
-                "Tablero «devolución(es) de camión por recibir en bodega» y recíbela.",
+                "Solo si quedó una de antes de la +61 (ya no se manda desde la app, §197): "
+                "toca el pendiente del Tablero «devolución(es) de camión por recibir en "
+                "bodega» y recíbela.",
                 "La mercancía sale del tránsito y entra a la bodega.",
             ),
             Punto(
@@ -1142,15 +1129,16 @@ SECCIONES: tuple[Seccion, ...] = (
                 "recibidas desde el teléfono aparecen aquí.",
             ),
             Punto(
-                "panel_producto_malo", "El producto malo que el vendedor tiene que regresar",
-                "Almacén → Inventario → pestaña «Producto malo». Escribe en las piezas lo "
-                "que entregó un vendedor → «Recibir en la bodega». Después, en Salidas, "
-                "haz una salida de «Producto malo» con lo que se tira.",
-                "Cada vendedor con lo malo de sus cambios físicos que le falta regresar "
-                "(las 4 Botanas de Federico, del 27/10). Lo recibido deja de faltar y entra "
-                "al almacén «Producto malo»; si fue un error, se elimina en Operaciones y "
-                "vuelve a faltar. «Cargar a su cuenta» solo con «Sí, cargárselo», a costo "
-                "(ADR 0002 §196).",
+                "panel_producto_malo", "Cambiar el producto malo que trae un vendedor",
+                "Almacén → Inventario → pestaña «Producto malo» → «Cambiar producto malo»: "
+                "quién lo trajo y las piezas malas de cada artículo → «Cambiar por bueno». "
+                "Después, en Salidas, haz una salida de «Producto malo» con lo que se tira.",
+                "Lo bueno sale de la bodega, lo malo entra a «Producto malo» y su camión no "
+                "cambia; sale en «Lo que cada vendedor ha traído este mes» (ADR 0002 "
+                "§197). Lo que quedó por regresar de cambios del teléfono (las 4 Botanas "
+                "de Federico del 27/10) se recibe o se carga a su cuenta, a costo, solo "
+                "con «Sí, cargárselo» (§196).",
+                desde="+61",
             ),
         ),
         parte="dashboard",
@@ -1242,12 +1230,11 @@ SECCIONES: tuple[Seccion, ...] = (
                 "teléfono la venta aparece cancelada con el motivo.",
             ),
             Punto(
-                "panel_operaciones_anular_merma", "Eliminar una merma de prueba",
-                "Registra una merma de prueba en el teléfono y sincroniza. Elimínala en "
-                "Operaciones y vuelve a sincronizar el teléfono.",
-                "Las piezas regresan al camión en el dashboard y en el teléfono (llega un "
-                "ajuste «Anulación de merma…» con tu motivo), y deja de contar en las "
-                "mermas del día.",
+                "panel_operaciones_anular_merma", "Eliminar un cambio de producto malo",
+                "En Producto malo, cambia una pieza de prueba a un vendedor. Elimínalo en "
+                "Operaciones (es un ajuste AB-).",
+                "Lo bueno regresa a la bodega, lo malo sale de «Producto malo» y ya no "
+                "cuenta en lo que trajo ese vendedor este mes (ADR 0002 §197).",
             ),
             Punto(
                 "panel_operaciones_eliminar_corte", "Eliminar un corte de prueba",

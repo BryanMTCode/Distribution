@@ -295,7 +295,6 @@ class ControladorSync extends Notifier<EstadoSync> {
       ref.invalidate(clienteEnVisitaProvider);
       ref.invalidate(carritoProvider);
       ref.invalidate(catalogoProvider);
-      ref.invalidate(motivosDeMermaProvider);
       ref.invalidate(motivosDeNoDropProvider);
       ref.invalidate(miDiaDelProvider);
     }
@@ -375,7 +374,6 @@ class ControladorSync extends Notifier<EstadoSync> {
         ahora: reloj().toUtc().toIso8601String(),
       );
       if (pidio) {
-        ref.invalidate(foliosDeMermaProvider);
         ref.invalidate(foliosDeNoDropProvider);
       }
     } on Object catch (e) {

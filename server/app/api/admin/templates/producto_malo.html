@@ -1,23 +1,30 @@
 {% extends "base.html" %}
+{% from "_familias.html" import botones_plegar, familia %}
 {% block titulo %}Producto malo{% endblock %}
 {% block contenido %}
 <h1>Producto malo</h1>
 <p class="subtitulo">
-  Lo malo que cada vendedor se llevó de las tiendas en un <strong>cambio físico</strong>
-  y tiene que regresar a la bodega. Queda a su nombre hasta que lo <strong>recibes</strong>
-  aquí —entra al almacén «Producto malo»— o se lo <strong>cargas a su cuenta</strong>, a
-  costo. Nada se le cobra solo.
+  El vendedor trae a la bodega lo malo —caducado, dañado— y se le <strong>cambia</strong>
+  por lo mismo, bueno. Aquí se registra: lo bueno sale de la bodega y lo malo entra al
+  almacén «Producto malo», a su nombre. Su camión no cambia.
 </p>
 
 {% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
 {% if error %}<div class="aviso-caja error" id="aviso_error">{{ error }}</div>{% endif %}
 
 <div class="tarjetas">
-  <div class="tarjeta {% if total_falta %}aviso{% endif %}" id="total_por_regresar">
+  <div class="tarjeta" id="total_traido_en_el_mes">
+    <div class="etiqueta">Traído este mes</div>
+    <div class="numero">{{ cambiado_en_el_mes|sum(attribute='piezas')|entero }} pza</div>
+    <div class="sutil">{{ cambiado_en_el_mes|length }} vendedor(es)</div>
+  </div>
+  {% if total_falta %}
+  <div class="tarjeta aviso" id="total_por_regresar">
     <div class="etiqueta">Por regresar</div>
     <div class="numero">{{ total_falta|entero }} pza</div>
-    <div class="sutil">{{ con_pendiente|length }} vendedor(es)</div>
+    <div class="sutil">{{ con_pendiente|length }} vendedor(es), de cambios del teléfono</div>
   </div>
+  {% endif %}
   <div class="tarjeta" id="total_en_la_bodega">
     <div class="etiqueta">En la bodega, en «Producto malo»</div>
     <div class="numero">{{ en_la_bodega|sum(attribute='cantidad')|entero }} pza</div>
@@ -26,9 +33,90 @@
   </div>
 </div>
 
-<h2>Por regresar</h2>
-{% if not con_pendiente %}
-  <p class="sutil" id="nadie_debe">Nadie tiene producto malo por regresar.</p>
+<h2>Cambiar producto malo</h2>
+{% if not puede_recibir %}
+  <p class="sutil">Cambiar es de quien mueve el inventario.</p>
+{% elif not la_bodega %}
+  <p class="sutil">No hay una bodega activa de donde salga lo bueno.</p>
+{% else %}
+{% if bodegas|length > 1 %}
+<form method="get" class="barra" id="elegir_bodega" style="margin-bottom:10px">
+  <select name="bodega" aria-label="De qué bodega sale lo bueno">
+    {% for b in bodegas %}
+      <option value="{{ b.id }}" {% if b.id == la_bodega.id %}selected{% endif %}>{{ b.nombre }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secundario">Usar esta bodega</button>
+</form>
+{% endif %}
+<form method="post" action="/panel/inventario/producto-malo/cambiar" id="forma_cambiar">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="bodega_id" value="{{ la_bodega.id }}">
+  <div class="campo" style="max-width:420px">
+    <label for="vendedor_cambio">Quién lo trajo</label>
+    <select id="vendedor_cambio" name="vendedor_id" required style="width:100%">
+      <option value="">—</option>
+      {% for v in vendedores %}
+        <option value="{{ v.id }}">{{ v.nombre }} · {{ v.camion }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <p class="ayuda" style="margin:6px 0">Escribe las piezas malas que trajo de cada artículo:
+    se le dan las mismas, buenas, de {{ la_bodega.nombre }}.</p>
+  {% if grupos %}
+  {{ botones_plegar() }}
+  {% for g in grupos %}
+  {% call familia(g, loop.index) %}
+  <div class="tabla-marco" style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Artículo</th><th class="numero">Hay bueno</th><th class="numero">Malas</th></tr></thead>
+      <tbody>
+      {% for f in g.filas %}
+        <tr id="cambiar_{{ f.sku }}">
+          <td>{{ f.nombre }} <span class="mono sutil">{{ f.sku }}</span></td>
+          <td class="numero">{{ f.cantidad|entero }}</td>
+          <td class="numero">
+            <input type="number" name="c_{{ f.producto_id }}" min="0" step="1"
+                   max="{{ f.cantidad|entero }}" inputmode="numeric" style="width:6em"
+                   aria-label="Piezas malas de {{ f.nombre }}">
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endcall %}
+  {% endfor %}
+  <div class="barra" style="margin-top:10px">
+    <button type="submit" id="boton_cambiar">Cambiar por bueno</button>
+  </div>
+  {% else %}
+  <p class="sutil">{{ la_bodega.nombre }} no tiene nada que dar a cambio.</p>
+  {% endif %}
+</form>
+{% endif %}
+
+{% if cambiado_en_el_mes %}
+<h2>Lo que cada vendedor ha traído este mes</h2>
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="cambiado_en_el_mes">
+    <thead><tr><th>Vendedor</th><th class="numero">Veces</th><th class="numero">Piezas</th></tr></thead>
+    <tbody>
+    {% for c in cambiado_en_el_mes %}
+      <tr><td>{{ c.vendedor }}</td><td class="numero">{{ c.veces }}</td>
+          <td class="numero">{{ c.piezas|entero }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# Lo pendiente de los cambios físicos que el teléfono registró antes de §197. #}
+{% if con_pendiente %}
+<h2>Por regresar, de cambios que registró el teléfono</h2>
+<p class="sutil">Antes, el vendedor registraba en su teléfono el cambio físico, y lo malo
+  quedaba a su nombre. Lo que todavía no entrega se recibe aquí o se le carga a su
+  cuenta.</p>
 {% endif %}
 {% for v in con_pendiente %}
 <section id="por_regresar_{{ v.id }}" style="margin-bottom:22px">
@@ -120,7 +208,7 @@
 <p class="sutil">Todavía no se ha recibido nada.</p>
 {% endif %}
 
-<h2>Lo recibido y lo cargado</h2>
+<h2>Lo cambiado, recibido y cargado</h2>
 {% if resuelto %}
 <div class="tabla-marco" style="overflow-x:auto">
   <table id="lo_resuelto">
@@ -130,7 +218,10 @@
       <tr>
         <td>{{ r.vendedor }} · {{ r.articulo }}
           <div class="sutil">{{ r.fecha.strftime('%d/%m/%Y') }} ·
-          {% if r.como == 'recibido' %}
+          {% if r.como == 'cambiado' %}
+            {% if r.eliminado %}Cambiado, y se eliminó
+            {% else %}Cambiado por bueno · <a href="/panel/operaciones/ajuste/{{ r.operacion_id }}" class="mono">{{ r.folio }}</a>{% endif %}
+          {% elif r.como == 'recibido' %}
             {% if r.eliminado %}Recibido, y se eliminó: vuelve a estar pendiente
             {% else %}Recibido en la bodega · <a href="/panel/operaciones/ajuste/{{ r.operacion_id }}" class="mono">{{ r.folio }}</a>{% endif %}
           {% else %}
@@ -145,6 +236,6 @@
   </table>
 </div>
 {% else %}
-<p class="sutil">Todavía no se ha recibido ni cargado nada.</p>
+<p class="sutil">Todavía no se ha cambiado, recibido ni cargado nada.</p>
 {% endif %}
 {% endblock %}

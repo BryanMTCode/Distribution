@@ -11,6 +11,8 @@ oficina lo recibe en la bodega o se lo carga a su cuenta:
 3. **Cargarlo** lo cobra a costo en su cuenta, y solo con la casilla.
 4. **Las mermas no van a ese almacén**, y de él se sale con una salida.
 5. **El Excel** dice lo que falta, a nombre de cada vendedor.
+6. **Cambiar** (§197): el vendedor entrega lo malo y se lleva lo mismo bueno de
+   la bodega; lo malo entra a «Producto malo» a su nombre y su camión no cambia.
 """
 
 from __future__ import annotations
@@ -187,7 +189,10 @@ async def test_un_cambio_eliminado_deja_de_estar_pendiente(
     cambio = await _del_telefono(sesion, semilla, dia)
     await _entrar(cliente)
     await _anular(cliente, "cambio", cambio)
-    assert "Nadie tiene producto malo por regresar." in solo_texto(await cliente.get(PANTALLA))
+    assert await _pendientes(sesion) == []
+    assert "Por regresar, de cambios que registró el teléfono" not in solo_texto(
+        await cliente.get(PANTALLA)
+    )
 
 
 async def test_las_mermas_no_van_al_almacen_y_de_el_se_sale_con_una_salida(
@@ -232,3 +237,82 @@ async def test_el_excel_dice_lo_que_falta_a_nombre_de_cada_vendedor(
                                      "Se le cargó", "Falta"]
     assert filas[titulo + 2][:6] == ["Juan Pérez", "Atún en agua 140 g", 4, 0, 0, 4]
     assert _renglon(libro["Resumen"], "Producto malo por regresar (hoy)")[1] == 4
+
+
+async def _cambiar(cliente, semilla, dia, piezas: int):  # noqa: F811
+    pagina = await cliente.get(PANTALLA)
+    return await cliente.post(
+        f"{PANTALLA}/cambiar",
+        data={
+            "csrf": csrf_del_panel(cliente, pagina),
+            "vendedor_id": str(semilla["vendedor"]),
+            "bodega_id": str(semilla["bodega"]),
+            f"c_{dia['producto']}": str(piezas),
+        },
+        follow_redirects=True,
+    )
+
+
+async def test_cambiarlo_saca_lo_bueno_de_la_bodega_y_no_toca_su_camion(
+    cliente, sesion, semilla, dia  # noqa: F811
+):
+    await _entrar(cliente)
+    bodega_antes = await _existencia(sesion, semilla["bodega"], dia["producto"])
+    camion_antes = await _existencia(sesion, semilla["camion"], dia["producto"])
+    avisos_antes = (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE vendedor_id = :v"),
+            {"v": semilla["vendedor"]},
+        )
+    ).scalar_one()
+
+    r = await _cambiar(cliente, semilla, dia, 4)
+    plano = solo_texto(r)
+    assert "Cambiadas 4 pieza(s)" in plano and "Su camión no cambia." in plano
+    almacen = await producto_malo.almacen(sesion)
+    assert await _existencia(sesion, semilla["bodega"], dia["producto"]) == bodega_antes - 4
+    assert await _existencia(sesion, almacen, dia["producto"]) == 4
+    assert await _existencia(sesion, semilla["camion"], dia["producto"]) == camion_antes
+    # Su camión no cambió: a su teléfono no le llega nada.
+    assert (
+        await sesion.execute(
+            text("SELECT count(*) FROM change_log WHERE vendedor_id = :v"),
+            {"v": semilla["vendedor"]},
+        )
+    ).scalar_one() == avisos_antes
+    # A su nombre, en lo que trajo este mes y en la historia.
+    pagina = solo_texto(await cliente.get(PANTALLA))
+    assert "Lo que cada vendedor ha traído este mes Vendedor Veces Piezas Juan Pérez 1 4" in pagina
+    assert "Cambiado por bueno" in pagina
+    # No es lo pendiente de los cambios del teléfono.
+    assert await _pendientes(sesion) == []
+
+    # Una sola operación en Operaciones; eliminarla lo deshace todo.
+    cabeza = (
+        await sesion.execute(
+            text(
+                "SELECT COALESCE(a.pareja_id, a.id) FROM producto_malo_resuelto r "
+                "  JOIN ajustes_camion a ON a.id = r.ajuste_id WHERE r.como = 'cambiado'"
+            )
+        )
+    ).scalar_one()
+    r = await _anular(cliente, "ajuste", cabeza)
+    assert "anulada" in solo_texto(r)
+    assert await _existencia(sesion, semilla["bodega"], dia["producto"]) == bodega_antes
+    assert await _existencia(sesion, almacen, dia["producto"]) == 0
+    assert "Lo que cada vendedor ha traído este mes" not in solo_texto(
+        await cliente.get(PANTALLA)
+    )
+
+
+async def test_no_se_cambia_mas_de_lo_bueno_que_hay_en_la_bodega(
+    cliente, sesion, semilla, dia  # noqa: F811
+):
+    await _entrar(cliente)
+    hay = await _existencia(sesion, semilla["bodega"], dia["producto"])
+    r = await _cambiar(cliente, semilla, dia, int(hay) + 1)
+    assert "No alcanza en" in solo_texto(r)
+    assert await _existencia(sesion, semilla["bodega"], dia["producto"]) == hay
+    assert (
+        await sesion.execute(text("SELECT count(*) FROM producto_malo_resuelto"))
+    ).scalar_one() == 0

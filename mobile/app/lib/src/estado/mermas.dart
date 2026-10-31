@@ -1,59 +1,22 @@
-/// El estado de la merma y del no-drop.
+/// El estado del no-drop: «No me compró».
 ///
-/// ─────────────────────────────────────────────────────────────────────────
-/// LOS DOS DOCUMENTOS QUE EXPLICAN UNA DIFERENCIA
-/// ─────────────────────────────────────────────────────────────────────────
-/// Ninguno mueve dinero, y por eso es fácil tratarlos como papeleo. No lo son:
-/// son los únicos que explican por qué el cierre no cuadra.
+/// La merma, la devolución y el cambio físico se quitaron de la app de los
+/// vendedores (ADR 0002 §197): el vendedor lleva lo malo a la bodega, ahí se le
+/// cambia por bueno, y la oficina lo registra en el dashboard. Lo que se quedó
+/// aquí es lo que comparte el no-drop.
 ///
-/// Sin la merma, la caja que se reventó en el camión llega a la liquidación como
-/// faltante, y un faltante sin explicación **se le carga al vendedor**. Sin el
-/// no-drop, un día de 20 visitas con 12 ventas se ve igual que uno de 12 visitas
-/// con 12 ventas, y desde la oficina son indistinguibles.
-///
-/// ─────────────────────────────────────────────────────────────────────────
-/// EL CATÁLOGO DE MOTIVOS VIENE DEL SERVIDOR, Y PUEDE ESTAR VACÍO
-/// ─────────────────────────────────────────────────────────────────────────
-/// Los dos motivos son catálogo cerrado (`motivos_merma`, `motivos_no_drop`), y
-/// llegan por delta. Un equipo que nunca sincronizó los tiene vacíos, y entonces
-/// **no hay nada que capturar**: la pantalla lo dice con esas palabras en vez de
-/// mostrar un selector sin opciones, porque un desplegable vacío parece una falla
-/// de la aplicación y no un equipo sin sincronizar.
+/// El catálogo de motivos (`motivos_no_drop`) llega por delta. Un equipo que
+/// nunca sincronizó lo tiene vacío, y entonces **no hay nada que capturar**: la
+/// pantalla lo dice con esas palabras en vez de mostrar un selector sin
+/// opciones, porque un desplegable vacío parece una falla de la aplicación y no
+/// un equipo sin sincronizar.
 library;
 
 import 'package:dsd_core/dsd_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../datos/repo_catalogo.dart';
 import 'carrito.dart';
 import 'sesion.dart';
-
-/// El camión de este vendedor, para que el servidor sepa de dónde sale la
-/// mercancía mermada.
-///
-/// Sale de la credencial, no de la pantalla: dejar que el dispositivo lo declare
-/// permitiría mermar el inventario de otro camión. El servidor además lo ignora y
-/// usa el del contexto, así que esto es conveniencia, no autoridad.
-
-final registroDeMermaProvider = Provider<RegistroDeMerma?>((ref) {
-  final sesion = ref.watch(sesionProvider);
-  if (sesion is! SesionAbierta) return null;
-
-  final dispositivoId = ref.watch(dispositivoIdProvider);
-  if (dispositivoId == null) return null;
-
-  final reloj = ref.watch(relojProvider);
-  return RegistroDeMerma(
-    db: ref.watch(baseLocalProvider).db,
-    vendedorId: sesion.credencial.codigo,
-    dispositivoId: dispositivoId,
-    outbox: ref.watch(outboxProvider),
-    folios: ref.watch(repoFoliosProvider),
-    nuevoUuid: ref.watch(nuevoUuidProvider),
-    ahora: reloj,
-    almacenId: ref.watch(almacenDelVendedorProvider),
-  );
-});
 
 final registroDeNoDropProvider = Provider<RegistroDeNoDrop?>((ref) {
   final sesion = ref.watch(sesionProvider);
@@ -90,11 +53,6 @@ final dispositivoIdProvider = Provider<String?>((ref) {
   return filas.single['valor'] as String?;
 });
 
-/// Los motivos de merma sincronizados. Vacío = equipo sin sincronizar.
-final motivosDeMermaProvider = Provider<List<MotivoDeMerma>>(
-  (ref) => ref.watch(registroDeMermaProvider)?.motivos() ?? const [],
-);
-
 /// Los motivos de no-drop, en el orden que definió la oficina.
 ///
 /// `orden` existe porque en la calle, con el cliente esperando, un catálogo
@@ -103,119 +61,8 @@ final motivosDeNoDropProvider = Provider<List<MotivoDeNoDrop>>(
   (ref) => ref.watch(registroDeNoDropProvider)?.motivos() ?? const [],
 );
 
-/// Lo que trae el camión, para escoger qué se mermó.
-final productosDelCamionProvider = Provider<List<ProductoDelCamion>>((ref) {
-  ref.watch(revisionDelCamionProvider);
-  return ref.watch(repoCatalogoProvider).enElCamion();
-});
-
-final foliosDeMermaProvider = Provider<RangoFolios?>(
-  (ref) => ref.watch(repoFoliosProvider).leer('merma'),
-);
-
 final foliosDeNoDropProvider = Provider<RangoFolios?>(
   (ref) => ref.watch(repoFoliosProvider).leer('no_drop'),
-);
-
-// ---------------------------------------------------------------------------
-// La merma
-// ---------------------------------------------------------------------------
-
-sealed class EstadoMerma {
-  const EstadoMerma();
-}
-
-class MermaInactiva extends EstadoMerma {
-  const MermaInactiva();
-}
-
-class MermaEnCurso extends EstadoMerma {
-  const MermaEnCurso();
-}
-
-class MermaRegistrada extends EstadoMerma {
-  const MermaRegistrada(this.merma);
-
-  final MermaGuardada merma;
-}
-
-class MermaFallida extends EstadoMerma {
-  const MermaFallida(this.motivo, [this.detalle]);
-
-  final MotivoNoMerma motivo;
-  final String? detalle;
-
-  /// Cada motivo pide algo distinto del vendedor, y ninguno debe parecerse a los
-  /// otros: "sincroniza" y "escoge un producto" se resuelven de maneras que no
-  /// tienen nada que ver.
-  String get mensaje => switch (motivo) {
-        MotivoNoMerma.sinRenglones =>
-          'Escoge al menos un producto y cuánto se perdió.',
-        MotivoNoMerma.cantidadInvalida =>
-          'Hay un renglón en cero. Pon cuánto fue, o quítalo.',
-        MotivoNoMerma.faltaCliente =>
-          'Una devolución o un cambio necesitan cliente: regístralos desde la '
-              'visita, para que la oficina sepa a quién.',
-        MotivoNoMerma.motivoDesconocido =>
-          'Ese motivo ya no está en el catálogo. Sincroniza y escoge otro.',
-        MotivoNoMerma.sinRangoDeFolios =>
-          'Este equipo no tiene folios de merma. Sincroniza para que el '
-              'servidor le asigne un rango.',
-        MotivoNoMerma.sinFolios =>
-          'Se acabaron los folios de merma. Sincroniza para pedir otro rango.',
-      };
-}
-
-class MermaSinIdentidad extends EstadoMerma {
-  const MermaSinIdentidad();
-}
-
-class ControladorMerma extends Notifier<EstadoMerma> {
-  @override
-  EstadoMerma build() => const MermaInactiva();
-
-  void registrar({
-    required TipoDeMerma tipo,
-    required String motivoCodigo,
-    required List<RenglonDeMerma> renglones,
-    String? clienteId,
-    String? observaciones,
-    Ubicacion? ubicacion,
-  }) {
-    final registro = ref.read(registroDeMermaProvider);
-    if (registro == null) {
-      state = const MermaSinIdentidad();
-      return;
-    }
-
-    state = const MermaEnCurso();
-    try {
-      final merma = registro.registrar(
-        tipo: tipo,
-        motivoCodigo: motivoCodigo,
-        renglones: renglones,
-        clienteId: clienteId,
-        observaciones: observaciones,
-        ubicacion: ubicacion,
-      );
-      // El inventario del camión cambió: el catálogo y las existencias que ve el
-      // vendedor tienen que reflejarlo antes de la siguiente venta, o le ofrecería
-      // mercancía que acaba de tirar.
-      elCamionCambio(ref);
-      ref.invalidate(resumenColaProvider);
-      // Una devolución o un cambio son una visita: la palomita de «hoy».
-      ref.invalidate(clientesProvider);
-      state = MermaRegistrada(merma);
-    } on MermaRechazada catch (e) {
-      state = MermaFallida(e.motivo, e.detalle);
-    }
-  }
-
-  void reiniciar() => state = const MermaInactiva();
-}
-
-final mermaProvider = NotifierProvider<ControladorMerma, EstadoMerma>(
-  ControladorMerma.new,
 );
 
 // ---------------------------------------------------------------------------

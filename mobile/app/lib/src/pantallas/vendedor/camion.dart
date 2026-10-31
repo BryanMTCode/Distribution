@@ -25,7 +25,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../datos/repo_catalogo.dart';
 import '../../estado/camion.dart';
 import '../familias.dart';
-import 'devolver_a_bodega.dart';
 
 class PantallaCamion extends ConsumerStatefulWidget {
   const PantallaCamion({super.key});
@@ -58,20 +57,9 @@ class _EstadoCamion extends ConsumerState<PantallaCamion>
               algunaPlegada: plegadas.isNotEmpty,
               alTocar: () => alternarTodas(productos, _familiaDe),
             ),
-          // La devolución a la bodega se entra DESDE AQUÍ y no desde el menú de la
-          // lista de clientes: la pregunta «¿qué bajo?» se contesta mirando lo que
-          // trae, y es la pantalla que el vendedor ya tiene abierta al final de la
-          // ruta. Un menú más arriba la habría escondido.
-          IconButton(
-            key: const Key('boton_devolver_a_bodega'),
-            tooltip: 'Devolver a la bodega',
-            icon: const Icon(Icons.warehouse_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const PantallaDevolverABodega(),
-              ),
-            ),
-          ),
+          // «Devolver a la bodega» ya no está (ADR 0002 §197): lo que regresa
+          // del camión lo pasa la oficina con «Mover mercancía», y al teléfono
+          // le llega como un ajuste.
         ],
       ),
       body: Column(

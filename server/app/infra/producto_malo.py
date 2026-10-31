@@ -21,6 +21,13 @@ de antes de esta pantalla también cuentan.
   cargo no se borra: si fue un error, se condona en su cuenta.
 
 Lo que no entrega se queda pendiente: nada se le cobra solo.
+
+Desde §197 la app de los vendedores ya no registra cambios físicos: «los
+vendedores solo llevarán la mercancía mala al almacén y se las cambiaremos por
+buena». Eso es **cambiar**: lo bueno sale de la bodega y lo malo entra al almacén
+«Producto malo», a nombre de quien lo trajo, y su camión no cambia —entregó uno
+malo y se llevó uno bueno—. Lo pendiente de arriba solo queda para los cambios
+que el teléfono registró antes.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import text
 
+from app.infra import traspaso_camion
 from app.infra.ajuste_de_existencia import (
     UnaSolaOperacion,
     existencia_con_candado,
@@ -94,16 +102,34 @@ SELECT m.vendedor_id, m.fecha_operativa AS fecha, m.folio_local AS folio,
  LIMIT 300
 """
 
+# Lo que cada vendedor ha traído y se le cambió por bueno, en el mes (§197).
+SQL_CAMBIADO_EN_EL_MES = """
+SELECT u.nombre AS vendedor, sum(r.cantidad) AS piezas,
+       count(DISTINCT COALESCE(a.pareja_id, a.id)) AS veces
+  FROM producto_malo_resuelto r
+  JOIN usuarios u ON u.id = r.vendedor_id
+  JOIN ajustes_camion a ON a.id = r.ajuste_id
+ WHERE r.como = 'cambiado'
+   AND r.fecha_operativa >= date_trunc('month', CAST(:hoy AS date))
+   AND NOT EXISTS (SELECT 1 FROM anulaciones an
+                    WHERE an.tipo = 'ajuste'
+                      AND an.documento_id = COALESCE(a.pareja_id, a.id))
+ GROUP BY u.nombre
+ ORDER BY piezas DESC, u.nombre
+"""
+
 SQL_RESUELTO = """
 SELECT r.registrado_en, r.fecha_operativa AS fecha, u.nombre AS vendedor,
        p.nombre AS articulo, r.cantidad, r.como, r.importe, q.nombre AS quien,
-       a.folio, COALESCE(a.pareja_id, a.id) AS operacion_id,
+       COALESCE(cab.folio, a.folio) AS folio, COALESCE(a.pareja_id, a.id) AS operacion_id,
        (an.id IS NOT NULL) AS eliminado, r.vendedor_id
   FROM producto_malo_resuelto r
   JOIN usuarios u ON u.id = r.vendedor_id
   JOIN productos p ON p.id = r.producto_id
   JOIN usuarios q ON q.id = r.registrado_por
   LEFT JOIN ajustes_camion a ON a.id = r.ajuste_id
+  -- El folio de la operación, no el de una de sus mitades.
+  LEFT JOIN ajustes_camion cab ON cab.id = a.pareja_id
   LEFT JOIN anulaciones an
          ON an.tipo = 'ajuste' AND an.documento_id = COALESCE(a.pareja_id, a.id)
  ORDER BY r.registrado_en DESC
@@ -146,6 +172,48 @@ async def cambios(sesion) -> list[dict]:
 async def resuelto(sesion) -> list[dict]:
     """Lo recibido y lo cargado, lo último primero."""
     return [dict(r) for r in (await sesion.execute(text(SQL_RESUELTO))).mappings()]
+
+
+async def cambiado_en_el_mes(sesion) -> list[dict]:
+    """Cuánto ha traído cada vendedor este mes: lo que un vendedor trae seguido
+    es lo que hay que revisar."""
+    return [
+        dict(r)
+        for r in (
+            await sesion.execute(text(SQL_CAMBIADO_EN_EL_MES), {"hoy": hoy_en_mazatlan()})
+        ).mappings()
+    ]
+
+
+async def vendedores(sesion) -> list[dict]:
+    """Quién puede traer producto malo: los vendedores con camión."""
+    return [
+        dict(r)
+        for r in (
+            await sesion.execute(
+                text(
+                    "SELECT u.id, u.nombre, a.nombre AS camion "
+                    "  FROM almacenes a JOIN usuarios u ON u.id = a.responsable_id "
+                    " WHERE a.tipo = 'camion' AND a.activo AND u.activo "
+                    " ORDER BY u.nombre"
+                )
+            )
+        ).mappings()
+    ]
+
+
+async def bodegas(sesion) -> list[dict]:
+    return [
+        dict(r)
+        for r in (
+            await sesion.execute(
+                text(
+                    "SELECT id, nombre FROM almacenes "
+                    " WHERE tipo = 'bodega' AND activo ORDER BY codigo"
+                )
+            )
+        ).mappings()
+    ]
 
 
 async def en_la_bodega(sesion) -> list[dict]:
@@ -309,3 +377,63 @@ async def cargar(sesion, *, vendedor_id, cantidades: dict, quien) -> Decimal:
              "importe": importes[producto_id], "hoy": hoy, "quien": quien},
         )
     return total
+
+
+async def cambiar(sesion, *, vendedor_id, bodega_id, cantidades: dict, quien) -> str:
+    """Lo malo que el vendedor trajo, por lo mismo bueno de la bodega (§197).
+
+    Lo bueno sale de la bodega y lo malo entra al almacén «Producto malo»: dos
+    ajustes atados por artículo, en una sola operación, como Mover mercancía. Se
+    ve en Operaciones y ahí se elimina. Su camión no cambia, así que a su
+    teléfono no le llega nada. Devuelve el folio. No hace commit."""
+    vendedor = (
+        await sesion.execute(
+            text("SELECT nombre FROM usuarios WHERE id = :v AND activo"), {"v": vendedor_id}
+        )
+    ).scalar_one_or_none()
+    if vendedor is None:
+        raise NoSePuede("Elige qué vendedor trajo el producto malo.")
+    if not cantidades:
+        raise NoSePuede("Escribe cuántas piezas malas trajo de algún artículo.")
+    try:
+        bodega = await traspaso_camion.almacen(sesion, bodega_id, "bodega")
+        malo = await traspaso_camion.almacen(sesion, await almacen(sesion, crear=True), "merma")
+        movimiento = await traspaso_camion.mover_entre(
+            sesion,
+            origen=bodega,
+            destino=malo,
+            cantidades=cantidades,
+            nota=f"cambio de producto malo con {vendedor}: entregó lo malo y se llevó "
+            "lo mismo, bueno",
+            quien=quien,
+        )
+    except traspaso_camion.MovimientoRechazado as e:
+        raise NoSePuede(str(e)) from e
+
+    # Lo que entró al almacén «Producto malo», a nombre de quien lo trajo.
+    cabeza = (
+        await sesion.execute(
+            text("SELECT id FROM ajustes_camion WHERE folio = :f"), {"f": movimiento.folio}
+        )
+    ).scalar_one()
+    hoy = hoy_en_mazatlan()
+    for ajuste in (
+        await sesion.execute(
+            text(
+                "SELECT id, producto_id, delta FROM ajustes_camion "
+                " WHERE (id = :c OR pareja_id = :c) AND almacen_id = :malo"
+            ),
+            {"c": cabeza, "malo": malo["id"]},
+        )
+    ).mappings():
+        await sesion.execute(
+            text(
+                "INSERT INTO producto_malo_resuelto "
+                "  (vendedor_id, producto_id, cantidad, como, ajuste_id, fecha_operativa, "
+                "   registrado_por) "
+                "VALUES (:v, :p, :c, 'cambiado', :a, :hoy, :quien)"
+            ),
+            {"v": vendedor_id, "p": ajuste["producto_id"], "c": ajuste["delta"],
+             "a": ajuste["id"], "hoy": hoy, "quien": quien},
+        )
+    return movimiento.folio

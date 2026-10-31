@@ -26,7 +26,6 @@ import '../../datos/repo_catalogo.dart';
 import '../../estado/carrito.dart';
 import '../familias.dart';
 import 'carrito.dart';
-import 'merma.dart';
 import 'no_drop.dart';
 import 'perfil_cliente.dart';
 
@@ -81,10 +80,13 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo>
     return Scaffold(
       appBar: AppBar(
         title: Text(cliente?.nombreComercial ?? 'Catálogo'),
-        // Las dos salidas de la visita que NO son una venta. Viven aquí, dentro
-        // de la visita, porque las dos necesitan al cliente: un no-drop sin
-        // cliente no mide nada, y una devolución sin él no se puede revisar
-        // contra su venta.
+        // Lo de la visita que NO es una venta: el perfil de la tienda y «No me
+        // compró». Viven aquí porque necesitan al cliente: un no-drop sin
+        // cliente no mide nada.
+        //
+        // La devolución y el cambio físico ya no están (ADR 0002 §197): los
+        // registra la oficina en el dashboard, y al teléfono le llegan como un
+        // ajuste de su camión.
         //
         // En un menú y no como botones: lo que se busca en esta pantalla es
         // vender, y dos iconos compitiendo con el carrito harían más lento el
@@ -105,17 +107,8 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo>
                   'perfil' => MaterialPageRoute<void>(
                       builder: (_) => PantallaPerfilDelCliente(cliente: cliente),
                     ),
-                  'no_drop' => MaterialPageRoute<void>(
-                      builder: (_) => PantallaNoDrop(cliente: cliente),
-                    ),
-                  'cambio' => MaterialPageRoute<void>(
-                      builder: (_) => PantallaMerma(
-                        cliente: cliente,
-                        tipoInicial: TipoDeMerma.cambio,
-                      ),
-                    ),
                   _ => MaterialPageRoute<void>(
-                      builder: (_) => PantallaMerma(cliente: cliente),
+                      builder: (_) => PantallaNoDrop(cliente: cliente),
                     ),
                 };
                 Navigator.of(context).push(destino);
@@ -136,25 +129,6 @@ class _EstadoCatalogo extends ConsumerState<PantallaCatalogo>
                   child: ListTile(
                     leading: Icon(Icons.do_not_disturb_on_outlined),
                     title: Text('No me compró'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'devolucion',
-                  child: ListTile(
-                    leading: Icon(Icons.undo),
-                    title: Text('Me devolvió mercancía'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                // Fresco por caducado o dañado, sin dinero (octubre 2026).
-                PopupMenuItem(
-                  value: 'cambio',
-                  key: Key('opcion_cambio'),
-                  child: ListTile(
-                    leading: Icon(Icons.swap_horiz),
-                    title: Text('Cambio físico'),
-                    subtitle: Text('Caducado o dañado, sin cobro'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),

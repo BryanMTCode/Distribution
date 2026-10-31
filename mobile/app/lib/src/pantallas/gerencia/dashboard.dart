@@ -34,6 +34,7 @@ IconData iconoDelAtajo(String nombre) => switch (nombre) {
       'ajustar' => Icons.fact_check_outlined,
       'articulos' => Icons.inventory_2_outlined,
       'movimientos' => Icons.history,
+      'malo' => Icons.report_gmailerrorred,
       _ => Icons.open_in_new,
     };
 

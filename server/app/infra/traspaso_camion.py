@@ -126,7 +126,7 @@ async def mover(
     camion = await almacen(sesion, camion_id, "camion")
     bodega = await almacen(sesion, bodega_id, "bodega")
     origen, destino = (bodega, camion) if al_camion else (camion, bodega)
-    return await _mover(sesion, origen=origen, destino=destino, cantidades=cantidades,
+    return await mover_entre(sesion, origen=origen, destino=destino, cantidades=cantidades,
                         nota=nota, quien=quien)
 
 
@@ -145,11 +145,11 @@ async def mover_entre_camiones(
         raise MovimientoRechazado("Elige dos camiones distintos.")
     origen = await almacen(sesion, origen_id, "camion")
     destino = await almacen(sesion, destino_id, "camion")
-    return await _mover(sesion, origen=origen, destino=destino, cantidades=cantidades,
+    return await mover_entre(sesion, origen=origen, destino=destino, cantidades=cantidades,
                         nota=nota, quien=quien)
 
 
-async def _mover(
+async def mover_entre(
     sesion,
     *,
     origen: dict,
@@ -224,20 +224,25 @@ async def _mover(
         folios += [folio_sale, folio_entra]
 
     piezas = sum(pedidas.values(), Decimal(0))
-    a_quien = (f"Al teléfono de {camiones[0]['responsable']} le llega"
-               if len(camiones) == 1 else
-               f"A los teléfonos de {camiones[0]['responsable']} y "
-               f"{camiones[1]['responsable']} les llega")
+    mensaje = (
+        f"Se movieron {len(pedidas)} artículo(s), {_piezas(piezas)} piezas, de "
+        f"{origen['nombre']} a {destino['nombre']}, en una sola operación "
+        f"({operacion.folio})."
+    )
+    # Entre dos almacenes sin camión —la bodega y el producto malo (§197)— no
+    # hay teléfono al que avisarle.
+    if camiones:
+        a_quien = (f"Al teléfono de {camiones[0]['responsable']} le llega"
+                   if len(camiones) == 1 else
+                   f"A los teléfonos de {camiones[0]['responsable']} y "
+                   f"{camiones[1]['responsable']} les llega")
+        mensaje += f" {a_quien} al sincronizar, y se suma a lo que traiga."
     return Movimiento(
         folio=operacion.folio,
         folios=folios,
         articulos=len(pedidas),
         piezas=piezas,
-        mensaje=(
-            f"Se movieron {len(pedidas)} artículo(s), {_piezas(piezas)} piezas, de "
-            f"{origen['nombre']} a {destino['nombre']}, en una sola operación "
-            f"({operacion.folio}). {a_quien} al sincronizar, y se suma a lo que traiga."
-        ),
+        mensaje=mensaje,
     )
 
 

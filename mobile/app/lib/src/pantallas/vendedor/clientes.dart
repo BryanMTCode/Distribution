@@ -28,7 +28,6 @@ import 'catalogo.dart';
 import 'guia.dart';
 import 'mapa.dart';
 import 'mi_dia.dart';
-import 'merma.dart';
 import 'perfil_cliente.dart';
 
 class PantallaClientes extends ConsumerWidget {
@@ -180,12 +179,9 @@ class PantallaClientes extends ConsumerWidget {
                 ? null
                 : () => ref.read(syncProvider.notifier).sincronizar(),
           ),
-          // La merma del camión no pertenece a ninguna visita: la caja se
-          // revienta entre tienda y tienda. Por eso vive aquí y no dentro del
-          // catálogo de un cliente.
-          // «Mi día» va PRIMERO entre las acciones, antes de merma y de salir:
-          // es lo que el vendedor abre varias veces al día, y las otras dos son
-          // excepcionales. El orden de los iconos es el orden de uso.
+          // «Mi día» va PRIMERO entre las acciones, antes de la impresora y de
+          // salir: es lo que el vendedor abre varias veces al día, y lo demás es
+          // excepcional. El orden de los iconos es el orden de uso.
           IconButton(
             key: const Key('boton_camion'),
             tooltip: 'Mi camión',
@@ -202,23 +198,17 @@ class PantallaClientes extends ConsumerWidget {
               MaterialPageRoute<void>(builder: (_) => const PantallaMiDia()),
             ),
           ),
-          // Merma y salir van a un menú, no a la barra: con tres iconos más la
-          // marca DEMO la fila DESBORDABA 46 píxeles —lo encontró la suite en modo
-          // demo, y en un teléfono angosto habría pasado igual sin modo demo—.
+          // La impresora y salir van a un menú, no a la barra: con tres iconos
+          // más la marca DEMO la fila DESBORDABA 46 píxeles —lo encontró la suite
+          // en modo demo, y en un teléfono angosto habría pasado igual—.
           //
-          // El criterio para elegir qué se queda a la vista es la frecuencia: «Mi
-          // día» se abre varias veces en una ruta; una merma es excepcional y salir
-          // es una vez al día. Un icono visible que desborda es peor que uno a dos
-          // toques.
+          // La merma ya no está aquí (ADR 0002 §197): la registra la oficina en
+          // el dashboard, y al teléfono le llega como un ajuste de su camión.
           PopupMenuButton<String>(
             key: const Key('menu_vendedor'),
             tooltip: 'Más',
             onSelected: (opcion) {
-              if (opcion == 'merma') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const PantallaMerma()),
-                );
-              } else if (opcion == 'impresora') {
+              if (opcion == 'impresora') {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const PantallaImpresora()),
                 );
@@ -227,15 +217,6 @@ class PantallaClientes extends ConsumerWidget {
               }
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'merma',
-                key: Key('boton_merma'),
-                child: ListTile(
-                  leading: Icon(Icons.delete_outline),
-                  title: Text('Registrar merma'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
               // La impresora del camión: elegirla y probarla (ADR 0002 §139).
               PopupMenuItem(
                 value: 'impresora',

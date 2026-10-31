@@ -8056,3 +8056,33 @@ quedaba sin nombre.
   nombre de cada vendedor: lo que cambió, entregó, se le cargó y le falta.
 - **Los vendedores no cambian**: su teléfono registra el cambio físico igual que
   antes; todo esto es del servidor.
+
+## 197. La app ya no registra mermas ni devoluciones: lo malo se cambia en la bodega
+
+«Quiero que en la aplicación no haya nada de devolución, mermas ni nada.» «Los
+vendedores no harán nada de eso: solo tomarán la mercancía mala al almacén y se
+las cambiaremos por buena.»
+
+- **Se quitaron de la app de los vendedores** (+61): «Registrar merma» (menú
+  «Más» de la lista), «Me devolvió mercancía» y «Cambio físico» (menú de la
+  visita) y «Devolver a la bodega» (Mi camión). «Perfil y ubicación», «No me
+  compró», la impresora y salir siguen. Es la regla de siempre: nada con
+  decisión del vendedor, todo desde el sistema.
+- **Lo malo se cambia en la bodega**: el vendedor entrega lo malo y se lleva lo
+  mismo, bueno. En el dashboard, Inventario → Producto malo → «Cambiar producto
+  malo»: quién lo trajo y las piezas de cada artículo. Lo bueno sale de la bodega
+  y lo malo entra al almacén «Producto malo» (§196), en una sola operación —el
+  mismo movimiento de dos ajustes atados de Mover mercancía—, a nombre de quien
+  lo trajo. **Su camión no cambia**: entregó uno malo y se llevó uno bueno, así
+  que a su teléfono no le llega nada.
+- **Se ve quién trae qué**: «Lo que cada vendedor ha traído este mes» (veces y
+  piezas) y la historia de lo cambiado. Si fue un error, se elimina en
+  Operaciones y se deshace todo.
+- **Lo que no se cambió por nada** —una tienda que devolvió sin llevarse otro—
+  se corrige con «Ajustar inventario» o «Mover mercancía», como cualquier
+  diferencia.
+- **Los teléfonos con la +59 o la +60** siguen pudiendo registrar mermas y
+  devoluciones hasta que se instale la +61, y el servidor las sigue recibiendo
+  como siempre: rechazarlas dejaría operaciones en cuarentena. Lo pendiente de
+  sus cambios físicos (§196) sigue en la misma pantalla, para recibirlo o
+  cargarlo.

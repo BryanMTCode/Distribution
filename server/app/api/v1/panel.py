@@ -55,9 +55,9 @@ ATAJOS: tuple[Atajo, ...] = (
           descripcion="Lo que llega a la bodega: compras y lo que se encontró de más"),
     Atajo(titulo="Salidas y mermas", icono="salida", ruta="/panel/salidas",
           descripcion="Lo que sale de la bodega sin venderse"),
-    # §196. Un ícono que la app todavía no conoce sale con el de abrir.
+    # §196, §197. La APK +60 no conoce este ícono y lo pinta con el de abrir.
     Atajo(titulo="Producto malo", icono="malo", ruta="/panel/inventario/producto-malo",
-          descripcion="Lo que cada vendedor cambió en las tiendas y tiene que regresar"),
+          descripcion="Lo malo que traen los vendedores: se les cambia por bueno"),
     Atajo(titulo="Ajustar inventario", icono="ajustar", ruta="/panel/inventario/ajustar",
           descripcion="Contar y dejar cada artículo en lo que hay"),
     Atajo(titulo="Artículos", icono="articulos", ruta="/panel/productos",

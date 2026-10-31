@@ -252,41 +252,21 @@ Dos cosas que conviene saber antes de usarlo con vendedores:
 A qué factura se aplica lo decide **el servidor**, en orden de vencimiento más
 antiguo. El teléfono solo dice «este cliente pagó tanto».
 
-### Registrar lo que se perdió (merma) y a quién no se le vendió (no-drop)
+### Lo malo y a quién no se le vendió (no-drop)
 
-Son los dos documentos que explican por qué el cierre no cuadra, y los dos están en
-el teléfono.
+**El vendedor ya no registra mermas, devoluciones ni cambios en el teléfono**
+(ADR 0002 §197, desde la +61). Lleva lo malo —caducado, dañado, lo que una tienda
+le regresó— a la bodega, y ahí se le cambia por lo mismo, bueno. La oficina lo
+registra en el dashboard: Almacén → Inventario → **Producto malo** → «Cambiar
+producto malo». Lo bueno sale de la bodega, lo malo entra al almacén «Producto
+malo» a su nombre, y su camión no cambia. Lo que se tira o se le regresa al
+proveedor sale de ese almacén con una salida.
 
-**La merma del camión** está en el icono de bote de basura, arriba a la derecha de la
-lista de ruta. Vive ahí y no dentro de la visita a un cliente porque la caja se
-revienta entre tienda y tienda:
+Una devolución que no se cambió por nada se corrige en el dashboard con «Ajustar
+inventario» o «Mover mercancía».
 
-1. Escoge el motivo. Es catálogo cerrado: viene del panel, no se escribe a mano.
-2. Busca el producto y teclea cuántas. Si capturas **cajas**, la pantalla te muestra
-   abajo en cuántas piezas se convierte — ahí se atrapa el dedazo antes de guardar.
-3. Registra.
-
-Tres cosas que conviene saber antes de darlo a vendedores:
-
-- **Se puede mermar más de lo que el camión dice que trae.** La pantalla avisa y lo
-  registra igual. El cartón ya está roto: si lo bloqueara, la pérdida no quedaría
-  registrada y en la liquidación aparecería como **faltante del vendedor**, que es
-  exactamente lo que este documento existe para evitar. El servidor lo marca y lo ves
-  en el panel.
-- **El motivo decide si se le descuenta.** Lo decides tú en el catálogo
-  (`afecta_vendedor`), nunca el vendedor al capturar — pero el teléfono **se lo
-  dice**: enterarse en la liquidación de que ese motivo se le cobra es lo que rompe
-  la confianza.
-- Lo mermado va a un almacén de tipo `merma` si creaste uno en **Equipo**. Si no
-  existe, la mercancía sale del sistema y solo queda el movimiento de salida.
-
-**La devolución de un cliente** se registra desde su visita: entra al cliente y usa
-el menú de los tres puntos → «Me devolvió mercancía». Tiene que ser desde ahí porque
-sin cliente la oficina no puede revisarla contra su venta. El signo es el contrario:
-la mercancía **entra** al camión y regresa a la bodega en la liquidación.
-
-**El no-drop** —la visita que no terminó en venta— está en el mismo menú, en «No me
-compró». Desde la +52 **se registra aunque el GPS no lea** (ADR 0002 §158): bajo
+**El no-drop** —la visita que no terminó en venta— está en el menú de los tres
+puntos de la visita, en «No me compró». Desde la +52 **se registra aunque el GPS no lea** (ADR 0002 §158): bajo
 techo y sin señal el vendedor tiene que poder cerrar al cliente, y el servidor la
 marca «Sin GPS» para que la oficina la vea. Si el satélite no aparece, la pantalla te
 dice qué falló y dónde se arregla —el permiso en los ajustes, el GPS apagado
