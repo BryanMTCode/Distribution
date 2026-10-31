@@ -16,7 +16,7 @@ de la Play Store está aparte, en [PLAY-STORE.md](PLAY-STORE.md).
   más le cuesta a cualquiera, y aquí ya está resuelto.
 - **Está probada en operación de verdad**, no es una maqueta. Los vendedores la usan todos los días,
   y cada problema real (cortes, tiendas, sincronización) se arregló y quedó con su prueba.
-- **Está cuidada por dentro.** Tiene unas **2,830 pruebas automáticas** (1675 del servidor, 746 de
+- **Está cuidada por dentro.** Tiene unas **2,839 pruebas automáticas** (1684 del servidor, 746 de
   Dart y 409 de pantallas) y documentación de instalación, respaldos, arranque diario y piloto. Cada
   decisión de negocio está escrita en el [ADR 0002](adr/0002-reglas-de-negocio.md) con su porqué.
 - **Tiene controles que muchos sistemas no tienen:**

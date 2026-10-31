@@ -1141,6 +1141,17 @@ SECCIONES: tuple[Seccion, ...] = (
                 "Cuentas por pagar, por proveedor y el valor del inventario; las compras "
                 "recibidas desde el teléfono aparecen aquí.",
             ),
+            Punto(
+                "panel_producto_malo", "El producto malo que el vendedor tiene que regresar",
+                "Almacén → Inventario → pestaña «Producto malo». Escribe en las piezas lo "
+                "que entregó un vendedor → «Recibir en la bodega». Después, en Salidas, "
+                "haz una salida de «Producto malo» con lo que se tira.",
+                "Cada vendedor con lo malo de sus cambios físicos que le falta regresar "
+                "(las 4 Botanas de Federico, del 27/10). Lo recibido deja de faltar y entra "
+                "al almacén «Producto malo»; si fue un error, se elimina en Operaciones y "
+                "vuelve a faltar. «Cargar a su cuenta» solo con «Sí, cargárselo», a costo "
+                "(ADR 0002 §196).",
+            ),
         ),
         parte="dashboard",
     ),

@@ -108,7 +108,9 @@ async def listar(
                           {precio_de_venta("x.producto_id")}
                          WHERE x.almacen_id = a.id
                   ) e ON true
-                 WHERE a.activo
+                 -- El producto malo (§196) tiene su pantalla, y no vale a precio de
+                 -- venta: aquí sumaría en lo que vale el inventario.
+                 WHERE a.activo AND NOT a.producto_malo
                  ORDER BY a.tipo, a.codigo
                 """  # noqa: S608 — fragmento constante del código
             )

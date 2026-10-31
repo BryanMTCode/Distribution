@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block titulo %}Producto malo{% endblock %}
+{% block contenido %}
+<h1>Producto malo</h1>
+<p class="subtitulo">
+  Lo malo que cada vendedor se llevó de las tiendas en un <strong>cambio físico</strong>
+  y tiene que regresar a la bodega. Queda a su nombre hasta que lo <strong>recibes</strong>
+  aquí —entra al almacén «Producto malo»— o se lo <strong>cargas a su cuenta</strong>, a
+  costo. Nada se le cobra solo.
+</p>
+
+{% if guardado %}<div class="aviso-caja bien" id="aviso_guardado">{{ guardado }}</div>{% endif %}
+{% if error %}<div class="aviso-caja error" id="aviso_error">{{ error }}</div>{% endif %}
+
+<div class="tarjetas">
+  <div class="tarjeta {% if total_falta %}aviso{% endif %}" id="total_por_regresar">
+    <div class="etiqueta">Por regresar</div>
+    <div class="numero">{{ total_falta|entero }} pza</div>
+    <div class="sutil">{{ con_pendiente|length }} vendedor(es)</div>
+  </div>
+  <div class="tarjeta" id="total_en_la_bodega">
+    <div class="etiqueta">En la bodega, en «Producto malo»</div>
+    <div class="numero">{{ en_la_bodega|sum(attribute='cantidad')|entero }} pza</div>
+    <div class="sutil">Se tira o se le regresa al proveedor con una
+      <a href="/panel/salidas">salida</a>.</div>
+  </div>
+</div>
+
+<h2>Por regresar</h2>
+{% if not con_pendiente %}
+  <p class="sutil" id="nadie_debe">Nadie tiene producto malo por regresar.</p>
+{% endif %}
+{% for v in con_pendiente %}
+<section id="por_regresar_{{ v.id }}" style="margin-bottom:22px">
+  <h3 style="margin-bottom:6px">{{ v.nombre }} · {{ v.falta|entero }} pza por regresar</h3>
+  <form method="post" action="/panel/inventario/producto-malo/recibir">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="vendedor_id" value="{{ v.id }}">
+    <div class="tabla-marco" style="overflow-x:auto">
+      <table>
+        {# Tres columnas: en el teléfono, lo que falta y dónde se escribe quedan a
+           la vista; lo demás va debajo del artículo. #}
+        <thead><tr>
+          <th>Artículo</th><th class="numero">Falta</th>
+          {% if puede_recibir or puede_cargar %}<th class="numero">Piezas</th>{% endif %}
+        </tr></thead>
+        <tbody>
+        {% for r in v.renglones if r.pendientes > 0 %}
+          <tr id="falta_{{ v.id }}_{{ r.producto_id }}">
+            <td>{{ r.articulo }} <span class="mono sutil">{{ r.sku }}</span>
+              <div class="sutil">Cambió {{ r.cambiadas|entero }} · entregó {{ r.recibidas|entero }}
+                · se le cargó {{ r.cargadas|entero }} · desde el {{ r.desde.strftime('%d/%m/%Y') }}</div></td>
+            <td class="numero"><strong>{{ r.pendientes|entero }}</strong></td>
+            {% if puede_recibir or puede_cargar %}
+            <td class="numero">
+              <input type="number" name="c_{{ r.producto_id }}" min="0" step="1"
+                     max="{{ r.pendientes|entero }}" inputmode="numeric" style="width:6em"
+                     aria-label="Piezas de {{ r.articulo }}">
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if puede_recibir or puede_cargar %}
+    <p class="ayuda" style="margin:6px 0">Escribe las piezas de cada artículo. Lo que
+      entregó, se recibe; lo que no va a entregar, se le carga a su cuenta.</p>
+    <div class="barra" style="flex-wrap:wrap;gap:10px">
+      {% if puede_recibir %}
+      <button type="submit" id="recibir_{{ v.id }}">Recibir en la bodega</button>
+      {% endif %}
+      {% if puede_cargar %}
+      <label style="display:flex;gap:6px;align-items:center">
+        <input type="checkbox" name="confirmo_cargo" value="1" id="confirmo_cargo_{{ v.id }}">
+        Sí, cargárselo
+      </label>
+      <button type="submit" class="secundario" id="cargar_{{ v.id }}"
+              formaction="/panel/inventario/producto-malo/cargar">Cargar a su cuenta, a costo</button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </form>
+  {% if v.cambios %}
+  <details style="margin-top:8px">
+    <summary>De dónde viene: sus cambios físicos</summary>
+    <div class="tabla-marco" style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Cambio físico</th><th class="numero">Piezas</th></tr></thead>
+        <tbody>
+        {% for c in v.cambios %}
+          <tr><td>{{ c.tienda or '—' }} · {{ c.articulo }}
+                <div class="sutil">{{ c.fecha.strftime('%d/%m/%Y') }} · <span class="mono">{{ c.folio }}</span></div></td>
+              <td class="numero">{{ c.piezas|entero }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+
+<h2>En la bodega</h2>
+{% if en_la_bodega %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="en_la_bodega">
+    <thead><tr><th>Artículo</th><th class="numero">Piezas</th></tr></thead>
+    <tbody>
+    {% for e in en_la_bodega %}
+      <tr><td>{{ e.articulo }} <span class="mono sutil">{{ e.sku }}</span></td>
+          <td class="numero">{{ e.cantidad|entero }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="sutil">Para tirarlo o regresárselo al proveedor: en <a href="/panel/salidas">Salidas</a>,
+  una salida de «Producto malo».</p>
+{% else %}
+<p class="sutil">Todavía no se ha recibido nada.</p>
+{% endif %}
+
+<h2>Lo recibido y lo cargado</h2>
+{% if resuelto %}
+<div class="tabla-marco" style="overflow-x:auto">
+  <table id="lo_resuelto">
+    <thead><tr><th>Qué se hizo</th><th class="numero">Piezas</th></tr></thead>
+    <tbody>
+    {% for r in resuelto %}
+      <tr>
+        <td>{{ r.vendedor }} · {{ r.articulo }}
+          <div class="sutil">{{ r.fecha.strftime('%d/%m/%Y') }} ·
+          {% if r.como == 'recibido' %}
+            {% if r.eliminado %}Recibido, y se eliminó: vuelve a estar pendiente
+            {% else %}Recibido en la bodega · <a href="/panel/operaciones/ajuste/{{ r.operacion_id }}" class="mono">{{ r.folio }}</a>{% endif %}
+          {% else %}
+            Cargado a su cuenta · <a href="/panel/vendedores/cuenta/{{ r.vendedor_id }}">${{ '{:,.2f}'.format(r.importe or 0) }}</a>
+          {% endif %}
+          · por {{ r.quien }}</div>
+        </td>
+        <td class="numero">{{ r.cantidad|entero }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="sutil">Todavía no se ha recibido ni cargado nada.</p>
+{% endif %}
+{% endblock %}

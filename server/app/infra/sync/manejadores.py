@@ -1330,9 +1330,11 @@ async def crear_merma(
     if sale:
         destino_merma = (
             await sesion.execute(
+                # Nunca el almacén «Producto malo» (§196): a ese solo entra lo
+                # que la oficina recibió de manos del vendedor.
                 text(
                     "SELECT id FROM almacenes WHERE tipo = 'merma' AND activo "
-                    " ORDER BY codigo LIMIT 1"
+                    "   AND NOT producto_malo ORDER BY codigo LIMIT 1"
                 )
             )
         ).scalar_one_or_none()

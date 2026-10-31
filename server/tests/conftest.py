@@ -108,6 +108,8 @@ TABLAS_VOLATILES = [
     "movimientos_tarjeta",
     # Los boletos del dashboard desde la app (§194): cuelgan de `usuarios`.
     "boletos_panel",
+    # El producto malo recibido o cargado (§196): cuelga de `usuarios`.
+    "producto_malo_resuelto",
     "proveedores",
     "salida_detalle",
     "salidas",

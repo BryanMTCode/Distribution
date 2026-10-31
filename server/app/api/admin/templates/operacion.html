@@ -54,20 +54,6 @@
   {% endif %}
 {% else %}
 
-  {% if plan.renglones %}
-  <h2>Lo que regresa</h2>
-  <div class="tabla-marco" style="overflow-x:auto">
-    <table id="renglones_operacion">
-      <thead><tr><th>Producto</th><th class="numero">Piezas</th><th>De</th><th>A</th></tr></thead>
-      <tbody>
-        {% for r in plan.renglones %}
-        <tr><td>{{ r.producto }}</td><td class="numero">{{ r.cantidad|entero }}</td><td>{{ r.de }}</td><td>{{ r.a }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
   {% if plan.bloqueos %}
   <div class="aviso-caja error" id="no_se_puede" style="margin-top:16px">
     <strong>No se puede eliminar.</strong>
@@ -76,6 +62,23 @@
   {% else %}
   <h2>Si la eliminas</h2>
   <ul id="lo_que_va_a_pasar">{% for e in plan.efectos %}<li>{{ e }}</li>{% endfor %}</ul>
+
+  {# Lo que se movería al eliminarla: al revés de lo que hizo. Antes iba arriba,
+     solo, como «Lo que regresa», y se leía como lo que pasó (§195). #}
+  {% if plan.renglones %}
+  <p class="sutil" style="margin-bottom:6px">La mercancía se movería así, al revés de
+  como la movió esta operación:</p>
+  <div class="tabla-marco" style="overflow-x:auto">
+    <table id="renglones_operacion">
+      <thead><tr><th>Producto</th><th class="numero">Piezas</th><th>Sale de</th><th>Va a</th></tr></thead>
+      <tbody>
+        {% for r in plan.renglones %}
+        <tr><td>{{ r.producto }}</td><td class="numero">{{ r.cantidad|entero }}</td><td>{{ r.de }}</td><td>{{ r.a }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   {% if puede_anular %}
   <form method="post" action="{{ op.pagina }}/anular" id="forma_anular"

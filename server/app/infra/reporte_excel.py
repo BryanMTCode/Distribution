@@ -44,7 +44,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
-from app.infra import tarjeta
+from app.infra import producto_malo, tarjeta
 from app.infra.corte_de_la_carga import DESDE_LA_CARGA, TOPE_DEL_CORTE
 from app.infra.cuenta_vendedor import ORIGENES
 from app.infra.ganancia import ganancia_neta
@@ -90,6 +90,9 @@ class Reporte:
     inventario: list[dict] = field(default_factory=list)
     cargas: list[dict] = field(default_factory=list)
     mermas: list[dict] = field(default_factory=list)
+    # Lo malo de los cambios físicos que cada vendedor tiene que regresar, hoy
+    # (§196).
+    producto_malo: list[dict] = field(default_factory=list)
     saldos: list[dict] = field(default_factory=list)
     movimientos: list[dict] = field(default_factory=list)
     valor_por_dia: dict = field(default_factory=dict)
@@ -340,7 +343,7 @@ SELECT m.fecha_operativa AS fecha, m.folio_local AS folio, u.nombre AS quien,
                    WHEN 'cambio' THEN 'Cambio físico'
                    ELSE 'Merma del camión' END AS tipo,
        COALESCE(mm.nombre, m.motivo_codigo) AS motivo, p.nombre AS articulo,
-       d.cantidad_base AS piezas
+       d.cantidad_base AS piezas, m.tipo = 'devolucion_cliente' AS entra
   FROM mermas m
   JOIN merma_detalle d ON d.merma_id = m.id
   JOIN productos p ON p.id = d.producto_id
@@ -349,7 +352,7 @@ SELECT m.fecha_operativa AS fecha, m.folio_local AS folio, u.nombre AS quien,
  WHERE m.fecha_operativa BETWEEN :desde AND :hasta AND m.estado = 'confirmada'
 UNION ALL
 SELECT s.fecha_operativa, s.folio, a.nombre, 'Merma de bodega',
-       COALESCE(mm.nombre, s.motivo_codigo), p.nombre, x.cantidad
+       COALESCE(mm.nombre, s.motivo_codigo), p.nombre, x.cantidad, false
   FROM salidas s
   JOIN salida_detalle x ON x.salida_id = s.id
   JOIN productos p ON p.id = x.producto_id
@@ -710,6 +713,9 @@ async def datos_del_reporte(
         inventario=await filas(SQL_INVENTARIO),
         cargas=await filas(SQL_CARGAS, rango),
         mermas=await filas(SQL_MERMAS, rango),
+        producto_malo=[
+            r for r in await producto_malo.por_regresar(sesion) if Decimal(r["pendientes"]) > 0
+        ],
         saldos=await filas(SQL_SALDOS),
         movimientos=await filas(SQL_MOVIMIENTOS, rango),
         valor_por_dia=await _valor_por_dia(filas, rango),
@@ -859,6 +865,11 @@ def _como_texto(valor, formato: str) -> str:
 
 def _suma(renglones: list[dict], clave: str) -> Decimal:
     return sum((Decimal(r[clave] or 0) for r in renglones), Decimal(0))
+
+
+def _documentos(renglones: list[dict]) -> int:
+    """Cuántos documentos hay en esos renglones: uno por folio y fecha."""
+    return len({(r["folio"], r["fecha"]) for r in renglones})
 
 
 DEL_DIA = (("Traía", "traia"), ("Cargó", "cargo"), ("Vendió", "vendio"),
@@ -1172,7 +1183,12 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
     mayoreo_importe = _suma(reporte.mayoreo, "total")
     cerrados = [c for c in reporte.cortes if c["estado"] == "cerrada"]
     piezas_cargadas = _suma(reporte.cargas, "piezas")
-    piezas_mermadas = _suma(reporte.mermas, "piezas")
+    # Lo que salió (mermas y cambios físicos) y lo que entró (devoluciones de
+    # clientes) van aparte: sumarlos daba un total sin sentido (§195).
+    salieron = [m for m in reporte.mermas if not m["entra"]]
+    entraron = [m for m in reporte.mermas if m["entra"]]
+    piezas_salieron = _suma(salieron, "piezas")
+    piezas_entraron = _suma(entraron, "piezas")
     bodega = [r for r in reporte.inventario if r["tipo_almacen"] == "bodega"]
     camiones = [r for r in reporte.inventario if r["tipo_almacen"] == "camion"]
     sin_precio = sorted({r["articulo"] for r in reporte.inventario if r["precio"] is None})
@@ -1253,8 +1269,13 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
         [("Qué", "texto"), ("Piezas", "entero"), ("Para entenderlo", "texto")],
         [
             ["Cargas a los camiones", piezas_cargadas, f"{len(reporte.cargas)} carga(s)"],
-            ["Mermas y devoluciones", piezas_mermadas,
-             f"{len({(m['folio'], m['fecha']) for m in reporte.mermas})} registro(s)"],
+            ["Mermas y cambios físicos", piezas_salieron,
+             f"{_documentos(salieron)} registro(s): salieron del camión o de la bodega"],
+            ["Devoluciones de clientes", piezas_entraron,
+             f"{_documentos(entraron)} registro(s): entraron al camión"],
+            ["Producto malo por regresar (hoy)", _suma(reporte.producto_malo, "pendientes"),
+             f"{len({r['vendedor_id'] for r in reporte.producto_malo})} vendedor(es): lo "
+             "malo de sus cambios físicos; en la hoja Cargas y mermas"],
         ],
     )
     resumen.nota("Cada tema tiene su hoja abajo: Ventas y efectivo, Compras —lo que se "
@@ -1511,10 +1532,27 @@ def armar_libro(reporte: Reporte, *, generado_por: str, generado_en: datetime) -
         "Mermas y devoluciones",
         [("Fecha", "fecha"), ("Folio", "texto"), ("Quién / dónde", "texto"),
          ("Qué fue", "texto"), ("Motivo", "texto"), ("Artículo", "texto"),
-         ("Piezas", "entero")],
+         ("Salió (piezas)", "entero"), ("Entró (piezas)", "entero")],
         [[m["fecha"], m["folio"], m["quien"], m["tipo"], m["motivo"], m["articulo"],
-          m["piezas"]] for m in reporte.mermas],
-        totales=["Total", "", "", "", "", "", piezas_mermadas],
+          None if m["entra"] else m["piezas"], m["piezas"] if m["entra"] else None]
+         for m in reporte.mermas],
+        totales=["Total", "", "", "", "", "", piezas_salieron, piezas_entraron],
+    )
+    if reporte.mermas:
+        hoja.nota("Salió: la merma del camión o de la bodega y, en el cambio físico, el "
+                  "producto bueno que se le dio a la tienda. Entró: lo que una tienda le "
+                  "regresó al camión. Van en columnas aparte porque son al revés: no se "
+                  "suman.")
+        hoja.fila += 1
+    hoja.tabla(
+        "Producto malo por regresar (hoy)",
+        [("Vendedor", "texto"), ("Artículo", "texto"), ("Cambió", "entero"),
+         ("Entregó", "entero"), ("Se le cargó", "entero"), ("Falta", "entero"),
+         ("Desde", "fecha")],
+        [[r["vendedor"], r["articulo"], r["cambiadas"], r["recibidas"], r["cargadas"],
+          r["pendientes"], r["desde"]] for r in reporte.producto_malo],
+        totales=["Total", "", None, None, None, _suma(reporte.producto_malo, "pendientes"), ""],
+        vacio="Nadie tiene producto malo por regresar.",
     )
     hoja.terminar()
 

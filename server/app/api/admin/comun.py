@@ -166,6 +166,9 @@ PESTANAS: dict[str, list[tuple[str, str]]] = {
         ("/panel/inventario/ajustar", "Ajustar inventario"),
         # De cuánto estaba a cuánto pasó cada artículo, sin abrir folios (§189).
         ("/panel/inventario/movimientos", "Movimientos"),
+        # Lo malo de los cambios físicos que cada vendedor tiene que regresar
+        # (§196).
+        ("/panel/inventario/producto-malo", "Producto malo"),
     ],
     "Entradas y salidas": [
         ("/panel/entradas", "Entradas"),
@@ -215,6 +218,7 @@ PERMISO_DEL_MENU: dict[str, str | tuple[str, ...] | None] = {
     "/panel/inventario/mover": ("inventario.ver", "inventario.ajustar"),
     "/panel/inventario/ajustar": ("inventario.ver", "inventario.ajustar"),
     "/panel/inventario/movimientos": "inventario.ver",
+    "/panel/inventario/producto-malo": "inventario.ver",
     "/panel/entradas": "inventario.ver",
     "/panel/salidas": "inventario.ver",
     "/panel/compras": "inventario.ver",

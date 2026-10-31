@@ -165,12 +165,14 @@ def _leer_cantidad(texto: str | None, *, que_es: str) -> Decimal:
 
 
 async def _bodegas(sesion):
-    """Solo bodegas: el inventario de un camión lo ajusta su liquidación."""
+    """Solo bodegas: el inventario de un camión lo ajusta su liquidación. Y el
+    almacén «Producto malo» (§196), de donde se tira o se le regresa al
+    proveedor lo que entregaron los vendedores."""
     return (
         await sesion.execute(
             text(
                 "SELECT id, codigo, nombre FROM almacenes "
-                " WHERE activo AND tipo = ANY(:tipos) ORDER BY codigo"
+                " WHERE activo AND (tipo = ANY(:tipos) OR producto_malo) ORDER BY codigo"
             ),
             {"tipos": list(TIPOS_DE_DESTINO)},
         )
@@ -276,13 +278,16 @@ async def crear(
 
     bodega = (
         await sesion.execute(
-            text("SELECT id, nombre, tipo FROM almacenes WHERE id = :a AND activo"),
+            text(
+                "SELECT id, nombre, tipo, producto_malo FROM almacenes "
+                " WHERE id = :a AND activo"
+            ),
             {"a": origen},
         )
     ).mappings().first()
     if bodega is None:
         return _a_lista(error="Esa bodega no existe o está inactiva.")
-    if bodega["tipo"] not in TIPOS_DE_DESTINO:
+    if bodega["tipo"] not in TIPOS_DE_DESTINO and not bodega["producto_malo"]:
         # Un camión no se ajusta desde el panel: su faltante se descubre y se
         # cobra en la LIQUIDACIÓN, que compara lo cargado contra lo retornado y
         # ya tiene su propia pantalla. Ajustarlo por aquí haría que el mismo
@@ -989,9 +994,11 @@ async def confirmar(
     if tipo == "merma":
         destino = (
             await sesion.execute(
+                # Nunca el almacén «Producto malo» (§196): la merma que sale de
+                # él se iría a él mismo.
                 text(
                     "SELECT id FROM almacenes WHERE tipo = 'merma' AND activo "
-                    " ORDER BY codigo LIMIT 1"
+                    "   AND NOT producto_malo ORDER BY codigo LIMIT 1"
                 )
             )
         ).scalar_one_or_none()

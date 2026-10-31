@@ -84,6 +84,8 @@ TABLAS_QUE_SE_VACIAN = (
     "movimientos_tarjeta",
     # Los boletos del dashboard desde la app (§194), como las sesiones.
     "boletos_panel",
+    # El producto malo que se recibió o se cargó (§196).
+    "producto_malo_resuelto",
     "existencias", "movimientos_inventario",
     # Catálogo
     "promociones", "precios", "producto_costos", "producto_unidades", "productos",

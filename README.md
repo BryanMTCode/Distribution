@@ -178,6 +178,8 @@ la bodega sube cuando alguien la cuenta.
 | **La ganancia neta del periodo que se elija** (§192): cada salida de la tarjeta dice qué fue (sueldos, gasolina, mantenimiento, renta, otro gasto o retiro del dueño); Ganancia resta los gastos y da la ganancia neta del periodo; la de la semana, en la pantalla principal; en el Excel solo para el administrador | ✅ 2 pruebas del servidor y la del Excel de la oficina |
 | **Las compras a proveedores y los gastos, sin abrir cada compra** (§193): Dinero → Compras y gastos, del periodo que se elija: cada compra con lo que trajo, lo pagado y lo que se debe; por proveedor, por artículo, y los gastos por tipo | ✅ 2 pruebas del servidor |
 | **El dashboard dentro de la app, para el administrador** (§194): Almacén → Mover y capturar, con los botones que manda el servidor (mover mercancía, entradas, salidas, ajustes, artículos); cada uno abre esa pantalla del dashboard en la app con un boleto de un solo uso, sin teclear la contraseña; los vendedores no cambian | ✅ 7 pruebas del servidor, 4 de Dart y 11 de la app |
+| **Lo que se movería al eliminar, donde se lee como tal** (§195): en el detalle de una operación, la tabla va dentro de «Si la eliminas» con «Sale de» y «Va a»; en el Excel, las mermas y cambios físicos (salieron) y las devoluciones de clientes (entraron) en columnas y renglones aparte | ✅ 2 pruebas del servidor |
+| **El producto malo que el vendedor tiene que regresar** (§196): lo malo de cada cambio físico queda a su nombre hasta que la oficina lo recibe en la bodega —entra al almacén «Producto malo», de donde sale con una salida— o se lo carga a su cuenta a costo; en Inventario → Producto malo, en la app y en el Excel | ✅ 7 pruebas del servidor |
 | **Después de guardar, la petición sigue viendo lo que ve quien la hizo** (§178): el corte que cierra el gerente al aceptar la carga ya no se recalcula con el alcance de otro vendedor («vendió 0», «esperaba $0») | ✅ 2 pruebas con el rol restringido |
 | **Cambiar los días de las rutas sin tocar lo trabajado** (§175): en Plan de visita, mover todas las de un día a otro, intercambiar dos días o recorrerlos uno para atrás o para adelante, en una ruta o en todas, desde la fecha que se escoja; antes de confirmar se ve cada día antes y después. Efectividad, «fuera de su día» y el mapa de la ruta miden lo trabajado con el plan de antes | ✅ 8 pruebas del servidor |
 | **En el teléfono, solo las tiendas de sus rutas** (§174): la tienda sin ruta que recibe una, el cliente de mayoreo y lo que el teléfono traía de su vínculo anterior se le van con la siguiente sincronización; y el teléfono pregunta una vez al día cuáles son suyas, para soltar también las que se tiraron con la base en blanco. `piloto_listo.sh todos` dice cuántas tiendas debe enseñar cada vendedor, cuántas le tocan hoy y cuántas soltó su teléfono | ✅ 11 pruebas del servidor, 5 de Dart, 1 de widget |
@@ -204,7 +206,7 @@ la bodega sube cuando alguien la cuenta.
 | **Instrumento del piloto** — cuadre diario contra el papel, bitácora y 12 criterios | ✅ 71 pruebas |
 | **El piloto de campo en sí** — dos semanas de un vendedor real | ⏳ calendario, no código |
 
-**1675 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **746 de Dart** y **409 de widget**, todas en verde.
+**1684 pruebas de Python** sobre PostgreSQL 16.13 + PostGIS, **746 de Dart** y **409 de widget**, todas en verde.
 
 ## Stack
 

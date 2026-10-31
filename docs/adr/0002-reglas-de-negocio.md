@@ -8009,3 +8009,50 @@ afectar la versión anterior, donde trabajan los vendedores.»
   computadora se ve igual que antes.
 - Necesita señal, como el dashboard, y Android 7 o más nuevo (la vista web lo
   pide; ya era el mínimo con Flutter 3.35).
+
+## 195. Lo que se movería al eliminar, dentro de «Si la eliminas»; y en el Excel, lo que salió aparte de lo que entró
+
+«Explícame estas dos operaciones»: un cambio físico y una devolución del cliente.
+Las dos pantallas se leían al revés de lo que pasó.
+
+- **En el detalle de una operación**, la tabla «Lo que regresa» iba arriba, sola,
+  y se leía como lo que había pasado. Es lo contrario: lo que se movería **si se
+  elimina**. Ahora va dentro de «Si la eliminas», después de lo que va a pasar,
+  con «Sale de» y «Va a». Lo que pasó es «Cómo quedó el inventario» (§189).
+- **En el Excel**, la tabla «Mermas y devoluciones» (hoja Cargas y mermas) sumaba
+  las dos aunque van al revés: la merma, el cambio físico y la merma de bodega
+  **salen**; la devolución del cliente **entra** al camión. Ahora van en dos
+  columnas, «Salió» y «Entró», con su total cada una, y el Resumen las dice en
+  dos renglones: «Mermas y cambios físicos» y «Devoluciones de clientes».
+
+## 196. El producto malo que el vendedor tiene que regresar a la bodega
+
+«Si Federico tiene 4 malas, quiero llevar control de esas para que las regrese al
+almacén.» En un cambio físico (§54) el vendedor le da a la tienda producto bueno
+y se lleva el malo: el bueno sale de su camión con documento, y el malo se
+quedaba sin nombre.
+
+- **Queda a su nombre, por regresar**: lo cambiado en sus cambios físicos menos
+  lo que la oficina recibió y lo que se le cargó. No se guarda: se calcula, así
+  que cuentan también los cambios de antes (las 4 Botanas de Federico del 27/10)
+  y un cambio eliminado en Operaciones deja de contar solo. Solo los cambios
+  físicos: la merma del camión sigue como estaba.
+- **Inventario → Producto malo** (y el botón «Producto malo» en la app de la
+  oficina, §194): cada vendedor con lo que le falta, de qué artículo, desde
+  cuándo y de qué cambios viene. Ahí se escriben las piezas y se elige:
+  - **Recibir en la bodega**: entra al almacén **«Producto malo»** con un ajuste
+    —una sola operación aunque sean varios artículos—. Se ve en Operaciones, y
+    eliminarlo ahí lo deja pendiente otra vez. No se recibe más de lo que debe.
+  - **Cargar a su cuenta**, a costo (§54), solo marcando «Sí, cargárselo»: un
+    cargo con el desglose que ve el vendedor. Sin costo capturado no se cobra en
+    cero: se pide capturarlo. Un cargo no se borra; se condona en su cuenta.
+- **Lo que no entrega se queda pendiente**: nada se le cobra solo.
+- **El almacén «Producto malo»** es de tipo merma —no vale en lo que vale la
+  empresa ni sale en Existencias, que sumaría su precio de venta: tiene su
+  pantalla— y no recibe las mermas del teléfono ni las de bodega: solo lo que la
+  oficina recibió. De él se tira o se le regresa al proveedor con una salida
+  (Salidas permite elegirlo como origen).
+- **En el Excel**, el Resumen dice cuánto falta y la hoja Cargas y mermas, a
+  nombre de cada vendedor: lo que cambió, entregó, se le cargó y le falta.
+- **Los vendedores no cambian**: su teléfono registra el cambio físico igual que
+  antes; todo esto es del servidor.
