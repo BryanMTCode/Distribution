@@ -7971,3 +7971,41 @@ compra.»
   tipo y uno por uno (§192).
 - Solo el administrador, como la tarjeta (`tarjeta.ver`). Desde Compras hay un
   enlace para llegar.
+
+## 194. El dashboard dentro de la app, para mover el almacén y dar de alta artículos
+
+«¿Es posible que el administrador haga en la app los movimientos que hace en el
+dashboard, sin tener que actualizar la app a los vendedores?» «Solo quiero poder
+mover el almacén, agregar productos, ese tipo de cosas.» «Ten cuidado de no
+afectar la versión anterior, donde trabajan los vendedores.»
+
+- **Almacén → Mover y capturar**, al final de las pestañas, solo para el
+  administrador: Mover mercancía, Entradas, Salidas y mermas, Ajustar
+  inventario, Artículos y Lo que se movió. Cada botón abre **esa pantalla del
+  dashboard dentro de la app**: la misma de la computadora, con sus reglas y sus
+  permisos. No contradice §134: ahí se quitaron las pantallas propias de la app;
+  esto es el dashboard mismo.
+- **Sin teclear la contraseña otra vez**: la app le pide al servidor un boleto
+  (`POST /v1/panel/boleto`, solo el administrador) que sirve **una vez y un
+  minuto**, y el dashboard lo canjea (`/panel/entrar/app`) por su sesión de
+  siempre. En la base queda la huella del boleto (sha256), no el boleto. El
+  canje solo lleva a pantallas del dashboard (`/panel…`), nunca a otro sitio.
+- **Los botones los decide el servidor** (`GET /v1/panel/atajos`): cuáles, con
+  qué nombre y a qué pantalla. Cambiar o agregar un botón, o mejorar una
+  pantalla del dashboard, no pide otra APK. A quien no le tocan —hoy, todo el
+  que no es administrador— le llega la lista vacía y la parte no aparece; sin
+  señal, tampoco.
+- **Dentro de la pantalla**: la flecha de atrás regresa por las pantallas del
+  dashboard y, en la primera, a los botones; «Volver a cargar» arriba; «Salir»
+  del dashboard regresa a la app. El Excel se baja en el navegador del teléfono,
+  con su propio boleto, y un enlace a otro sitio también se abre ahí. Si la
+  sesión del dashboard vence con la pantalla abierta, se abre otra sola, una vez.
+- **Los vendedores no cambian**: su app (+59) sigue igual y no sabe de esto; el
+  servidor solo agregó rutas y una tabla (`boletos_panel`). En la APK +60, la
+  pantalla del vendedor ni pide ni enseña los botones, y esa APK solo hace falta
+  en el teléfono del administrador.
+- **El dashboard en el teléfono**: las tablas anchas se deslizan de lado dentro
+  de su marco, sin que la página entera se salga de la pantalla; en la
+  computadora se ve igual que antes.
+- Necesita señal, como el dashboard, y Android 7 o más nuevo (la vista web lo
+  pide; ya era el mínimo con Flutter 3.35).

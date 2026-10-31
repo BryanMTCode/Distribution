@@ -299,6 +299,18 @@
       color: var(--marca); font-size: 30px;
       font-family: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
     }
+    /* En el teléfono —también dentro de la app de la oficina (ADR 0002 §194)— una
+       tabla ancha se desliza de lado dentro de su marco, en vez de cortarse o de
+       empujar la página. Va al final para ganarle al `overflow: hidden` de arriba;
+       en la computadora no cambia nada. */
+    @media (max-width: 860px) {
+      .tabla-marco, details.familia { overflow-x: auto; }
+      /* Los encabezados del Inventario van en una tabla aparte, sin marco. */
+      main > table.columnas-fijas { display: block; overflow-x: auto; }
+      /* Una opción larga («Todos los vendedores (la misma a cada uno)») no
+         ensancha la página. */
+      main select { max-width: 100%; }
+    }
   </style>
 </head>
 <body>

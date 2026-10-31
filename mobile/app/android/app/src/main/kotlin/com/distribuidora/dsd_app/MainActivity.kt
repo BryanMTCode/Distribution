@@ -45,6 +45,27 @@ class MainActivity : FlutterActivity() {
                     resultado.success(false)
                 }
             }
+        // Una dirección web, al navegador del teléfono (ADR 0002 §194): el Excel
+        // del dashboard, que el navegador sabe bajar y abrir. Solo http(s).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsd/navegador")
+            .setMethodCallHandler { llamada, resultado ->
+                val url = llamada.argument<String>("url")
+                if (llamada.method != "abrir" || url == null) {
+                    resultado.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val direccion = Uri.parse(url)
+                if (direccion.scheme != "https" && direccion.scheme != "http") {
+                    resultado.success(false)
+                    return@setMethodCallHandler
+                }
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, direccion))
+                    resultado.success(true)
+                } catch (e: ActivityNotFoundException) {
+                    resultado.success(false)
+                }
+            }
     }
 
     override fun onRequestPermissionsResult(

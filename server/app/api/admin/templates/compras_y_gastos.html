@@ -102,7 +102,7 @@
 </div>
 
 <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;margin-top:8px">
-  <div style="flex:1 1 360px">
+  <div style="min-width:0;flex:1 1 360px">
     <h2>Por proveedor</h2>
     <div class="tabla-marco">
       <table id="compras_por_proveedor">
@@ -118,7 +118,7 @@
       </table>
     </div>
   </div>
-  <div style="flex:1 1 420px">
+  <div style="min-width:0;flex:1 1 420px">
     <h2>Por artículo</h2>
     <div class="tabla-marco">
       <table id="compras_por_articulo">
@@ -142,7 +142,7 @@
 <h2 id="gastos">Gastos de la empresa</h2>
 {% if gastos.renglones %}
 <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
-  <div class="tabla-marco" style="flex:0 1 360px">
+  <div class="tabla-marco" style="min-width:0;flex:0 1 360px">
     <table id="gastos_por_tipo">
       <thead><tr><th>En qué</th><th class="numero">Cuánto</th></tr></thead>
       <tbody>
@@ -153,7 +153,7 @@
       <tfoot><tr><td><strong>Total</strong></td><td class="numero"><strong>{{ gastos.total|dinero }}</strong></td></tr></tfoot>
     </table>
   </div>
-  <div class="tabla-marco" style="flex:1 1 420px">
+  <div class="tabla-marco" style="min-width:0;flex:1 1 420px">
     <table id="gastos_uno_por_uno">
       <thead><tr><th>Fecha</th><th>En qué</th><th>Detalle</th><th class="numero">Cuánto</th></tr></thead>
       <tbody>

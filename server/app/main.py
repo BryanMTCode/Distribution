@@ -66,6 +66,7 @@ from app.api.v1 import (
     tablero,
     vendedores,
 )
+from app.api.v1 import panel as v1_panel
 from app.core.config import obtener_config
 from app.core.db import motor, motor_api
 from app.core.observabilidad import iniciar_sentry
@@ -142,6 +143,8 @@ def crear_app() -> FastAPI:
     app.include_router(vendedores.router, prefix="/v1")
     app.include_router(objetivos.router, prefix="/v1")
     app.include_router(mayoreo.router, prefix="/v1")
+    # El boleto para abrir el dashboard desde la app de la oficina (§194).
+    app.include_router(v1_panel.router, prefix="/v1")
     app.include_router(mapa.router, prefix="/v1")
 
     # El panel va sin prefijo de versión: no es un contrato con nadie, es una

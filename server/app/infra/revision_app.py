@@ -697,10 +697,31 @@ SECCIONES: tuple[Seccion, ...] = (
             Punto(
                 "sin_entradas_ni_traspasos", "Sin Entradas ni Traspasos ni Mayoreo",
                 "Abre Almacén y mira las pestañas.",
-                "Existencias, Cargas y Corte del día. Entradas y Traspasos ya no están en "
-                "la app: se hacen en el panel (ADR 0002 §134); Mayoreo tiene su propia "
-                "pestaña abajo (§152).",
-                desde="+50",
+                "Existencias, Cargas y Corte del día —y, para el admin, «Mover y capturar» "
+                "al final (§194)—. Entradas y Traspasos ya no son pestañas de la app: se "
+                "hacen en el panel (ADR 0002 §134); Mayoreo tiene su propia pestaña abajo "
+                "(§152).",
+                desde="+60",
+            ),
+            Punto(
+                "mover_y_capturar", "Mover y capturar: el dashboard dentro de la app",
+                "Entra como admin → Almacén → «Mover y capturar» → «Mover mercancía». "
+                "Mueve algo de prueba de la bodega a un camión y regrésalo. Luego, "
+                "«Artículos»: cambia algo de un artículo de prueba.",
+                "Cada botón abre esa pantalla del dashboard dentro de la app, sin pedir la "
+                "contraseña, y lo que haces queda igual que en la computadora (sale en el "
+                "dashboard). Un gerente o un vendedor no ven esta parte (ADR 0002 §194).",
+                desde="+60",
+            ),
+            Punto(
+                "dashboard_atras_excel_salir", "Atrás, el Excel y «Salir» dentro de la app",
+                "En una pantalla de «Mover y capturar»: entra a otra desde el menú del "
+                "dashboard y toca atrás; abre «Reporte en Excel» → «Bajar el reporte en "
+                "Excel»; y toca «Salir» arriba.",
+                "Atrás regresa a la pantalla anterior del dashboard y, en la primera, a los "
+                "botones. El Excel se abre en el navegador del teléfono y se baja ahí. "
+                "«Salir» cierra el dashboard y regresa a la app (ADR 0002 §194).",
+                desde="+60",
             ),
             Punto(
                 "cargas_un_dia", "Las cargas de un día, con su estatus",

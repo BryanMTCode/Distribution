@@ -17,6 +17,11 @@
 /// Entradas y Traspasos estuvieron aquí y se quitaron (§134): «de la app quitaré
 /// lo de entrada y traspasos». Se hacen en el panel.
 ///
+///   · **Mover y capturar** (§194): para el administrador, botones que abren
+///     esas pantallas del dashboard —mover mercancía, entradas, salidas,
+///     ajustes, artículos— dentro de la app. Los botones los manda el servidor
+///     (`/v1/panel/atajos`): a quien no le tocan, la parte no aparece.
+///
 /// La carga y el corte van separados a propósito (ADR 0002 §82): primero se
 /// cierra el corte del vendedor y después se acepta su carga.
 ///
@@ -30,11 +35,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../estado/almacen.dart';
 import '../../estado/cargas.dart';
+import '../../estado/dashboard.dart';
 import '../../estado/vendedores.dart';
 import '../familias.dart';
 import 'cargas.dart';
 import 'comunes.dart';
 import 'cortes.dart';
+import 'dashboard.dart';
 
 /// Si la pestaña Almacén aparece en la barra.
 final muestraAlmacenProvider = Provider<bool>(
@@ -50,6 +57,7 @@ class PantallaAlmacen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ver = ref.watch(puedeVerAlmacenProvider);
+    final atajos = ref.watch(atajosDelPanelProvider).valueOrNull ?? const <AtajoDelPanel>[];
     // (clave, título, pantalla con o sin barra propia)
     final partes = <(Key, String, Widget Function(bool conBarra))>[
       if (ver) ...[
@@ -63,6 +71,14 @@ class PantallaAlmacen extends ConsumerWidget {
         (const Key('pestana_cargas'), 'Cargas', (b) => PantallaCargas(conBarra: b)),
       if (ref.watch(puedeCortarProvider))
         (const Key('pestana_cortes'), 'Corte del día', (b) => PantallaCortes(conBarra: b)),
+      // Al final: las pestañas de siempre no cambian de lugar si tarda o no hay
+      // señal.
+      if (atajos.isNotEmpty)
+        (
+          const Key('pestana_mover_y_capturar'),
+          'Mover y capturar',
+          (b) => PantallaAtajosDelPanel(atajos: atajos, conBarra: b),
+        ),
     ];
     if (partes.isEmpty) return const SizedBox.shrink();
     if (partes.length == 1) return partes.single.$3(true);

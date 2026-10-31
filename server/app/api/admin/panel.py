@@ -43,7 +43,7 @@ from app.api.admin.sesion_web import (
     exigir_csrf,
 )
 from app.core.seguridad import verificar_password
-from app.infra import tarjeta
+from app.infra import boletos_del_panel, tarjeta
 from app.infra.ganancia import ganancia_neta
 from app.infra.models import Usuario
 from app.infra.objetivos_diarios import de_toda_la_empresa, objetivos_diarios
@@ -114,6 +114,48 @@ async def procesar_entrar(
         modelo,
         respuesta,
         ip=peticion.client.host if peticion.client else None,
+    )
+    return respuesta
+
+
+# Desde la app de la oficina (ADR 0002 §194): la app pide un boleto con su token
+# y aquí se canjea por la sesión de siempre, sin teclear la contraseña otra vez.
+# POST dentro de la app; GET en el navegador del teléfono, que es donde se baja
+# el Excel. El boleto sirve una vez y un minuto: ver `boletos_del_panel`.
+@router.post("/entrar/app")
+async def entrar_desde_la_app(
+    peticion: Request,
+    sesion: SesionDep,
+    boleto: Annotated[str, Form()] = "",
+    siguiente: Annotated[str, Form()] = "",
+):
+    return await _canjear_boleto(peticion, sesion, boleto, siguiente)
+
+
+@router.get("/entrar/app")
+async def entrar_desde_la_app_en_el_navegador(
+    peticion: Request, sesion: SesionDep, boleto: str = "", siguiente: str = ""
+):
+    return await _canjear_boleto(peticion, sesion, boleto, siguiente)
+
+
+async def _canjear_boleto(peticion: Request, sesion, boleto: str, siguiente: str):
+    usuario_id = await boletos_del_panel.canjear(sesion, boleto)
+    modelo = await sesion.get(Usuario, usuario_id) if usuario_id else None
+    if modelo is None or not modelo.activo or modelo.rol_codigo == "vendedor":
+        # El boleto queda gastado aunque no haya servido.
+        await sesion.commit()
+        return render(
+            peticion,
+            "entrar.html",
+            {"error": "El acceso desde la app ya venció. Vuelve a abrir el dashboard "
+                      "desde la app, o entra con tu código y contraseña."},
+        )
+    respuesta = RedirectResponse(
+        boletos_del_panel.destino_seguro(siguiente), status_code=status.HTTP_303_SEE_OTHER
+    )
+    await abrir_sesion(
+        sesion, modelo, respuesta, ip=peticion.client.host if peticion.client else None
     )
     return respuesta
 

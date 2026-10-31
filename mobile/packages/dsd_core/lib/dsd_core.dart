@@ -35,6 +35,7 @@ export 'src/mi_dia.dart';
 export 'src/no_drop.dart';
 export 'src/objetivos_cliente.dart';
 export 'src/oficina_rechazo.dart';
+export 'src/panel_cliente.dart';
 export 'src/ordenes.dart';
 export 'src/periodo_cliente.dart';
 export 'src/plan_visita.dart';

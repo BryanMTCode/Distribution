@@ -82,6 +82,8 @@ TABLAS_QUE_SE_VACIAN = (
     "pagos_proveedor", "cuentas_por_pagar", "entrada_detalle", "entradas",
     # La tarjeta de la empresa (§190): vuelve a empezar con su saldo.
     "movimientos_tarjeta",
+    # Los boletos del dashboard desde la app (§194), como las sesiones.
+    "boletos_panel",
     "existencias", "movimientos_inventario",
     # Catálogo
     "promociones", "precios", "producto_costos", "producto_unidades", "productos",

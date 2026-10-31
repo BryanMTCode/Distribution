@@ -120,7 +120,7 @@
 <h2 id="gastos">Gastos de la empresa</h2>
 {% if gastos.renglones %}
 <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
-  <div class="tabla-marco" style="flex:0 1 360px">
+  <div class="tabla-marco" style="min-width:0;flex:0 1 360px">
   <table id="gastos_por_tipo">
     <thead><tr><th>En qué</th><th class="numero">Cuánto</th></tr></thead>
     <tbody>
@@ -131,7 +131,7 @@
     <tfoot><tr><td><strong>Total</strong></td><td class="numero"><strong>{{ gastos.total|dinero }}</strong></td></tr></tfoot>
   </table>
   </div>
-  <div class="tabla-marco" style="flex:1 1 420px">
+  <div class="tabla-marco" style="min-width:0;flex:1 1 420px">
   <table id="gastos_uno_por_uno">
     <thead><tr><th>Fecha</th><th>En qué</th><th>Detalle</th><th class="numero">Cuánto</th></tr></thead>
     <tbody>

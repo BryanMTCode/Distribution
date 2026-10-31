@@ -101,7 +101,9 @@ android {
 
     defaultConfig {
         applicationId = "com.distribuidora.dsd_app"
-        minSdk = flutter.minSdkVersion
+        // La vista web del dashboard (ADR 0002 §194) pide Android 7 (API 24), que
+        // ya es el mínimo de Flutter 3.35; así tampoco se rompe con uno más viejo.
+        minSdk = maxOf(flutter.minSdkVersion, 24)
         targetSdk = flutter.targetSdkVersion
 
         // Vienen de `version:` en pubspec.yaml. El número después del `+` es el
